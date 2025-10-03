@@ -1,20 +1,11 @@
 [
   {
-    "id": "c99f4d36-77e4-4e49-ae2f-8e1e236e1180",
-    "date": "2025-10-03",
     "type": "income",
+    "id": "330e4a62-c7a0-4dd1-8c2c-2ffc5a142727",
+    "category": "",
     "amount": 12000,
-    "category": "",
+    "date": "2025-10-04",
     "note": "",
-    "createdAt": 1759496477855
-  },
-  {
-    "id": "f8b1246d-1c0e-4253-b745-1a45254ea688",
-    "date": "2025-10-03",
-    "type": "income",
-    "amount": 1,
-    "category": "",
-    "note": "測試",
-    "createdAt": 1759516296729
+    "createdAt": 1759521398217
   }
 ]
