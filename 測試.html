@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>我的記帳本</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Firebase CDN -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+  <style>
+    body {
+      background-image: url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg");
+      background-repeat: no-repeat;
+      background-size: cover;
+      background-attachment: fixed;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      color: white;
+    }
+    .container {
+      background: rgba(0,0,0,0.75);
+      margin: 20px;
+      padding: 20px;
+      border-radius: 12px;
+    }
+    button { margin: 3px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>我的記帳本</h1>
+    <div>
+      <button id="setInit">設定期初</button>
+      <button id="clear">清空</button>
+      <button id="fbLoginBtn" title="用 Google 登入">Google 登入</button>
+      <button id="fbLogoutBtn" title="登出" style="display:none">登出</button>
+      <span id="fbWho" class="muted">(未登入：匿名模式，僅本裝置)</span>
+    </div>
+
+    <div>
+      <label>月份：</label>
+      <input type="month" id="monthPicker">
+      <br>
+      <label>日期：</label>
+      <input type="date" id="date">
+    </div>
+  </div>
+
+  <script>
+    /* ============== Firebase：啟動保險版（UID 隔離） ============== */
+    const USE_FIREBASE = true;
+    const FIREBASE_ROOT = "users";
+    const FIREBASE_SUB_ENTRIES  = "entries";
+    const FIREBASE_SUB_INITIALS = "initials";
+
+    let db = null;
+    let CURRENT_UID = null;
+
+    // ★ 這裡要換成你的 Firebase Config
+    const firebaseConfig = {
+      apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
+      authDomain: "eyvind95-182f0.firebaseapp.com",
+      projectId: "eyvind95-182f0",
+      storageBucket: "eyvind95-182f0.firebasestorage.app",
+      messagingSenderId: "105770576221",
+      appId: "1:105770576221:web:4256dca5ec54b7cf91a0b4"
+    };
+
+    function initFirebaseApp() {
+      if (firebase.apps.length === 0) {
+        firebase.initializeApp(firebaseConfig);
+      }
+      if (!db) db = firebase.firestore();
+    }
+
+    const googleProvider = new firebase.auth.GoogleAuthProvider();
+
+    async function firebaseInitIfNeeded() {
+      if (!USE_FIREBASE) return;
+      initFirebaseApp();
+
+      await new Promise((resolve) => {
+        const off = firebase.auth().onAuthStateChanged((user) => {
+          off();
+          if (user) {
+            CURRENT_UID = user.uid;
+            updateLoginUI(user);
+            resolve();
+          } else {
+            firebase.auth().signInAnonymously().then((cred) => {
+              CURRENT_UID = cred.user.uid;
+              updateLoginUI(cred.user);
+              resolve();
+            });
+          }
+        });
+      });
+    }
+
+    async function handleAuthRedirectResult() {
+      initFirebaseApp();
+      try {
+        const res = await firebase.auth().getRedirectResult();
+        if (res && res.user) {
+          CURRENT_UID = res.user.uid;
+          updateLoginUI(res.user);
+        }
+      } catch (e) {}
+    }
+
+    async function googleLogin() {
+      initFirebaseApp();
+      try {
+        const result = await firebase.auth().signInWithPopup(googleProvider);
+        CURRENT_UID = result.user.uid;
+        updateLoginUI(result.user);
+        alert("Google 登入成功！");
+      } catch (e) {
+        const fallback = [
+          "auth/operation-not-supported-in-this-environment",
+          "auth/popup-blocked",
+          "auth/popup-closed-by-user",
+        ];
+        if (fallback.includes(e.code)) {
+          initFirebaseApp();
+          await firebase.auth().signInWithRedirect(googleProvider);
+          return;
+        }
+        alert("Google 登入失敗：" + e.message);
+      }
+    }
+
+    async function googleLogout(){
+      initFirebaseApp();
+      await firebase.auth().signOut();
+      CURRENT_UID = null;
+      await firebaseInitIfNeeded();
+      alert("已登出，回到匿名模式（僅本裝置）");
+    }
+
+    function updateLoginUI(user){
+      const who = document.getElementById("fbWho");
+      const btnLogin = document.getElementById("fbLoginBtn");
+      const btnLogout = document.getElementById("fbLogoutBtn");
+      if (!who || !btnLogin || !btnLogout) return;
+
+      if (user && !user.isAnonymous){
+        who.textContent = `已登入：${user.email || user.displayName || "Google 使用者"}`;
+        btnLogin.style.display = "none";
+        btnLogout.style.display = "";
+      }else{
+        who.textContent = "（未登入：匿名模式，僅本裝置）";
+        btnLogin.style.display = "";
+        btnLogout.style.display = "none";
+      }
+    }
+
+    document.getElementById("fbLoginBtn").addEventListener("click", googleLogin);
+    document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
+
+    /* ============== 日期自動填入 ============== */
+    function setTodayOnce(){
+      const today = new Date();
+      const monthPicker = document.getElementById("monthPicker");
+      if (monthPicker && !monthPicker.value) {
+        monthPicker.value = today.toISOString().slice(0,7);
+      }
+      const dateEl = document.getElementById("date");
+      if (dateEl && !dateEl.value){
+        const y=today.getFullYear(), m=String(today.getMonth()+1).padStart(2,"0"), d=String(today.getDate()).padStart(2,"0");
+        dateEl.value = `${y}-${m}-${d}`;
+      }
+    }
+    document.addEventListener("DOMContentLoaded", setTodayOnce);
+    window.addEventListener("load", () => setTimeout(setTodayOnce, 0));
+
+    /* ============== 啟動程式 ============== */
+    (async () => {
+      await firebaseInitIfNeeded();
+      await handleAuthRedirectResult();
+      setTodayOnce(); // 確保有日期
+    })();
+  </script>
+</body>
+</html>
