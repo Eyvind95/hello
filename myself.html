@@ -234,10 +234,17 @@ const googleProvider = new firebase.auth.GoogleAuthProvider();
       appId: "1:105770576221:web:4256dca5ec54b7cf91a0b4"
       // measurementId: "G-XXXX"  // （可留空，與同步無關）
     };
-
+function initFirebaseApp() {
+  if (firebase.apps.length === 0) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  if (!window.db) {
+    window.db = firebase.firestore();
+  }
+}
     async function firebaseInitIfNeeded(){
-  if(!USE_FIREBASE) return;
-
+ if (!USE_FIREBASE) return;
+  initFirebaseApp();
   // 初始化 App（只做一次）
   if(firebase.apps.length === 0){
     firebase.initializeApp(firebaseConfig);
@@ -280,6 +287,7 @@ function updateLoginUI(user){
 }
 
 async function googleLogin(){
+  initFirebaseApp();
   try{
     // 若目前是匿名使用者，這裡會把匿名身分「升級」為同一個 Google UID（不丟資料）
     const result = await firebase.auth().signInWithPopup(googleProvider);
@@ -297,6 +305,7 @@ async function googleLogin(){
 }
 
 async function googleLogin(){
+   initFirebaseApp();
   try {
     // 先嘗試 popup（桌機 OK）
     const result = await firebase.auth().signInWithPopup(googleProvider);
@@ -342,6 +351,7 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
       return list;
     }
     async function handleAuthRedirectResult(){
+      initFirebaseApp();
   try {
     const res = await firebase.auth().getRedirectResult();
     if (res && res.user) {
