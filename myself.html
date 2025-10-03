@@ -19,13 +19,17 @@
     body{
       margin:0;
       color:#fff; /* 全站白字 */
-      /* 只改這裡：先疊一層淡黑遮罩，再放你的背景圖，最後是底色 */
       background:
         linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
         url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg") center / cover no-repeat fixed,
         var(--bg);
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
     }
+    /* 手機避免 fixed 背景 bug */
+    @media (max-width: 768px){
+      body{ background-attachment: scroll; }
+    }
+
     .container{ max-width:1100px; margin:32px auto; padding:0 16px; }
     header{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px; }
     h1{font-size:28px; margin:0;}
@@ -75,6 +79,13 @@
     .muted{color:var(--muted)}
     .right{display:flex;align-items:center;gap:8px;}
     .spacer{flex:1}
+
+    /* 分類小計：左表格 + 右圓餅圖 */
+    .cat-wrap{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:start; }
+    @media (max-width: 900px){ .cat-wrap{ grid-template-columns:1fr; } }
+    .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
+    .legend .key{ display:inline-flex; align-items:center; gap:6px; }
+    .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
   </style>
 
   <!-- Firebase（可選） -->
@@ -160,19 +171,29 @@
           </div>
         </div>
 
-        <!-- 本月分類小計（只計支出） -->
+        <!-- 本月分類小計（只計支出） + 圓餅圖 -->
         <div class="card" style="background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; margin-top:12px;">
           <h3 style="margin:0 0 8px 0; font-size:16px; color:var(--muted)">本月分類小計（支出）</h3>
-          <table id="catTable">
-            <thead>
-              <tr>
-                <th style="width:120px">分類</th>
-                <th style="width:140px">金額小計</th>
-                <th>筆數</th>
-              </tr>
-            </thead>
-            <tbody id="catTbody"></tbody>
-          </table>
+
+          <div class="cat-wrap">
+            <!-- 左側表格 -->
+            <table id="catTable">
+              <thead>
+                <tr>
+                  <th style="width:120px">分類</th>
+                  <th style="width:140px">金額小計</th>
+                  <th>筆數</th>
+                </tr>
+              </thead>
+              <tbody id="catTbody"></tbody>
+            </table>
+
+            <!-- 右側圓餅圖 -->
+            <div class="cat-chart">
+              <canvas id="catPie" width="360" height="240" style="width:100%;max-width:420px;height:auto;display:block;"></canvas>
+              <div id="catLegend" class="legend" style="margin-top:8px;"></div>
+            </div>
+          </div>
         </div>
 
         <table id="table">
@@ -193,26 +214,107 @@
   </div>
 
   <script>
-    /* 可選：Firebase */
-    const USE_FIREBASE = false;
-    const FIREBASE_COLLECTION = "my_ledger_entries";
-    const FIREBASE_COLLECTION_INITIALS = "my_ledger_initials";
-    const firebaseConfig = { apiKey:"YOUR_API_KEY",authDomain:"YOUR_PROJECT.firebaseapp.com",projectId:"YOUR_PROJECT_ID",storageBucket:"YOUR_PROJECT.appspot.com",messagingSenderId:"YOUR_SENDER_ID",appId:"YOUR_APP_ID" };
+    /* ============== Firebase：UID 隔離版（可選） ============== */
+    const USE_FIREBASE = false; // ★ 填好 firebaseConfig 並開啟匿名登入後，改成 true 就會用雲端
+    const FIREBASE_ROOT = "users";             // 第一層集合
+    const FIREBASE_SUB_ENTRIES = "entries";    // 明細
+    const FIREBASE_SUB_INITIALS = "initials";  // 期初
     let db = null;
-    async function firebaseInitIfNeeded(){ if(!USE_FIREBASE) return; if(!db){ firebase.initializeApp(firebaseConfig); await firebase.auth().signInAnonymously(); db = firebase.firestore(); } }
+    let CURRENT_UID = null;
 
-    /* GitHub 一鍵同步設定（可用就填） */
-    const GH_OWNER = "Eyvind95";
-    const GH_REPO  = "hello";
+    // 到 Firebase 「專案設定 → 一般 → Web App 設定」複製整個物件貼到這裡
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+      // measurementId: "G-XXXX"  // （可留空，與同步無關）
+    };
+
+    async function firebaseInitIfNeeded(){
+      if(!USE_FIREBASE) return;
+      if(db && CURRENT_UID) return;
+
+      // 初始化 App
+      if(firebase.apps.length === 0){
+        firebase.initializeApp(firebaseConfig);
+      }
+      // 匿名登入（無視窗）
+      const cred = await firebase.auth().signInAnonymously();
+      CURRENT_UID = cred.user.uid;
+      db = firebase.firestore();
+    }
+
+    // 依 UID 的 collection 參照
+    function colEntries(){ return db.collection(FIREBASE_ROOT).doc(CURRENT_UID).collection(FIREBASE_SUB_ENTRIES); }
+    function colInitials(){ return db.collection(FIREBASE_ROOT).doc(CURRENT_UID).collection(FIREBASE_SUB_INITIALS); }
+
+    // 雲端讀取（覆蓋本機）
+    async function cloudLoad(){
+      await firebaseInitIfNeeded();
+      const list = [];
+      const snap = await colEntries().get();
+      snap.forEach(doc => list.push(doc.data()));
+      // 依日期/建立時間排序
+      list.sort((a,b)=> (a.date===b.date? (a.createdAt||0)-(b.createdAt||0) : a.date.localeCompare(b.date)));
+      return list;
+    }
+    async function cloudLoadInitials(){
+      await firebaseInitIfNeeded();
+      const obj = {};
+      const snap = await colInitials().get();
+      snap.forEach(doc => { obj[doc.id] = (doc.data().amount || 0); });
+      return obj;
+    }
+
+    // 雲端覆蓋式寫入（簡單可靠）
+    async function cloudSave(all){
+      await firebaseInitIfNeeded();
+      // 先刪全部
+      const cur = await colEntries().get();
+      const del = db.batch();
+      cur.forEach(doc=> del.delete(doc.ref));
+      await del.commit();
+      // 再整批寫入
+      const batch = db.batch();
+      for(const it of all){
+        batch.set(colEntries().doc(it.id), it);
+      }
+      await batch.commit();
+    }
+    async function cloudSaveInitials(obj){
+      await firebaseInitIfNeeded();
+      const cur = await colInitials().get();
+      const del = db.batch();
+      cur.forEach(doc=> del.delete(doc.ref));
+      await del.commit();
+      const batch = db.batch();
+      for(const [k,v] of Object.entries(obj)){
+        batch.set(colInitials().doc(k), { amount: Number(v)||0 });
+      }
+      await batch.commit();
+    }
+
+    /* ============== GitHub 一鍵同步（保留） ============== */
+    const GH_OWNER = "你的GitHub帳號";   // ← 改成你的帳號（例如 eyvind95）
+    const GH_REPO  = "your-repo";        // ← 改成你的 repo 名（例如 hello）
     const GH_BRANCH = "main";
     const GH_ENTRIES_PATH  = "data/entries.json";
     const GH_INITIALS_PATH = "data/initials.json";
-    const GH_TOKEN_KEY = "gh_pat_my_ledger";
+    const GH_TOKEN_KEY = "gh_pat_my_ledger"; // Token 儲存在瀏覽器
+
     function ghGetToken(){ return localStorage.getItem(GH_TOKEN_KEY) || ""; }
     function ghSetToken(t){ if(!t) return; localStorage.setItem(GH_TOKEN_KEY, t); alert("已儲存 GitHub Token（存在本機瀏覽器）"); }
     async function ghApi(path, method="GET", body){
-      const token = ghGetToken(); if(!token) throw new Error("尚未設定 GitHub Token");
-      const res = await fetch(`https://api.github.com${path}`, { method, headers: { "Authorization": `Bearer ${token}`, "Accept": "application/vnd.github+json" }, body: body ? JSON.stringify(body) : undefined });
+      const token = ghGetToken();
+      if(!token) throw new Error("尚未設定 GitHub Token");
+      const res = await fetch(`https://api.github.com${path}`, {
+        method,
+        headers: { "Authorization": `Bearer ${token}`, "Accept": "application/vnd.github+json" },
+        body: body ? JSON.stringify(body) : undefined
+      });
       if(!res.ok){ const t = await res.text(); throw new Error(`GitHub API ${res.status}: ${t}`); }
       return res.json();
     }
@@ -225,36 +327,42 @@
     }
     function base64ToJson(b64){ const str = decodeURIComponent(escape(atob(b64))); return JSON.parse(str); }
 
-    /* 工具 */
+    /* ============== 共用工具 & 本機儲存 ============== */
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-    const LS_KEY = "ledgerEntries_v1";
-    const INITIALS_KEY = "ledgerInitials_v1";
+    const LS_KEY = "ledgerEntries_v1";      // localStorage key（明細）
+    const INITIALS_KEY = "ledgerInitials_v1"; // localStorage key（期初）
+
     const fmtMoney = (n) => new Intl.NumberFormat("zh-Hant-TW", { style: "currency", currency: "TWD" }).format(Number(n)||0);
     const ymd = (d) => d.toISOString().slice(0,10);
     const toDate = (s) => new Date(s + "T00:00:00");
-    const getMonthRange = (year, monthIdx) => { const start = new Date(Date.UTC(year, monthIdx, 1)); const end = new Date(Date.UTC(year, monthIdx + 1, 0)); return { start, end }; };
+    const getMonthRange = (year, monthIdx /*0-11*/) => {
+      const start = new Date(Date.UTC(year, monthIdx, 1));
+      const end = new Date(Date.UTC(year, monthIdx + 1, 0));
+      return { start, end };
+    };
     function round2(n){ return Math.round(n * 100) / 100; }
     function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
-    function monthKey(y, m){ return `${y}-${String(m).padStart(2,'0')}`; }
+    function monthKey(y, m){ return `${y}-${String(m).padStart(2,'0')}`; } // m:1-12
     function prevMonthOf(y, m){ const d=new Date(Date.UTC(y, m-1, 1)); d.setUTCMonth(d.getUTCMonth()-1); return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1}; }
+
+    // 本機儲存
     function loadLocal(){ try{ const raw=localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : []; }catch(e){ return []; } }
     function saveLocal(list){ localStorage.setItem(LS_KEY, JSON.stringify(list)); }
     function loadInitialsLocal(){ try{ const raw=localStorage.getItem(INITIALS_KEY); return raw ? JSON.parse(raw) : {}; }catch(e){ return {}; } }
     function saveInitialsLocal(obj){ localStorage.setItem(INITIALS_KEY, JSON.stringify(obj)); }
 
-    async function cloudLoad(){ await firebaseInitIfNeeded(); const snap=await db.collection(FIREBASE_COLLECTION).get(); const list=[]; snap.forEach(doc=>list.push(doc.data())); return list.sort((a,b)=> (a.date===b.date? a.createdAt-b.createdAt : a.date.localeCompare(b.date))); }
-    async function cloudSave(all){ await firebaseInitIfNeeded(); const col=db.collection(FIREBASE_COLLECTION); const snap=await col.get(); const del=db.batch(); snap.forEach(doc=>del.delete(doc.ref)); await del.commit(); const batch=db.batch(); for(const it of all){ batch.set(col.doc(it.id), it); } await batch.commit(); }
-    async function cloudLoadInitials(){ await firebaseInitIfNeeded(); const snap=await db.collection(FIREBASE_COLLECTION_INITIALS).get(); const obj={}; snap.forEach(doc=>{ obj[doc.id]=doc.data().amount; }); return obj; }
-    async function cloudSaveInitials(obj){ await firebaseInitIfNeeded(); const col=db.collection(FIREBASE_COLLECTION_INITIALS); const snap=await col.get(); const del=db.batch(); snap.forEach(doc=>del.delete(doc.ref)); await del.commit(); const batch=db.batch(); for(const [k,v] of Object.entries(obj)){ batch.set(col.doc(k), {amount:Number(v)||0}); } await batch.commit(); }
-
+    // 統一入口（依 USE_FIREBASE 切換本機/雲端）
     async function loadUnified(){
       if(USE_FIREBASE){
         try{
           const [list, ini] = await Promise.all([cloudLoad(), cloudLoadInitials()]);
+          // 離線備份到本機
           saveLocal(list); saveInitialsLocal(ini);
           return { list, initials: ini };
-        }catch(e){ alert("雲端讀取失敗，改用本機資料"); }
+        }catch(e){
+          alert("雲端讀取失敗，改用本機資料");
+        }
       }
       return { list: loadLocal(), initials: loadInitialsLocal() };
     }
@@ -266,28 +374,32 @@
       saveLocal(entries); saveInitialsLocal(initials);
     }
 
-    /* 狀態與初始化 */
+    /* ============== 狀態與初始化 ============== */
     let entries = [];
     let initials = {};
+
     const monthPicker = $("#monthPicker");
     const today = new Date();
     monthPicker.value = today.toISOString().slice(0,7);
     $("#date").value = ymd(today);
 
-    /* 事件：新增/刪除/匯出/匯入/清空 */
+    /* ============== 事件：新增/刪除/匯出/匯入/清空 ============== */
     $("#entryForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const date = $("#date").value;
-      const type = $("#type").value;
+      const type = $("#type").value; // 'income' | 'expense'
       const amountStr = $("#amount").value.trim();
-      const category = type === "expense" ? $("#category").value : "";
+      const category = type === "expense" ? $("#category").value : ""; // 收入不記類別
       const note = $("#note").value.trim();
+
       if(!date || !type || !amountStr){ return; }
       const amount = parseFloat(amountStr);
       if(isNaN(amount) || amount <= 0){ alert("請輸入正確金額（> 0）"); return; }
+
       const entry = { id: crypto.randomUUID(), date, type, amount: round2(amount), category, note, createdAt: Date.now() };
       entries.push(entry);
       await saveUnified();
+
       $("#amount").value = ""; $("#note").value = "";
       renderWithEnsure();
     });
@@ -314,9 +426,7 @@
         const text = await file.text();
         const data = JSON.parse(text);
         if(!data || !Array.isArray(data.entries) || typeof data.initials !== "object") throw new Error("格式錯誤");
-        for(const it of data.entries){
-          if(!it.id || !it.date || !it.type || !it.amount) throw new Error("明細缺少必要欄位");
-        }
+        for(const it of data.entries){ if(!it.id || !it.date || !it.type || !it.amount) throw new Error("明細缺少必要欄位"); }
         entries = data.entries;
         initials = data.initials;
         await saveUnified();
@@ -333,19 +443,22 @@
       }
     });
 
-    /* 類別選單：收入隱藏、支出顯示 */
+    /* ============== 類別選單：收入隱藏、支出顯示 ============== */
     $("#type").addEventListener("change", () => {
       $("#category").style.display = ($("#type").value === "income") ? "none" : "block";
     });
     $("#type").dispatchEvent(new Event("change"));
 
-    /* 期初邏輯 */
+    /* ============== 期初邏輯：設定、承接、顯示 ============== */
     function ensureInitialForMonth(y, m){
       const mk = monthKey(y, m);
       if(initials[mk] !== undefined) return;
+
+      // 承接上月期末
       const { y:py, m:pm } = prevMonthOf(y, m);
       const pmk = monthKey(py, pm);
       let prevInit = Number(initials[pmk] ?? 0);
+
       const {start:ps, end:pe} = getMonthRange(py, pm-1);
       let pIncome = 0, pExpense = 0;
       for(const it of entries){
@@ -357,6 +470,7 @@
       }
       pIncome = round2(pIncome); pExpense = round2(pExpense);
       const prevEnd = round2(prevInit + pIncome - pExpense);
+
       if(initials[pmk] !== undefined || pIncome > 0 || pExpense > 0){
         initials[mk] = prevEnd;
       }else{
@@ -379,7 +493,7 @@
       renderWithEnsure();
     });
 
-    /* 月份切換 */
+    /* ============== 月份切換 ============== */
     $("#prevMonth").addEventListener("click", () => shiftMonth(-1));
     $("#nextMonth").addEventListener("click", () => shiftMonth(1));
     function shiftMonth(delta){
@@ -390,7 +504,7 @@
     }
     monthPicker.addEventListener("change", renderWithEnsure);
 
-    /* 渲染 */
+    /* ============== 渲染 ============== */
     function renderWithEnsure(){
       const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
       ensureInitialForMonth(y, m);
@@ -401,12 +515,15 @@
       const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
       const {start, end} = getMonthRange(y, m - 1);
 
+      // 區間提示
       $("#rangeHint").textContent = `${y}年${m}月 1 日 ~ ${y}年${m}月 ${end.getUTCDate()} 日`;
 
+      // 本月資料
       const monthItems = entries
         .filter(e => { const d = toDate(e.date); return d >= start && d <= end; })
         .sort((a,b) => (a.date === b.date ? a.createdAt - b.createdAt : a.date.localeCompare(b.date)));
 
+      // 表格
       const tbody = $("#tbody");
       tbody.innerHTML = "";
       for(const it of monthItems){
@@ -418,14 +535,13 @@
           <td class="amount">${fmtMoney(it.amount)}</td>
           <td>${escapeHtml(it.category || "")}</td>
           <td>${escapeHtml(it.note || "")}</td>
-          <td class="actions">
-            <button data-id="${it.id}" class="del">刪除</button>
-          </td>
+          <td class="actions"><button data-id="${it.id}" class="del">刪除</button></td>
         `;
         tbody.appendChild(tr);
       }
       $$("#tbody .del").forEach(btn => btn.addEventListener("click", () => removeEntry(btn.dataset.id)));
 
+      // 統計
       let income = 0, expense = 0;
       for(const it of monthItems){ if(it.type === "income") income += it.amount; else expense += it.amount; }
       income = round2(income); expense = round2(expense);
@@ -434,33 +550,98 @@
       $("#sumExpense").textContent = fmtMoney(expense);
       $("#sumNet").textContent = fmtMoney(net);
 
+      // 期初 & 期末
       const mk = monthKey(y, m);
       const initAmt = Number(initials[mk] ?? 0);
       const endAmt = round2(initAmt + income - expense);
       $("#sumInit").textContent = fmtMoney(initAmt);
       $("#sumEnd").textContent  = fmtMoney(endAmt);
 
+      // 分類小計 + 圓餅圖
       renderCategorySummary(monthItems);
     }
 
+    // 分類小計（僅支出）＋ 圓餅圖（吃=橘、交通=黃、玩=淡藍、其他=灰）
     function renderCategorySummary(monthItems){
       const cats = ["吃","交通","玩","其他"];
+      const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff", "其他":"#aaaaaa" };
+
       const map = new Map(cats.map(c => [c, {sum:0, count:0}]));
-      let untyped = {sum:0, count:0};
       for(const it of monthItems){
         if(it.type !== "expense") continue;
         const key = (it.category || "").trim();
         if(map.has(key)){ const rec = map.get(key); rec.sum = round2(rec.sum + it.amount); rec.count += 1; }
-        else { untyped.sum = round2(untyped.sum + it.amount); untyped.count += 1; }
       }
+
+      // 表格
       const rows = [];
-      for(const cat of cats){ const rec = map.get(cat); rows.push(`<tr><td>${cat}</td><td class="amount">${fmtMoney(rec.sum)}</td><td>${rec.count}</td></tr>`); }
-      if(untyped.count > 0){ rows.push(`<tr><td>(未選)</td><td class="amount">${fmtMoney(untyped.sum)}</td><td>${untyped.count}</td></tr>`); }
+      for(const cat of cats){
+        const rec = map.get(cat);
+        rows.push(`<tr><td>${cat}</td><td class="amount">${fmtMoney(rec.sum)}</td><td>${rec.count}</td></tr>`);
+      }
       const tbody = document.getElementById("catTbody");
       if(tbody) tbody.innerHTML = rows.join("");
+
+      // 圓餅圖
+      const data = cats.map(c => ({ label:c, value: map.get(c).sum, color: colors[c] }));
+      const total = data.reduce((s,d)=>s+d.value,0);
+      drawPie("catPie", data, total);
+
+      // Legend
+      const legend = document.getElementById("catLegend");
+      if(legend){
+        legend.innerHTML = (total<=0)
+          ? `<span class="muted">本月尚無支出</span>`
+          : data.filter(d=>d.value>0).map(d=>{
+              const pct=((d.value/total)*100).toFixed(1);
+              return `<span class="key"><span class="dot" style="background:${d.color}"></span>${d.label} ${pct}%</span>`;
+            }).join(" ");
+      }
     }
 
-    /* GitHub 按鈕事件 */
+    function drawPie(canvasId, data, total){
+      const canvas = document.getElementById(canvasId);
+      if(!canvas) return;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      if(!total || total<=0){
+        ctx.beginPath();
+        ctx.arc(canvas.width/2, canvas.height/2, Math.min(canvas.width, canvas.height)/2 - 10, 0, Math.PI*2);
+        ctx.strokeStyle = "rgba(255,255,255,0.15)";
+        ctx.lineWidth = 10;
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.font = "14px system-ui, -apple-system, 'Segoe UI', Roboto";
+        ctx.textAlign = "center";
+        ctx.fillText("本月無支出", canvas.width/2, canvas.height/2+5);
+        return;
+      }
+
+      const cx = canvas.width/2, cy = canvas.height/2;
+      const r  = Math.min(canvas.width, canvas.height)/2 - 8;
+      let start = -Math.PI/2;
+
+      for(const d of data){
+        if(d.value<=0) continue;
+        const ang = d.value/total * Math.PI*2;
+        ctx.beginPath(); ctx.moveTo(cx,cy);
+        ctx.arc(cx,cy,r,start,start+ang);
+        ctx.closePath(); ctx.fillStyle=d.color; ctx.fill();
+        start += ang;
+      }
+      // 甜甜圈中洞
+      ctx.beginPath(); ctx.arc(cx,cy,r*0.55,0,Math.PI*2);
+      ctx.fillStyle="#101010"; ctx.fill();
+      // 中心文字
+      ctx.fillStyle="rgba(255,255,255,0.9)";
+      ctx.font="12px system-ui, -apple-system, 'Segoe UI', Roboto";
+      ctx.textAlign="center"; ctx.fillText("總支出",cx,cy-4);
+      ctx.font="16px system-ui, -apple-system, 'Segoe UI', Roboto";
+      ctx.fillText(fmtMoney(total),cx,cy+18);
+    }
+
+    /* ============== GitHub 按鈕事件 ============== */
     document.getElementById("ghLoginBtn").addEventListener("click", () => {
       const cur = ghGetToken();
       const t = prompt("貼上你的 GitHub Fine-grained Token（只會存本機）:", cur || "");
@@ -486,7 +667,7 @@
       }catch(e){ alert("載入失敗：\n" + e.message + "\n\n提示：先按一次『同步到 GitHub』建立檔案。"); }
     });
 
-    /* 啟動 */
+    /* ============== 啟動：先讀資料，再渲染 ============== */
     (async () => {
       const loaded = await loadUnified();
       entries = loaded.list;
@@ -496,6 +677,3 @@
   </script>
 </body>
 </html>
-
-
-
