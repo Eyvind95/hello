@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>我的記帳本</title>
 
-  <!-- Firebase v8（compat） -->
+  <!-- Firebase v8 compat（穩定） -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
@@ -31,10 +31,7 @@
         var(--bg);
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
     }
-    /* 手機避免 fixed 背景 bug */
-    @media (max-width: 768px){
-      body{ background-attachment: scroll; }
-    }
+    @media (max-width: 768px){ body{ background-attachment: scroll; } }
 
     .container{ max-width:1100px; margin:32px auto; padding:0 16px; }
     header{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px; }
@@ -44,7 +41,8 @@
       background:var(--panel); padding:10px 12px; border:1px solid var(--border); border-radius:14px;
     }
     .controls button, .controls select, .controls input{
-      background:#202020; color:#fff; border:1px solid var(--border); padding:8px 10px; border-radius:10px; outline:none;
+      background:#202020; color:#fff; border:1px solid var(--border);
+      padding:8px 10px; border-radius:10px; outline:none;
     }
     .controls button:hover{filter:brightness(1.12); cursor:pointer}
     .row{display:grid; gap:16px; grid-template-columns: 1.1fr 1fr;}
@@ -85,7 +83,6 @@
     .right{display:flex;align-items:center;gap:8px;}
     .spacer{flex:1}
 
-    /* 分類小計：左表格 + 右圓餅圖 */
     .cat-wrap{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:start; }
     @media (max-width: 900px){ .cat-wrap{ grid-template-columns:1fr; } }
     .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
@@ -110,10 +107,15 @@
         <button id="importBtn" title="匯入 JSON">匯入</button>
         <button id="clearBtn" title="清空所有資料">清空</button>
 
-        <!-- Google 登入/登出（跨裝置同步） -->
+        <!-- Google 登入/登出 -->
         <button id="fbLoginBtn"  title="用 Google 登入">Google 登入</button>
         <button id="fbLogoutBtn" title="登出" style="display:none">登出</button>
         <span id="fbWho" class="muted">(未登入：匿名模式，僅本裝置)</span>
+
+        <!-- GitHub 手動同步 -->
+        <button id="ghLoginBtn" title="登入 GitHub（輸入/更新 Token）">GitHub 登入</button>
+        <button id="ghSaveBtn"  title="把本機/雲端資料存到 GitHub">同步到 GitHub</button>
+        <button id="ghLoadBtn"  title="從 GitHub 載入到本機">從 GitHub 載入</button>
       </div>
     </header>
 
@@ -130,7 +132,6 @@
 
           <input class="col-span-2" type="number" id="amount" inputmode="decimal" step="0.01" placeholder="金額" required />
 
-          <!-- 類別：支出才顯示 -->
           <select class="col-span-3" id="category">
             <option value="">選擇類別</option>
             <option value="吃">吃</option>
@@ -149,46 +150,21 @@
       <section class="card">
         <h2>本月明細</h2>
         <div class="summary">
-          <div class="tile income">
-            <h3>本月收入</h3>
-            <div class="val" id="sumIncome">$0</div>
-          </div>
-          <div class="tile expense">
-            <h3>本月支出</h3>
-            <div class="val" id="sumExpense">$0</div>
-          </div>
-          <div class="tile net">
-            <h3>本月淨額（收−支）</h3>
-            <div class="val" id="sumNet">$0</div>
-          </div>
-          <div class="tile">
-            <h3>本月期初（本錢）</h3>
-            <div class="val" id="sumInit">$0</div>
-          </div>
-          <div class="tile">
-            <h3>本月期末（結餘）</h3>
-            <div class="val" id="sumEnd">$0</div>
-          </div>
+          <div class="tile income"><h3>本月收入</h3><div class="val" id="sumIncome">$0</div></div>
+          <div class="tile expense"><h3>本月支出</h3><div class="val" id="sumExpense">$0</div></div>
+          <div class="tile net"><h3>本月淨額（收−支）</h3><div class="val" id="sumNet">$0</div></div>
+          <div class="tile"><h3>本月期初（本錢）</h3><div class="val" id="sumInit">$0</div></div>
+          <div class="tile"><h3>本月期末（結餘）</h3><div class="val" id="sumEnd">$0</div></div>
         </div>
 
-        <!-- 本月分類小計（只計支出） + 圓餅圖 -->
+        <!-- 分類表 + 圓餅圖 -->
         <div class="card" style="background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; margin-top:12px;">
           <h3 style="margin:0 0 8px 0; font-size:16px; color:var(--muted)">本月分類小計（支出）</h3>
-
           <div class="cat-wrap">
-            <!-- 左側表格 -->
             <table id="catTable">
-              <thead>
-                <tr>
-                  <th style="width:120px">分類</th>
-                  <th style="width:140px">金額小計</th>
-                  <th>筆數</th>
-                </tr>
-              </thead>
+              <thead><tr><th style="width:120px">分類</th><th style="width:140px">金額小計</th><th>筆數</th></tr></thead>
               <tbody id="catTbody"></tbody>
             </table>
-
-            <!-- 右側圓餅圖 -->
             <div class="cat-chart">
               <canvas id="catPie" width="360" height="240" style="width:100%;max-width:420px;height:auto;display:block;"></canvas>
               <div id="catLegend" class="legend" style="margin-top:8px;"></div>
@@ -212,18 +188,16 @@
       </section>
     </div>
   </div>
-        <button id="ghLoginBtn"  title="登入 GitHub（輸入/更新 Token）">GitHub 登入</button>
-<button id="ghSaveBtn"   title="把本機/雲端資料存到 GitHub">同步到 GitHub</button>
-<button id="ghLoadBtn"   title="從 GitHub 載入到本機">從 GitHub 載入</button>
+
   <script>
     /* ============== Firebase：UID 隔離 + 行動端友善登入 ============== */
-    const USE_FIREBASE = true;                 // 要跨裝置就 true
+    const USE_FIREBASE = true;
     const FIREBASE_ROOT = "users";
     const FIREBASE_SUB_ENTRIES  = "entries";
     const FIREBASE_SUB_INITIALS = "initials";
     let db = null, CURRENT_UID = null;
 
-    // ★ 把下面換成你的專案設定（不是 YOUR_*）
+    // ★★★ 請改成你的 Firebase 設定（專案設定 → 一般 → Web App）
     const firebaseConfig = {
       apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
       authDomain: "eyvind95-182f0.firebaseapp.com",
@@ -231,77 +205,62 @@
       storageBucket: "eyvind95-182f0.firebasestorage.app",
       messagingSenderId: "105770576221",
       appId: "1:105770576221:web:4256dca5ec54b7cf91a0b4"
-      // measurementId 可省略
     };
 
-    // 確保 App 先初始化（避免 no-app）
-    function initFirebaseApp() {
-      if (firebase.apps.length === 0) {
-        firebase.initializeApp(firebaseConfig);
-      }
+    function initFirebaseApp(){
+      if (firebase.apps.length === 0) firebase.initializeApp(firebaseConfig);
       if (!db) db = firebase.firestore();
     }
 
     const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-    // 有使用者（Google 或匿名）
-    async function firebaseInitIfNeeded() {
-      if (!USE_FIREBASE) return;
+    async function firebaseInitIfNeeded(){
+      if(!USE_FIREBASE) return;
       initFirebaseApp();
-
-      await new Promise((resolve) => {
-        const off = firebase.auth().onAuthStateChanged((user) => {
+      await new Promise((resolve)=>{
+        const off = firebase.auth().onAuthStateChanged(async (user)=>{
           off();
-          if (user) {
+          if(user){
             CURRENT_UID = user.uid;
             updateLoginUI(user);
             resolve();
-          } else {
-            firebase.auth().signInAnonymously().then((cred) => {
-              CURRENT_UID = cred.user.uid;
-              updateLoginUI(cred.user);
-              resolve();
-            });
+          }else{
+            const cred = await firebase.auth().signInAnonymously();
+            CURRENT_UID = cred.user.uid;
+            updateLoginUI(cred.user);
+            resolve();
           }
         });
       });
     }
-/* ============== GitHub 一鍵同步（手動） ============== */
-const GH_OWNER   = "Eyvind95";    // ← 你的 GitHub 帳號
-const GH_REPO    = "hello";       // ← 你的 repo 名
-const GH_BRANCH  = "main";        // ← 分支（多半是 main）
-const GH_ENTRIES_PATH  = "data/entries.json";
-const GH_INITIALS_PATH = "data/initials.json";
-const GH_TOKEN_KEY = "gh_pat_my_ledger"; // Token 存在瀏覽器 localStorage
-    // Redirect 回來接結果
-    async function handleAuthRedirectResult() {
+
+    async function handleAuthRedirectResult(){
       initFirebaseApp();
-      try {
+      try{
         const res = await firebase.auth().getRedirectResult();
-        if (res && res.user) {
+        if(res && res.user){
           CURRENT_UID = res.user.uid;
           updateLoginUI(res.user);
         }
-      } catch (e) {}
+      }catch(e){}
     }
 
-    // Google 登入：桌機 popup，手機 fallback redirect
-    async function googleLogin() {
+    async function googleLogin(){
       initFirebaseApp();
-      try {
+      try{
         const result = await firebase.auth().signInWithPopup(googleProvider);
         CURRENT_UID = result.user.uid;
         updateLoginUI(result.user);
         const loaded = await loadUnified();
         entries = loaded.list; initials = loaded.initials; renderWithEnsure();
         alert("Google 登入成功！");
-      } catch (e) {
+      }catch(e){
         const fallback = [
           "auth/operation-not-supported-in-this-environment",
           "auth/popup-blocked",
           "auth/popup-closed-by-user",
         ];
-        if (fallback.includes(e.code)) {
+        if (fallback.includes(e.code)){
           initFirebaseApp();
           await firebase.auth().signInWithRedirect(googleProvider);
           return;
@@ -309,95 +268,20 @@ const GH_TOKEN_KEY = "gh_pat_my_ledger"; // Token 存在瀏覽器 localStorage
         alert("Google 登入失敗：" + e.message);
       }
     }
-    function ghGetToken(){ return localStorage.getItem(GH_TOKEN_KEY) || ""; }
-function ghSetToken(t){
-  if(!t) return;
-  localStorage.setItem(GH_TOKEN_KEY, t);
-  alert("已儲存 GitHub Token（僅存在本機瀏覽器）");
-}
-async function ghApi(path, method="GET", body){
-  const token = ghGetToken();
-  if(!token) throw new Error("尚未設定 GitHub Token");
-  const res = await fetch(`https://api.github.com${path}`, {
-    method,
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Accept": "application/vnd.github+json"
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if(!res.ok){
-    const t = await res.text();
-    throw new Error(`GitHub API ${res.status}: ${t}`);
-  }
-  return res.json();
-}
-async function ghReadFile(repoPath){
-  return ghApi(`/repos/${GH_OWNER}/${GH_REPO}/contents/${repoPath}?ref=${GH_BRANCH}`,"GET");
-}
-async function ghWriteFile(repoPath, jsonObj, message){
-  const contentStr = JSON.stringify(jsonObj, null, 2);
-  const base64 = btoa(unescape(encodeURIComponent(contentStr)));
-  let sha; 
-  try{ const exist = await ghReadFile(repoPath); sha = exist.sha; }catch(e){ /* 不存在就新建 */ }
-  return ghApi(`/repos/${GH_OWNER}/${GH_REPO}/contents/${repoPath}`, "PUT", {
-    message: message || `update ${repoPath}`,
-    content: base64,
-    branch: GH_BRANCH,
-    sha
-  });
-}
-function base64ToJson(b64){
-  const str = decodeURIComponent(escape(atob(b64)));
-  return JSON.parse(str);
-}
-
-/* -------- 綁定按鈕事件 -------- */
-document.getElementById("ghLoginBtn").addEventListener("click", () => {
-  const cur = ghGetToken();
-  const t = prompt("貼上你的 GitHub Token（Fine-grained 或 classic；只儲存在本機）：", cur || "");
-  if(t) ghSetToken(t.trim());
-});
-
-document.getElementById("ghSaveBtn").addEventListener("click", async () => {
-  try{
-    // 把目前「記憶體中的 entries/initials」存到 GitHub
-    await ghWriteFile(GH_ENTRIES_PATH, entries,  "save: entries");
-    await ghWriteFile(GH_INITIALS_PATH, initials, "save: initials");
-    alert("已同步到 GitHub ✅");
-  }catch(e){
-    alert("同步失敗：\n" + e.message + "\n\n提示：請確認 Token 權限、OWNER/REPO/BRANCH 是否正確。");
-  }
-});
-
-document.getElementById("ghLoadBtn").addEventListener("click", async () => {
-  if(!confirm("這會用 GitHub 上的資料覆蓋本機（此裝置）資料，確定？")) return;
-  try{
-    const eRes = await ghReadFile(GH_ENTRIES_PATH);
-    const iRes = await ghReadFile(GH_INITIALS_PATH);
-    entries  = base64ToJson(eRes.content);
-    initials = base64ToJson(iRes.content);
-    await saveUnified();      // 也同步回 Firebase 與 localStorage
-    renderWithEnsure();
-    alert("已從 GitHub 載入 ✅");
-  }catch(e){
-    alert("載入失敗：\n" + e.message + "\n\n提示：先按一次『同步到 GitHub』建立檔案。");
-  }
-});
     async function googleLogout(){
       initFirebaseApp();
       await firebase.auth().signOut();
       CURRENT_UID = null;
-      await firebaseInitIfNeeded(); // 退回匿名
+      await firebaseInitIfNeeded();
       const loaded = await loadUnified();
       entries = loaded.list; initials = loaded.initials; renderWithEnsure();
       alert("已登出，回到匿名模式（僅本裝置）");
     }
+
     function updateLoginUI(user){
       const who = document.getElementById("fbWho");
       const btnLogin = document.getElementById("fbLoginBtn");
       const btnLogout = document.getElementById("fbLogoutBtn");
-      if (!who || !btnLogin || !btnLogout) return;
       if (user && !user.isAnonymous){
         who.textContent = `已登入：${user.email || user.displayName || "Google 使用者"}`;
         btnLogin.style.display = "none"; btnLogout.style.display = "";
@@ -409,68 +293,127 @@ document.getElementById("ghLoadBtn").addEventListener("click", async () => {
     document.getElementById("fbLoginBtn").addEventListener("click", googleLogin);
     document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 
-    // Firestore refs（依 UID）
-    function colEntries()  { return db.collection(FIREBASE_ROOT).doc(CURRENT_UID).collection(FIREBASE_SUB_ENTRIES); }
-    function colInitials() { return db.collection(FIREBASE_ROOT).doc(CURRENT_UID).collection(FIREBASE_SUB_INITIALS); }
+    // Firestore 參照
+    function colEntries(){  return db.collection(FIREBASE_ROOT).doc(CURRENT_UID).collection(FIREBASE_SUB_ENTRIES); }
+    function colInitials(){ return db.collection(FIREBASE_ROOT).doc(CURRENT_UID).collection(FIREBASE_SUB_INITIALS); }
 
-    // 雲端 I/O（覆蓋式，簡單穩）
     async function cloudLoad(){
       await firebaseInitIfNeeded();
       const list = []; const snap = await colEntries().get();
-      snap.forEach(doc => list.push(doc.data()));
+      snap.forEach(doc=>list.push(doc.data()));
       list.sort((a,b)=> (a.date===b.date? (a.createdAt||0)-(b.createdAt||0) : a.date.localeCompare(b.date)));
       return list;
     }
     async function cloudLoadInitials(){
       await firebaseInitIfNeeded();
       const obj = {}; const snap = await colInitials().get();
-      snap.forEach(doc => { obj[doc.id] = (doc.data().amount || 0); });
+      snap.forEach(doc => { obj[doc.id] = (doc.data().amount||0); });
       return obj;
     }
     async function cloudSave(all){
       await firebaseInitIfNeeded();
       const cur = await colEntries().get();
-      const del = db.batch(); cur.forEach(doc=>del.delete(doc.ref)); await del.commit();
-      const batch = db.batch(); for (const it of all) batch.set(colEntries().doc(it.id), it); await batch.commit();
+      const del = db.batch(); cur.forEach(d=>del.delete(d.ref)); await del.commit();
+      const batch = db.batch(); for(const it of all) batch.set(colEntries().doc(it.id), it); await batch.commit();
     }
     async function cloudSaveInitials(obj){
       await firebaseInitIfNeeded();
       const cur = await colInitials().get();
-      const del = db.batch(); cur.forEach(doc=>del.delete(doc.ref)); await del.commit();
-      const batch = db.batch(); for (const [k,v] of Object.entries(obj)) batch.set(colInitials().doc(k), {amount:Number(v)||0}); await batch.commit();
+      const del = db.batch(); cur.forEach(d=>del.delete(d.ref)); await del.commit();
+      const batch = db.batch(); for(const [k,v] of Object.entries(obj)) batch.set(colInitials().doc(k), {amount:Number(v)||0}); await batch.commit();
     }
 
+    /* ============== GitHub 一鍵同步（手動） ============== */
+    // ★★★ 請依你的 repo 修改這 5 項
+    const GH_OWNER   = "Eyvind95";      // 你的 GitHub 帳號
+    const GH_REPO    = "hello";         // 你的 repo 名
+    const GH_BRANCH  = "main";          // 分支
+    const GH_ENTRIES_PATH  = "data/entries.json";
+    const GH_INITIALS_PATH = "data/initials.json";
+    const GH_TOKEN_KEY = "gh_pat_my_ledger"; // Token 存 localStorage
+
+    function ghGetToken(){ return localStorage.getItem(GH_TOKEN_KEY) || ""; }
+    function ghSetToken(t){ if(!t) return; localStorage.setItem(GH_TOKEN_KEY, t); alert("已儲存 GitHub Token（本機）"); }
+    async function ghApi(path, method="GET", body){
+      const token = ghGetToken();
+      if(!token) throw new Error("尚未設定 GitHub Token");
+      const res = await fetch(`https://api.github.com${path}`, {
+        method,
+        headers:{ "Authorization":`Bearer ${token}`,"Accept":"application/vnd.github+json" },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if(!res.ok){ const t = await res.text(); throw new Error(`GitHub API ${res.status}: ${t}`); }
+      return res.json();
+    }
+    async function ghReadFile(repoPath){
+      return ghApi(`/repos/${GH_OWNER}/${GH_REPO}/contents/${repoPath}?ref=${GH_BRANCH}`, "GET");
+    }
+    async function ghWriteFile(repoPath, jsonObj, message){
+      const contentStr = JSON.stringify(jsonObj, null, 2);
+      const base64 = btoa(unescape(encodeURIComponent(contentStr)));
+      let sha; try{ const exist = await ghReadFile(repoPath); sha = exist.sha; }catch(e){}
+      return ghApi(`/repos/${GH_OWNER}/${GH_REPO}/contents/${repoPath}`, "PUT", {
+        message: message || `update ${repoPath}`,
+        content: base64, branch: GH_BRANCH, sha
+      });
+    }
+    function base64ToJson(b64){
+      const str = decodeURIComponent(escape(atob(b64)));
+      return JSON.parse(str);
+    }
+
+    document.getElementById("ghLoginBtn").addEventListener("click", () => {
+      const cur = ghGetToken();
+      const t = prompt("貼上你的 GitHub Token（只儲存在本機）：", cur || "");
+      if(t) ghSetToken(t.trim());
+    });
+    document.getElementById("ghSaveBtn").addEventListener("click", async () => {
+      try{
+        await ghWriteFile(GH_ENTRIES_PATH, entries,  "save: entries");
+        await ghWriteFile(GH_INITIALS_PATH, initials, "save: initials");
+        alert("已同步到 GitHub ✅");
+      }catch(e){ alert("同步失敗：\n" + e.message); }
+    });
+    document.getElementById("ghLoadBtn").addEventListener("click", async () => {
+      if(!confirm("這會用 GitHub 上的資料覆蓋本機（此裝置），確定？")) return;
+      try{
+        const eRes = await ghReadFile(GH_ENTRIES_PATH);
+        const iRes = await ghReadFile(GH_INITIALS_PATH);
+        entries  = base64ToJson(eRes.content);
+        initials = base64ToJson(iRes.content);
+        await saveUnified();  // 回存 Firebase 與本機
+        renderWithEnsure();
+        alert("已從 GitHub 載入 ✅");
+      }catch(e){
+        alert("載入失敗：\n" + e.message + "\n\n提示：先按一次『同步到 GitHub』建立檔案。");
+      }
+    });
+
     /* ============== 共用工具 & 本機儲存 ============== */
-    const $ = (sel) => document.querySelector(sel);
+    const $  = (sel) => document.querySelector(sel);
     const $$ = (sel) => Array.from(document.querySelectorAll(sel));
     const LS_KEY = "ledgerEntries_v1";
     const INITIALS_KEY = "ledgerInitials_v1";
 
-    const fmtMoney = (n) => new Intl.NumberFormat("zh-Hant-TW", { style: "currency", currency: "TWD" }).format(Number(n)||0);
+    const fmtMoney = (n) => new Intl.NumberFormat("zh-Hant-TW",{style:"currency",currency:"TWD"}).format(Number(n)||0);
     const ymd = (d) => d.toISOString().slice(0,10);
-    const toDate = (s) => new Date(s + "T00:00:00");
-    const getMonthRange = (year, monthIdx) => {
-      const start = new Date(Date.UTC(year, monthIdx, 1));
-      const end = new Date(Date.UTC(year, monthIdx + 1, 0));
-      return { start, end };
-    };
-    function round2(n){ return Math.round(n * 100) / 100; }
-    function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
+    const toDate = (s) => new Date(s+"T00:00:00");
+    const getMonthRange = (y, mIdx) => ({ start:new Date(Date.UTC(y,mIdx,1)), end:new Date(Date.UTC(y,mIdx+1,0)) });
+    function round2(n){ return Math.round(n*100)/100; }
+    function escapeHtml(s){ return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
     function monthKey(y, m){ return `${y}-${String(m).padStart(2,'0')}`; }
-    function prevMonthOf(y, m){ const d=new Date(Date.UTC(y, m-1, 1)); d.setUTCMonth(d.getUTCMonth()-1); return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1}; }
+    function prevMonthOf(y, m){ const d=new Date(Date.UTC(y,m-1,1)); d.setUTCMonth(d.getUTCMonth()-1); return {y:d.getUTCFullYear(),m:d.getUTCMonth()+1}; }
 
-    // 本機儲存
-    function loadLocal(){ try{ const raw=localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : []; }catch(e){ return []; } }
+    function loadLocal(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||"[]"); }catch(e){ return []; } }
     function saveLocal(list){ localStorage.setItem(LS_KEY, JSON.stringify(list)); }
-    function loadInitialsLocal(){ try{ const raw=localStorage.getItem(INITIALS_KEY); return raw ? JSON.parse(raw) : {}; }catch(e){ return {}; } }
+    function loadInitialsLocal(){ try{ return JSON.parse(localStorage.getItem(INITIALS_KEY)||"{}"); }catch(e){ return {}; } }
     function saveInitialsLocal(obj){ localStorage.setItem(INITIALS_KEY, JSON.stringify(obj)); }
 
-    // 統一入口（雲端優先，失敗退回本機）
     async function loadUnified(){
       if(USE_FIREBASE){
         try{
           const [list, ini] = await Promise.all([cloudLoad(), cloudLoadInitials()]);
-          saveLocal(list); saveInitialsLocal(ini); // 離線備份
+          saveLocal(list); saveInitialsLocal(ini);
           return { list, initials: ini };
         }catch(e){ alert("雲端讀取失敗，改用本機資料"); }
       }
@@ -489,8 +432,6 @@ document.getElementById("ghLoadBtn").addEventListener("click", async () => {
     let initials = {};
 
     const monthPicker = $("#monthPicker");
-
-    // 日期保險：只在空值時帶入今天
     function setTodayOnce(){
       const today = new Date();
       if (monthPicker && !monthPicker.value) monthPicker.value = today.toISOString().slice(0,7);
@@ -501,262 +442,183 @@ document.getElementById("ghLoadBtn").addEventListener("click", async () => {
       }
     }
     document.addEventListener("DOMContentLoaded", setTodayOnce);
-    window.addEventListener("load", () => setTimeout(setTodayOnce, 0));
+    window.addEventListener("load", () => setTimeout(setTodayOnce,0));
 
     /* ============== 事件：新增/刪除/匯出/匯入/清空 ============== */
-    $("#entryForm").addEventListener("submit", async (e) => {
+    $("#entryForm").addEventListener("submit", async (e)=>{
       e.preventDefault();
       const date = $("#date").value;
       const type = $("#type").value;
       const amountStr = $("#amount").value.trim();
       const category = type === "expense" ? $("#category").value : "";
       const note = $("#note").value.trim();
-
-      if(!date || !type || !amountStr){ return; }
+      if(!date || !type || !amountStr) return;
       const amount = parseFloat(amountStr);
       if(isNaN(amount) || amount <= 0){ alert("請輸入正確金額（> 0）"); return; }
-
-      const entry = { id: (crypto?.randomUUID?.()||String(Date.now()+Math.random())), date, type, amount: round2(amount), category, note, createdAt: Date.now() };
+      const entry = { id:(crypto?.randomUUID?.()||String(Date.now()+Math.random())), date, type, amount:round2(amount), category, note, createdAt:Date.now() };
       entries.push(entry);
       await saveUnified();
-
-      $("#amount").value = ""; $("#note").value = "";
+      $("#amount").value=""; $("#note").value="";
       renderWithEnsure();
     });
+
     async function removeEntry(id){
       if(!confirm("確定刪除此筆？")) return;
-      entries = entries.filter(e => e.id !== id);
+      entries = entries.filter(e=>e.id!==id);
       await saveUnified();
       renderWithEnsure();
     }
-    $("#exportBtn").addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify({entries, initials}, null, 2)], {type:"application/json"});
+
+    $("#exportBtn").addEventListener("click",()=>{
+      const blob = new Blob([JSON.stringify({entries,initials},null,2)],{type:"application/json"});
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "ledger_backup.json"; a.click();
+      const a=document.createElement("a"); a.href=url; a.download="ledger_backup.json"; a.click();
       URL.revokeObjectURL(url);
     });
-    $("#importBtn").addEventListener("click", () => $("#importFile").click());
-    $("#importFile").addEventListener("change", async (e) => {
-      const file = e.target.files[0];
-      if(!file) return;
+    $("#importBtn").addEventListener("click",()=>$("#importFile").click());
+    $("#importFile").addEventListener("change", async (e)=>{
+      const file=e.target.files[0]; if(!file) return;
       try{
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if(!data || !Array.isArray(data.entries) || typeof data.initials !== "object") throw new Error("格式錯誤");
-        for(const it of data.entries){ if(!it.id || !it.date || !it.type || !it.amount) throw new Error("明細缺少必要欄位"); }
-        entries = data.entries; initials = data.initials;
-        await saveUnified(); alert("匯入完成！"); renderWithEnsure();
-      }catch(err){ alert("匯入失敗：" + err.message); }
-      finally{ e.target.value = ""; }
+        const text=await file.text(); const data=JSON.parse(text);
+        if(!data || !Array.isArray(data.entries) || typeof data.initials!=="object") throw new Error("格式錯誤");
+        for(const it of data.entries){ if(!it.id||!it.date||!it.type||!it.amount) throw new Error("明細缺少必要欄位"); }
+        entries=data.entries; initials=data.initials; await saveUnified(); renderWithEnsure(); alert("匯入完成！");
+      }catch(err){ alert("匯入失敗："+err.message); } finally{ e.target.value=""; }
     });
-    $("#clearBtn").addEventListener("click", async () => {
+    $("#clearBtn").addEventListener("click", async ()=>{
       if(confirm("這會刪除所有『明細＋期初』資料（不可復原）。確定？")){
-        entries = []; initials = {};
-        await saveUnified(); renderWithEnsure();
+        entries=[]; initials={}; await saveUnified(); renderWithEnsure();
       }
     });
 
-    /* ============== 類別選單：收入隱藏、支出顯示 ============== */
-    $("#type").addEventListener("change", () => {
-      $("#category").style.display = ($("#type").value === "income") ? "none" : "block";
-    });
+    $("#type").addEventListener("change",()=>{ $("#category").style.display = ($("#type").value==="income") ? "none" : "block"; });
     $("#type").dispatchEvent(new Event("change"));
 
-    /* ============== 期初邏輯：設定、承接、顯示 ============== */
-    function ensureInitialForMonth(y, m){
-      const mk = monthKey(y, m);
+    function ensureInitialForMonth(y,m){
+      const mk = monthKey(y,m);
       if(initials[mk] !== undefined) return;
-
-      // 承接上月期末
-      const { y:py, m:pm } = prevMonthOf(y, m);
-      const pmk = monthKey(py, pm);
-      let prevInit = Number(initials[pmk] ?? 0);
-
-      const {start:ps, end:pe} = getMonthRange(py, pm-1);
-      let pIncome = 0, pExpense = 0;
+      const {y:py,m:pm}=prevMonthOf(y,m); const pmk=monthKey(py,pm);
+      let prevInit=Number(initials[pmk]??0);
+      const {start:ps,end:pe}=getMonthRange(py,pm-1);
+      let pIncome=0,pExpense=0;
       for(const it of entries){
-        const d = toDate(it.date);
-        if(d >= ps && d <= pe){
-          if(it.type === "income") pIncome += it.amount;
-          else pExpense += it.amount;
-        }
+        const d=toDate(it.date);
+        if(d>=ps && d<=pe){ if(it.type==="income") pIncome+=it.amount; else pExpense+=it.amount; }
       }
-      pIncome = round2(pIncome); pExpense = round2(pExpense);
-      const prevEnd = round2(prevInit + pIncome - pExpense);
-
-      if(initials[pmk] !== undefined || pIncome > 0 || pExpense > 0){
-        initials[mk] = prevEnd;
-      }else{
-        const v = prompt(`請輸入 ${y} 年 ${m} 月的期初金額（本錢）：`, "0");
-        const n = Number(v);
-        initials[mk] = Number.isFinite(n) ? round2(n) : 0;
+      pIncome=round2(pIncome); pExpense=round2(pExpense);
+      const prevEnd=round2(prevInit+pIncome-pExpense);
+      if(initials[pmk]!==undefined || pIncome>0 || pExpense>0) initials[mk]=prevEnd;
+      else{
+        const v=prompt(`請輸入 ${y} 年 ${m} 月的期初金額（本錢）：`,"0");
+        const n=Number(v); initials[mk]=Number.isFinite(n)?round2(n):0;
       }
       saveUnified();
     }
-    document.getElementById("editInitBtn").addEventListener("click", async () => {
-      const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
-      const mk = monthKey(y, m);
-      const cur = Number(initials[mk] ?? 0);
-      const v = prompt(`設定 ${y} 年 ${m} 月期初金額：`, String(cur));
-      if(v === null) return;
-      const n = Number(v);
-      initials[mk] = Number.isFinite(n) ? round2(n) : cur;
+    document.getElementById("editInitBtn").addEventListener("click", async ()=>{
+      const [y,m]=monthPicker.value.split("-").map(x=>parseInt(x,10));
+      const mk=monthKey(y,m); const cur=Number(initials[mk]??0);
+      const v=prompt(`設定 ${y} 年 ${m} 月期初金額：`,String(cur));
+      if(v===null) return;
+      const n=Number(v); initials[mk]=Number.isFinite(n)?round2(n):cur;
       await saveUnified(); renderWithEnsure();
     });
 
-    /* ============== 月份切換 ============== */
-    $("#prevMonth").addEventListener("click", () => shiftMonth(-1));
-    $("#nextMonth").addEventListener("click", () => shiftMonth(1));
+    $("#prevMonth").addEventListener("click",()=>shiftMonth(-1));
+    $("#nextMonth").addEventListener("click",()=>shiftMonth(1));
     function shiftMonth(delta){
-      const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
-      const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-      monthPicker.value = d.toISOString().slice(0,7);
-      renderWithEnsure();
+      const [y,m]=monthPicker.value.split("-").map(x=>parseInt(x,10));
+      const d=new Date(Date.UTC(y,m-1+delta,1)); monthPicker.value=d.toISOString().slice(0,7); renderWithEnsure();
     }
-    monthPicker.addEventListener("change", renderWithEnsure);
+    monthPicker.addEventListener("change",renderWithEnsure);
 
-    /* ============== 渲染 ============== */
     function renderWithEnsure(){
-      const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
-      ensureInitialForMonth(y, m);
-      render();
+      const [y,m]=monthPicker.value.split("-").map(x=>parseInt(x,10));
+      ensureInitialForMonth(y,m); render();
     }
     function render(){
-      const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
-      const {start, end} = getMonthRange(y, m - 1);
+      const [y,m]=monthPicker.value.split("-").map(x=>parseInt(x,10));
+      const {start,end}=getMonthRange(y,m-1);
+      $("#rangeHint").textContent=`${y}年${m}月 1 日 ~ ${y}年${m}月 ${end.getUTCDate()} 日`;
+      const monthItems=entries
+        .filter(e=>{const d=toDate(e.date); return d>=start && d<=end;})
+        .sort((a,b)=>(a.date===b.date? a.createdAt-b.createdAt : a.date.localeCompare(b.date)));
 
-      // 區間提示
-      $("#rangeHint").textContent = `${y}年${m}月 1 日 ~ ${y}年${m}月 ${end.getUTCDate()} 日`;
-
-      // 本月資料
-      const monthItems = entries
-        .filter(e => { const d = toDate(e.date); return d >= start && d <= end; })
-        .sort((a,b) => (a.date === b.date ? a.createdAt - b.createdAt : a.date.localeCompare(b.date)));
-
-      // 表格
-      const tbody = $("#tbody");
-      tbody.innerHTML = "";
+      const tbody=$("#tbody"); tbody.innerHTML="";
       for(const it of monthItems){
-        const tr = document.createElement("tr");
-        const typeClass = it.type === "income" ? "type-income" : "type-expense";
-        tr.innerHTML = `
+        const tr=document.createElement("tr");
+        const typeClass=it.type==="income"?"type-income":"type-expense";
+        tr.innerHTML=`
           <td>${it.date}</td>
-          <td class="${typeClass}">${it.type === "income" ? "收入" : "支出"}</td>
+          <td class="${typeClass}">${it.type==="income"?"收入":"支出"}</td>
           <td class="amount">${fmtMoney(it.amount)}</td>
-          <td>${escapeHtml(it.category || "")}</td>
-          <td>${escapeHtml(it.note || "")}</td>
-          <td class="actions"><button data-id="${it.id}" class="del">刪除</button></td>
-        `;
+          <td>${escapeHtml(it.category||"")}</td>
+          <td>${escapeHtml(it.note||"")}</td>
+          <td class="actions"><button data-id="${it.id}" class="del">刪除</button></td>`;
         tbody.appendChild(tr);
       }
-      $$("#tbody .del").forEach(btn => btn.addEventListener("click", () => removeEntry(btn.dataset.id)));
+      $$("#tbody .del").forEach(btn=>btn.addEventListener("click",()=>removeEntry(btn.dataset.id)));
 
-      // 統計
-      let income = 0, expense = 0;
-      for(const it of monthItems){ if(it.type === "income") income += it.amount; else expense += it.amount; }
-      income = round2(income); expense = round2(expense);
-      const net = round2(income - expense);
-      $("#sumIncome").textContent = fmtMoney(income);
-      $("#sumExpense").textContent = fmtMoney(expense);
-      $("#sumNet").textContent = fmtMoney(net);
+      let income=0,expense=0;
+      for(const it of monthItems){ if(it.type==="income") income+=it.amount; else expense+=it.amount; }
+      income=round2(income); expense=round2(expense);
+      const net=round2(income-expense);
+      $("#sumIncome").textContent=fmtMoney(income);
+      $("#sumExpense").textContent=fmtMoney(expense);
+      $("#sumNet").textContent=fmtMoney(net);
 
-      // 期初 & 期末
-      const mk = monthKey(y, m);
-      const initAmt = Number(initials[mk] ?? 0);
-      const endAmt = round2(initAmt + income - expense);
-      $("#sumInit").textContent = fmtMoney(initAmt);
-      $("#sumEnd").textContent  = fmtMoney(endAmt);
+      const mk=monthKey(y,m);
+      const initAmt=Number(initials[mk]??0);
+      const endAmt=round2(initAmt+income-expense);
+      $("#sumInit").textContent=fmtMoney(initAmt);
+      $("#sumEnd").textContent=fmtMoney(endAmt);
 
-      // 分類小計 + 圓餅圖
       renderCategorySummary(monthItems);
     }
-
-    // 分類小計（僅支出）＋ 圓餅圖（吃=橘、交通=黃、玩=淡藍、其他=灰）
     function renderCategorySummary(monthItems){
-      const cats = ["吃","交通","玩","其他"];
-      const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff", "其他":"#aaaaaa" };
-
-      const map = new Map(cats.map(c => [c, {sum:0, count:0}]));      
+      const cats=["吃","交通","玩","其他"];
+      const colors={"吃":"#ff7f50","交通":"#ffd93b","玩":"#6ec5ff","其他":"#aaaaaa"};
+      const map=new Map(cats.map(c=>[c,{sum:0,count:0}]));
       for(const it of monthItems){
-        if(it.type !== "expense") continue;
-        const key = (it.category || "").trim();
-        if(map.has(key)){ const rec = map.get(key); rec.sum = round2(rec.sum + it.amount); rec.count += 1; }
+        if(it.type!=="expense") continue;
+        const key=(it.category||"").trim();
+        if(map.has(key)){ const r=map.get(key); r.sum=round2(r.sum+it.amount); r.count+=1; }
       }
-
-      // 表格
-      const rows = [];
-      for(const cat of cats){
-        const rec = map.get(cat);
-        rows.push(`<tr><td>${cat}</td><td class="amount">${fmtMoney(rec.sum)}</td><td>${rec.count}</td></tr>`);
-      }
-      const tbody = document.getElementById("catTbody");
-      if(tbody) tbody.innerHTML = rows.join("");
-
-      // 圓餅圖
-      const data = cats.map(c => ({ label:c, value: map.get(c).sum, color: colors[c] }));
-      const total = data.reduce((s,d)=>s+d.value,0);
-      drawPie("catPie", data, total);
-
-      // Legend
-      const legend = document.getElementById("catLegend");
-      if(legend){
-        legend.innerHTML = (total<=0)
-          ? `<span class="muted">本月尚無支出</span>`
-          : data.filter(d=>d.value>0).map(d=>{
-              const pct=((d.value/total)*100).toFixed(1);
-              return `<span class="key"><span class="dot" style="background:${d.color}"></span>${d.label} ${pct}%</span>`;
-            }).join(" ");
-      }
+      const tbody=document.getElementById("catTbody");
+      tbody.innerHTML=cats.map(c=>`<tr><td>${c}</td><td class="amount">${fmtMoney(map.get(c).sum)}</td><td>${map.get(c).count}</td></tr>`).join("");
+      const data=cats.map(c=>({label:c,value:map.get(c).sum,color:colors[c]}));
+      const total=data.reduce((s,d)=>s+d.value,0);
+      drawPie("catPie",data,total);
+      const legend=document.getElementById("catLegend");
+      legend.innerHTML=(total<=0)?`<span class="muted">本月尚無支出</span>`:
+        data.filter(d=>d.value>0).map(d=>`<span class="key"><span class="dot" style="background:${d.color}"></span>${d.label} ${(d.value/total*100).toFixed(1)}%</span>`).join(" ");
     }
-    function drawPie(canvasId, data, total){
-      const canvas = document.getElementById(canvasId);
-      if(!canvas) return;
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-
-      if(!total || total<=0){
-        ctx.beginPath();
-        ctx.arc(canvas.width/2, canvas.height/2, Math.min(canvas.width, canvas.height)/2 - 10, 0, Math.PI*2);
-        ctx.strokeStyle = "rgba(255,255,255,0.15)";
-        ctx.lineWidth = 10; ctx.stroke();
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
-        ctx.font = "14px system-ui, -apple-system, 'Segoe UI', Roboto";
-        ctx.textAlign = "center";
-        ctx.fillText("本月無支出", canvas.width/2, canvas.height/2+5);
-        return;
+    function drawPie(canvasId,data,total){
+      const c=document.getElementById(canvasId); if(!c) return;
+      const ctx=c.getContext("2d"); ctx.clearRect(0,0,c.width,c.height);
+      if(!total||total<=0){
+        ctx.beginPath(); ctx.arc(c.width/2,c.height/2,Math.min(c.width,c.height)/2-10,0,Math.PI*2);
+        ctx.strokeStyle="rgba(255,255,255,0.15)"; ctx.lineWidth=10; ctx.stroke();
+        ctx.fillStyle="rgba(255,255,255,0.7)"; ctx.font="14px system-ui,-apple-system,'Segoe UI',Roboto";
+        ctx.textAlign="center"; ctx.fillText("本月無支出",c.width/2,c.height/2+5); return;
       }
-
-      const cx = canvas.width/2, cy = canvas.height/2;
-      const r  = Math.min(canvas.width, canvas.height)/2 - 8;
-      let start = -Math.PI/2;
-
-      for(const d of data){
-        if(d.value<=0) continue;
-        const ang = d.value/total * Math.PI*2;
-        ctx.beginPath(); ctx.moveTo(cx,cy);
-        ctx.arc(cx,cy,r,start,start+ang);
-        ctx.closePath(); ctx.fillStyle=d.color; ctx.fill();
-        start += ang;
+      const cx=c.width/2, cy=c.height/2, r=Math.min(c.width,c.height)/2-8; let start=-Math.PI/2;
+      for(const d of data){ if(d.value<=0) continue;
+        const ang=d.value/total*Math.PI*2;
+        ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,start+ang); ctx.closePath(); ctx.fillStyle=d.color; ctx.fill();
+        start+=ang;
       }
-      // 甜甜圈中洞
-      ctx.beginPath(); ctx.arc(cx,cy,r*0.55,0,Math.PI*2);
-      ctx.fillStyle="#101010"; ctx.fill();
-      // 中心文字
-      ctx.fillStyle="rgba(255,255,255,0.9)";
-      ctx.font="12px system-ui, -apple-system, 'Segoe UI', Roboto";
-      ctx.textAlign="center"; ctx.fillText("總支出",cx,cy-4);
-      ctx.font="16px system-ui, -apple-system, 'Segoe UI', Roboto";
-      ctx.fillText(fmtMoney(total),cx,cy+18);
+      ctx.beginPath(); ctx.arc(cx,cy,r*0.55,0,Math.PI*2); ctx.fillStyle="#101010"; ctx.fill();
+      ctx.fillStyle="rgba(255,255,255,0.9)"; ctx.font="12px system-ui,-apple-system,'Segoe UI',Roboto"; ctx.textAlign="center";
+      ctx.fillText("總支出",cx,cy-4); ctx.font="16px system-ui,-apple-system,'Segoe UI',Roboto"; ctx.fillText(fmtMoney(total),cx,cy+18);
     }
 
-    /* ============== 啟動：先讀資料，再渲染 ============== */
-    (async () => {
-      await firebaseInitIfNeeded();     // 有 user（匿名或 Google）
-      await handleAuthRedirectResult(); // 行動端 redirect 回來
-      const loaded = await loadUnified();
-      entries = loaded.list; initials = loaded.initials;
-      renderWithEnsure();
-      setTodayOnce(); // 再保險一次
+    /* 啟動 */
+    (async ()=>{
+      await firebaseInitIfNeeded();
+      await handleAuthRedirectResult();
+      const loaded=await loadUnified();
+      entries=loaded.list; initials=loaded.initials;
+      renderWithEnsure(); setTodayOnce();
     })();
   </script>
 </body>
