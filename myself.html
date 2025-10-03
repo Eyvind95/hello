@@ -109,7 +109,9 @@
         <input id="importFile" type="file" accept="application/json" style="display:none" />
         <button id="importBtn" title="匯入 JSON">匯入</button>
         <button id="clearBtn" title="清空所有資料">清空</button>
-
+<button id="fbLoginBtn" title="用 Google 登入">Google 登入</button>
+<button id="fbLogoutBtn" title="登出" style="display:none">登出</button>
+<span id="fbWho" class="muted"></span>
         <!-- GitHub 同步 -->
         <button id="ghLoginBtn"  title="登入 GitHub（輸入/更新 Token）">GitHub 登入</button>
         <button id="ghSaveBtn"   title="把本機資料存到 GitHub">同步到 GitHub</button>
@@ -215,13 +217,13 @@
 
   <script>
     /* ============== Firebase：UID 隔離版（可選） ============== */
-    const USE_FIREBASE = false; // ★ 填好 firebaseConfig 並開啟匿名登入後，改成 true 就會用雲端
+    const USE_FIREBASE = true; // ★ 填好 firebaseConfig 並開啟匿名登入後，改成 true 就會用雲端
     const FIREBASE_ROOT = "users";             // 第一層集合
     const FIREBASE_SUB_ENTRIES = "entries";    // 明細
     const FIREBASE_SUB_INITIALS = "initials";  // 期初
     let db = null;
     let CURRENT_UID = null;
-
+const googleProvider = new firebase.auth.GoogleAuthProvider();
     // 到 Firebase 「專案設定 → 一般 → Web App 設定」複製整個物件貼到這裡
     const firebaseConfig = {
       apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
@@ -234,19 +236,85 @@
     };
 
     async function firebaseInitIfNeeded(){
-      if(!USE_FIREBASE) return;
-      if(db && CURRENT_UID) return;
+  if(!USE_FIREBASE) return;
 
-      // 初始化 App
-      if(firebase.apps.length === 0){
-        firebase.initializeApp(firebaseConfig);
+  // 初始化 App（只做一次）
+  if(firebase.apps.length === 0){
+    firebase.initializeApp(firebaseConfig);
+  }
+  db = firebase.firestore();
+
+  // 等待取得使用者（含重新整理後的自動恢復）
+  await new Promise((resolve) => {
+    const off = firebase.auth().onAuthStateChanged((user) => {
+      off();
+      if(user){
+        CURRENT_UID = user.uid;
+        updateLoginUI(user);
+        resolve();
+      }else{
+        // 還沒登入 → 先匿名登入（單機可用，但跨裝置不同 UID）
+        firebase.auth().signInAnonymously().then(cred=>{
+          CURRENT_UID = cred.user.uid;
+          updateLoginUI(cred.user);
+          resolve();
+        });
       }
-      // 匿名登入（無視窗）
-      const cred = await firebase.auth().signInAnonymously();
-      CURRENT_UID = cred.user.uid;
-      db = firebase.firestore();
-    }
+    });
+  });
+}
+function updateLoginUI(user){
+  const who = document.getElementById("fbWho");
+  const btnLogin = document.getElementById("fbLoginBtn");
+  const btnLogout = document.getElementById("fbLogoutBtn");
+  // 如果是匿名使用者，沒有 email/displayName
+  if(user.isAnonymous){
+    who.textContent = "（未登入：匿名模式，僅本裝置）";
+    btnLogin.style.display = "";
+    btnLogout.style.display = "none";
+  }else{
+    who.textContent = `已登入：${user.email || user.displayName || "Google 使用者"}`;
+    btnLogin.style.display = "none";
+    btnLogout.style.display = "";
+  }
+}
 
+async function googleLogin(){
+  try{
+    // 若目前是匿名使用者，這裡會把匿名身分「升級」為同一個 Google UID（不丟資料）
+    const result = await firebase.auth().signInWithPopup(googleProvider);
+    CURRENT_UID = result.user.uid;
+    updateLoginUI(result.user);
+    // 重新從雲端讀一次（因為 UID 變了）
+    const loaded = await loadUnified();
+    entries = loaded.list;
+    initials = loaded.initials;
+    renderWithEnsure();
+    alert("Google 登入成功，已切換到雲端資料！");
+  }catch(e){
+    alert("Google 登入失敗：" + e.message);
+  }
+}
+
+async function googleLogout(){
+  try{
+    await firebase.auth().signOut();
+    CURRENT_UID = null;
+    // 登出後會在 firebaseInitIfNeeded 裡自動再匿名登入
+    await firebaseInitIfNeeded();
+    const loaded = await loadUnified();
+    entries = loaded.list;
+    initials = loaded.initials;
+    renderWithEnsure();
+    alert("已登出，回到匿名模式（不跨裝置同步）");
+  }catch(e){
+    alert("登出失敗：" + e.message);
+  }
+}
+
+// 綁定按鈕（放在全域 JS 區塊）
+document.getElementById("fbLoginBtn").addEventListener("click", googleLogin);
+document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
     // 依 UID 的 collection 參照
     function colEntries(){ return db.collection(FIREBASE_ROOT).doc(CURRENT_UID).collection(FIREBASE_SUB_ENTRIES); }
     function colInitials(){ return db.collection(FIREBASE_ROOT).doc(CURRENT_UID).collection(FIREBASE_SUB_INITIALS); }
@@ -298,8 +366,8 @@
     }
 
     /* ============== GitHub 一鍵同步（保留） ============== */
-    const GH_OWNER = "你的GitHub帳號";   // ← 改成你的帳號（例如 eyvind95）
-    const GH_REPO  = "your-repo";        // ← 改成你的 repo 名（例如 hello）
+    const GH_OWNER = "Eyvind95";   // ← 改成你的帳號（例如 eyvind95）
+    const GH_REPO  = "hello";        // ← 改成你的 repo 名（例如 hello）
     const GH_BRANCH = "main";
     const GH_ENTRIES_PATH  = "data/entries.json";
     const GH_INITIALS_PATH = "data/initials.json";
@@ -378,10 +446,27 @@
     let entries = [];
     let initials = {};
 
-    const monthPicker = $("#monthPicker");
-    const today = new Date();
-    monthPicker.value = today.toISOString().slice(0,7);
-    $("#date").value = ymd(today);
+const monthPicker = $("#monthPicker");
+
+// 只在目前為空時，把今天塞進 month 與 date
+function setTodayOnce() {
+  const today = new Date();
+  if (monthPicker && !monthPicker.value) {
+    monthPicker.value = today.toISOString().slice(0, 7);   // YYYY-MM
+  }
+  const dateEl = document.getElementById("date");
+  if (dateEl && !dateEl.value) {
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    dateEl.value = `${y}-${m}-${d}`;                       // YYYY-MM-DD
+  }
+}
+
+// DOM 準備好就設一次
+document.addEventListener("DOMContentLoaded", setTodayOnce);
+// 全站載入完再補一次（避免其他 async 初始化把值清掉）
+window.addEventListener("load", () => setTimeout(setTodayOnce, 0));
 
     /* ============== 事件：新增/刪除/匯出/匯入/清空 ============== */
     $("#entryForm").addEventListener("submit", async (e) => {
@@ -673,8 +758,8 @@
       entries = loaded.list;
       initials = loaded.initials;
       renderWithEnsure();
+      setTodayOnce();
     })();
   </script>
 </body>
 </html>
-
