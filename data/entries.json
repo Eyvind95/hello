@@ -1,11 +1,11 @@
 [
   {
-    "id": "c99f4d36-77e4-4e49-ae2f-8e1e236e1180",
+    "id": "9ea2a659-826d-4478-8d8e-f740a42ef79c",
     "date": "2025-10-03",
     "type": "income",
-    "amount": 12000,
+    "amount": 13769,
     "category": "",
-    "note": "",
-    "createdAt": 1759496477855
+    "note": "初始金額",
+    "createdAt": 1759486731436
   }
 ]
