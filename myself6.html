@@ -140,6 +140,17 @@ form .col-span-6{grid-column: span 6;}
   form .col-span-6{
     grid-column: 1 / -1 !important;
   }
+.chart-wrap {
+  position: relative;
+  min-height: 280px;   /* 固定高度，防止初次渲染撐開 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-wrap canvas {
+  max-width: 100%;
+  height: auto !important; /* 禁止 Chart.js 在載入時強制設定高度 */
 }
   </style>
 </head>
@@ -787,4 +798,5 @@ form .col-span-6{grid-column: span 6;}
   </script>
 </body>
 </html>
+
 
