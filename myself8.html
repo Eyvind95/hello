@@ -124,6 +124,14 @@
     width: 100% !important;
   }
 }
+  @media (min-width: 561px) {
+  form.grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+  form .col-span-2{ grid-column: span 2; }
+  form .col-span-3{ grid-column: span 3; }
+  form .col-span-6{ grid-column: span 6; }
+}
 </style>
 </head>
 <body>
@@ -791,4 +799,5 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 </script>
 </body>
 </html>
+
 
