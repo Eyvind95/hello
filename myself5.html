@@ -53,61 +53,29 @@
 
     /* === 表單網格：方案A，自適應 === */
     form.grid{
-      display:grid;
-      gap:12px;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    }
-    form.grid > *{min-width:0}
-    form.grid input, form.grid select, form.grid button{
-      width:100%; background:#202020; color:#fff; border:1px solid var(--border); padding:10px; border-radius:10px;
-    }
-    form .col-span-2{grid-column: span 2;}
-    form .col-span-3{grid-column: span 3;}
-    form .col-span-6{grid-column: span 6;}
+  display:grid;
+  gap:12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* 比 140px 再大一點，避免手機誤判 */
+}
+form.grid > *{min-width:0;}
 
-    table{width:100%; border-collapse:collapse; margin-top:10px;}
-    th, td{border-bottom:1px solid var(--border); padding:10px 8px; text-align:left; font-size:14px;}
-    th{color:var(--muted); font-weight:600;}
-    td.amount{font-variant-numeric: tabular-nums;}
-    .type-income{color:var(--ok); font-weight:600;}
-    .type-expense{color:var(--danger); font-weight:600;}
-    .actions button{ background:#2a2a2a; border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; }
-
-    .summary{ display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; margin-top:8px; }
-    .tile{ background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; }
-    .tile h3{margin:0 0 8px 0; font-size:14px; color:var(--muted)}
-    .tile .val{font-size:22px; font-variant-numeric: tabular-nums;}
-    .tile.income .val{color:var(--ok)}
-    .tile.expense .val{color:var(--danger)}
-    .tile.net .val{color:var(--accent)}
-    .muted{color:var(--muted)}
-    .right{display:flex;align-items:center;gap:8px;}
-    .spacer{flex:1}
-
-    .cat-wrap{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:start; }
-    @media (max-width: 900px){ .cat-wrap{ grid-template-columns:1fr; } }
-    .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
-    .legend .key{ display:inline-flex; align-items:center; gap:6px; }
-    .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
-
-    /* === 最終覆蓋：<=900px 一律單欄 === */
-    @media (max-width: 900px){
-      form.grid{
-        grid-template-columns: 1fr !important;
-        grid-auto-flow: row !important;
-        justify-items: stretch !important;
-      }
-      form.grid > *{
-        grid-column: 1 / -1 !important;
-        width: 100% !important;
-        min-width: 0 !important;
-      }
-      form .col-span-2,
-      form .col-span-3,
-      form .col-span-6{
-        grid-column: 1 / -1 !important;
-      }
-    }
+/* 手機 <= 900px：一律單欄，且忽略 col-span */
+@media (max-width:900px){
+  form.grid{
+    grid-template-columns:1fr !important;
+    grid-auto-flow: row !important;
+  }
+  form.grid > *{
+    grid-column: 1 / -1 !important;
+    width:100% !important;
+    min-width:0 !important;
+  }
+  form .col-span-2,
+  form .col-span-3,
+  form .col-span-6{
+    grid-column:1 / -1 !important;
+  }
+}
   </style>
 </head>
 <body>
@@ -644,6 +612,7 @@
 </body>
 
 </html>
+
 
 
 
