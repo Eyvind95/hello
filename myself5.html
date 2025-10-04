@@ -89,26 +89,6 @@
     .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
     .legend .key{ display:inline-flex; align-items:center; gap:6px; }
     .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
-     @media (max-width: 768px){
-  /* 1) 表單永遠一欄，避免載入時先被桌面/舊規則撐成 2 欄 */
-  form.grid{
-    grid-template-columns: 1fr !important;
-    grid-auto-flow: row !important;
-    justify-items: stretch !important;
-  }
-  /* 2) 每個欄位都佔滿整列，避免 col-span-* 造成擠壓 */
-  form.grid > *{
-    grid-column: 1 / -1 !important;
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-  /* 3) 明確把 span 類別關掉（就算你保留它們也不會影響手機） */
-  form .col-span-2,
-  form .col-span-3,
-  form .col-span-6{
-    grid-column: 1 / -1 !important;
-  }
-}
      @media (max-width: 900px){
   /* 表單只剩 1 欄，避免 auto-fit 在寬度介於 480~900px 時排出 2 欄 */
   form.grid{
@@ -659,6 +639,7 @@
 </body>
 
 </html>
+
 
 
 
