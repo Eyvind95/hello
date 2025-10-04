@@ -88,15 +88,18 @@
     .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
     .legend .key{ display:inline-flex; align-items:center; gap:6px; }
     .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
-        @media (max-width: 600px) {
-      form.grid {
-        grid-template-columns: 1fr !important;
-      }
-      form.grid > * {
-        grid-column: span 1 !important;
-        width: 100%;
-      }
-    }
+       @media (max-width: 600px) {
+  form.grid{
+    grid-template-columns: 1fr !important;  /* 只有 1 欄 */
+    grid-auto-flow: row;                    /* 逐列排 */
+    justify-items: stretch;                 /* 撐滿列寬 */
+  }
+  /* 無視 col-span-2/3/6，全部都佔滿一整列 */
+  form.grid > *{
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+}
   </style>
 </head>
 <body>
@@ -633,3 +636,4 @@
 </body>
 
 </html>
+
