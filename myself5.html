@@ -88,6 +88,15 @@
     .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
     .legend .key{ display:inline-flex; align-items:center; gap:6px; }
     .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
+        @media (max-width: 600px) {
+      form.grid {
+        grid-template-columns: 1fr !important;
+      }
+      form.grid > * {
+        grid-column: span 1 !important;
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
@@ -622,4 +631,5 @@
     })();
   </script>
 </body>
+
 </html>
