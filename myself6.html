@@ -105,22 +105,42 @@
 
     /* 最終覆蓋：<=1024px 一律單欄，無視 col-span */
     @media (max-width: 1024px){
-      form.grid{
-        grid-template-columns: 1fr !important;
-        grid-auto-flow: row !important;
-        justify-items: stretch !important;
-      }
-      form.grid > *{
-        grid-column: 1 / -1 !important;
-        width: 100% !important;
-        min-width: 0 !important;
-      }
-      form .col-span-2,
-      form .col-span-3,
-      form .col-span-6{
-        grid-column: 1 / -1 !important;
-      }
-    }
+form.grid{
+  display:grid;
+  gap:12px;
+  /* 固定 6 欄，欄寬可壓縮（minmax(0,1fr) 可避免被內容撐爆） */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+form.grid > *{ min-width:0; } /* 保證內容不把欄位撐爆 */
+form.grid input, form.grid select, form.grid button{
+  width:100%;
+  background:#202020; color:#fff; border:1px solid var(--border);
+  padding:10px; border-radius:10px;
+}
+
+/* 你原本的 col-span-* 還是照用 */
+form .col-span-2{grid-column: span 2;}
+form .col-span-3{grid-column: span 3;}
+form .col-span-6{grid-column: span 6;}
+
+/* <=1024px 一律單欄；強制蓋掉所有 span，避免再排兩列 */
+@media (max-width: 1024px){
+  form.grid{
+    grid-template-columns: 1fr !important;
+    grid-auto-flow: row !important;
+    justify-items: stretch !important;
+  }
+  form.grid > *{
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  form .col-span-2,
+  form .col-span-3,
+  form .col-span-6{
+    grid-column: 1 / -1 !important;
+  }
+}
   </style>
 </head>
 <body>
@@ -767,3 +787,4 @@
   </script>
 </body>
 </html>
+
