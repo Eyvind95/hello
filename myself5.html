@@ -10,7 +10,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
-   <style>
+     <style>
     :root{
       --bg:#0b0b0b;
       --panel:#151515cc;
@@ -51,7 +51,7 @@
     .card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; }
     .card h2{margin:0 0 10px 0; font-size:20px;}
 
-    /* ✅ 修正版：讓「新增一筆」在手機上不擠、不閃動 */
+    /* === 表單網格：方案A，自適應 === */
     form.grid{
       display:grid;
       gap:12px;
@@ -89,20 +89,25 @@
     .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
     .legend .key{ display:inline-flex; align-items:center; gap:6px; }
     .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
-     @media (max-width: 900px){
-  /* 表單只剩 1 欄，避免 auto-fit 在寬度介於 480~900px 時排出 2 欄 */
-  form.grid{
-    grid-template-columns: 1fr !important;
-    grid-auto-flow: row !important;
-    justify-items: stretch !important;
-  }
-  /* 每個欄位都佔滿整列，避免 col-span-* 撐爆 */
-  form.grid > *{
-    grid-column: 1 / -1 !important;
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-}
+
+    /* === 最終覆蓋：<=900px 一律單欄 === */
+    @media (max-width: 900px){
+      form.grid{
+        grid-template-columns: 1fr !important;
+        grid-auto-flow: row !important;
+        justify-items: stretch !important;
+      }
+      form.grid > *{
+        grid-column: 1 / -1 !important;
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+      form .col-span-2,
+      form .col-span-3,
+      form .col-span-6{
+        grid-column: 1 / -1 !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -639,6 +644,7 @@
 </body>
 
 </html>
+
 
 
 
