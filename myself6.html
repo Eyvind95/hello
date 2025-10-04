@@ -46,8 +46,26 @@
   }
   .controls button:hover{ filter:brightness(1.12); cursor:pointer; }
 
-  .row{ display:grid; gap:16px; grid-template-columns:1.1fr 1fr; }
-  @media (max-width:900px){ .row{ grid-template-columns:1fr; } }
+  .row{
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1.1fr 1fr;
+  align-items: start;
+}
+
+/* 手機時讓右側（本月明細）掉下去 */
+@media (max-width: 900px){
+  .row{
+    grid-template-columns: 1fr;
+  }
+  .row > .card:nth-child(2){
+    order: 2; /* 確保圓餅圖卡片在下方 */
+    margin-top: 12px;
+  }
+  .row > .card:nth-child(1){
+    order: 1;
+  }
+}
 
   .card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; }
   .card h2{ margin:0 0 10px 0; font-size:20px; }
@@ -764,6 +782,7 @@
   </script>
 </body>
 </html>
+
 
 
 
