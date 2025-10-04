@@ -102,6 +102,28 @@
   .recent h3{ margin:0 0 8px; font-size:16px; }
   .rerun{ background:#2a2a2a; color:#fff; border:1px solid var(--border); padding:6px 10px; border-radius:8px; cursor:pointer; }
   .rerun:hover{ filter:brightness(1.12); }
+  @media (min-width: 901px){
+  /* 這三個是「新增一筆」第一排 */
+  form.grid #date   { min-width: 220px !important; }  /* 日期：請完整顯示 yyyy-mm-dd */
+  form.grid #type   { min-width: 120px !important; }  /* 收/支 */
+  form.grid #amount { min-width: 140px !important; }  /* 金額 */
+
+  /* 讓 grid 看到有最小寬度時願意換行（避免硬擠） */
+  form.grid{
+    grid-auto-flow: row;
+  }
+}
+
+/* 手機：維持一欄滿版（你之前的規則不變） */
+@media (max-width: 600px){
+  form.grid{
+    grid-template-columns: 1fr !important;
+  }
+  form.grid > *{
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -769,3 +791,4 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 </script>
 </body>
 </html>
+
