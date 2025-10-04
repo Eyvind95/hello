@@ -109,6 +109,20 @@
     grid-column: 1 / -1 !important;
   }
 }
+     @media (max-width: 900px){
+  /* 表單只剩 1 欄，避免 auto-fit 在寬度介於 480~900px 時排出 2 欄 */
+  form.grid{
+    grid-template-columns: 1fr !important;
+    grid-auto-flow: row !important;
+    justify-items: stretch !important;
+  }
+  /* 每個欄位都佔滿整列，避免 col-span-* 撐爆 */
+  form.grid > *{
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
   </style>
 </head>
 <body>
@@ -645,6 +659,7 @@
 </body>
 
 </html>
+
 
 
 
