@@ -788,9 +788,20 @@ document.getElementById("ghLoadBtn").addEventListener("click", async () => {
 /* ============== Google 登入/登出按鈕 ============== */
 document.getElementById("fbLoginBtn").addEventListener("click", googleLogin);
 document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
+function initToday() {
+  const dateInput = document.querySelector('input[type="date"]');
+  if (dateInput) {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    dateInput.value = `${yyyy}-${mm}-${dd}`;
+  }
+}
 
-/* ============== 啟動：先讀資料，再渲染 ============== */
+/* ======================== 啟動：先讀資料、再渲染 ======================== */
 (async () => {
+  initToday(); // ✅ ← 新增這行：每次打開頁面都更新成今天
   const loaded = await loadUnified();
   entries = loaded.list;
   initials = loaded.initials;
@@ -799,5 +810,6 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 </script>
 </body>
 </html>
+
 
 
