@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>我的記帳本</title>
 
-<!-- Firebase v8（穩定、與你 v8 模板一致） -->
+<!-- Firebase v8 compat（穩定） -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
@@ -30,7 +30,7 @@
       var(--bg);
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
   }
-  /* 手機避免 fixed 背景 */
+  /* 手機避免 fixed 背景問題 */
   @media (max-width:768px){ body{ background-attachment:scroll; } }
 
   .container{ max-width:1100px; margin:32px auto; padding:0 16px; }
@@ -52,7 +52,7 @@
   .card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; }
   .card h2{margin:0 0 10px 0; font-size:20px;}
 
-  /* 表單 */
+  /* 新增一筆表單 */
   form.grid{ display:grid; gap:12px; grid-template-columns: repeat(6, 1fr); }
   form.grid > *{min-width:0}
   form.grid input, form.grid select, form.grid button{
@@ -61,6 +61,8 @@
   form .col-span-2{grid-column: span 2;}
   form .col-span-3{grid-column: span 3;}
   form .col-span-6{grid-column: span 6;}
+
+  /* 手機：單欄滿版 */
   @media (max-width: 600px){
     form.grid{ grid-template-columns:1fr !important; grid-auto-flow:row; justify-items:stretch; }
     form.grid > *{ grid-column:1 / -1 !important; width:100% !important; }
@@ -83,27 +85,23 @@
   .tile.expense .val{color:var(--danger)}
   .tile.net .val{color:var(--accent)}
   .muted{color:var(--muted)}
+  .right{display:flex;align-items:center;gap:8px;}
   .spacer{flex:1}
 
-  /* 分類小計 + 圓餅圖：上下排（餅圖在下） */
-  .cat-wrap{ display:flex; flex-direction:column; gap:20px; align-items:center; justify-content:center; }
+  /* 分類小計：上下排（圓餅圖在下面） */
+  .cat-wrap{
+    display:flex; flex-direction:column; gap:20px; align-items:center; justify-content:center;
+  }
   .cat-chart{ width:100%; display:flex; flex-direction:column; align-items:center; }
   .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
   .legend .key{ display:inline-flex; align-items:center; gap:6px; }
   .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
 
-  /* 快速常用（最常記的 5 筆） */
-  .freq{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
-  .freq h3{ margin:0 0 8px; font-size:16px; }
-  .freq-item{
-    display:flex; align-items:center; justify-content:space-between; gap:8px;
-    padding:8px 10px; border:1px solid var(--border); border-radius:10px; margin-top:6px;
-  }
+  /* 最近 5 筆 */
+  .recent{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
+  .recent h3{ margin:0 0 8px; font-size:16px; }
   .rerun{ background:#2a2a2a; color:#fff; border:1px solid var(--border); padding:6px 10px; border-radius:8px; cursor:pointer; }
   .rerun:hover{ filter:brightness(1.12); }
-
-  /* 每週支出統計（本月） */
-  .weekly h3{ margin:12px 0 8px 0; font-size:16px; color:var(--muted) }
 </style>
 </head>
 <body>
@@ -136,7 +134,7 @@
   </header>
 
   <div class="row">
-    <!-- 左側：新增 + 最常記的 5 筆 -->
+    <!-- 左側：新增記帳 + 最近 5 筆 -->
     <section class="card">
       <h2>新增一筆</h2>
       <form id="entryForm" class="grid">
@@ -160,10 +158,14 @@
       </form>
       <p class="muted" style="margin-top:8px;">提示：月份統計依日期（每月 1 日 ~ 該月最後一天）。</p>
 
-      <!-- 最常記的 5 筆（金額＋類別；$80.00（吃）×4）-->
-      <div class="freq">
-        <h3>最常記的 5 筆</h3>
-        <div id="freqList"></div>
+      <div class="recent">
+        <h3>最近 5 筆</h3>
+        <div id="recentList"></div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
+          <label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;">
+            <input type="checkbox" id="rerunSameDay" /> 複製時沿用原日期（不改成今天）
+          </label>
+        </div>
       </div>
     </section>
 
@@ -196,9 +198,8 @@
       <!-- 分類小計（只計支出） + 圓餅圖（在下面） -->
       <div class="card" style="background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; margin-top:12px;">
         <h3 style="margin:0 0 8px 0; font-size:16px; color:var(--muted)">本月分類小計（支出）</h3>
-
         <div class="cat-wrap">
-          <!-- 上：表格 -->
+          <!-- 上面：表格 -->
           <table id="catTable" style="max-width:860px;width:100%;">
             <thead>
               <tr>
@@ -210,26 +211,11 @@
             <tbody id="catTbody"></tbody>
           </table>
 
-          <!-- 下：圓餅圖 -->
+          <!-- 下面：圓餅圖 -->
           <div class="cat-chart" style="margin-top:6px;">
             <canvas id="catPie" width="360" height="240" style="width:100%;max-width:420px;height:auto;display:block;"></canvas>
             <div id="catLegend" class="legend" style="margin-top:8px;"></div>
           </div>
-        </div>
-
-        <!-- 再下：每週支出統計（本月） -->
-        <div class="weekly">
-          <h3>每週支出統計（本月）</h3>
-          <table id="weekTable">
-            <thead>
-              <tr>
-                <th style="width:80px">週次</th>
-                <th style="width:220px">日期範圍</th>
-                <th style="width:120px">支出金額</th>
-              </tr>
-            </thead>
-            <tbody id="weekTbody"></tbody>
-          </table>
         </div>
       </div>
 
@@ -251,16 +237,20 @@
 </div>
 
 <script>
-/* ============== Firebase（沿用你 v8 的設定） ============== */
+/* ============== Firebase：請替換成你的專案 ============== */
 const firebaseConfig = {
-  apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
-  authDomain: "eyvind95-182f0.firebaseapp.com",
-  projectId: "eyvind95-182f0",
-  storageBucket: "eyvind95-182f0.firebasestorage.app",
-  messagingSenderId: "105770576221",
-  appId: "1:105770576221:web:4256dca5ec54b7cf91a0b4"
+ apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
+      authDomain: "eyvind95-182f0.firebaseapp.com",
+      projectId: "eyvind95-182f0",
+      storageBucket: "eyvind95-182f0.firebasestorage.app",
+      messagingSenderId: "105770576221",
+      appId: "1:105770576221:web:4256dca5ec54b7cf91a0b4"
+  // measurementId: "G-XXXX" // 可留空
 };
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+function initFirebaseApp(){
+  if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); }
+}
+initFirebaseApp();
 
 /* ============== Firestore 與 UID ============== */
 let db = firebase.firestore();
@@ -272,13 +262,14 @@ function userDoc(){ return db.collection('users').doc(CURRENT_UID); }
 function colEntries(){ return userDoc().collection('entries'); }
 function colInitials(){ return userDoc().collection('initials'); }
 
-/* ============== GitHub 同步（與 v8 一致） ============== */
-const GH_OWNER = "Eyvind95";
-const GH_REPO  = "hello";
+/* ============== GitHub 一鍵同步（選用） ============== */
+const GH_OWNER = "Eyvind95";    // ← 改成你的帳號
+const GH_REPO  = "hello";       // ← 改成你的 repo 名
 const GH_BRANCH = "main";
 const GH_ENTRIES_PATH  = "data/entries.json";
 const GH_INITIALS_PATH = "data/initials.json";
 const GH_TOKEN_KEY = "gh_pat_my_ledger";
+
 function ghGetToken(){ return localStorage.getItem(GH_TOKEN_KEY) || ""; }
 function ghSetToken(t){ if(!t) return; localStorage.setItem(GH_TOKEN_KEY, t); alert("已儲存 GitHub Token（存在本機瀏覽器）"); }
 async function ghApi(path, method="GET", body){
@@ -314,7 +305,8 @@ function round2(n){ return Math.round((Number(n)||0) * 100) / 100; }
 function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
 function monthKey(y, m){ return `${y}-${String(m).padStart(2,'0')}`; } // m:1-12
 function prevMonthOf(y, m){ const d=new Date(Date.UTC(y, m-1, 1)); d.setUTCMonth(d.getUTCMonth()-1); return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1}; }
-function getMonthRange(year, monthIdx){
+
+function getMonthRange(year, monthIdx /*0-11*/){
   const start = new Date(Date.UTC(year, monthIdx, 1));
   const end = new Date(Date.UTC(year, monthIdx + 1, 0));
   return { start, end };
@@ -414,16 +406,23 @@ async function googleLogout(){
   entries = loaded.list; initials = loaded.initials;
   renderWithEnsure();
 }
+
 firebase.auth().onAuthStateChanged(async (user)=>{
   if(user){
-    CURRENT_UID = user.uid; updateLoginUI(user);
+    CURRENT_UID = user.uid;
+    updateLoginUI(user);
+    const loaded = await loadUnified();
+    entries = loaded.list; initials = loaded.initials;
+    renderWithEnsure();
   }else{
-    CURRENT_UID = null; updateLoginUI(null);
+    CURRENT_UID = null;
+    updateLoginUI(null);
+    const loaded = await loadUnified();
+    entries = loaded.list; initials = loaded.initials;
+    renderWithEnsure();
   }
-  const loaded = await loadUnified();
-  entries = loaded.list; initials = loaded.initials;
-  renderWithEnsure();
 });
+
 function updateLoginUI(user){
   if(user){
     $("#fbWho").textContent = `已登入：${user.email || "Google 帳號"}`;
@@ -440,7 +439,7 @@ function updateLoginUI(user){
 $("#entryForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const date = $("#date").value;
-  const type = $("#type").value;
+  const type = $("#type").value; // 'income' | 'expense'
   const amountStr = $("#amount").value.trim();
   const category = type === "expense" ? $("#category").value : "";
   const note = $("#note").value.trim();
@@ -456,12 +455,14 @@ $("#entryForm").addEventListener("submit", async (e) => {
   $("#amount").value = ""; $("#note").value = "";
   renderWithEnsure();
 });
+
 async function removeEntry(id){
   if(!confirm("確定刪除此筆？")) return;
   entries = entries.filter(e => e.id !== id);
   await saveUnified();
   renderWithEnsure();
 }
+
 $("#exportBtn").addEventListener("click", () => {
   const blob = new Blob([JSON.stringify({entries, initials}, null, 2)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
@@ -494,17 +495,18 @@ $("#clearBtn").addEventListener("click", async () => {
   }
 });
 
-/* 類別選單：收入隱藏、支出顯示 */
+/* ============== 類別選單：收入隱藏、支出顯示 ============== */
 $("#type").addEventListener("change", () => {
   $("#category").style.display = ($("#type").value === "income") ? "none" : "block";
 });
 $("#type").dispatchEvent(new Event("change"));
 
-/* 期初：設定/承接/顯示 */
+/* ============== 期初邏輯：設定、承接、顯示 ============== */
 function ensureInitialForMonth(y, m){
   const mk = monthKey(y, m);
   if(initials[mk] !== undefined) return;
 
+  // 承接上月期末
   const { y:py, m:pm } = prevMonthOf(y, m);
   const pmk = monthKey(py, pm);
   let prevInit = Number(initials[pmk] ?? 0);
@@ -530,6 +532,7 @@ function ensureInitialForMonth(y, m){
   }
   saveUnified();
 }
+
 document.getElementById("editInitBtn").addEventListener("click", async () => {
   const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
   const mk = monthKey(y, m);
@@ -542,7 +545,7 @@ document.getElementById("editInitBtn").addEventListener("click", async () => {
   renderWithEnsure();
 });
 
-/* 月份切換 */
+/* ============== 月份切換 ============== */
 $("#prevMonth").addEventListener("click", () => shiftMonth(-1));
 $("#nextMonth").addEventListener("click", () => shiftMonth(1));
 function shiftMonth(delta){
@@ -559,17 +562,20 @@ function renderWithEnsure(){
   ensureInitialForMonth(y, m);
   render();
 }
+
 function render(){
   const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
   const {start, end} = getMonthRange(y, m - 1);
 
+  // 區間提示
   $("#rangeHint").textContent = `${y}年${m}月 1 日 ~ ${y}年${m}月 ${end.getUTCDate()} 日`;
 
+  // 本月資料
   const monthItems = entries
     .filter(e => { const d = toDate(e.date); return d >= start && d <= end; })
     .sort((a,b) => (a.date === b.date ? a.createdAt - b.createdAt : a.date.localeCompare(b.date)));
 
-  // 明細表
+  // 表格
   const tbody = $("#tbody");
   tbody.innerHTML = "";
   for(const it of monthItems){
@@ -587,7 +593,7 @@ function render(){
   }
   $$("#tbody .del").forEach(btn => btn.addEventListener("click", () => removeEntry(btn.dataset.id)));
 
-  // 本月收支
+  // 統計
   let income = 0, expense = 0;
   for(const it of monthItems){ if(it.type === "income") income += it.amount; else expense += it.amount; }
   income = round2(income); expense = round2(expense);
@@ -596,7 +602,7 @@ function render(){
   $("#sumExpense").textContent = fmtMoney(expense);
   $("#sumNet").textContent = fmtMoney(net);
 
-  // 期初/期末
+  // 期初 & 期末
   const mk = monthKey(y, m);
   const initAmt = Number(initials[mk] ?? 0);
   const endAmt = round2(initAmt + income - expense);
@@ -606,25 +612,23 @@ function render(){
   // 分類小計 + 圓餅圖
   renderCategorySummary(monthItems);
 
-  // 本月分週（週一～週日；只計支出）
-  renderWeeklyMonthWeeks(monthItems, y, m);
-
-  // 最常記的 5 筆（全資料統計、以 金額+類別 為鍵）
-  renderFrequentPairs(entries);
+  // 最近 5 筆
+  renderRecent();
 }
 
-/* 分類小計（僅支出）+ 圓餅圖 */
+// 分類小計（僅支出）＋ 圓餅圖（吃=橘、交通=黃、玩=淡藍、其他=灰）
 function renderCategorySummary(monthItems){
   const cats = ["吃","交通","玩","其他"];
   const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff", "其他":"#aaaaaa" };
 
-  const map = new Map(cats.map(c => [c, {sum:0, count:0}])); // 只列這四類
+  const map = new Map(cats.map(c => [c, {sum:0, count:0}]));
   for(const it of monthItems){
     if(it.type !== "expense") continue;
     const key = (it.category || "").trim();
     if(map.has(key)){ const rec = map.get(key); rec.sum = round2(rec.sum + it.amount); rec.count += 1; }
   }
 
+  // 表格
   const rows = [];
   for(const cat of cats){
     const rec = map.get(cat);
@@ -633,10 +637,12 @@ function renderCategorySummary(monthItems){
   const tbody = document.getElementById("catTbody");
   if(tbody) tbody.innerHTML = rows.join("");
 
+  // 圓餅圖
   const data = cats.map(c => ({ label:c, value: map.get(c).sum, color: colors[c] }));
   const total = data.reduce((s,d)=>s+d.value,0);
   drawPie("catPie", data, total);
 
+  // Legend
   const legend = document.getElementById("catLegend");
   if(legend){
     legend.innerHTML = (total<=0)
@@ -647,6 +653,7 @@ function renderCategorySummary(monthItems){
         }).join(" ");
   }
 }
+
 function drawPie(canvasId, data, total){
   const canvas = document.getElementById(canvasId);
   if(!canvas) return;
@@ -665,9 +672,11 @@ function drawPie(canvasId, data, total){
     ctx.fillText("本月無支出", canvas.width/2, canvas.height/2+5);
     return;
   }
+
   const cx = canvas.width/2, cy = canvas.height/2;
   const r  = Math.min(canvas.width, canvas.height)/2 - 8;
   let start = -Math.PI/2;
+
   for(const d of data){
     if(d.value<=0) continue;
     const ang = d.value/total * Math.PI*2;
@@ -676,8 +685,10 @@ function drawPie(canvasId, data, total){
     ctx.closePath(); ctx.fillStyle=d.color; ctx.fill();
     start += ang;
   }
+  // 甜甜圈中洞
   ctx.beginPath(); ctx.arc(cx,cy,r*0.55,0,Math.PI*2);
   ctx.fillStyle="#101010"; ctx.fill();
+  // 中心文字
   ctx.fillStyle="rgba(255,255,255,0.9)";
   ctx.font="12px system-ui, -apple-system, 'Segoe UI', Roboto";
   ctx.textAlign="center"; ctx.fillText("總支出",cx,cy-4);
@@ -685,7 +696,7 @@ function drawPie(canvasId, data, total){
   ctx.fillText(fmtMoney(total),cx,cy+18);
 }
 
-/* ==== 最常記的 5 筆（金額+類別）==== */
+/* ============== 最近 5 筆 ============== */
 function renderFrequentPairs(list){
   const box = $("#freqList");
   if(!box) return;
@@ -735,7 +746,8 @@ function renderFrequentPairs(list){
   });
 }
 
-/* GitHub 按鈕事件（與 v8 一致） */
+
+/* ============== GitHub 按鈕事件 ============== */
 document.getElementById("ghLoginBtn").addEventListener("click", () => {
   const cur = ghGetToken();
   const t = prompt("貼上你的 GitHub Fine-grained Token（只會存本機）:", cur || "");
@@ -761,18 +773,23 @@ document.getElementById("ghLoadBtn").addEventListener("click", async () => {
   }catch(e){ alert("載入失敗：\n" + e.message + "\n\n提示：先按一次『同步到 GitHub』建立檔案。"); }
 });
 
-/* Google 登入/登出按鈕 */
+/* ============== Google 登入/登出按鈕 ============== */
 document.getElementById("fbLoginBtn").addEventListener("click", googleLogin);
 document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
-
-/* 進站固定把日期設成今天（修你提到的日期不自動更新） */
-(function initToday(){
+function initToday() {
   const dateInput = document.querySelector('input[type="date"]');
-  if (dateInput) dateInput.value = ymd(new Date());
-})();
+  if (dateInput) {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    dateInput.value = `${yyyy}-${mm}-${dd}`;
+  }
+}
 
-/* 啟動：先讀資料，再渲染 */
+/* ======================== 啟動：先讀資料、再渲染 ======================== */
 (async () => {
+  initToday(); // ✅ ← 新增這行：每次打開頁面都更新成今天
   const loaded = await loadUnified();
   entries = loaded.list;
   initials = loaded.initials;
