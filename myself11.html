@@ -46,9 +46,13 @@
   }
   .controls button:hover{filter:brightness(1.12); cursor:pointer}
 
-  .row{display:grid; gap:16px; grid-template-columns: 1.1fr 1fr;}
-  /* ✅ 防止左右其中一邊把另一邊擠爆 */
-  .row > *{ min-width: 0; }
+.row{
+  display: grid;
+  gap: 16px;
+  /* 左 1fr、右 1.35fr：右邊比較寬 */
+  grid-template-columns: 1fr 1.35fr;
+}
+.row > *{ min-width: 0; } /* 防止內容把格子撐爆 */
   @media (max-width: 900px){ .row{grid-template-columns:1fr;} }
 
   .card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; min-width:0; }
@@ -78,7 +82,12 @@
   .actions button{ background:#2a2a2a; border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; }
 
   /* 五塊統計 */
-  .summary{ display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; margin-top:8px; }
+.summary{
+  display: grid;
+  gap: 12px;
+  /* 原本是 repeat(5, 1fr) 會硬塞 5 欄，改成自適應欄寬 */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
   .tile{ background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; }
   .tile h3{margin:0 0 8px 0; font-size:14px; color:var(--muted)}
   .tile .val{font-size:22px; font-variant-numeric: tabular-nums;}
