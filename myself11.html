@@ -169,6 +169,7 @@
           <option value="吃">吃</option>
           <option value="交通">交通</option>
           <option value="玩">玩</option>
+           <option value="洗衣服">洗衣服</option>
           <option value="其他">其他</option>
         </select>
         <input class="col-span-3" type="text" id="note" placeholder="備註（可留空）" />
@@ -638,8 +639,8 @@ function render(){
 
 /* 分類小計（僅支出）＋ 圓餅圖（吃=橘、交通=黃、玩=淡藍、其他=灰） */
 function renderCategorySummary(monthItems){
-  const cats = ["吃","交通","玩","其他"];
-  const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff", "其他":"#aaaaaa" };
+  const cats = ["吃","交通","玩","洗衣服","其他"];
+  const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff","洗衣服": "#b19cd9", "其他":"#aaaaaa" };
 
   const map = new Map(cats.map(c => [c, {sum:0, count:0}]));  
   for(const it of monthItems){
