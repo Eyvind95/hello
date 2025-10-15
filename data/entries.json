@@ -1,11 +1,236 @@
 [
   {
-    "type": "income",
     "id": "330e4a62-c7a0-4dd1-8c2c-2ffc5a142727",
-    "category": "",
     "amount": 12000,
     "date": "2025-10-04",
+    "type": "income",
+    "createdAt": 1759521398217,
+    "category": "",
+    "note": ""
+  },
+  {
+    "createdAt": 1759832300556,
+    "id": "9146d5fb-5f02-4495-88da-bccc6d9c2169",
+    "category": "吃",
+    "type": "expense",
+    "date": "2025-10-04",
+    "amount": 110,
+    "note": ""
+  },
+  {
+    "type": "expense",
+    "category": "吃",
     "note": "",
-    "createdAt": 1759521398217
+    "date": "2025-10-07",
+    "createdAt": 1759832338363,
+    "id": "53507156-4eb5-4b12-9bbd-11fe822fff49",
+    "amount": 80
+  },
+  {
+    "category": "吃",
+    "id": "309ee08d-7761-452d-a03a-fb218fa52125",
+    "note": "",
+    "createdAt": 1759901055235,
+    "type": "expense",
+    "amount": 80,
+    "date": "2025-10-07"
+  },
+  {
+    "note": "",
+    "date": "2025-10-08",
+    "createdAt": 1760022560270,
+    "category": "吃",
+    "type": "expense",
+    "amount": 80,
+    "id": "526905cc-e879-4aa5-9911-30b23810e882"
+  },
+  {
+    "category": "吃",
+    "note": "",
+    "id": "14b37c12-290d-4d86-bbd6-2f29f5a9d3ea",
+    "date": "2025-10-08",
+    "type": "expense",
+    "amount": 110,
+    "createdAt": 1760022569704
+  },
+  {
+    "date": "2025-10-09",
+    "category": "吃",
+    "id": "713d337b-03d2-4214-83e7-ceaf1f2c7478",
+    "createdAt": 1760022589039,
+    "type": "expense",
+    "note": "",
+    "amount": 80
+  },
+  {
+    "createdAt": 1760022593646,
+    "date": "2025-10-09",
+    "id": "17fcab7b-ea80-4305-bf0d-155c8de1a45b",
+    "amount": 90,
+    "note": "",
+    "category": "吃",
+    "type": "expense"
+  },
+  {
+    "date": "2025-10-10",
+    "note": "",
+    "category": "吃",
+    "id": "76a3075b-247d-4df8-947e-439e899cc317",
+    "amount": 190,
+    "createdAt": 1760074126870,
+    "type": "expense"
+  },
+  {
+    "createdAt": 1760106338793,
+    "date": "2025-10-10",
+    "note": "",
+    "type": "expense",
+    "id": "311e0364-e17a-415f-9949-1ebec468ee3f",
+    "amount": 135,
+    "category": "吃"
+  },
+  {
+    "id": "165a2b2c-1f31-4159-ad0d-e5370db54320",
+    "date": "2025-10-11",
+    "createdAt": 1760183223707,
+    "amount": 90,
+    "type": "expense",
+    "category": "吃",
+    "note": ""
+  },
+  {
+    "note": "",
+    "date": "2025-10-11",
+    "createdAt": 1760183234562,
+    "type": "expense",
+    "category": "吃",
+    "id": "e300090a-d06e-4671-a34f-5fcc159dcd3f",
+    "amount": 70
+  },
+  {
+    "amount": 75,
+    "type": "expense",
+    "date": "2025-10-11",
+    "category": "吃",
+    "createdAt": 1760183238249,
+    "note": "",
+    "id": "45f23d62-c0ef-4964-9df9-d706016e2e3a"
+  },
+  {
+    "date": "2025-10-11",
+    "amount": 70,
+    "note": "",
+    "createdAt": 1760184165791,
+    "id": "98131d9f-5c23-4fbf-8c66-b2b28b223951",
+    "category": "吃",
+    "type": "expense"
+  },
+  {
+    "id": "7844ab0b-ab13-4911-8123-4be9e09d2bb0",
+    "createdAt": 1760259222600,
+    "type": "expense",
+    "category": "洗衣服",
+    "note": "",
+    "amount": 20,
+    "date": "2025-10-12"
+  },
+  {
+    "note": "",
+    "id": "424c3aac-8d44-491c-aae3-ebd9817f52e8",
+    "category": "吃",
+    "createdAt": 1760267391347,
+    "date": "2025-10-12",
+    "type": "expense",
+    "amount": 90
+  },
+  {
+    "note": "",
+    "type": "expense",
+    "amount": 110,
+    "createdAt": 1760360674888,
+    "date": "2025-10-13",
+    "category": "吃",
+    "id": "49b03e7f-346f-4ee6-8aa9-e511d404354f"
+  },
+  {
+    "category": "",
+    "date": "2025-10-13",
+    "createdAt": 1760361276818,
+    "id": "cb142dee-d5f3-4a8d-8c29-5cf1303d4e1f",
+    "note": "",
+    "amount": 230,
+    "type": "income"
+  },
+  {
+    "amount": 20,
+    "note": "",
+    "type": "expense",
+    "createdAt": 1760361306743,
+    "id": "801d83e6-17ec-4c13-86a2-e2ef70d22ce3",
+    "category": "洗衣服",
+    "date": "2025-10-13"
+  },
+  {
+    "amount": 80,
+    "category": "吃",
+    "id": "6e3adf81-eebc-4b71-a7ae-ba177231e8e2",
+    "note": "",
+    "type": "expense",
+    "date": "2025-10-14",
+    "createdAt": 1760413790588
+  },
+  {
+    "amount": 500,
+    "category": "其他",
+    "date": "2025-10-14",
+    "type": "expense",
+    "id": "dafa7afc-6531-4e76-bab9-2e7e2dee1547",
+    "note": "書費",
+    "createdAt": 1760418889100
+  },
+  {
+    "createdAt": 1760437747979,
+    "amount": 110,
+    "note": "",
+    "category": "吃",
+    "date": "2025-10-14",
+    "id": "78535586-3d28-47e0-938b-349912471ce0",
+    "type": "expense"
+  },
+  {
+    "amount": 60,
+    "createdAt": 1760437780054,
+    "note": "",
+    "date": "2025-10-14",
+    "category": "吃",
+    "id": "d2300900-9912-4386-a209-c3158e04c21c",
+    "type": "expense"
+  },
+  {
+    "amount": 20,
+    "createdAt": 1760450285361,
+    "type": "expense",
+    "date": "2025-10-14",
+    "note": "",
+    "id": "114e3369-9b79-4e4b-be68-19aa734df507",
+    "category": "洗衣服"
+  },
+  {
+    "date": "2025-10-15",
+    "note": "",
+    "amount": 80,
+    "category": "吃",
+    "createdAt": 1760500024150,
+    "type": "expense",
+    "id": "c93b58a4-7ebb-451a-b829-d35c20a46918"
+  },
+  {
+    "date": "2025-10-15",
+    "category": "",
+    "type": "income",
+    "note": "",
+    "id": "e3cb6a26-d045-4f23-b52d-eb49136700b8",
+    "createdAt": 1760500041635,
+    "amount": 300
   }
 ]
