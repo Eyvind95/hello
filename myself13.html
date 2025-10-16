@@ -139,7 +139,7 @@
       <input id="importFile" type="file" accept="application/json" style="display:none" />
       <button id="importBtn" title="匯入 JSON">匯入</button>
       <button id="clearBtn" title="清空所有資料">清空</button>
-
+      <button id="updateBtn" onclick="forceUpdate()">🔄 強制更新</button>
       <!-- Google 登入/登出 -->
       <button id="fbLoginBtn"  title="用 Google 登入">登入</button>
       <button id="fbLogoutBtn" title="登出" style="display:none">登出</button>
@@ -914,7 +914,6 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
   }
 })();
 </script>
-  <button onclick="forceUpdate()">🔄 強制更新</button>
 <script>
 async function forceUpdate() {
   try {
@@ -926,9 +925,11 @@ async function forceUpdate() {
       const keys = await caches.keys();
       for (const k of keys) await caches.delete(k);
     }
-  } catch(e) {}
-  location.replace(location.origin + location.pathname + '?v=' + Date.now());
+  } catch (e) {}
+  location.replace(location.pathname + '?v=' + Date.now());
 }
+</script>
 </script>
 </body>
 </html>
+
