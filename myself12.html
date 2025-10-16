@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>我的記帳本</title>
 
-<!-- App / Icon（使用 6.png） -->
-<link rel="icon" type="image/png" href="6.png" />
-<link rel="apple-touch-icon" href="6.png" />
-<meta name="theme-color" content="#0b0b0b" />
+<!-- ✅ 網站圖示設定（記得 6.png 與 manifest.webmanifest 放在同一層） -->
+<link rel="icon" type="image/png" sizes="512x512" href="6.png">
+<link rel="apple-touch-icon" href="6.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0b0b">
 
 <!-- Firebase v8 compat（穩定） -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -16,115 +17,105 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
 <style>
-  :root{
-    --bg:#0b0b0b;
-    --panel:#151515cc;
-    --muted:#bbbbbb;
-    --accent:#6ee7ff;
-    --danger:#ff7b7b;
-    --ok:#8cff9c;
-    --border:#2a2a2a;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%;}
-  body{
-    margin:0; color:#fff;
-    background:
-      linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
-      url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg") center / cover no-repeat fixed,
-      var(--bg);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
-  }
-  /* 手機避免 fixed 背景問題 */
-  @media (max-width:768px){ body{ background-attachment:scroll; } }
+/* ===================== 原有 CSS 全部保留 ===================== */
+:root{
+  --bg:#0b0b0b;
+  --panel:#151515cc;
+  --muted:#bbbbbb;
+  --accent:#6ee7ff;
+  --danger:#ff7b7b;
+  --ok:#8cff9c;
+  --border:#2a2a2a;
+}
+*{box-sizing:border-box}
+html,body{height:100%;}
+body{
+  margin:0; color:#fff;
+  background:
+    linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
+    url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg") center / cover no-repeat fixed,
+    var(--bg);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
+}
+@media (max-width:768px){ body{ background-attachment:scroll; } }
 
-  .container{ max-width:1100px; margin:32px auto; padding:0 16px; }
-  header{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px; }
-  h1{font-size:28px; margin:0;}
-  .controls{
-    display:flex; flex-wrap:wrap; gap:8px; align-items:center;
-    background:var(--panel); padding:10px 12px; border:1px solid var(--border); border-radius:14px;
-  }
-  .controls button, .controls select, .controls input{
-    background:#202020; color:#fff; border:1px solid var(--border);
-    padding:8px 10px; border-radius:10px; outline:none;
-  }
-  .controls button:hover{filter:brightness(1.12); cursor:pointer}
+.container{ max-width:1100px; margin:32px auto; padding:0 16px; }
+header{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px; }
+h1{font-size:28px; margin:0;}
+.controls{
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  background:var(--panel); padding:10px 12px; border:1px solid var(--border); border-radius:14px;
+}
+.controls button, .controls select, .controls input{
+  background:#202020; color:#fff; border:1px solid var(--border);
+  padding:8px 10px; border-radius:10px; outline:none;
+}
+.controls button:hover{filter:brightness(1.12); cursor:pointer}
 
 .row{
   display: grid;
   gap: 16px;
-  /* 左 1fr、右 1.35fr：右邊比較寬 */
   grid-template-columns: 1.11fr 1.35fr;
 }
-.row > *{ min-width: 0; } /* 防止內容把格子撐爆 */
-  @media (max-width: 900px){ .row{grid-template-columns:1fr;} }
+.row > *{ min-width: 0; }
+@media (max-width: 900px){ .row{grid-template-columns:1fr;} }
 
-  .card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; min-width:0; }
-  .card h2{margin:0 0 10px 0; font-size:20px;}
+.card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; min-width:0; }
+.card h2{margin:0 0 10px 0; font-size:20px;}
 
-  /* 新增一筆表單 */
-  form.grid{ display:grid; gap:12px; grid-template-columns: repeat(6, 1fr); }
-  form.grid > *{min-width:0}
-  form.grid input, form.grid select, form.grid button{
-    width:100%; background:#202020; color:#fff; border:1px solid var(--border); padding:10px; border-radius:10px;
-  }
-  form .col-span-2{grid-column: span 2;}
-  form .col-span-3{grid-column: span 3;}
-  form .col-span-6{grid-column: span 6;}
-  /* 手機：單欄滿版 */
-  @media (max-width: 600px){
-    form.grid{ grid-template-columns:1fr !important; grid-auto-flow:row; justify-items:stretch; }
-    form.grid > *{ grid-column:1 / -1 !important; width:100% !important; }
-  }
+form.grid{ display:grid; gap:12px; grid-template-columns: repeat(6, 1fr); }
+form.grid > *{min-width:0}
+form.grid input, form.grid select, form.grid button{
+  width:100%; background:#202020; color:#fff; border:1px solid var(--border); padding:10px; border-radius:10px;
+}
+form .col-span-2{grid-column: span 2;}
+form .col-span-3{grid-column: span 3;}
+form .col-span-6{grid-column: span 6;}
+@media (max-width: 600px){
+  form.grid{ grid-template-columns:1fr !important; grid-auto-flow:row; justify-items:stretch; }
+  form.grid > *{ grid-column:1 / -1 !important; width:100% !important; }
+}
 
-  table{width:100%; border-collapse:collapse; margin-top:10px;}
-  th, td{border-bottom:1px solid var(--border); padding:10px 8px; text-align:left; font-size:14px;}
-  th{color:var(--muted); font-weight:600;}
-  td.amount{font-variant-numeric: tabular-nums;}
-  .type-income{color:var(--ok); font-weight:600;}
-  .type-expense{color:var(--danger); font-weight:600;}
-  .actions button{ background:#2a2a2a; border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; }
+table{width:100%; border-collapse:collapse; margin-top:10px;}
+th, td{border-bottom:1px solid var(--border); padding:10px 8px; text-align:left; font-size:14px;}
+th{color:var(--muted); font-weight:600;}
+td.amount{font-variant-numeric: tabular-nums;}
+.type-income{color:var(--ok); font-weight:600;}
+.type-expense{color:var(--danger); font-weight:600;}
+.actions button{ background:#2a2a2a; border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; }
 
-  /* 五塊統計 */
 .summary{
   display: grid;
   gap: 12px;
-  /* 原本是 repeat(5, 1fr) 會硬塞 5 欄，改成自適應欄寬 */
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
-  .tile{ background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; }
-  .tile h3{margin:0 0 8px 0; font-size:14px; color:var(--muted)}
-  .tile .val{font-size:22px; font-variant-numeric: tabular-nums;}
-  .tile.income .val{color:var(--ok)}
-  .tile.expense .val{color:var(--danger)}
-  .tile.net .val{color:var(--accent)}
-  .muted{color:var(--muted)}
-  .right{display:flex;align-items:center;gap:8px;}
-  .spacer{flex:1}
+.tile{ background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; }
+.tile h3{margin:0 0 8px 0; font-size:14px; color:var(--muted)}
+.tile .val{font-size:22px; font-variant-numeric: tabular-nums;}
+.tile.income .val{color:var(--ok)}
+.tile.expense .val{color:var(--danger)}
+.tile.net .val{color:var(--accent)}
+.muted{color:var(--muted)}
+.right{display:flex;align-items:center;gap:8px;}
+.spacer{flex:1}
 
-  /* 分類小計：上下排（圓餅圖在下面） */
-  .cat-wrap{
-    display:flex; flex-direction:column; gap:20px; align-items:center; justify-content:center;
-  }
-  .cat-chart{ width:100%; display:flex; flex-direction:column; align-items:center; }
-  .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
-  .legend .key{ display:inline-flex; align-items:center; gap:6px; }
-  .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
+.cat-wrap{ display:flex; flex-direction:column; gap:20px; align-items:center; justify-content:center; }
+.cat-chart{ width:100%; display:flex; flex-direction:column; align-items:center; }
+.legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
+.legend .key{ display:inline-flex; align-items:center; gap:6px; }
+.legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
 
-  /* 最常記的 5 筆 */
-  .freq{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
-  .freq h3{ margin:0 0 8px; font-size:16px; }
-  .freq-item{
-    display:flex; align-items:center; justify-content:space-between;
-    gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; margin-top:6px;
-  }
-  .rerun{ background:#2a2a2a; color:#fff; border:1px solid var(--border); padding:6px 10px; border-radius:8px; cursor:pointer; }
-  .rerun:hover{ filter:brightness(1.12); }
+.freq{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
+.freq h3{ margin:0 0 8px; font-size:16px; }
+.freq-item{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; margin-top:6px;
+}
+.rerun{ background:#2a2a2a; color:#fff; border:1px solid var(--border); padding:6px 10px; border-radius:8px; cursor:pointer; }
+.rerun:hover{ filter:brightness(1.12); }
 
-  /* 每週支出統計 */
-  .weekly{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
-  .weekly h3{ margin:0 0 8px; font-size:16px; }
+.weekly{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
+.weekly h3{ margin:0 0 8px; font-size:16px; }
 </style>
 </head>
 <body>
