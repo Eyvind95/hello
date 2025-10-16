@@ -300,6 +300,15 @@ let db = firebase.firestore();
 let CURRENT_UID = null;
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+  // 讓登入狀態能被 PWA/行動裝置記住（LOCAL）
+firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
+
+// 偵測是否在 PWA/行動裝置（這些環境常會擋 popup）
+function isStandaloneLike () {
+  return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true
+      || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
 
 function userDoc(){ return db.collection('users').doc(CURRENT_UID); }
 function colEntries(){ return userDoc().collection('entries'); }
@@ -417,26 +426,37 @@ monthPicker.value = today.toISOString().slice(0,7);
 $("#date").value = ymd(today);
 
 /* ============== Google 登入 / 登出 ============== */
-async function googleLogin(){
-  try{
-    const res = await firebase.auth().signInWithPopup(googleProvider);
-    CURRENT_UID = res.user.uid;
-    updateLoginUI(res.user);
-    const loaded = await loadUnified();
-    entries = loaded.list; initials = loaded.initials;
-    renderWithEnsure();
-    alert("Google 登入成功！");
-  }catch(e){
-    const fallback = [
-      "auth/operation-not-supported-in-this-environment",
-      "auth/popup-blocked",
-      "auth/popup-closed-by-user",
-    ];
-    if(fallback.includes(e.code||"")){
+async function googleLogin () {
+  try {
+    // 在 PWA 或行動裝置 → 直接用 Redirect 最穩
+    if (isStandaloneLike()) {
       await firebase.auth().signInWithRedirect(googleProvider);
       return;
     }
-    alert("Google 登入失敗：" + e.message);
+
+    // 一般桌機頁面 → 先試 Popup
+    await firebase.auth().signInWithPopup(googleProvider);
+  } catch (e) {
+    const code = e.code || "";
+    // 這些錯誤改用 Redirect 再試一次
+    const needRedirect = [
+      "auth/operation-not-supported-in-this-environment",
+      "auth/popup-blocked",
+      "auth/popup-closed-by-user",
+      "auth/cancelled-popup-request"
+    ];
+    if (needRedirect.includes(code)) {
+      try {
+        await firebase.auth().signInWithRedirect(googleProvider);
+        return;
+      } catch (err2) {
+        alert("改用 Redirect 仍失敗：\n" + (err2.message || err2));
+      }
+    } else if (code === "auth/unauthorized-domain") {
+      alert("此網域未加入 Firebase 允許清單：請到 Firebase > Authentication > Settings > Authorized domains 加入 eyvind95.github.io");
+    } else {
+      alert("Google 登入失敗：\n" + (e.message || e));
+    }
   }
 }
 async function googleLogout(){
@@ -896,4 +916,5 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 </script>
 </body>
 </html>
+
 
