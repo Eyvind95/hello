@@ -32,9 +32,9 @@ html,body{height:100%;}
 body{
   margin:0; color:#fff;
   background:
-    linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
-    url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg") center / cover no-repeat fixed,
-    var(--bg);
+  linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
+  url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg") center / cover no-repeat fixed,
+  var(--bg);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
 }
 @media (max-width:768px){ body{ background-attachment:scroll; } }
@@ -120,159 +120,159 @@ td.amount{font-variant-numeric: tabular-nums;}
 </head>
 <body>
 <div class="container">
-  <header>
-    <h1>我的記帳本</h1>
-    <div class="controls">
-      <button id="prevMonth" title="上一個月">◀</button>
-      <input type="month" id="monthPicker" />
-      <button id="nextMonth" title="下一個月">▶</button>
-      <span class="muted" id="rangeHint"></span>
-      <div class="spacer"></div>
+<header>
+<h1>我的記帳本</h1>
+<div class="controls">
+<button id="prevMonth" title="上一個月">◀</button>
+<input type="month" id="monthPicker" />
+<button id="nextMonth" title="下一個月">▶</button>
+<span class="muted" id="rangeHint"></span>
+<div class="spacer"></div>
 
-      <button id="editInitBtn" title="設定本月期初">設定期初</button>
-      <button id="exportBtn" title="匯出 JSON">匯出</button>
-      <input id="importFile" type="file" accept="application/json" style="display:none" />
-      <button id="importBtn" title="匯入 JSON">匯入</button>
-      <button id="clearBtn" title="清空所有資料">清空</button>
+<button id="editInitBtn" title="設定本月期初">設定期初</button>
+<button id="exportBtn" title="匯出 JSON">匯出</button>
+<input id="importFile" type="file" accept="application/json" style="display:none" />
+<button id="importBtn" title="匯入 JSON">匯入</button>
+<button id="clearBtn" title="清空所有資料">清空</button>
 
-      <!-- Google 登入/登出 -->
-      <button id="fbLoginBtn"  title="用 Google 登入">登入</button>
-      <button id="fbLogoutBtn" title="登出" style="display:none">登出</button>
-      <span id="fbWho" class="muted">(未登入：匿名模式，僅本裝置)</span>
+<!-- Google 登入/登出 -->
+<button id="fbLoginBtn"  title="用 Google 登入">登入</button>
+<button id="fbLogoutBtn" title="登出" style="display:none">登出</button>
+<span id="fbWho" class="muted">(未登入：匿名模式，僅本裝置)</span>
 
-      <!-- GitHub 手動同步 -->
-      <button id="ghLoginBtn" title="登入 GitHub（輸入/更新 Token）">GitHub 登入</button>
-      <button id="ghSaveBtn"  title="把本機/雲端資料存到 GitHub">同步到 GitHub</button>
-      <button id="ghLoadBtn"  title="從 GitHub 載入到本機">從 GitHub 載入</button>
-    </div>
-  </header>
+<!-- GitHub 手動同步 -->
+<button id="ghLoginBtn" title="登入 GitHub（輸入/更新 Token）">GitHub 登入</button>
+<button id="ghSaveBtn"  title="把本機/雲端資料存到 GitHub">同步到 GitHub</button>
+<button id="ghLoadBtn"  title="從 GitHub 載入到本機">從 GitHub 載入</button>
+</div>
+</header>
 
-  <div class="row">
-    <!-- 左側：新增記帳 + 最常記的 5 筆 -->
-    <section class="card">
-      <h2>新增一筆</h2>
-      <form id="entryForm" class="grid">
-        <input class="col-span-2" type="date" id="date" required />
-        <select class="col-span-2" id="type" required>
-          <option value="expense">支出</option>
-          <option value="income">收入</option>
-        </select>
-        <input class="col-span-2" type="number" id="amount" inputmode="decimal" step="0.01" placeholder="金額" required />
+<div class="row">
+<!-- 左側：新增記帳 + 最常記的 5 筆 -->
+<section class="card">
+<h2>新增一筆</h2>
+<form id="entryForm" class="grid">
+<input class="col-span-2" type="date" id="date" required />
+<select class="col-span-2" id="type" required>
+<option value="expense">支出</option>
+<option value="income">收入</option>
+</select>
+<input class="col-span-2" type="number" id="amount" inputmode="decimal" step="0.01" placeholder="金額" required />
 
-        <!-- 類別：支出才顯示 -->
-        <select class="col-span-3" id="category">
-          <option value="">選擇類別</option>
-          <option value="吃">吃</option>
-          <option value="交通">交通</option>
-          <option value="玩">玩</option>
-          <option value="洗衣服">洗衣服</option>
-          <option value="其他">其他</option>
-        </select>
+<!-- 類別：支出才顯示 -->
+<select class="col-span-3" id="category">
+<option value="">選擇類別</option>
+<option value="吃">吃</option>
+<option value="交通">交通</option>
+<option value="玩">玩</option>
+<option value="洗衣服">洗衣服</option>
+<option value="其他">其他</option>
+</select>
 
-        <!-- 備註選單（新增「零食」在留空下面、早餐上面） -->
-        <select class="col-span-3" id="noteSelect" onchange="toggleNoteInput(this)">
-          <option value="">留空</option>
-          <option value="零食">零食</option>
-          <option value="早餐">早餐</option>
-          <option value="午餐">午餐</option>
-          <option value="晚餐">晚餐</option>
-          <option value="宵夜">宵夜</option>
-          <option value="書費">書費</option>
-          <option value="對齊現實">對齊現實</option>
-          <option value="custom">請輸入備註</option>
-        </select>
-        <input class="col-span-3" type="text" id="noteInput" placeholder="請輸入備註" style="display:none;" />
+<!-- 備註選單（新增「零食」在留空下面、早餐上面） -->
+<select class="col-span-3" id="noteSelect" onchange="toggleNoteInput(this)">
+<option value="">留空</option>
+<option value="零食">零食</option>
+<option value="早餐">早餐</option>
+<option value="午餐">午餐</option>
+<option value="晚餐">晚餐</option>
+<option value="宵夜">宵夜</option>
+<option value="書費">書費</option>
+<option value="對齊現實">對齊現實</option>
+<option value="custom">請輸入備註</option>
+</select>
+<input class="col-span-3" type="text" id="noteInput" placeholder="請輸入備註" style="display:none;" />
 
-        <button class="col-span-6" type="submit">加入</button>
-      </form>
-      <p class="muted" style="margin-top:8px;">提示：月份統計依日期（每月 1 日 ~ 該月最後一天）。</p>
+<button class="col-span-6" type="submit">加入</button>
+</form>
+<p class="muted" style="margin-top:8px;">提示：月份統計依日期（每月 1 日 ~ 該月最後一天）。</p>
 
-      <div class="freq">
-        <h3>最常記的 5 筆</h3>
-        <div id="freqList"></div>
-      </div>
-    </section>
+<div class="freq">
+<h3>最常記的 5 筆</h3>
+<div id="freqList"></div>
+</div>
+</section>
 
-    <!-- 右側：列表與統計 -->
-    <section class="card">
-      <h2>本月明細</h2>
-      <div class="summary">
-        <div class="tile income">
-          <h3>本月收入</h3>
-          <div class="val" id="sumIncome">$0</div>
-        </div>
-        <div class="tile expense">
-          <h3>本月支出</h3>
-          <div class="val" id="sumExpense">$0</div>
-        </div>
-        <div class="tile net">
-          <h3>本月淨額（收−支）</h3>
-          <div class="val" id="sumNet">$0</div>
-        </div>
-        <div class="tile">
-          <h3>本月期初（本錢）</h3>
-          <div class="val" id="sumInit">$0</div>
-        </div>
-        <div class="tile">
-          <h3>本月期末（結餘）</h3>
-          <div class="val" id="sumEnd">$0</div>
-        </div>
-      </div>
+<!-- 右側：列表與統計 -->
+<section class="card">
+<h2>本月明細</h2>
+<div class="summary">
+<div class="tile income">
+<h3>本月收入</h3>
+<div class="val" id="sumIncome">$0</div>
+</div>
+<div class="tile expense">
+<h3>本月支出</h3>
+<div class="val" id="sumExpense">$0</div>
+</div>
+<div class="tile net">
+<h3>本月淨額（收−支）</h3>
+<div class="val" id="sumNet">$0</div>
+</div>
+<div class="tile">
+<h3>本月期初（本錢）</h3>
+<div class="val" id="sumInit">$0</div>
+</div>
+<div class="tile">
+<h3>本月期末（結餘）</h3>
+<div class="val" id="sumEnd">$0</div>
+</div>
+</div>
 
-      <!-- 分類小計（只計支出） + 圓餅圖（在下面） -->
-      <div class="card" style="background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; margin-top:12px;">
-        <h3 style="margin:0 0 8px 0; font-size:16px; color:var(--muted)">本月分類小計（支出）</h3>
-        <div class="cat-wrap">
-          <!-- 上面：表格 -->
-          <table id="catTable" style="max-width:860px;width:100%;">
-            <thead>
-              <tr>
-                <th style="width:120px">分類</th>
-                <th style="width:140px">金額小計</th>
-                <th>筆數</th>
-              </tr>
-            </thead>
-            <tbody id="catTbody"></tbody>
-          </table>
+<!-- 分類小計（只計支出） + 圓餅圖（在下面） -->
+<div class="card" style="background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; margin-top:12px;">
+<h3 style="margin:0 0 8px 0; font-size:16px; color:var(--muted)">本月分類小計（支出）</h3>
+<div class="cat-wrap">
+<!-- 上面：表格 -->
+<table id="catTable" style="max-width:860px;width:100%;">
+<thead>
+<tr>
+<th style="width:120px">分類</th>
+<th style="width:140px">金額小計</th>
+<th>筆數</th>
+</tr>
+</thead>
+<tbody id="catTbody"></tbody>
+</table>
 
-          <!-- 下面：圓餅圖 -->
-          <div class="cat-chart" style="margin-top:6px;">
-            <canvas id="catPie" width="360" height="240" style="width:100%;max-width:420px;height:auto;display:block;"></canvas>
-            <div id="catLegend" class="legend" style="margin-top:8px;"></div>
-          </div>
-        </div>
-      </div>
+<!-- 下面：圓餅圖 -->
+<div class="cat-chart" style="margin-top:6px;">
+<canvas id="catPie" width="360" height="240" style="width:100%;max-width:420px;height:auto;display:block;"></canvas>
+<div id="catLegend" class="legend" style="margin-top:8px;"></div>
+</div>
+</div>
+</div>
 
-      <!-- 每週支出統計（本月） -->
-      <div class="weekly">
-        <h3>每週支出統計（本月）</h3>
-        <table>
-          <thead>
-            <tr>
-              <th style="width:80px">第幾週</th>
-              <th style="width:200px">日期範圍</th>
-              <th style="width:120px">支出金額</th>
-            </tr>
-          </thead>
-          <tbody id="weeklyTbody"></tbody>
-        </table>
-      </div>
+<!-- 每週支出統計（本月） -->
+<div class="weekly">
+<h3>每週支出統計（本月）</h3>
+<table>
+<thead>
+<tr>
+<th style="width:80px">第幾週</th>
+<th style="width:200px">日期範圍</th>
+<th style="width:120px">支出金額</th>
+</tr>
+</thead>
+<tbody id="weeklyTbody"></tbody>
+</table>
+</div>
 
-      <table id="table">
-        <thead>
-          <tr>
-            <th style="width:110px">日期</th>
-            <th style="width:80px">收/支</th>
-            <th style="width:110px">金額</th>
-            <th>類別</th>
-            <th>備註</th>
-            <th style="width:90px">操作</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </section>
-  </div>
+<table id="table">
+<thead>
+<tr>
+<th style="width:110px">日期</th>
+<th style="width:80px">收/支</th>
+<th style="width:110px">金額</th>
+<th>類別</th>
+<th>備註</th>
+<th style="width:90px">操作</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+</section>
+</div>
 </div>
 
 <script>
@@ -341,9 +341,9 @@ function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<
 function monthKey(y, m){ return `${y}-${String(m).padStart(2,'0')}`; } // m:1-12
 function prevMonthOf(y, m){ const d=new Date(Date.UTC(y, m-1, 1)); d.setUTCMonth(d.getUTCMonth()-1); return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1}; }
 function getMonthRange(year, monthIdx /*0-11*/){
-  const start = new Date(Date.UTC(year, monthIdx, 1));
-  const end = new Date(Date.UTC(year, monthIdx + 1, 0));
-  return { start, end };
+const start = new Date(Date.UTC(year, monthIdx, 1));
+const end = new Date(Date.UTC(year, monthIdx + 1, 0));
+return { start, end };
 }
 
 /* 本機儲存 */
@@ -385,19 +385,19 @@ async function cloudSaveInitials(obj){
 async function loadUnified(){
   try{
     if(CURRENT_UID){
-      const [list, ini] = await Promise.all([cloudLoad(), cloudLoadInitials()]);
-      saveLocal(list); saveInitialsLocal(ini);
-      return { list, initials: ini };
-    }
-  }catch(e){ alert("雲端讀取失敗，改用本機資料"); }
-  return { list: loadLocal(), initials: loadInitialsLocal() };
+  const [list, ini] = await Promise.all([cloudLoad(), cloudLoadInitials()]);
+  saveLocal(list); saveInitialsLocal(ini);
+  return { list, initials: ini };
+}
+}catch(e){ alert("雲端讀取失敗，改用本機資料"); }
+return { list: loadLocal(), initials: loadInitialsLocal() };
 }
 async function saveUnified(){
   if(CURRENT_UID){
     try{ await Promise.all([cloudSave(entries), cloudSaveInitials(initials)]); return; }
-    catch(e){ alert("雲端儲存失敗，資料先留在本機"); }
-  }
-  saveLocal(entries); saveInitialsLocal(initials);
+catch(e){ alert("雲端儲存失敗，資料先留在本機"); }
+}
+saveLocal(entries); saveInitialsLocal(initials);
 }
 
 /* ============== 狀態與初始化 ============== */
@@ -534,7 +534,7 @@ $("#importFile").addEventListener("change", async (e) => {
     const data = JSON.parse(text);
     if(!data || !Array.isArray(data.entries) || typeof data.initials !== "object") throw new Error("格式錯誤");
     for(const it of data.entries){ if(!it.id || !it.date || !it.type || !it.amount) throw new Error("明細缺少必要欄位"); }
-    entries = data.entries;
+      entries = data.entries;
     initials = data.initials;
     await saveUnified();
     alert("匯入完成！");
@@ -616,22 +616,37 @@ function renderWithEnsure(){
   ensureInitialForMonth(y, m);
   render();
 }
-function render(){
-  const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
-  const {start, end} = getMonthRange(y, m - 1);
+function render() {
+  const [y, m] = monthPicker.value.split("-").map(x => parseInt(x, 10));
+  const { start, end } = getMonthRange(y, m - 1);
 
   // 區間提示
   $("#rangeHint").textContent = `${y}年${m}月 1 日 ~ ${y}年${m}月 ${end.getUTCDate()} 日`;
 
-  // 本月資料
+  // 整個月的資料（給統計用）
   const monthItems = entries
-    .filter(e => { const d = toDate(e.date); return d >= start && d <= end; })
-    .sort((a,b) => (a.date === b.date ? a.createdAt - b.createdAt : a.date.localeCompare(b.date)));
+  .filter(e => {
+    const d = toDate(e.date);
+    return d >= start && d <= end;
+  })
+  .sort((a, b) =>
+    a.date === b.date ? a.createdAt - b.createdAt : a.date.localeCompare(b.date)
+    );
 
-  // 明細表
+  // 只顯示近七天的明細（畫面）
+  const now = new Date();
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setUTCDate(now.getUTCDate() - 6); // 含今天共7天
+
+  const recentItems = monthItems.filter(it => {
+    const d = toDate(it.date);
+    return d >= sevenDaysAgo && d <= now;
+  });
+
+  // ===== 明細表 =====
   const tbody = $("#tbody");
   tbody.innerHTML = "";
-  for(const it of monthItems){
+  for (const it of recentItems) {
     const tr = document.createElement("tr");
     const typeClass = it.type === "income" ? "type-income" : "type-expense";
     tr.innerHTML = `
@@ -644,31 +659,33 @@ function render(){
     `;
     tbody.appendChild(tr);
   }
-  $$("#tbody .del").forEach(btn => btn.addEventListener("click", () => removeEntry(btn.dataset.id)));
+  $$("#tbody .del").forEach(btn =>
+    btn.addEventListener("click", () => removeEntry(btn.dataset.id))
+    );
 
-  // 統計（收入/支出/淨額）
-  let income = 0, expense = 0;
-  for(const it of monthItems){ if(it.type === "income") income += it.amount; else expense += it.amount; }
-  income = round2(income); expense = round2(expense);
+  // ===== 統計（整月）=====
+  let income = 0,
+  expense = 0;
+  for (const it of monthItems) {
+    if (it.type === "income") income += it.amount;
+    else expense += it.amount;
+  }
+  income = round2(income);
+  expense = round2(expense);
   const net = round2(income - expense);
   $("#sumIncome").textContent = fmtMoney(income);
   $("#sumExpense").textContent = fmtMoney(expense);
   $("#sumNet").textContent = fmtMoney(net);
 
-  // 期初 & 期末
+  // 期初與期末
   const mk = monthKey(y, m);
   const initAmt = Number(initials[mk] ?? 0);
   const endAmt = round2(initAmt + income - expense);
   $("#sumInit").textContent = fmtMoney(initAmt);
-  $("#sumEnd").textContent  = fmtMoney(endAmt);
-
-  // 分類小計 + 圓餅圖
+  $("#sumEnd").textContent = fmtMoney(endAmt);
+  // 其它報表（仍用整月）
   renderCategorySummary(monthItems);
-
-  // 最常記的 5 筆（金額＋類別）
   renderFrequentPairs(monthItems);
-
-  // 每週支出統計
   renderWeekly(monthItems, y, m);
 }
 
@@ -702,11 +719,11 @@ function renderCategorySummary(monthItems){
   const legend = document.getElementById("catLegend");
   if(legend){
     legend.innerHTML = (total<=0)
-      ? `<span class="muted">本月尚無支出</span>`
-      : data.filter(d=>d.value>0).map(d=>{
-          const pct=((d.value/total)*100).toFixed(1);
-          return `<span class="key"><span class="dot" style="background:${d.color}"></span>${d.label} ${pct}%</span>`;
-        }).join(" ");
+    ? `<span class="muted">本月尚無支出</span>`
+    : data.filter(d=>d.value>0).map(d=>{
+      const pct=((d.value/total)*100).toFixed(1);
+      return `<span class="key"><span class="dot" style="background:${d.color}"></span>${d.label} ${pct}%</span>`;
+    }).join(" ");
   }
 }
 function drawPie(canvasId, data, total){
@@ -769,8 +786,8 @@ function renderFrequentPairs(list){
   }
 
   const arr = Array.from(countMap.values())
-    .sort((a,b)=> b.count - a.count || b.last - a.last)
-    .slice(0,5);
+  .sort((a,b)=> b.count - a.count || b.last - a.last)
+  .slice(0,5);
 
   box.innerHTML = arr.map(p => `
     <div class="freq-item">
@@ -780,31 +797,31 @@ function renderFrequentPairs(list){
   `).join("");
 
   // 點「再記一次」：沿用金額+類別、日期=今天、type=支出
-  $$("#freqList .rerun").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const amount = Number(btn.dataset.amount);
-      const category = btn.dataset.category || "";
-      const entry = {
-        id: crypto.randomUUID(),
-        date: ymd(new Date()),
-        type: 'expense',
-        amount: round2(amount),
-        category,
-        note: '',
-        createdAt: Date.now()
-      };
-      entries.push(entry);
-      await saveUnified();
-      renderWithEnsure();
+    $$("#freqList .rerun").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const amount = Number(btn.dataset.amount);
+        const category = btn.dataset.category || "";
+        const entry = {
+          id: crypto.randomUUID(),
+          date: ymd(new Date()),
+          type: 'expense',
+          amount: round2(amount),
+          category,
+          note: '',
+          createdAt: Date.now()
+        };
+        entries.push(entry);
+        await saveUnified();
+        renderWithEnsure();
+      });
     });
-  });
-}
+  }
 
 /* 每週支出統計（本月）－ 週一~週日，範圍裁在本月內 */
-function renderWeekly(monthItems, y, m){
-  const {start, end} = getMonthRange(y, m-1);
+  function renderWeekly(monthItems, y, m){
+    const {start, end} = getMonthRange(y, m-1);
   // 找到本月第一個週一
-  const first = new Date(start);
+    const first = new Date(start);
   const day = first.getUTCDay();           // 0 Sun, 1 Mon, ...
   const diff = (day === 0) ? 1 : (1 - day); // shift to Monday
   first.setUTCDate(first.getUTCDate() + diff);
@@ -872,14 +889,14 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 /* 每次開頁把「新增日期」設為今天（避免改過日期後卡住） */
 (function initToday(){
   const dateInput = document.querySelector('input[type="date"]');
-  if (dateInput) {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    dateInput.value = `${yyyy}-${mm}-${dd}`;
-  }
-})();
-</script>
+    if (dateInput) {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      dateInput.value = `${yyyy}-${mm}-${dd}`;
+    }
+  })();
+  </script>
 </body>
 </html>
