@@ -172,7 +172,17 @@
            <option value="洗衣服">洗衣服</option>
           <option value="其他">其他</option>
         </select>
-        <input class="col-span-3" type="text" id="note" placeholder="備註（可留空）" />
+      <select class="col-span-3" id="noteSelect" onchange="toggleNoteInput(this)">
+  <option value="">留空</option>
+  <option value="早餐">早餐</option>
+  <option value="午餐">午餐</option>
+  <option value="晚餐">晚餐</option>
+  <option value="宵夜">宵夜</option>
+  <option value="書費">書費</option>
+  <option value="對齊現實">對齊現實</option>
+  <option value="custom">請輸入備註</option>
+</select>
+<input class="col-span-3" type="text" id="noteInput" placeholder="請輸入備註" style="display:none;" />
         <button class="col-span-6" type="submit">加入</button>
       </form>
       <p class="muted" style="margin-top:8px;">提示：月份統計依日期（每月 1 日 ~ 該月最後一天）。</p>
@@ -464,7 +474,14 @@ $("#entryForm").addEventListener("submit", async (e) => {
   const type = $("#type").value; // 'income' | 'expense'
   const amountStr = $("#amount").value.trim();
   const category = type === "expense" ? $("#category").value : "";
-  const note = $("#note").value.trim();
+let note = "";
+const noteSelect = $("#noteSelect");
+const noteInput = $("#noteInput");
+if (noteSelect.value === "custom") {
+  note = noteInput.value.trim();
+} else {
+  note = noteSelect.value;
+}
 
   if(!date || !type || !amountStr){ return; }
   const amount = parseFloat(amountStr);
@@ -845,7 +862,15 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
     dateInput.value = `${yyyy}-${mm}-${dd}`;
   }
 })();
-
+function toggleNoteInput(sel) {
+  const input = document.getElementById("noteInput");
+  if (sel.value === "custom") {
+    input.style.display = "block";
+  } else {
+    input.style.display = "none";
+    input.value = ""; // 清空手動輸入框
+  }
+}
 /* 啟動：先讀資料、再渲染 */
 (async () => {
   const loaded = await loadUnified();
@@ -855,8 +880,4 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 })();
 </script>
 </body>
-
 </html>
-
-
-
