@@ -276,6 +276,48 @@ td.amount{font-variant-numeric: tabular-nums;}
 </div>
 
 <script>
+  <script>
+/* ===== 版本偵測：改這個字串就能強制所有端更新 ===== */
+const APP_VERSION = '2025-10-16-1';
+
+/* 開頁就先檢查版本；不同就加 ?v=… 重新載入，確保抓到最新版檔案 */
+(function ensureLatest() {
+  try {
+    const KEY = 'app_version';
+    const saved = localStorage.getItem(KEY);
+
+    if (saved !== APP_VERSION) {
+      localStorage.setItem(KEY, APP_VERSION);
+
+      // 把目前網址加上一個 ?v=APP_VERSION 參數（或更新既有的 v）
+      const url = new URL(window.location.href);
+      url.searchParams.set('v', APP_VERSION);
+
+      // 只在真的有變動時才跳轉，避免無限 reload
+      if (window.location.href !== url.toString()) {
+        window.location.replace(url.toString());
+        return; // 跳轉就先結束，後面程式等新頁面再跑
+      }
+    }
+  } catch (e) {
+    // 就算失敗也不影響主流程
+    console.warn('version check failed:', e);
+  }
+})();
+
+/* 如果裝過 PWA/有 Service Worker，這裡把舊的註銷，避免吃舊快取 */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations()
+    .then(regs => regs.forEach(reg => reg.unregister()))
+    .catch(() => {});
+}
+</script>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+
+<!-- 如果你有 manifest，記得帶版本參數；沒有就可以省略這行 -->
+<link rel="manifest" href="manifest.webmanifest?v=2025-10-16-1">
 /* ============== Firebase（請用你的專案設定） ============== */
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
@@ -909,3 +951,4 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 </body>
 
 </html>
+
