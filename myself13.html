@@ -281,6 +281,8 @@
 </div>
 
 <script>
+  const BUILD = "v11-7day-local-2025-10-16";
+console.log("Build:", BUILD);
 /* ============== Firebase（沿用你的專案設定） ============== */
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
@@ -628,14 +630,19 @@ function render(){
     .filter(e => { const d = toDate(e.date); return d >= start && d <= end; })
     .sort((a,b) => (a.date === b.date ? a.createdAt - b.createdAt : a.date.localeCompare(b.date)));
 
-  // ★ 明細表：只顯示近 7 天（含今天）
-  const now = new Date();
-  const sevenDaysAgo = new Date(now);
-  sevenDaysAgo.setUTCDate(now.getUTCDate() - 6);
-  const recentItems = monthItems.filter(it => {
-    const d = toDate(it.date);
-    return d >= sevenDaysAgo && d <= now;
-  });
+// 只顯示近七天的明細（畫面）— 以本地時區為準，避免 UTC 混用
+const todayLocal = new Date();
+todayLocal.setHours(0, 0, 0, 0);          // 今天 00:00 本地時間
+const sevenDaysAgo = new Date(todayLocal);
+sevenDaysAgo.setDate(todayLocal.getDate() - 6); // 含今天共 7 天
+
+const endOfToday = new Date(todayLocal);
+endOfToday.setHours(23, 59, 59, 999);
+
+const recentItems = monthItems.filter(it => {
+  const d = toDate(it.date);              // 你原本就是本地 00:00
+  return d >= sevenDaysAgo && d <= endOfToday;
+});
 
   // 明細表（近 7 天）
   const tbody = $("#tbody");
@@ -889,3 +896,4 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 </script>
 </body>
 </html>
+
