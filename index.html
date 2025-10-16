@@ -1,1 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>我的網站</title>
+<link rel="icon" href="/hello/apps/ledger/6.png">
+<style>
+  :root{
+    --bg:#0b0b0b; --panel:#151515cc; --border:#2a2a2a; --muted:#bbb;
+    --accent:#6ee7ff; --ok:#8cff9c;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;color:#fff;
+    background:
+      linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.35)),
+      url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg") center/cover no-repeat fixed,
+      var(--bg);
+    font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"PingFang TC","Noto Sans TC","Microsoft JhengHei",Arial;
+  }
+  @media (max-width:768px){ body{ background-attachment:scroll; } }
+  .wrap{max-width:1100px;margin:32px auto;padding:0 16px;}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+  h1{margin:0;font-size:28px}
+  .sub{color:var(--muted);font-size:14px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:16px}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(3,minmax(0,1fr))}
+  @media (max-width:900px){ .grid{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:600px){ .grid{grid-template-columns:1fr} }
+  .card{
+    background:#101010;border:1px solid var(--border);border-radius:16px;padding:14px;
+    display:flex;flex-direction:column;gap:10px;min-height:160px;
+  }
+  .card h3{margin:0;font-size:18px}
+  .card p{margin:0;color:var(--muted);font-size:14px;line-height:1.5}
+  .actions{margin-top:auto;display:flex;gap:8px}
+  .btn{
+    appearance:none;border:1px solid var(--border);background:#202020;color:#fff;
+    padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px;
+  }
+  .btn:hover{filter:brightness(1.1)}
+  .tag{font-size:12px;color:var(--muted)}
+  footer{margin-top:18px;color:var(--muted);font-size:13px;display:flex;gap:12px;flex-wrap:wrap}
+  .hero{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .hero .right{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>我的網站</h1>
+      <div class="sub">把常用的小工具集中在一起：記帳、待辦、筆記…</div>
+    </div>
+    <div class="right">
+      <!-- 主站不強制登入；若要做全站登入可在這裡放按鈕 -->
+      <a class="btn" href="https://github.com/Eyvind95/hello" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </header>
 
+  <section class="panel">
+    <h2 style="margin:0 0 10px 0;font-size:20px;">我的 Apps</h2>
+    <div class="grid">
+      <!-- 記帳本 -->
+      <article class="card">
+        <div class="tag">工具</div>
+        <h3>記帳本</h3>
+        <p>雲端/本機雙存、月/週統計、分類圓餅、最常記的 5 筆、GitHub 同步、強制更新。</p>
+        <div class="actions">
+          <a class="btn" href="/hello/apps/ledger/" aria-label="開啟記帳本">進入</a>
+          <a class="btn" href="/hello/apps/ledger/?v=now" aria-label="以防快取問題，用參數開啟">以最新版開啟</a>
+        </div>
+      </article>
+
+      <!-- 先占位：待辦 -->
+      <article class="card">
+        <div class="tag">即將推出</div>
+        <h3>待辦清單</h3>
+        <p>簡潔的每日待辦與提醒（規劃中）。</p>
+        <div class="actions">
+          <a class="btn" href="/hello/apps/todo/" aria-label="待辦清單">預覽</a>
+        </div>
+      </article>
+
+      <!-- 先占位：筆記 -->
+      <article class="card">
+        <div class="tag">即將推出</div>
+        <h3>快速筆記</h3>
+        <p>Markdown 小筆記、雲端同步（規劃中）。</p>
+        <div class="actions">
+          <a class="btn" href="/hello/apps/notes/" aria-label="快速筆記">預覽</a>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <footer>
+    <span>© 2025 Me</span>
+    <span>·</span>
+    <a class="btn" href="/hello/apps/ledger/manifest.webmanifest" target="_blank" rel="noopener">主站 icon/設定</a>
+  </footer>
+</div>
+</body>
+</html>
