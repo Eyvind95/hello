@@ -1,294 +1,78 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>每日任務</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>皮卡的每日任務</title>
 
-<link rel="manifest" href="./daily.webmanifest">
-<link rel="icon" href="./6.png">
-<meta name="theme-color" content="#101010">
+  <!-- PWA -->
+  <link rel="manifest" href="./daily.webmanifest" />
+  <link rel="icon" href="./6.png" type="image/png" />
+  <meta name="theme-color" content="#0b0b0b" />
 
-<style>
-:root{
-  --bg:#0b0b0b;
-  --panel:#151515cc;
-  --muted:#bbbbbb;
-  --border:#2a2a2a;
-  --ok:#8cff9c;
-  --warn:#ffd966;
-  --danger:#ff7b7b;
-  --accent:#6ee7ff;
-}
-*{box-sizing:border-box}
-html,body{height:100%}
-body{
-  margin:0;color:#fff;
-  background:
-    linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),
-    url("../data/72tu0U1 (1).png") center/cover no-repeat fixed,
-    var(--bg);
-  font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"PingFang TC","Noto Sans TC","Microsoft JhengHei","Helvetica Neue",Arial,sans-serif;
-}
-@media (max-width:768px){ body{ background-attachment:scroll; } }
-
-.container{max-width:1100px;margin:20px auto;padding:0 12px;}
-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-h1{margin:0;font-size:24px}
-.tag{padding:4px 8px;border:1px solid var(--border);border-radius:999px;background:#101010;color:var(--muted);font-size:12px}
-
-.grid{display:grid;gap:12px;grid-template-columns: repeat(2,1fr)}
-@media (max-width:900px){.grid{grid-template-columns: 1fr}}
-
-.card{
-  background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:12px;min-width:0;
-}
-.card h3{margin:0 0 8px;font-size:18px;display:flex;align-items:center;gap:8px}
-.icon{width:28px;height:28px;border-radius:6px;object-fit:cover;border:1px solid #0006}
-.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
-.badge{padding:2px 6px;border:1px solid var(--border);border-radius:6px;background:#0f0f0f;color:var(--muted);font-size:12px}
-.chk{display:flex;align-items:center;gap:6px;margin-right:10px}
-.chk input{width:18px;height:18px}
-.btn{background:#222;border:1px solid var(--border);color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
-.btn:hover{filter:brightness(1.1)}
-.note{color:var(--muted);font-size:12px}
-.kv{display:flex;align-items:center;gap:6px}
-.kv .num{font-variant-numeric: tabular-nums;}
-
-.warn{color:var(--warn)}
-.ok{color:var(--ok)}
-.danger{color:var(--danger)}
-.sep{height:6px}
-</style>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <style>
+    :root{
+      --bg:#0b0b0b;
+      --panel:#101010cc;
+      --border:#2a2a2a;
+      --accent:#6ee7ff;
+      --ok:#8cff9c;
+      --muted:#bbb;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;color:#fff;
+      background:
+        linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),
+        url("./6.png") center/cover no-repeat fixed,
+        var(--bg);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+    }
+    @media (max-width:768px){ body{ background-attachment:scroll; } }
+    .container{max-width:1000px; margin:24px auto; padding:0 12px;}
+    header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    h1{margin:0;font-size:22px}
+    .who{color:var(--muted)}
+    .btn{background:#1e293b;color:#fff;border:1px solid var(--border);padding:8px 10px;border-radius:10px;cursor:pointer}
+    .btn:hover{filter:brightness(1.1)}
+    .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:12px}
+    .card h2{margin:0 0 8px 0;font-size:18px;display:flex;align-items:center;gap:8px}
+    .muted{color:var(--muted)}
+    .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .pill{display:inline-block;border:1px solid var(--border);border-radius:999px;padding:4px 8px;background:#111}
+    input[type="number"]{width:90px;background:#0f172a;color:#fff;border:1px solid var(--border);border-radius:8px;padding:6px}
+    .chk{display:flex;align-items:center;gap:6px}
+  </style>
 </head>
 <body>
-<div class="container">
-  <header>
-    <h1>每日任務</h1>
-    <span class="tag">每天 05:00 重置</span>
-    <span class="tag">20:00 / 22:00 提醒未完成</span>
-    <span class="tag">資料保存在本機（localStorage）</span>
-    <div class="spacer"></div>
-    <span id="fbWho" class="tag">(未登入)</span>
-<button id="fbLoginBtn" class="btn">Google 登入</button>
-<button id="fbLogoutBtn" class="btn" style="display:none">登出</button>
-    <button id="forceRefresh" class="btn">強制更新</button>
-  </header>
+  <div class="container">
+    <header>
+      <h1>皮卡的每日任務</h1>
+      <span id="who" class="who">(未登入：本機紀錄)</span>
+      <div style="flex:1"></div>
+      <button id="fbLoginBtn" class="btn">登入 Google</button>
+      <button id="fbLogoutBtn" class="btn" style="display:none;">登出</button>
+    </header>
 
-  <!-- 8 張圖順序：a~h -->
-  <div class="grid">
+    <div class="card" style="margin-bottom:12px">
+      <div class="row">
+        <span class="muted">今天（05:00 作為跨日點）未完成每日：</span>
+        <span id="pendingBadge" class="pill">0 個</span>
+      </div>
+    </div>
 
-    <!-- 1. 原神（亞服）-->
-    <section class="card" id="gs-asia">
-      <h3><img src="./a.jpg" class="icon" alt=""> 原神（亞服）</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="gsAsia_daily"> 每日</label>
-        <div class="kv">
-          體力：
-          <button class="btn" data-act="resinDec" data-key="gsAsia_resin">−1</button>
-          <span class="num" id="gsAsia_resin_txt">160</span> / 200
-          <button class="btn" data-act="resinInc" data-key="gsAsia_resin">+1</button>
-          <button class="btn" data-act="resinSet" data-key="gsAsia_resin">設定</button>
-          <span class="note">（每 8 分+1）</span>
-        </div>
-      </div>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="gsAsia_abyss"> 淵月螺旋（1日、16日重置；前一天提醒）</label>
-      </div>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="gsAsia_poem"> 劇詩（每月 1 日重置；前一天提醒）</label>
-      </div>
-      <div class="row">
-        <div class="badge">版本更新（每 42 天；2 天前提醒）</div>
-        <span class="note" id="gsAsia_ver_txt"></span>
-      </div>
-    </section>
+    <div id="content" class="grid"></div>
+  </div>
 
-    <!-- 2. 原神（台服） -->
-    <section class="card" id="gs-tw">
-      <h3><img src="./a.jpg" class="icon" alt=""> 原神（台服）</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="gsTw_daily"> 每日</label>
-        <div class="kv">
-          體力：
-          <button class="btn" data-act="resinDec" data-key="gsTw_resin">−1</button>
-          <span class="num" id="gsTw_resin_txt">160</span> / 200
-          <button class="btn" data-act="resinInc" data-key="gsTw_resin">+1</button>
-          <button class="btn" data-act="resinSet" data-key="gsTw_resin">設定</button>
-          <span class="note">（每 8 分+1）</span>
-        </div>
-      </div>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="gsTw_abyss"> 淵月螺旋（1日、16日重置；前一天提醒）</label>
-      </div>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="gsTw_poem"> 劇詩（每月 1 日重置；前一天提醒）</label>
-      </div>
-      <div class="row">
-        <div class="badge">版本更新（每 42 天；2 天前提醒）</div>
-        <span class="note" id="gsTw_ver_txt"></span>
-      </div>
-    </section>
+  <!-- Firebase v8 compat -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
-    <!-- 3. 崩壞：星穹鐵道 -->
-    <section class="card" id="hsr">
-      <h3><img src="./b.jpg" class="icon" alt=""> 崩壞：星穹鐵道</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="hsr_daily"> 每日</label>
-      </div>
-      <div class="sep"></div>
-      <div class="row"><div class="badge">混沌回憶</div><span class="note" id="hsr_cTxt"></span></div>
-      <div class="row"><div class="badge">虛構敘事</div><span class="note" id="hsr_sTxt"></span></div>
-      <div class="row"><div class="badge">末日幻影</div><span class="note" id="hsr_dTxt"></span></div>
-      <div class="row"><div class="badge">異相仲裁</div><span class="note" id="hsr_aTxt"></span></div>
-      <div class="row"><div class="badge">版本更新</div><span class="note" id="hsr_vTxt"></span></div>
-    </section>
-
-    <!-- 4. 絕區零（ZZZ） -->
-    <section class="card" id="zzz">
-      <h3><img src="./c.png" class="icon" alt=""> 絕區零</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="zzz_daily"> 每日</label>
-      </div>
-      <div class="row">
-        <div class="kv">
-          體力（織夢晶）：
-          <span class="num" id="zzz_power_txt">480</span> / 960（底線 240）
-          <button class="btn" data-act="zzzAdd">+80</button>
-          <button class="btn" data-act="zzzSet">設定</button>
-        </div>
-        <span class="note">達 960 會回到 240（你的規則）</span>
-      </div>
-    </section>
-
-    <!-- 5. HoYoLAB -->
-    <section class="card" id="hoyolab">
-      <h3><img src="./d.png" class="icon" alt=""> HoYoLAB</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="hyl_daily"> 每日</label>
-      </div>
-    </section>
-
-    <!-- 6. 貓咪大戰爭 -->
-    <section class="card" id="cats">
-      <h3><img src="./e.jpg" class="icon" alt=""> 貓咪大戰爭</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="cats_daily"> 每日</label>
-      </div>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="cats_weekend"> 週末關卡（六、日；每天重置）</label>
-      </div>
-    </section>
-
-    <!-- 7. Pokémon GO -->
-    <section class="card" id="pogo">
-      <h3><img src="./f.jpg" class="icon" alt=""> Pokémon GO</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="pogo_spin"> 轉一次補給站</label>
-        <label class="chk"><input type="checkbox" data-key="pogo_catch"> 抓一隻寶可夢</label>
-      </div>
-    </section>
-
-    <!-- 8. 諾提里森 -->
-    <section class="card" id="noti">
-      <h3><img src="./g.jpg" class="icon" alt=""> 諾提里森</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="noti_daily"> 每日</label>
-      </div>
-    </section>
-
-    <!-- 9. 新世界狂歡 -->
-    <section class="card" id="nsfw">
-      <h3><img src="./h.jpg" class="icon" alt=""> 新世界狂歡</h3>
-      <div class="row">
-        <label class="chk"><input type="checkbox" data-key="ns_daily"> 每日</label>
-      </div>
-      <div class="row">
-        <div class="kv">
-          金幣卷（3 天一輪）：目前
-          <span class="num" id="ns_ticket_txt">2/3</span>
-          <button class="btn" data-act="nsAdd">+1 天</button>
-          <button class="btn" data-act="nsReset">清零</button>
-        </div>
-      </div>
-    </section>
-
-  </div><!-- grid -->
-</div><!-- container -->
-
-<script>
   <script>
-// ===== Firebase 初始化（你的 daily 專案）=====
-const firebaseConfig = {
-  apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
-  authDomain: "eyvind95-182f0.firebaseapp.com",
-  projectId: "eyvind95-182f0",
-  storageBucket: "eyvind95-182f0.firebasestorage.app",
-  messagingSenderId: "105770576221",
-  appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
-};
-function initFirebaseApp(){ if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); } }
-initFirebaseApp();
-
-const googleProvider = new firebase.auth.GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
-
-let CURRENT_UID = null;
-
-// 依使用者切換不同 localStorage key（anon/UID）
-const keyFor = (uid) => 'daily_state_v1_' + (uid || 'anon');
-let STATE_KEY = keyFor(null);
-
-function updateLoginUI(user){
-  if(user){
-    document.getElementById('fbWho').textContent = `已登入：${user.email || 'Google 帳號'}`;
-    document.getElementById('fbLoginBtn').style.display = 'none';
-    document.getElementById('fbLogoutBtn').style.display = '';
-  }else{
-    document.getElementById('fbWho').textContent = '(未登入)';
-    document.getElementById('fbLoginBtn').style.display = '';
-    document.getElementById('fbLogoutBtn').style.display = 'none';
-  }
-}
-
-// 登入/登出
-async function googleLogin(){
-  try{
-    const res = await firebase.auth().signInWithPopup(googleProvider);
-    // 這裡 onAuthStateChanged 會接手載入使用者狀態
-  }catch(e){
-    // 若手機瀏覽器不支援 popup，退回 redirect
-    const fallback = [
-      "auth/operation-not-supported-in-this-environment",
-      "auth/popup-blocked",
-      "auth/popup-closed-by-user",
-    ];
-    if(fallback.includes(e.code||"")){
-      await firebase.auth().signInWithRedirect(googleProvider);
-      return;
-    }
-    alert('Google 登入失敗：' + e.message);
-  }
-}
-async function googleLogout(){
-  await firebase.auth().signOut();
-}
-
-// 綁定按鈕
-document.addEventListener('DOMContentLoaded', ()=>{
-  const btnIn  = document.getElementById('fbLoginBtn');
-  const btnOut = document.getElementById('fbLogoutBtn');
-  if(btnIn)  btnIn.addEventListener('click', googleLogin);
-  if(btnOut) btnOut.addEventListener('click', googleLogout);
-});
-
-<!-- 這三個 <script> 一定要在 daily.html 內，且在這段程式碼之前就已經載入 -->
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-<script>
-  // 1) 初始化 Firebase (專案 daily 的配置)
+  /* ================= Firebase ================= */
   const firebaseConfig = {
     apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
     authDomain: "eyvind95-182f0.firebaseapp.com",
@@ -297,428 +81,413 @@ document.addEventListener('DOMContentLoaded', ()=>{
     messagingSenderId: "105770576221",
     appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
   };
-  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-
-  // 2) Google provider
+  if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); }
+  const db = firebase.firestore();
   const googleProvider = new firebase.auth.GoogleAuthProvider();
   googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-  // 3) 小工具：localStorage 載入/保存 + 預設 state
-  function load(key, fallback){ try{ return JSON.parse(localStorage.getItem(key)) ?? fallback; }catch(e){ return fallback; } }
+  /* =============== 工具 =============== */
+  const CLIENT_ID = Math.random().toString(36).slice(2);
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const ymd = d => d.toISOString().slice(0,10);
+
+  function load(key, fallback){ try{return JSON.parse(localStorage.getItem(key))||fallback;}catch(e){return fallback;} }
   function save(key, obj){ localStorage.setItem(key, JSON.stringify(obj)); }
 
   function defaultState(){
+    const today = new Date();
     return {
+      // 勾選（每日、週末等）
       checks: {},
-      gsAsia_resin: 160,
+
+      // 原神體力（兩個帳號）
+      gsAsia_resin: 160,      // 0~200
       gsTw_resin: 160,
+
+      // 原神體力計時器（8分鐘 +1），null 表示未啟動
       resinTimerStart: null,
+
+      // ZZZ 體力（滿 960，底 240）
       zzz_power: 480,
+
+      // 新世界狂歡 金幣券
       ns_ticket: 2,
-      ns_ticket_date: ymd(new Date()),
+      ns_ticket_date: ymd(today),
+
+      // 星穹鐵道 / 版本等固定日期
       genshin_ver_base: '2025-10-22',
       hsr_c_next: '2025-10-27',
       hsr_s_next: '2025-11-24',
       hsr_d_next: '2025-11-10',
       hsr_a_next: '2025-11-05',
       hsr_v_next: '2025-11-05',
-      lastReset: ymd(new Date())
+
+      // 最近一次 05:00 重置過的日期（若不同就清每日）
+      lastReset: ymd(today),
+
+      // 雲端同步欄位
+      _clientUpdatedAt: 0
     };
   }
 
-  // 4) 讓這兩個是「全域變數」（render、persist 會用到）
+  /* =============== 狀態/儲存（本機＋雲端） =============== */
   let CURRENT_UID = null;
   let STATE_KEY = 'daily_state_v1_anon';
   let state = load(STATE_KEY, defaultState());
-  function persist(){ save(STATE_KEY, state); }
+  let cloudUnsub = null;
+  let saveTimer = null;
 
-  // 5) 登入/登出按鈕（記得 daily.html 內要有 id="fbLoginBtn" / "fbLogoutBtn" 的按鈕）
+  function persistLocal(){
+    state._clientUpdatedAt = Date.now();
+    save(STATE_KEY, state);
+  }
+
+  function userDailyDoc(){
+    return db.collection('users').doc(CURRENT_UID)
+             .collection('daily').doc('state');
+  }
+
+  async function cloudLoad(){
+    const snap = await userDailyDoc().get();
+    return snap.exists ? snap.data() : null;
+  }
+
+  async function cloudSaveDebounced(){
+    persistLocal();
+    if(!CURRENT_UID) return;               // 未登入只存本機
+    if(saveTimer) clearTimeout(saveTimer); // 簡單去抖動
+    saveTimer = setTimeout(async ()=>{
+      try{
+        await userDailyDoc().set({
+          state,
+          clientId: CLIENT_ID,
+          clientUpdatedAt: state._clientUpdatedAt,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge:true });
+      }catch(e){ console.warn('cloud save failed', e); }
+    }, 400);
+  }
+
+  // 啟用雲端即時同步（避免循環：忽略自己 clientId）
+  function startCloudWatch(){
+    if(!CURRENT_UID){ if(cloudUnsub) cloudUnsub(); cloudUnsub=null; return; }
+    if(cloudUnsub) cloudUnsub();
+
+    cloudUnsub = userDailyDoc().onSnapshot(snap=>{
+      const data = snap.data();
+      if(!data) return;
+      if(data.clientId === CLIENT_ID) return; // 自己剛寫入，忽略
+      const remote = data.state || {};
+      const rUpdated = Number(data.clientUpdatedAt||0);
+      if(rUpdated > (state._clientUpdatedAt||0)){
+        state = remote;
+        STATE_KEY = 'daily_state_v1_' + (CURRENT_UID || 'anon');
+        save(STATE_KEY, state);
+        render();
+      }
+    });
+  }
+
+  // 登入/登出
   async function googleLogin(){
     try{
-      const res = await firebase.auth().signInWithPopup(googleProvider);
-      // 成功後 onAuthStateChanged 會被觸發，不用在這裡做其他事
+      await firebase.auth().signInWithPopup(googleProvider);
     }catch(e){
-      // 行動裝置可能擋彈窗，用 redirect 備援
-      if ((e.code||'').includes('popup')) {
-        await firebase.auth().signInWithRedirect(googleProvider);
-      } else {
-        alert('Google 登入失敗：' + (e.message||e));
-      }
+      if((e.code||'').includes('popup')) await firebase.auth().signInWithRedirect(googleProvider);
+      else alert('登入失敗：' + e.message);
     }
   }
-  async function googleLogout(){
-    await firebase.auth().signOut();
-    // onAuthStateChanged 會被觸發
-  }
-  document.addEventListener('click', (ev)=>{
-    if (ev.target.id === 'fbLoginBtn')  googleLogin();
-    if (ev.target.id === 'fbLogoutBtn') googleLogout();
+  async function googleLogout(){ await firebase.auth().signOut(); }
+
+  document.addEventListener('click', ev=>{
+    if(ev.target.id==='fbLoginBtn') googleLogin();
+    if(ev.target.id==='fbLogoutBtn') googleLogout();
   });
 
-  // 6) 登入狀態監聽（★重點）
-  firebase.auth().onAuthStateChanged(user=>{
+  firebase.auth().onAuthStateChanged(async user=>{
     CURRENT_UID = user ? user.uid : null;
+    STATE_KEY   = 'daily_state_v1_' + (CURRENT_UID || 'anon');
 
-    // 依使用者切換不同 localStorage key
-    STATE_KEY = 'daily_state_v1_' + (CURRENT_UID || 'anon');
-
-    // 讀入該使用者的 daily 狀態；第一次會用預設值
-    state = load(STATE_KEY, defaultState());
-    persist();   // 立即寫回，確保 key 存在
-
-    // 更新登入 UI
+    // 取本機、雲端，選較新
+    const local = load(STATE_KEY, defaultState());
+    let newer = local;
+    if(CURRENT_UID){
+      try{
+        const remote = await cloudLoad();
+        if(remote){
+          const r = remote.state || {};
+          const rUpdated = Number(remote.clientUpdatedAt||0);
+          if(rUpdated > (local._clientUpdatedAt||0)) newer = r;
+        }
+      }catch(e){ console.warn('cloud load failed', e); }
+    }
+    state = newer;
+    persistLocal();     // 以選定的較新版本覆寫本機
+    startCloudWatch();  // 啟動/關閉即時同步
     updateLoginUI(user);
-
-    // 重新渲染畫面（你的 render() 已經會去使用 state 了）
-    try{
-      render();
-    }catch(e){
-      console.error(e);
-      alert('渲染失敗：' + e);
-    }
-  });
-
-  // 7) UI 顯示（你可以自由調整）
-  function updateLoginUI(user){
-    const who = document.getElementById('who');
-    const loginBtn  = document.getElementById('fbLoginBtn');
-    const logoutBtn = document.getElementById('fbLogoutBtn');
-    if (who) who.textContent = user ? `已登入：${user.email||'Google 帳號'}` : '(未登入：僅本機)';
-    if (loginBtn)  loginBtn.style.display  = user ? 'none' : '';
-    if (logoutBtn) logoutBtn.style.display = user ? '' : 'none';
-  }
-
-  // 8) 你的 ymd / render() 等工具要先存在
-  function ymd(d){ return d.toISOString().slice(0,10); }
-</script>
-
-/* ====== 小工具 ====== */
-const $  = s => document.querySelector(s);
-const $$ = s => Array.from(document.querySelectorAll(s));
-const pad2 = n => String(n).padStart(2,'0');
-const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-const todayUTC = () => { const d=new Date(); return new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); };
-
-function load(key, def){ try{ const v = localStorage.getItem(key); return v==null? def : JSON.parse(v);}catch(e){ return def; } }
-function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
-
-/* ====== 狀態儲存 ====== */
-// 產生預設狀態（跟你原本的內容一樣）
-function defaultState(){
-  return {
-    checks: {},
-    gsAsia_resin: 160,
-    gsTw_resin: 160,
-    resinTimerStart: null,      // 原神樹脂計時起點
-    zzz_power: 480,             // ZZZ 目前體力
-    ns_ticket: 2,               // 新世界狂歡 金幣券 0/1/2/3
-    ns_ticket_date: ymd(new Date()), // 金幣券計算用日期
-    genshin_ver_base: '2025-10-22',  // 原神版本基準日（後面會自動+42天）
-    hsr_c_next: '2025-10-27',        // 混沌回憶 下一次
-    hsr_s_next: '2025-11-24',        // 虛構敘事 下一次
-    hsr_d_next: '2025-11-10',        // 末日幻影 下一次
-    hsr_a_next: '2025-11-05',        // 異相仲裁 下一次
-    hsr_v_next: '2025-11-05',        // 星鐵版本 下一次
-    lastReset: ymd(new Date())       // 每日重置記錄
-  };
-}
-
-// 依使用者切換不同 localStorage key（anon/UID）
-// 注意：CURRENT_UID/STATE_KEY 在登入模組也會用到，保持為同一份
-let CURRENT_UID = CURRENT_UID || null;
-let STATE_KEY = STATE_KEY || ('daily_state_v1_' + (CURRENT_UID || 'anon'));
-
-let state = load(STATE_KEY, defaultState());
-function persist(){ save(STATE_KEY, state); }
-
-/* ====== 每日 05:00 自動重置 ====== */
-function maybeResetDaily(){
-  const now = new Date();
-  const last = new Date(state.lastReset + 'T00:00:00');
-  const resetToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0, 0);
-  const need = (now >= resetToday) && (ymd(now) !== state.lastReset);
-  if(need){
-    state.checks = {};
-    state.lastReset = ymd(now);
-    // ZZZ 底線 240：若目前小於 240 則補到 240（你的規則敘述是「會自己回到240」）
-    if(state.zzz_power < 240) state.zzz_power = 240;
-    persist();
     render();
-  }
-}
-maybeResetDaily();
-setInterval(maybeResetDaily, 60*1000);
+  });
 
-/* ====== 通知：20:00 / 22:00 提醒未完成 ====== */
-async function ensureNotifyPerm(){
-  if(!('Notification' in window)) return false;
-  if(Notification.permission === 'granted') return true;
-  if(Notification.permission !== 'denied'){
-    const r = await Notification.requestPermission();
-    return r === 'granted';
+  function updateLoginUI(user){
+    $('#who').textContent = user ? `已登入：${user.email}` : '(未登入：本機紀錄)';
+    $('#fbLoginBtn').style.display = user ? 'none':'';
+    $('#fbLogoutBtn').style.display = user ? '':'none';
   }
-  return false;
-}
-function scheduleNightAlerts(){
-  const now = new Date();
-  const targets = [
-    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0),
-    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 0, 0),
-  ];
-  targets.forEach(t=>{
-    let ms = t - now;
-    if(ms < 0) ms += 24*60*60*1000; // 明天
-    setTimeout(async ()=>{
-      const ok = await ensureNotifyPerm();
-      if(!ok) return;
-      const undone = countUndoneDaily();
-      if(undone>0){
-        new Notification('每日提示', { body:`你還有 ${undone} 項每日未完成！`, icon:'./6.png' });
+
+  /* ================= 功能區 ================= */
+
+  // 05:00 為跨日：若過日就清「每日」勾選
+  function ensureDailyReset(){
+    const now = new Date();
+    const cutoff = new Date(); cutoff.setHours(5,0,0,0);
+    const last = state.lastReset ? new Date(state.lastReset) : new Date(0);
+    if(now >= cutoff && ymd(last) !== ymd(now)){
+      // 清「每日」前綴的項目
+      for(const k of Object.keys(state.checks||{})){
+        if(k.startsWith('daily:')) delete state.checks[k];
       }
-      scheduleNightAlerts(); // 再排下一輪
-    }, ms);
-  });
-}
-function countUndoneDaily(){
-  const keys = [
-    'gsAsia_daily','gsTw_daily','hsr_daily','zzz_daily','hyl_daily','cats_daily',
-    'pogo_spin','pogo_catch','noti_daily','ns_daily'
-  ];
-  return keys.reduce((n,k)=> n + (state.checks[k]?0:1), 0);
-}
-scheduleNightAlerts();
-ensureNotifyPerm();
-
-/* ====== 原神：樹脂每 8 分自動 +1，直到 200 ====== */
-function tickResin(){
-  const now = Date.now();
-  if(!state.resinTimerStart) state.resinTimerStart = now;
-  const elapsed = Math.floor((now - state.resinTimerStart)/60000); // 分
-  const add = Math.floor(elapsed / 8);
-  if(add>0){
-    ['gsAsia_resin','gsTw_resin'].forEach(k=>{
-      state[k] = Math.min(200, state[k] + add);
-    });
-    state.resinTimerStart += add*8*60000;
-    persist();
-    renderResinOnly();
-  }
-}
-setInterval(tickResin, 30*1000);
-
-/* ====== ZZZ：+80；>=960 回到 240 ====== */
-function zzzAdd(){
-  let v = state.zzz_power + 80;
-  if(v >= 960) v = 240;
-  state.zzz_power = v;
-  persist(); render();
-}
-
-/* ====== 新世界狂歡：三天一輪 ====== */
-function nsAdd(){
-  // 以日為單位 +1（2/3 -> 3/3 -> 清零）
-  let [cur, total] = getNSTicket();
-  cur += 1;
-  if(cur >= 3){ cur = 0; }
-  state.ns_ticket = cur;
-  state.ns_ticket_date = ymd(new Date());
-  persist(); render();
-}
-function nsReset(){
-  state.ns_ticket = 0;
-  state.ns_ticket_date = ymd(new Date());
-  persist(); render();
-}
-function getNSTicket(){ return [state.ns_ticket, 3]; }
-
-/* ====== HSR / Genshin 固定日期文案 ====== */
-function fmtDate(s){
-  const d = new Date(s + 'T00:00:00');
-  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-}
-// 42 天週期（傳入下一次日期字串，顯示：下一次 XXXX-XX-XX，距離 N 天）
-function txtNext42(sNext){
-  const d = new Date(sNext+'T00:00:00');
-  const now = todayUTC();
-  const diff = Math.ceil((d-now)/(24*3600*1000));
-  return `下一次：${fmtDate(sNext)}（剩 ${diff} 天）`;
-}
-// 原神固定重置：1日/16日 & 1日
-function nextAbyssTxt(){
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const d = now.getDate();
-  let next;
-  if(d < 1) next = new Date(y,m,1);
-  else if(d < 16) next = new Date(y,m,16);
-  else next = new Date(y,m+1,1);
-  const days = Math.ceil((next - now)/(24*3600*1000));
-  return `下一次：${fmtDate(ymd(next))}（剩 ${days} 天；前一天提醒）`;
-}
-function nextPoemTxt(){
-  const now = new Date();
-  let next = new Date(now.getFullYear(), now.getMonth(), 1);
-  if(now >= next){ // 如果已過 1 號就下個月 1 號
-    next = new Date(now.getFullYear(), now.getMonth()+1, 1);
-  }
-  const days = Math.ceil((next - now)/(24*3600*1000));
-  return `下一次：${fmtDate(ymd(next))}（剩 ${days} 天；前一天提醒）`;
-}
-function nextGenshinVerTxt(base){
-  // 42 天一版，基準 base 為已知下一次。顯示兩天前提醒
-  const baseD = new Date(base+'T00:00:00');
-  const now = todayUTC();
-  let d = new Date(baseD);
-  while(d < now){ d.setDate(d.getDate()+42); }
-  const diff = Math.ceil((d-now)/(24*3600*1000));
-  return `下一次：${fmtDate(ymd(d))}（剩 ${diff} 天；兩天前提醒）`;
-}
-
-/* ====== 勾選、數值變更 ====== */
-function bindUI(){
-  // 勾選
-  $$('.chk input[type=checkbox]').forEach(chk=>{
-    const key = chk.dataset.key;
-    chk.checked = !!state.checks[key];
-    chk.addEventListener('change', ()=>{
-      state.checks[key] = chk.checked;
-      persist();
-    });
-  });
-
-  // 樹脂按鈕
-  $$('[data-act="resinInc"]').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      const k = b.dataset.key;
-      state[k] = Math.min(200, (state[k]||0)+1);
-      persist(); renderResinOnly();
-    });
-  });
-  $$('[data-act="resinDec"]').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      const k = b.dataset.key;
-      state[k] = Math.max(0, (state[k]||0)-1);
-      persist(); renderResinOnly();
-    });
-  });
-  $$('[data-act="resinSet"]').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      const k = b.dataset.key;
-      const cur = state[k]||0;
-      const v = prompt('設定樹脂（0~200）：', String(cur));
-      if(v===null) return;
-      let n = Number(v);
-      if(!Number.isFinite(n)) return;
-      n = Math.max(0, Math.min(200, Math.round(n)));
-      state[k]=n; persist(); renderResinOnly();
-    });
-  });
-
-  // ZZZ
-  $('[data-act="zzzAdd"]').addEventListener('click', zzzAdd);
-  $('[data-act="zzzSet"]').addEventListener('click', ()=>{
-    const v = prompt('設定 ZZZ 體力（240~960；80 的倍數）：', String(state.zzz_power||240));
-    if(v===null) return;
-    let n = Number(v);
-    if(!Number.isFinite(n)) return;
-    n = Math.max(240, Math.min(960, Math.round(n/80)*80));
-    state.zzz_power = n; persist(); render();
-  });
-
-  // 新世界狂歡
-  $('[data-act="nsAdd"]').addEventListener('click', nsAdd);
-  $('[data-act="nsReset"]').addEventListener('click', nsReset);
-
-  // 強制更新（清快取+重載）
-  $('#forceRefresh').addEventListener('click', async ()=>{
-    if('caches' in window){
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k=>caches.delete(k)));
+      state.lastReset = ymd(now);
+      cloudSaveDebounced();
     }
-    if('serviceWorker' in navigator){
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r=>r.unregister()));
-    }
-    location.reload(true);
-  });
-}
-
-function renderResinOnly(){
-  $('#gsAsia_resin_txt').textContent = state.gsAsia_resin;
-  $('#gsTw_resin_txt').textContent = state.gsTw_resin;
-}
-function render(){
-  bindUI();
-  renderResinOnly();
-  // ZZZ
-  $('#zzz_power_txt').textContent = state.zzz_power;
-  // 新世界狂歡
-  const [cur, total] = getNSTicket();
-  $('#ns_ticket_txt').textContent = `${cur}/${total}`;
-
-  // HSR/版本/原神固定重置文案
-  $('#hsr_cTxt').textContent = txtNext42(state.hsr_c_next);
-  $('#hsr_sTxt').textContent = txtNext42(state.hsr_s_next);
-  $('#hsr_dTxt').textContent = txtNext42(state.hsr_d_next);
-  $('#hsr_aTxt').textContent = txtNext42(state.hsr_a_next);
-  $('#hsr_vTxt').textContent = txtNext42(state.hsr_v_next);
-
-  $('#gsAsia_ver_txt').textContent = nextGenshinVerTxt(state.genshin_ver_base);
-  $('#gsTw_ver_txt').textContent   = nextGenshinVerTxt(state.genshin_ver_base);
-
-  // 淵月／劇詩
-  const abyss = nextAbyssTxt();
-  const poem  = nextPoemTxt();
-  // 顯示到兩張卡（亞/台）
-  // 這裡我們只在描述中呈現，實際提醒由夜間提醒+前一天邏輯處理
-  //（簡化：顯示文字，提醒採通知）
-  // 你若想把文字放到頁面，也可額外加 <span id="..."></span> 來顯示
-}
-
-/* ====== 前一天/兩天前提醒（在頁面開著時生效；PWA 安裝後一樣會跳系統通知） ====== */
-function scheduleEdgeReminders(){
-  const now = new Date();
-  const todayStr = ymd(now);
-
-  // 原神：淵月 1/16；劇詩 1號（前一天）
-  function remindIfDayBefore(targetDay){ // targetDay: Date
-    const diff = Math.ceil((targetDay - now)/(24*3600*1000));
-    if(diff === 1) new Notification('提醒', { body:'原神的月度內容明天重置，記得打勾！', icon:'./6.png' });
   }
-  // 本月
-  const y = now.getFullYear(), m = now.getMonth();
-  const next1 = new Date(y,m,1), next16 = new Date(y,m,16);
-  if(now < next1) remindIfDayBefore(next1);
-  else if(now < next16) remindIfDayBefore(next16);
-  else remindIfDayBefore(new Date(y,m+1,1));
-  // 劇詩
-  const poemNext = (now.getDate() < 1) ? new Date(y,m,1) : new Date(y,m+1,1);
-  remindIfDayBefore(poemNext);
 
-  // 原神版本（基準 + 42n；兩天前）
-  const base = new Date(state.genshin_ver_base+'T00:00:00');
-  let v = new Date(base);
-  const todayU = todayUTC();
-  while(v <= todayU) v.setDate(v.getDate()+42);
-  const diff2 = Math.ceil((v - now)/(24*3600*1000));
-  if(diff2 === 2) new Notification('提醒', { body:'原神版本兩天後更新，該版本內容別忘了收尾！', icon:'./6.png' });
-}
-ensureNotifyPerm().then(scheduleEdgeReminders);
+  // 原神體力：8 分鐘 +1，滿 200；可手動調整
+  function startResinTick(){
+    if(state.resinTimerStart) return;
+    state.resinTimerStart = Date.now();
+    setInterval(()=>{
+      const deltaMin = Math.floor((Date.now() - state.resinTimerStart)/60000);
+      if(deltaMin <= 0) return;
+      const inc = Math.floor(deltaMin/8);
+      if(inc > 0){
+        state.resinTimerStart = Date.now();
+        state.gsAsia_resin = Math.min(200, state.gsAsia_resin + inc);
+        state.gsTw_resin   = Math.min(200, state.gsTw_resin + inc);
+        render();
+        cloudSaveDebounced();
+      }
+    }, 60000);
+  }
 
-/* ====== 啟動 ====== */
-render();
+  // 計算未完成每日（label 以 daily: 前綴簡單辨識）
+  function computePending(){
+    const keys = Object.keys(state.checks||{});
+    let n = 0;
+    for(const k of keys){
+      if(k.startsWith('daily:') && !state.checks[k]) n++;
+    }
+    return n;
+  }
 
-/* ====== 註冊 SW（僅每日任務頁） ====== */
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./sw-daily.js')
-    .then(reg=>console.log('daily SW registered', reg))
-    .catch(console.error);
+  /* ================= 渲染 ================= */
 
-  // 如需 FCM 背景推播，另外註冊（保持檔案存在即可）
-  navigator.serviceWorker.register('./firebase-messaging-sw.js')
-    .catch(()=>{});
-}
-</script>
+  function chk(id, label){
+    const v = !!state.checks[id];
+    return `
+      <label class="chk">
+        <input type="checkbox" ${v?'checked':''} data-chk="${id}" />
+        <span>${label}</span>
+      </label>
+    `;
+  }
+
+  function render(){
+    ensureDailyReset();
+    $('#pendingBadge').textContent = computePending() + ' 個';
+
+    $('#content').innerHTML = `
+      <!-- 原神（亞服） -->
+      <section class="card">
+        <h2>原神（亞服）</h2>
+        <div class="row">
+          <span class="muted">體力</span>
+          <input type="number" id="gsAsia" min="0" max="200" step="1" value="${state.gsAsia_resin}" />
+          <span>/ 200</span>
+          <button class="btn" id="gsAsiaPlus">+1</button>
+          <button class="btn" id="gsAsiaMinus">-1</button>
+          <button class="btn" id="resinTick">啟動+計時（每 8 分鐘 +1）</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          ${chk('daily:gsAsia:commission','每日委託')}
+          ${chk('gsAsia:abyss:1','淵月螺旋（每月1/16重置）')}
+          ${chk('gsAsia:chronicle:1','劇詩（每月1號重置）')}
+        </div>
+      </section>
+
+      <!-- 原神（台服） -->
+      <section class="card">
+        <h2>原神（台服）</h2>
+        <div class="row">
+          <span class="muted">體力</span>
+          <input type="number" id="gsTw" min="0" max="200" step="1" value="${state.gsTw_resin}" />
+          <span>/ 200</span>
+          <button class="btn" id="gsTwPlus">+1</button>
+          <button class="btn" id="gsTwMinus">-1</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          ${chk('daily:gsTw:commission','每日委託')}
+          ${chk('gsTw:abyss:1','淵月螺旋（每月1/16重置）')}
+          ${chk('gsTw:chronicle:1','劇詩（每月1號重置）')}
+        </div>
+      </section>
+
+      <!-- 絕區零 -->
+      <section class="card">
+        <h2>絕區零</h2>
+        <div class="row">
+          <span class="muted">體力</span>
+          <input type="number" id="zzz" min="240" max="960" step="1" value="${state.zzz_power}" />
+          <span>/ 960（底 240，滿則重置回 240）</span>
+          <button class="btn" id="zzzDone">使用 +80</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          ${chk('daily:zzz','每日')}
+        </div>
+      </section>
+
+      <!-- HoYoLAB -->
+      <section class="card">
+        <h2>HoYoLAB</h2>
+        <div class="row">
+          ${chk('daily:hoyolab','每日')}
+        </div>
+      </section>
+
+      <!-- 貓咪大戰爭 -->
+      <section class="card">
+        <h2>貓咪大戰爭</h2>
+        <div class="row">
+          ${chk('daily:bc','每日')}
+          ${chk('weekend:bc','週末關卡（六/日）')}
+        </div>
+      </section>
+
+      <!-- Pokémon GO -->
+      <section class="card">
+        <h2>Pokémon GO</h2>
+        <div class="row">
+          ${chk('daily:pogo:spin','轉一個補給站')}
+          ${chk('daily:pogo:caught','捉一隻寶可夢')}
+        </div>
+      </section>
+
+      <!-- 諾提里森 -->
+      <section class="card">
+        <h2>諾提里森</h2>
+        <div class="row">
+          ${chk('daily:note','每日')}
+        </div>
+      </section>
+
+      <!-- 新世界狂歡 -->
+      <section class="card">
+        <h2>新世界狂歡</h2>
+        <div class="row">
+          ${chk('daily:nsc','每日')}
+        </div>
+        <div class="row" style="margin-top:6px">
+          <span class="muted">金幣卷：</span>
+          <span class="pill"><strong>${state.ns_ticket}</strong> / 3</span>
+          <span class="muted">（每 3 天一次，現況日期：${state.ns_ticket_date}）</span>
+          <button class="btn" id="nscUse">使用 1 張</button>
+        </div>
+      </section>
+
+      <!-- 星穹鐵道 排程 -->
+      <section class="card">
+        <h2>星穹鐵道（排程）</h2>
+        <div class="row">
+          <span class="muted">混沌回憶：</span><span class="pill">${state.hsr_c_next}</span>
+          <span class="muted">虛構敘事：</span><span class="pill">${state.hsr_s_next}</span>
+          <span class="muted">末日幻影：</span><span class="pill">${state.hsr_d_next}</span>
+          <span class="muted">異相仲裁：</span><span class="pill">${state.hsr_a_next}</span>
+          <span class="muted">版本更新：</span><span class="pill">${state.hsr_v_next}</span>
+        </div>
+      </section>
+    `;
+
+    // 綁定事件
+    // 勾選
+    $$('input[type="checkbox"][data-chk]').forEach(el=>{
+      el.addEventListener('change', ()=>{
+        state.checks[el.dataset.chk] = el.checked;
+        cloudSaveDebounced();
+        $('#pendingBadge').textContent = computePending() + ' 個';
+      });
+    });
+
+    // 原神（亞）
+    $('#gsAsia').addEventListener('change', e=>{
+      state.gsAsia_resin = Math.max(0, Math.min(200, Number(e.target.value)||0));
+      cloudSaveDebounced();
+    });
+    $('#gsAsiaPlus').addEventListener('click', ()=>{
+      state.gsAsia_resin = Math.min(200, (state.gsAsia_resin||0)+1);
+      $('#gsAsia').value = state.gsAsia_resin;
+      cloudSaveDebounced();
+    });
+    $('#gsAsiaMinus').addEventListener('click', ()=>{
+      state.gsAsia_resin = Math.max(0, (state.gsAsia_resin||0)-1);
+      $('#gsAsia').value = state.gsAsia_resin;
+      cloudSaveDebounced();
+    });
+
+    // 原神（台）
+    $('#gsTw').addEventListener('change', e=>{
+      state.gsTw_resin = Math.max(0, Math.min(200, Number(e.target.value)||0));
+      cloudSaveDebounced();
+    });
+    $('#gsTwPlus').addEventListener('click', ()=>{
+      state.gsTw_resin = Math.min(200, (state.gsTw_resin||0)+1);
+      $('#gsTw').value = state.gsTw_resin;
+      cloudSaveDebounced();
+    });
+    $('#gsTwMinus').addEventListener('click', ()=>{
+      state.gsTw_resin = Math.max(0, (state.gsTw_resin||0)-1);
+      $('#gsTw').value = state.gsTw_resin;
+      cloudSaveDebounced();
+    });
+
+    // 啟動原神體力自動 +1
+    $('#resinTick').addEventListener('click', ()=>{
+      startResinTick();
+      alert('已啟動：每 8 分鐘 +1（兩個帳號都會加）。');
+    });
+
+    // ZZZ
+    $('#zzz').addEventListener('change', e=>{
+      let v = Number(e.target.value)||240;
+      v = Math.max(240, Math.min(960, v));
+      state.zzz_power = v;
+      cloudSaveDebounced();
+    });
+    $('#zzzDone').addEventListener('click', ()=>{
+      let v = (state.zzz_power||240) + 80;
+      if(v >= 960) v = 240;
+      state.zzz_power = v;
+      $('#zzz').value = v;
+      cloudSaveDebounced();
+    });
+
+    // 新世界狂歡 金幣卷
+    $('#nscUse').addEventListener('click', ()=>{
+      if(state.ns_ticket > 0) state.ns_ticket -= 1;
+      else state.ns_ticket = 0;
+      $('#content').querySelector('.pill strong').textContent = state.ns_ticket;
+      cloudSaveDebounced();
+    });
+  }
+
+  /* =============== Service Worker 註冊 =============== */
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./sw-daily.js')
+      .then(()=>console.log('SW registered'))
+      .catch(e=>console.warn('SW failed',e));
+  }
+
+  // 初渲染
+  render();
+  </script>
 </body>
-
 </html>
