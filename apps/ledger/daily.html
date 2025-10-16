@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>每日任務</title>
+
+<link rel="manifest" href="./daily.webmanifest">
+<link rel="icon" href="./6.png">
+<meta name="theme-color" content="#101010">
+
+<style>
+:root{
+  --bg:#0b0b0b;
+  --panel:#151515cc;
+  --muted:#bbbbbb;
+  --border:#2a2a2a;
+  --ok:#8cff9c;
+  --warn:#ffd966;
+  --danger:#ff7b7b;
+  --accent:#6ee7ff;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;color:#fff;
+  background:
+    linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),
+    url("../data/72tu0U1 (1).png") center/cover no-repeat fixed,
+    var(--bg);
+  font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"PingFang TC","Noto Sans TC","Microsoft JhengHei","Helvetica Neue",Arial,sans-serif;
+}
+@media (max-width:768px){ body{ background-attachment:scroll; } }
+
+.container{max-width:1100px;margin:20px auto;padding:0 12px;}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+h1{margin:0;font-size:24px}
+.tag{padding:4px 8px;border:1px solid var(--border);border-radius:999px;background:#101010;color:var(--muted);font-size:12px}
+
+.grid{display:grid;gap:12px;grid-template-columns: repeat(2,1fr)}
+@media (max-width:900px){.grid{grid-template-columns: 1fr}}
+
+.card{
+  background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:12px;min-width:0;
+}
+.card h3{margin:0 0 8px;font-size:18px;display:flex;align-items:center;gap:8px}
+.icon{width:28px;height:28px;border-radius:6px;object-fit:cover;border:1px solid #0006}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.badge{padding:2px 6px;border:1px solid var(--border);border-radius:6px;background:#0f0f0f;color:var(--muted);font-size:12px}
+.chk{display:flex;align-items:center;gap:6px;margin-right:10px}
+.chk input{width:18px;height:18px}
+.btn{background:#222;border:1px solid var(--border);color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+.btn:hover{filter:brightness(1.1)}
+.note{color:var(--muted);font-size:12px}
+.kv{display:flex;align-items:center;gap:6px}
+.kv .num{font-variant-numeric: tabular-nums;}
+
+.warn{color:var(--warn)}
+.ok{color:var(--ok)}
+.danger{color:var(--danger)}
+.sep{height:6px}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>每日任務</h1>
+    <span class="tag">每天 05:00 重置</span>
+    <span class="tag">20:00 / 22:00 提醒未完成</span>
+    <span class="tag">資料保存在本機（localStorage）</span>
+    <div class="spacer"></div>
+    <button id="forceRefresh" class="btn">強制更新</button>
+  </header>
+
+  <!-- 8 張圖順序：a~h -->
+  <div class="grid">
+
+    <!-- 1. 原神（亞服）-->
+    <section class="card" id="gs-asia">
+      <h3><img src="./a.jpg" class="icon" alt=""> 原神（亞服）</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="gsAsia_daily"> 每日</label>
+        <div class="kv">
+          體力：
+          <button class="btn" data-act="resinDec" data-key="gsAsia_resin">−1</button>
+          <span class="num" id="gsAsia_resin_txt">160</span> / 200
+          <button class="btn" data-act="resinInc" data-key="gsAsia_resin">+1</button>
+          <button class="btn" data-act="resinSet" data-key="gsAsia_resin">設定</button>
+          <span class="note">（每 8 分+1）</span>
+        </div>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="gsAsia_abyss"> 淵月螺旋（1日、16日重置；前一天提醒）</label>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="gsAsia_poem"> 劇詩（每月 1 日重置；前一天提醒）</label>
+      </div>
+      <div class="row">
+        <div class="badge">版本更新（每 42 天；2 天前提醒）</div>
+        <span class="note" id="gsAsia_ver_txt"></span>
+      </div>
+    </section>
+
+    <!-- 2. 原神（台服） -->
+    <section class="card" id="gs-tw">
+      <h3><img src="./a.jpg" class="icon" alt=""> 原神（台服）</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="gsTw_daily"> 每日</label>
+        <div class="kv">
+          體力：
+          <button class="btn" data-act="resinDec" data-key="gsTw_resin">−1</button>
+          <span class="num" id="gsTw_resin_txt">160</span> / 200
+          <button class="btn" data-act="resinInc" data-key="gsTw_resin">+1</button>
+          <button class="btn" data-act="resinSet" data-key="gsTw_resin">設定</button>
+          <span class="note">（每 8 分+1）</span>
+        </div>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="gsTw_abyss"> 淵月螺旋（1日、16日重置；前一天提醒）</label>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="gsTw_poem"> 劇詩（每月 1 日重置；前一天提醒）</label>
+      </div>
+      <div class="row">
+        <div class="badge">版本更新（每 42 天；2 天前提醒）</div>
+        <span class="note" id="gsTw_ver_txt"></span>
+      </div>
+    </section>
+
+    <!-- 3. 崩壞：星穹鐵道 -->
+    <section class="card" id="hsr">
+      <h3><img src="./b.jpg" class="icon" alt=""> 崩壞：星穹鐵道</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="hsr_daily"> 每日</label>
+      </div>
+      <div class="sep"></div>
+      <div class="row"><div class="badge">混沌回憶</div><span class="note" id="hsr_cTxt"></span></div>
+      <div class="row"><div class="badge">虛構敘事</div><span class="note" id="hsr_sTxt"></span></div>
+      <div class="row"><div class="badge">末日幻影</div><span class="note" id="hsr_dTxt"></span></div>
+      <div class="row"><div class="badge">異相仲裁</div><span class="note" id="hsr_aTxt"></span></div>
+      <div class="row"><div class="badge">版本更新</div><span class="note" id="hsr_vTxt"></span></div>
+    </section>
+
+    <!-- 4. 絕區零（ZZZ） -->
+    <section class="card" id="zzz">
+      <h3><img src="./c.png" class="icon" alt=""> 絕區零</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="zzz_daily"> 每日</label>
+      </div>
+      <div class="row">
+        <div class="kv">
+          體力（織夢晶）：
+          <span class="num" id="zzz_power_txt">480</span> / 960（底線 240）
+          <button class="btn" data-act="zzzAdd">+80</button>
+          <button class="btn" data-act="zzzSet">設定</button>
+        </div>
+        <span class="note">達 960 會回到 240（你的規則）</span>
+      </div>
+    </section>
+
+    <!-- 5. HoYoLAB -->
+    <section class="card" id="hoyolab">
+      <h3><img src="./d.png" class="icon" alt=""> HoYoLAB</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="hyl_daily"> 每日</label>
+      </div>
+    </section>
+
+    <!-- 6. 貓咪大戰爭 -->
+    <section class="card" id="cats">
+      <h3><img src="./e.jpg" class="icon" alt=""> 貓咪大戰爭</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="cats_daily"> 每日</label>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="cats_weekend"> 週末關卡（六、日；每天重置）</label>
+      </div>
+    </section>
+
+    <!-- 7. Pokémon GO -->
+    <section class="card" id="pogo">
+      <h3><img src="./f.jpg" class="icon" alt=""> Pokémon GO</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="pogo_spin"> 轉一次補給站</label>
+        <label class="chk"><input type="checkbox" data-key="pogo_catch"> 抓一隻寶可夢</label>
+      </div>
+    </section>
+
+    <!-- 8. 諾提里森 -->
+    <section class="card" id="noti">
+      <h3><img src="./g.jpg" class="icon" alt=""> 諾提里森</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="noti_daily"> 每日</label>
+      </div>
+    </section>
+
+    <!-- 9. 新世界狂歡 -->
+    <section class="card" id="nsfw">
+      <h3><img src="./h.jpg" class="icon" alt=""> 新世界狂歡</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-key="ns_daily"> 每日</label>
+      </div>
+      <div class="row">
+        <div class="kv">
+          金幣卷（3 天一輪）：目前
+          <span class="num" id="ns_ticket_txt">2/3</span>
+          <button class="btn" data-act="nsAdd">+1 天</button>
+          <button class="btn" data-act="nsReset">清零</button>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- grid -->
+</div><!-- container -->
+
+<script>
+/* ====== 小工具 ====== */
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const pad2 = n => String(n).padStart(2,'0');
+const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const todayUTC = () => { const d=new Date(); return new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); };
+
+function load(key, def){ try{ const v = localStorage.getItem(key); return v==null? def : JSON.parse(v);}catch(e){ return def; } }
+function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+
+/* ====== 狀態儲存 ====== */
+const STATE_KEY = 'daily_state_v1';
+let state = load(STATE_KEY, {
+  // 勾選
+  checks: {},
+  // 原神樹脂
+  gsAsia_resin: 160,
+  gsTw_resin: 160,
+  resinTimerStart: null, // 自動回復參考時間
+  // ZZZ 體力
+  zzz_power: 480, // 目前
+  // 新世界狂歡票
+  ns_ticket: 2,   // 0..3
+  ns_ticket_date: ymd(new Date()), // 以日為單位 +1
+  // 版本基準：你可以依實際改
+  genshin_ver_base: '2025-10-22', // 原神下一次更新日（你曾提供）
+  hsr_c_next: '2025-10-27',
+  hsr_s_next: '2025-11-24',
+  hsr_d_next: '2025-11-10',
+  hsr_a_next: '2025-11-05',
+  hsr_v_next: '2025-11-05',
+  // 上次每日重置的日期
+  lastReset: ymd(new Date())
+});
+function persist(){ save(STATE_KEY, state); }
+
+/* ====== 每日 05:00 自動重置 ====== */
+function maybeResetDaily(){
+  const now = new Date();
+  const last = new Date(state.lastReset + 'T00:00:00');
+  const resetToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0, 0);
+  const need = (now >= resetToday) && (ymd(now) !== state.lastReset);
+  if(need){
+    state.checks = {};
+    state.lastReset = ymd(now);
+    // ZZZ 底線 240：若目前小於 240 則補到 240（你的規則敘述是「會自己回到240」）
+    if(state.zzz_power < 240) state.zzz_power = 240;
+    persist();
+    render();
+  }
+}
+maybeResetDaily();
+setInterval(maybeResetDaily, 60*1000);
+
+/* ====== 通知：20:00 / 22:00 提醒未完成 ====== */
+async function ensureNotifyPerm(){
+  if(!('Notification' in window)) return false;
+  if(Notification.permission === 'granted') return true;
+  if(Notification.permission !== 'denied'){
+    const r = await Notification.requestPermission();
+    return r === 'granted';
+  }
+  return false;
+}
+function scheduleNightAlerts(){
+  const now = new Date();
+  const targets = [
+    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0),
+    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 0, 0),
+  ];
+  targets.forEach(t=>{
+    let ms = t - now;
+    if(ms < 0) ms += 24*60*60*1000; // 明天
+    setTimeout(async ()=>{
+      const ok = await ensureNotifyPerm();
+      if(!ok) return;
+      const undone = countUndoneDaily();
+      if(undone>0){
+        new Notification('每日提示', { body:`你還有 ${undone} 項每日未完成！`, icon:'./6.png' });
+      }
+      scheduleNightAlerts(); // 再排下一輪
+    }, ms);
+  });
+}
+function countUndoneDaily(){
+  const keys = [
+    'gsAsia_daily','gsTw_daily','hsr_daily','zzz_daily','hyl_daily','cats_daily',
+    'pogo_spin','pogo_catch','noti_daily','ns_daily'
+  ];
+  return keys.reduce((n,k)=> n + (state.checks[k]?0:1), 0);
+}
+scheduleNightAlerts();
+ensureNotifyPerm();
+
+/* ====== 原神：樹脂每 8 分自動 +1，直到 200 ====== */
+function tickResin(){
+  const now = Date.now();
+  if(!state.resinTimerStart) state.resinTimerStart = now;
+  const elapsed = Math.floor((now - state.resinTimerStart)/60000); // 分
+  const add = Math.floor(elapsed / 8);
+  if(add>0){
+    ['gsAsia_resin','gsTw_resin'].forEach(k=>{
+      state[k] = Math.min(200, state[k] + add);
+    });
+    state.resinTimerStart += add*8*60000;
+    persist();
+    renderResinOnly();
+  }
+}
+setInterval(tickResin, 30*1000);
+
+/* ====== ZZZ：+80；>=960 回到 240 ====== */
+function zzzAdd(){
+  let v = state.zzz_power + 80;
+  if(v >= 960) v = 240;
+  state.zzz_power = v;
+  persist(); render();
+}
+
+/* ====== 新世界狂歡：三天一輪 ====== */
+function nsAdd(){
+  // 以日為單位 +1（2/3 -> 3/3 -> 清零）
+  let [cur, total] = getNSTicket();
+  cur += 1;
+  if(cur >= 3){ cur = 0; }
+  state.ns_ticket = cur;
+  state.ns_ticket_date = ymd(new Date());
+  persist(); render();
+}
+function nsReset(){
+  state.ns_ticket = 0;
+  state.ns_ticket_date = ymd(new Date());
+  persist(); render();
+}
+function getNSTicket(){ return [state.ns_ticket, 3]; }
+
+/* ====== HSR / Genshin 固定日期文案 ====== */
+function fmtDate(s){
+  const d = new Date(s + 'T00:00:00');
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+}
+// 42 天週期（傳入下一次日期字串，顯示：下一次 XXXX-XX-XX，距離 N 天）
+function txtNext42(sNext){
+  const d = new Date(sNext+'T00:00:00');
+  const now = todayUTC();
+  const diff = Math.ceil((d-now)/(24*3600*1000));
+  return `下一次：${fmtDate(sNext)}（剩 ${diff} 天）`;
+}
+// 原神固定重置：1日/16日 & 1日
+function nextAbyssTxt(){
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const d = now.getDate();
+  let next;
+  if(d < 1) next = new Date(y,m,1);
+  else if(d < 16) next = new Date(y,m,16);
+  else next = new Date(y,m+1,1);
+  const days = Math.ceil((next - now)/(24*3600*1000));
+  return `下一次：${fmtDate(ymd(next))}（剩 ${days} 天；前一天提醒）`;
+}
+function nextPoemTxt(){
+  const now = new Date();
+  let next = new Date(now.getFullYear(), now.getMonth(), 1);
+  if(now >= next){ // 如果已過 1 號就下個月 1 號
+    next = new Date(now.getFullYear(), now.getMonth()+1, 1);
+  }
+  const days = Math.ceil((next - now)/(24*3600*1000));
+  return `下一次：${fmtDate(ymd(next))}（剩 ${days} 天；前一天提醒）`;
+}
+function nextGenshinVerTxt(base){
+  // 42 天一版，基準 base 為已知下一次。顯示兩天前提醒
+  const baseD = new Date(base+'T00:00:00');
+  const now = todayUTC();
+  let d = new Date(baseD);
+  while(d < now){ d.setDate(d.getDate()+42); }
+  const diff = Math.ceil((d-now)/(24*3600*1000));
+  return `下一次：${fmtDate(ymd(d))}（剩 ${diff} 天；兩天前提醒）`;
+}
+
+/* ====== 勾選、數值變更 ====== */
+function bindUI(){
+  // 勾選
+  $$('.chk input[type=checkbox]').forEach(chk=>{
+    const key = chk.dataset.key;
+    chk.checked = !!state.checks[key];
+    chk.addEventListener('change', ()=>{
+      state.checks[key] = chk.checked;
+      persist();
+    });
+  });
+
+  // 樹脂按鈕
+  $$('[data-act="resinInc"]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const k = b.dataset.key;
+      state[k] = Math.min(200, (state[k]||0)+1);
+      persist(); renderResinOnly();
+    });
+  });
+  $$('[data-act="resinDec"]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const k = b.dataset.key;
+      state[k] = Math.max(0, (state[k]||0)-1);
+      persist(); renderResinOnly();
+    });
+  });
+  $$('[data-act="resinSet"]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const k = b.dataset.key;
+      const cur = state[k]||0;
+      const v = prompt('設定樹脂（0~200）：', String(cur));
+      if(v===null) return;
+      let n = Number(v);
+      if(!Number.isFinite(n)) return;
+      n = Math.max(0, Math.min(200, Math.round(n)));
+      state[k]=n; persist(); renderResinOnly();
+    });
+  });
+
+  // ZZZ
+  $('[data-act="zzzAdd"]').addEventListener('click', zzzAdd);
+  $('[data-act="zzzSet"]').addEventListener('click', ()=>{
+    const v = prompt('設定 ZZZ 體力（240~960；80 的倍數）：', String(state.zzz_power||240));
+    if(v===null) return;
+    let n = Number(v);
+    if(!Number.isFinite(n)) return;
+    n = Math.max(240, Math.min(960, Math.round(n/80)*80));
+    state.zzz_power = n; persist(); render();
+  });
+
+  // 新世界狂歡
+  $('[data-act="nsAdd"]').addEventListener('click', nsAdd);
+  $('[data-act="nsReset"]').addEventListener('click', nsReset);
+
+  // 強制更新（清快取+重載）
+  $('#forceRefresh').addEventListener('click', async ()=>{
+    if('caches' in window){
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+    location.reload(true);
+  });
+}
+
+function renderResinOnly(){
+  $('#gsAsia_resin_txt').textContent = state.gsAsia_resin;
+  $('#gsTw_resin_txt').textContent = state.gsTw_resin;
+}
+function render(){
+  bindUI();
+  renderResinOnly();
+  // ZZZ
+  $('#zzz_power_txt').textContent = state.zzz_power;
+  // 新世界狂歡
+  const [cur, total] = getNSTicket();
+  $('#ns_ticket_txt').textContent = `${cur}/${total}`;
+
+  // HSR/版本/原神固定重置文案
+  $('#hsr_cTxt').textContent = txtNext42(state.hsr_c_next);
+  $('#hsr_sTxt').textContent = txtNext42(state.hsr_s_next);
+  $('#hsr_dTxt').textContent = txtNext42(state.hsr_d_next);
+  $('#hsr_aTxt').textContent = txtNext42(state.hsr_a_next);
+  $('#hsr_vTxt').textContent = txtNext42(state.hsr_v_next);
+
+  $('#gsAsia_ver_txt').textContent = nextGenshinVerTxt(state.genshin_ver_base);
+  $('#gsTw_ver_txt').textContent   = nextGenshinVerTxt(state.genshin_ver_base);
+
+  // 淵月／劇詩
+  const abyss = nextAbyssTxt();
+  const poem  = nextPoemTxt();
+  // 顯示到兩張卡（亞/台）
+  // 這裡我們只在描述中呈現，實際提醒由夜間提醒+前一天邏輯處理
+  //（簡化：顯示文字，提醒採通知）
+  // 你若想把文字放到頁面，也可額外加 <span id="..."></span> 來顯示
+}
+
+/* ====== 前一天/兩天前提醒（在頁面開著時生效；PWA 安裝後一樣會跳系統通知） ====== */
+function scheduleEdgeReminders(){
+  const now = new Date();
+  const todayStr = ymd(now);
+
+  // 原神：淵月 1/16；劇詩 1號（前一天）
+  function remindIfDayBefore(targetDay){ // targetDay: Date
+    const diff = Math.ceil((targetDay - now)/(24*3600*1000));
+    if(diff === 1) new Notification('提醒', { body:'原神的月度內容明天重置，記得打勾！', icon:'./6.png' });
+  }
+  // 本月
+  const y = now.getFullYear(), m = now.getMonth();
+  const next1 = new Date(y,m,1), next16 = new Date(y,m,16);
+  if(now < next1) remindIfDayBefore(next1);
+  else if(now < next16) remindIfDayBefore(next16);
+  else remindIfDayBefore(new Date(y,m+1,1));
+  // 劇詩
+  const poemNext = (now.getDate() < 1) ? new Date(y,m,1) : new Date(y,m+1,1);
+  remindIfDayBefore(poemNext);
+
+  // 原神版本（基準 + 42n；兩天前）
+  const base = new Date(state.genshin_ver_base+'T00:00:00');
+  let v = new Date(base);
+  const todayU = todayUTC();
+  while(v <= todayU) v.setDate(v.getDate()+42);
+  const diff2 = Math.ceil((v - now)/(24*3600*1000));
+  if(diff2 === 2) new Notification('提醒', { body:'原神版本兩天後更新，該版本內容別忘了收尾！', icon:'./6.png' });
+}
+ensureNotifyPerm().then(scheduleEdgeReminders);
+
+/* ====== 啟動 ====== */
+render();
+
+/* ====== 註冊 SW（僅每日任務頁） ====== */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw-daily.js')
+    .then(reg=>console.log('daily SW registered', reg))
+    .catch(console.error);
+
+  // 如需 FCM 背景推播，另外註冊（保持檔案存在即可）
+  navigator.serviceWorker.register('./firebase-messaging-sw.js')
+    .catch(()=>{});
+}
+</script>
+</body>
+</html>
