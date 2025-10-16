@@ -1,7 +1,7 @@
 {
   "name": "我的記帳本",
   "short_name": "記帳本",
-  "start_url": "./myself13.html",
+  "start_url": ".index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0b0b0b",
