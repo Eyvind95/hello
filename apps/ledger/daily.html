@@ -60,6 +60,8 @@ h1{margin:0;font-size:24px}
 .danger{color:var(--danger)}
 .sep{height:6px}
 </style>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 </head>
 <body>
 <div class="container">
@@ -69,6 +71,9 @@ h1{margin:0;font-size:24px}
     <span class="tag">20:00 / 22:00 提醒未完成</span>
     <span class="tag">資料保存在本機（localStorage）</span>
     <div class="spacer"></div>
+    <span id="fbWho" class="tag">(未登入)</span>
+<button id="fbLoginBtn" class="btn">Google 登入</button>
+<button id="fbLogoutBtn" class="btn" style="display:none">登出</button>
     <button id="forceRefresh" class="btn">強制更新</button>
   </header>
 
@@ -214,6 +219,179 @@ h1{margin:0;font-size:24px}
 </div><!-- container -->
 
 <script>
+  <script>
+// ===== Firebase 初始化（你的 daily 專案）=====
+const firebaseConfig = {
+  apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
+  authDomain: "eyvind95-182f0.firebaseapp.com",
+  projectId: "eyvind95-182f0",
+  storageBucket: "eyvind95-182f0.firebasestorage.app",
+  messagingSenderId: "105770576221",
+  appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
+};
+function initFirebaseApp(){ if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); } }
+initFirebaseApp();
+
+const googleProvider = new firebase.auth.GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+let CURRENT_UID = null;
+
+// 依使用者切換不同 localStorage key（anon/UID）
+const keyFor = (uid) => 'daily_state_v1_' + (uid || 'anon');
+let STATE_KEY = keyFor(null);
+
+function updateLoginUI(user){
+  if(user){
+    document.getElementById('fbWho').textContent = `已登入：${user.email || 'Google 帳號'}`;
+    document.getElementById('fbLoginBtn').style.display = 'none';
+    document.getElementById('fbLogoutBtn').style.display = '';
+  }else{
+    document.getElementById('fbWho').textContent = '(未登入)';
+    document.getElementById('fbLoginBtn').style.display = '';
+    document.getElementById('fbLogoutBtn').style.display = 'none';
+  }
+}
+
+// 登入/登出
+async function googleLogin(){
+  try{
+    const res = await firebase.auth().signInWithPopup(googleProvider);
+    // 這裡 onAuthStateChanged 會接手載入使用者狀態
+  }catch(e){
+    // 若手機瀏覽器不支援 popup，退回 redirect
+    const fallback = [
+      "auth/operation-not-supported-in-this-environment",
+      "auth/popup-blocked",
+      "auth/popup-closed-by-user",
+    ];
+    if(fallback.includes(e.code||"")){
+      await firebase.auth().signInWithRedirect(googleProvider);
+      return;
+    }
+    alert('Google 登入失敗：' + e.message);
+  }
+}
+async function googleLogout(){
+  await firebase.auth().signOut();
+}
+
+// 綁定按鈕
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btnIn  = document.getElementById('fbLoginBtn');
+  const btnOut = document.getElementById('fbLogoutBtn');
+  if(btnIn)  btnIn.addEventListener('click', googleLogin);
+  if(btnOut) btnOut.addEventListener('click', googleLogout);
+});
+
+<!-- 這三個 <script> 一定要在 daily.html 內，且在這段程式碼之前就已經載入 -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script>
+  // 1) 初始化 Firebase (專案 daily 的配置)
+  const firebaseConfig = {
+    apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
+    authDomain: "eyvind95-182f0.firebaseapp.com",
+    projectId: "eyvind95-182f0",
+    storageBucket: "eyvind95-182f0.firebasestorage.app",
+    messagingSenderId: "105770576221",
+    appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
+  };
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
+  // 2) Google provider
+  const googleProvider = new firebase.auth.GoogleAuthProvider();
+  googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+  // 3) 小工具：localStorage 載入/保存 + 預設 state
+  function load(key, fallback){ try{ return JSON.parse(localStorage.getItem(key)) ?? fallback; }catch(e){ return fallback; } }
+  function save(key, obj){ localStorage.setItem(key, JSON.stringify(obj)); }
+
+  function defaultState(){
+    return {
+      checks: {},
+      gsAsia_resin: 160,
+      gsTw_resin: 160,
+      resinTimerStart: null,
+      zzz_power: 480,
+      ns_ticket: 2,
+      ns_ticket_date: ymd(new Date()),
+      genshin_ver_base: '2025-10-22',
+      hsr_c_next: '2025-10-27',
+      hsr_s_next: '2025-11-24',
+      hsr_d_next: '2025-11-10',
+      hsr_a_next: '2025-11-05',
+      hsr_v_next: '2025-11-05',
+      lastReset: ymd(new Date())
+    };
+  }
+
+  // 4) 讓這兩個是「全域變數」（render、persist 會用到）
+  let CURRENT_UID = null;
+  let STATE_KEY = 'daily_state_v1_anon';
+  let state = load(STATE_KEY, defaultState());
+  function persist(){ save(STATE_KEY, state); }
+
+  // 5) 登入/登出按鈕（記得 daily.html 內要有 id="fbLoginBtn" / "fbLogoutBtn" 的按鈕）
+  async function googleLogin(){
+    try{
+      const res = await firebase.auth().signInWithPopup(googleProvider);
+      // 成功後 onAuthStateChanged 會被觸發，不用在這裡做其他事
+    }catch(e){
+      // 行動裝置可能擋彈窗，用 redirect 備援
+      if ((e.code||'').includes('popup')) {
+        await firebase.auth().signInWithRedirect(googleProvider);
+      } else {
+        alert('Google 登入失敗：' + (e.message||e));
+      }
+    }
+  }
+  async function googleLogout(){
+    await firebase.auth().signOut();
+    // onAuthStateChanged 會被觸發
+  }
+  document.addEventListener('click', (ev)=>{
+    if (ev.target.id === 'fbLoginBtn')  googleLogin();
+    if (ev.target.id === 'fbLogoutBtn') googleLogout();
+  });
+
+  // 6) 登入狀態監聽（★重點）
+  firebase.auth().onAuthStateChanged(user=>{
+    CURRENT_UID = user ? user.uid : null;
+
+    // 依使用者切換不同 localStorage key
+    STATE_KEY = 'daily_state_v1_' + (CURRENT_UID || 'anon');
+
+    // 讀入該使用者的 daily 狀態；第一次會用預設值
+    state = load(STATE_KEY, defaultState());
+    persist();   // 立即寫回，確保 key 存在
+
+    // 更新登入 UI
+    updateLoginUI(user);
+
+    // 重新渲染畫面（你的 render() 已經會去使用 state 了）
+    try{
+      render();
+    }catch(e){
+      console.error(e);
+      alert('渲染失敗：' + e);
+    }
+  });
+
+  // 7) UI 顯示（你可以自由調整）
+  function updateLoginUI(user){
+    const who = document.getElementById('who');
+    const loginBtn  = document.getElementById('fbLoginBtn');
+    const logoutBtn = document.getElementById('fbLogoutBtn');
+    if (who) who.textContent = user ? `已登入：${user.email||'Google 帳號'}` : '(未登入：僅本機)';
+    if (loginBtn)  loginBtn.style.display  = user ? 'none' : '';
+    if (logoutBtn) logoutBtn.style.display = user ? '' : 'none';
+  }
+
+  // 8) 你的 ymd / render() 等工具要先存在
+  function ymd(d){ return d.toISOString().slice(0,10); }
+</script>
+
 /* ====== 小工具 ====== */
 const $  = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
@@ -225,29 +403,32 @@ function load(key, def){ try{ const v = localStorage.getItem(key); return v==nul
 function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 
 /* ====== 狀態儲存 ====== */
-const STATE_KEY = 'daily_state_v1';
-let state = load(STATE_KEY, {
-  // 勾選
-  checks: {},
-  // 原神樹脂
-  gsAsia_resin: 160,
-  gsTw_resin: 160,
-  resinTimerStart: null, // 自動回復參考時間
-  // ZZZ 體力
-  zzz_power: 480, // 目前
-  // 新世界狂歡票
-  ns_ticket: 2,   // 0..3
-  ns_ticket_date: ymd(new Date()), // 以日為單位 +1
-  // 版本基準：你可以依實際改
-  genshin_ver_base: '2025-10-22', // 原神下一次更新日（你曾提供）
-  hsr_c_next: '2025-10-27',
-  hsr_s_next: '2025-11-24',
-  hsr_d_next: '2025-11-10',
-  hsr_a_next: '2025-11-05',
-  hsr_v_next: '2025-11-05',
-  // 上次每日重置的日期
-  lastReset: ymd(new Date())
-});
+// 產生預設狀態（跟你原本的內容一樣）
+function defaultState(){
+  return {
+    checks: {},
+    gsAsia_resin: 160,
+    gsTw_resin: 160,
+    resinTimerStart: null,      // 原神樹脂計時起點
+    zzz_power: 480,             // ZZZ 目前體力
+    ns_ticket: 2,               // 新世界狂歡 金幣券 0/1/2/3
+    ns_ticket_date: ymd(new Date()), // 金幣券計算用日期
+    genshin_ver_base: '2025-10-22',  // 原神版本基準日（後面會自動+42天）
+    hsr_c_next: '2025-10-27',        // 混沌回憶 下一次
+    hsr_s_next: '2025-11-24',        // 虛構敘事 下一次
+    hsr_d_next: '2025-11-10',        // 末日幻影 下一次
+    hsr_a_next: '2025-11-05',        // 異相仲裁 下一次
+    hsr_v_next: '2025-11-05',        // 星鐵版本 下一次
+    lastReset: ymd(new Date())       // 每日重置記錄
+  };
+}
+
+// 依使用者切換不同 localStorage key（anon/UID）
+// 注意：CURRENT_UID/STATE_KEY 在登入模組也會用到，保持為同一份
+let CURRENT_UID = CURRENT_UID || null;
+let STATE_KEY = STATE_KEY || ('daily_state_v1_' + (CURRENT_UID || 'anon'));
+
+let state = load(STATE_KEY, defaultState());
 function persist(){ save(STATE_KEY, state); }
 
 /* ====== 每日 05:00 自動重置 ====== */
@@ -539,4 +720,5 @@ if('serviceWorker' in navigator){
 }
 </script>
 </body>
+
 </html>
