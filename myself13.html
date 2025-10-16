@@ -914,7 +914,21 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
   }
 })();
 </script>
+  <button onclick="forceUpdate()">🔄 強制更新</button>
+<script>
+async function forceUpdate() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) await r.unregister();
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      for (const k of keys) await caches.delete(k);
+    }
+  } catch(e) {}
+  location.replace(location.origin + location.pathname + '?v=' + Date.now());
+}
+</script>
 </body>
 </html>
-
-
