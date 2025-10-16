@@ -634,14 +634,22 @@ function render() {
     );
 
   // 只顯示近七天的明細（畫面）
-  const now = new Date();
-  const sevenDaysAgo = new Date(now);
-  sevenDaysAgo.setUTCDate(now.getUTCDate() - 6); // 含今天共7天
+  // 只顯示近七天的明細（畫面）— 以『本地午夜』為基準，含今天共 7 天
+  const todayLocal = new Date();                              // 現在（本地）
+  const todayStart = new Date(
+    todayLocal.getFullYear(),
+    todayLocal.getMonth(),
+    todayLocal.getDate()
+  );                                                          // 今天 00:00 (本地)
+  const sevenDaysAgoStart = new Date(todayStart);             // 從今天往回 6 天的 00:00
+  sevenDaysAgoStart.setDate(sevenDaysAgoStart.getDate() - 6);
 
   const recentItems = monthItems.filter(it => {
+    // toDate(it.date) 會產生「本地 00:00」時間
     const d = toDate(it.date);
-    return d >= sevenDaysAgo && d <= now;
+    return d >= sevenDaysAgoStart && d <= todayStart;         // 含今天（00:00 所在日）
   });
+
 
   // ===== 明細表 =====
   const tbody = $("#tbody");
@@ -899,4 +907,5 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
   })();
   </script>
 </body>
+
 </html>
