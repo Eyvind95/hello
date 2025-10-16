@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>我的記帳本</title>
 
-<!-- App / Icon -->
+<!-- App / Icon（使用 6.png） -->
 <link rel="icon" type="image/png" href="6.png" />
 <link rel="apple-touch-icon" href="6.png" />
 <meta name="theme-color" content="#0b0b0b" />
@@ -174,21 +174,24 @@
           <option value="吃">吃</option>
           <option value="交通">交通</option>
           <option value="玩">玩</option>
-           <option value="洗衣服">洗衣服</option>
+          <option value="洗衣服">洗衣服</option>
           <option value="其他">其他</option>
         </select>
-      <select class="col-span-3" id="noteSelect" onchange="toggleNoteInput(this)">
-  <option value="">留空</option>
-  <option value="零食">零食</option>
-  <option value="早餐">早餐</option>
-  <option value="午餐">午餐</option>
-  <option value="晚餐">晚餐</option>
-  <option value="宵夜">宵夜</option>
-  <option value="書費">書費</option>
-  <option value="對齊現實">對齊現實</option>
-  <option value="custom">請輸入備註</option>
-</select>
-<input class="col-span-3" type="text" id="noteInput" placeholder="請輸入備註" style="display:none;" />
+
+        <!-- 備註選單（新增「零食」在留空下面、早餐上面） -->
+        <select class="col-span-3" id="noteSelect" onchange="toggleNoteInput(this)">
+          <option value="">留空</option>
+          <option value="零食">零食</option>
+          <option value="早餐">早餐</option>
+          <option value="午餐">午餐</option>
+          <option value="晚餐">晚餐</option>
+          <option value="宵夜">宵夜</option>
+          <option value="書費">書費</option>
+          <option value="對齊現實">對齊現實</option>
+          <option value="custom">請輸入備註</option>
+        </select>
+        <input class="col-span-3" type="text" id="noteInput" placeholder="請輸入備註" style="display:none;" />
+
         <button class="col-span-6" type="submit">加入</button>
       </form>
       <p class="muted" style="margin-top:8px;">提示：月份統計依日期（每月 1 日 ~ 該月最後一天）。</p>
@@ -343,7 +346,7 @@ const fmtMoney = (n) => new Intl.NumberFormat("zh-Hant-TW", { style: "currency",
 const ymd = (d) => d.toISOString().slice(0,10);
 const toDate = (s) => new Date(s + "T00:00:00");
 function round2(n){ return Math.round((Number(n)||0) * 100) / 100; }
-function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&gt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
 function monthKey(y, m){ return `${y}-${String(m).padStart(2,'0')}`; } // m:1-12
 function prevMonthOf(y, m){ const d=new Date(Date.UTC(y, m-1, 1)); d.setUTCMonth(d.getUTCMonth()-1); return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1}; }
 function getMonthRange(year, monthIdx /*0-11*/){
@@ -474,20 +477,33 @@ function updateLoginUI(user){
 }
 
 /* ============== 事件：新增/刪除/匯出/匯入/清空 ============== */
+function toggleNoteInput(sel) {
+  const input = document.getElementById("noteInput");
+  if (sel.value === "custom") {
+    input.style.display = "block";
+    input.focus();
+  } else {
+    input.style.display = "none";
+    input.value = ""; // 清空手動輸入框
+  }
+}
+
 $("#entryForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const date = $("#date").value;
   const type = $("#type").value; // 'income' | 'expense'
   const amountStr = $("#amount").value.trim();
   const category = type === "expense" ? $("#category").value : "";
-let note = "";
-const noteSelect = $("#noteSelect");
-const noteInput = $("#noteInput");
-if (noteSelect.value === "custom") {
-  note = noteInput.value.trim();
-} else {
-  note = noteSelect.value;
-}
+
+  // 備註：選單 or 自訂
+  let note = "";
+  const noteSelect = $("#noteSelect");
+  const noteInput  = $("#noteInput");
+  if (noteSelect.value === "custom") {
+    note = noteInput.value.trim();
+  } else {
+    note = noteSelect.value; // 可能是 ""(留空) 或 預設詞（含「零食」）
+  }
 
   if(!date || !type || !amountStr){ return; }
   const amount = parseFloat(amountStr);
@@ -497,7 +513,12 @@ if (noteSelect.value === "custom") {
   entries.push(entry);
   await saveUnified();
 
-  $("#amount").value = ""; $("#note").value = "";
+  // ✅ 正確重置：金額清空、備註選單回「留空」、自訂輸入框關閉
+  $("#amount").value = "";
+  noteSelect.value = "";
+  noteInput.value = "";
+  noteInput.style.display = "none";
+
   renderWithEnsure();
 });
 async function removeEntry(id){
@@ -660,7 +681,7 @@ function render(){
   renderWeekly(monthItems, y, m);
 }
 
-/* 分類小計（僅支出）＋ 圓餅圖（吃=橘、交通=黃、玩=淡藍、其他=灰） */
+/* 分類小計（僅支出）＋ 圓餅圖（吃=橘、交通=黃、玩=淡藍、洗衣服=淡紫、其他=灰） */
 function renderCategorySummary(monthItems){
   const cats = ["吃","交通","玩","洗衣服","其他"];
   const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff","洗衣服": "#b19cd9", "其他":"#aaaaaa" };
@@ -868,23 +889,6 @@ document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
     dateInput.value = `${yyyy}-${mm}-${dd}`;
   }
 })();
-function toggleNoteInput(sel) {
-  const input = document.getElementById("noteInput");
-  if (sel.value === "custom") {
-    input.style.display = "block";
-  } else {
-    input.style.display = "none";
-    input.value = ""; // 清空手動輸入框
-  }
-}
-/* 啟動：先讀資料、再渲染 */
-(async () => {
-  const loaded = await loadUnified();
-  entries = loaded.list;
-  initials = loaded.initials;
-  renderWithEnsure();
-})();
 </script>
 </body>
-
 </html>
