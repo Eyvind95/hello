@@ -95,11 +95,22 @@
   function load(key, fallback){ try{return JSON.parse(localStorage.getItem(key))||fallback;}catch(e){return fallback;} }
   function save(key, obj){ localStorage.setItem(key, JSON.stringify(obj)); }
 
-  function defaultState(){
-    const today = new Date();
-    return {
-      // 勾選（每日、週末等）
-      checks: {},
+function defaultState(){
+  const today = new Date();
+  return {
+    // 勾選（每日、週末等）
+    checks: {
+      'daily:hsr': false,      // 崩壞：星穹鐵道 每日
+      'daily:gsAsia:commission': false,
+      'daily:gsTw:commission': false,
+      'daily:zzz': false,
+      'daily:hoyolab': false,
+      'daily:bc': false,
+      'daily:pogo:spin': false,
+      'daily:pogo:caught': false,
+      'daily:note': false,
+      'daily:nsc': false
+    },
 
       // 原神體力（兩個帳號）
       gsAsia_resin: 160,      // 0~200
@@ -498,4 +509,5 @@
   </script>
 </body>
 </html>
+
 
