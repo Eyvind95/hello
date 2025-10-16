@@ -1,0 +1,14 @@
+{
+  "name": "每日任務",
+  "short_name": "每日任務",
+  "description": "遊戲每日提醒器",
+  "start_url": "./daily.html?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101010",
+  "theme_color": "#101010",
+  "icons": [
+    { "src": "./icons/app-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icons/app-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
