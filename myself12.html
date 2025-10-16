@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="6.png" />
 <meta name="theme-color" content="#0b0b0b" />
 
-<!-- Firebase v8（穩定） -->
+<!-- Firebase v8 compat（穩定） -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
@@ -19,7 +19,6 @@
   :root{
     --bg:#0b0b0b;
     --panel:#151515cc;
-    --panel-2:#101010;
     --muted:#bbbbbb;
     --accent:#6ee7ff;
     --danger:#ff7b7b;
@@ -36,6 +35,7 @@
       var(--bg);
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
   }
+  /* 手機避免 fixed 背景問題 */
   @media (max-width:768px){ body{ background-attachment:scroll; } }
 
   .container{ max-width:1100px; margin:32px auto; padding:0 16px; }
@@ -51,11 +51,16 @@
   }
   .controls button:hover{filter:brightness(1.12); cursor:pointer}
 
-  /* 兩欄（左：新增/常用；右：統計/列表） */
-  .row{display:grid; gap:16px; grid-template-columns: 1.11fr 1.35fr;} /* ← 你指定的寬比 */
+.row{
+  display: grid;
+  gap: 16px;
+  /* 左 1fr、右 1.35fr：右邊比較寬 */
+  grid-template-columns: 1.11fr 1.35fr;
+}
+.row > *{ min-width: 0; } /* 防止內容把格子撐爆 */
   @media (max-width: 900px){ .row{grid-template-columns:1fr;} }
 
-  .card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; }
+  .card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; min-width:0; }
   .card h2{margin:0 0 10px 0; font-size:20px;}
 
   /* 新增一筆表單 */
@@ -67,7 +72,7 @@
   form .col-span-2{grid-column: span 2;}
   form .col-span-3{grid-column: span 3;}
   form .col-span-6{grid-column: span 6;}
-
+  /* 手機：單欄滿版 */
   @media (max-width: 600px){
     form.grid{ grid-template-columns:1fr !important; grid-auto-flow:row; justify-items:stretch; }
     form.grid > *{ grid-column:1 / -1 !important; width:100% !important; }
@@ -82,7 +87,12 @@
   .actions button{ background:#2a2a2a; border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; }
 
   /* 五塊統計 */
-  .summary{ display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; margin-top:8px; }
+.summary{
+  display: grid;
+  gap: 12px;
+  /* 原本是 repeat(5, 1fr) 會硬塞 5 欄，改成自適應欄寬 */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
   .tile{ background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; }
   .tile h3{margin:0 0 8px 0; font-size:14px; color:var(--muted)}
   .tile .val{font-size:22px; font-variant-numeric: tabular-nums;}
@@ -93,23 +103,27 @@
   .right{display:flex;align-items:center;gap:8px;}
   .spacer{flex:1}
 
-  /* 分類小計：表格 + 圓餅圖（在下面） */
-  .cat-box{ background:var(--panel-2); border:1px solid var(--border); border-radius:14px; padding:14px; margin-top:12px; }
-  .cat-wrap{ display:flex; flex-direction:column; gap:20px; align-items:center; justify-content:center; }
+  /* 分類小計：上下排（圓餅圖在下面） */
+  .cat-wrap{
+    display:flex; flex-direction:column; gap:20px; align-items:center; justify-content:center;
+  }
   .cat-chart{ width:100%; display:flex; flex-direction:column; align-items:center; }
   .legend{ display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--muted); }
   .legend .key{ display:inline-flex; align-items:center; gap:6px; }
   .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
 
-  /* 左側：最常記的 5 筆 */
+  /* 最常記的 5 筆 */
   .freq{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
   .freq h3{ margin:0 0 8px; font-size:16px; }
-  .freq-item{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; margin-top:6px; }
+  .freq-item{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; margin-top:6px;
+  }
   .rerun{ background:#2a2a2a; color:#fff; border:1px solid var(--border); padding:6px 10px; border-radius:8px; cursor:pointer; }
   .rerun:hover{ filter:brightness(1.12); }
 
-  /* 每週支出統計（本月） */
-  .weekly{ background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; margin-top:12px; }
+  /* 每週支出統計 */
+  .weekly{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
   .weekly h3{ margin:0 0 8px; font-size:16px; }
 </style>
 </head>
@@ -154,30 +168,26 @@
         </select>
         <input class="col-span-2" type="number" id="amount" inputmode="decimal" step="0.01" placeholder="金額" required />
 
-        <!-- 類別（支出時顯示） -->
+        <!-- 類別：支出才顯示 -->
         <select class="col-span-3" id="category">
           <option value="">選擇類別</option>
           <option value="吃">吃</option>
           <option value="交通">交通</option>
           <option value="玩">玩</option>
-          <option value="洗衣服">洗衣服</option>
+           <option value="洗衣服">洗衣服</option>
           <option value="其他">其他</option>
         </select>
-
-        <!-- 備註：下拉選單，遇「請輸入備註」出現輸入框 -->
-        <select class="col-span-3" id="notePreset">
-          <option value="">留空</option>
-          <option value="零食">零食</option>
-          <option value="早餐">早餐</option>
-          <option value="午餐">午餐</option>
-          <option value="晚餐">晚餐</option>
-          <option value="宵夜">宵夜</option>
-          <option value="書費">書費</option>
-          <option value="對齊現實">對齊現實</option>
-          <option value="__custom__">請輸入備註</option>
-        </select>
-        <input class="col-span-3" type="text" id="noteCustom" placeholder="輸入備註…" style="display:none" />
-
+      <select class="col-span-3" id="noteSelect" onchange="toggleNoteInput(this)">
+  <option value="">留空</option>
+  <option value="早餐">早餐</option>
+  <option value="午餐">午餐</option>
+  <option value="晚餐">晚餐</option>
+  <option value="宵夜">宵夜</option>
+  <option value="書費">書費</option>
+  <option value="對齊現實">對齊現實</option>
+  <option value="custom">請輸入備註</option>
+</select>
+<input class="col-span-3" type="text" id="noteInput" placeholder="請輸入備註" style="display:none;" />
         <button class="col-span-6" type="submit">加入</button>
       </form>
       <p class="muted" style="margin-top:8px;">提示：月份統計依日期（每月 1 日 ~ 該月最後一天）。</p>
@@ -188,7 +198,7 @@
       </div>
     </section>
 
-    <!-- 右側：統計 + 列表 -->
+    <!-- 右側：列表與統計 -->
     <section class="card">
       <h2>本月明細</h2>
       <div class="summary">
@@ -214,10 +224,11 @@
         </div>
       </div>
 
-      <!-- 分類小計（表格 + 圓餅圖在下） -->
-      <div class="cat-box">
+      <!-- 分類小計（只計支出） + 圓餅圖（在下面） -->
+      <div class="card" style="background:#101010; border:1px solid var(--border); border-radius:14px; padding:14px; margin-top:12px;">
         <h3 style="margin:0 0 8px 0; font-size:16px; color:var(--muted)">本月分類小計（支出）</h3>
         <div class="cat-wrap">
+          <!-- 上面：表格 -->
           <table id="catTable" style="max-width:860px;width:100%;">
             <thead>
               <tr>
@@ -229,6 +240,7 @@
             <tbody id="catTbody"></tbody>
           </table>
 
+          <!-- 下面：圓餅圖 -->
           <div class="cat-chart" style="margin-top:6px;">
             <canvas id="catPie" width="360" height="240" style="width:100%;max-width:420px;height:auto;display:block;"></canvas>
             <div id="catLegend" class="legend" style="margin-top:8px;"></div>
@@ -236,15 +248,15 @@
         </div>
       </div>
 
-      <!-- 每週統計 -->
+      <!-- 每週支出統計（本月） -->
       <div class="weekly">
         <h3>每週支出統計（本月）</h3>
-        <table id="weeklyTable">
+        <table>
           <thead>
             <tr>
               <th style="width:80px">第幾週</th>
-              <th style="width:180px">日期範圍</th>
-              <th>支出金額</th>
+              <th style="width:200px">日期範圍</th>
+              <th style="width:120px">支出金額</th>
             </tr>
           </thead>
           <tbody id="weeklyTbody"></tbody>
@@ -269,7 +281,7 @@
 </div>
 
 <script>
-/* ============== Firebase（你的專案） ============== */
+/* ============== Firebase（請用你的專案設定） ============== */
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
   authDomain: "eyvind95-182f0.firebaseapp.com",
@@ -278,11 +290,10 @@ const firebaseConfig = {
   messagingSenderId: "105770576221",
   appId: "1:105770576221:web:4256dca5ec54b7cf91a0b4"
 };
-function initFirebaseApp(){
-  if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); }
-}
+function initFirebaseApp(){ if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); } }
 initFirebaseApp();
 
+/* ============== Firestore 與 UID ============== */
 let db = firebase.firestore();
 let CURRENT_UID = null;
 const googleProvider = new firebase.auth.GoogleAuthProvider();
@@ -299,7 +310,6 @@ const GH_BRANCH = "main";
 const GH_ENTRIES_PATH  = "data/entries.json";
 const GH_INITIALS_PATH = "data/initials.json";
 const GH_TOKEN_KEY = "gh_pat_my_ledger";
-
 function ghGetToken(){ return localStorage.getItem(GH_TOKEN_KEY) || ""; }
 function ghSetToken(t){ if(!t) return; localStorage.setItem(GH_TOKEN_KEY, t); alert("已儲存 GitHub Token（存在本機瀏覽器）"); }
 async function ghApi(path, method="GET", body){
@@ -323,7 +333,7 @@ async function ghWriteFile(repoPath, jsonObj, message){
 function base64ToJson(b64){ const str = decodeURIComponent(escape(atob(b64))); return JSON.parse(str); }
 
 /* ============== 共用工具 & 本機儲存 ============== */
-const $  = (sel) => document.querySelector(sel);
+const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const LS_KEY = "ledgerEntries_v1";
 const INITIALS_KEY = "ledgerInitials_v1";
@@ -335,14 +345,13 @@ function round2(n){ return Math.round((Number(n)||0) * 100) / 100; }
 function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
 function monthKey(y, m){ return `${y}-${String(m).padStart(2,'0')}`; } // m:1-12
 function prevMonthOf(y, m){ const d=new Date(Date.UTC(y, m-1, 1)); d.setUTCMonth(d.getUTCMonth()-1); return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1}; }
-
 function getMonthRange(year, monthIdx /*0-11*/){
   const start = new Date(Date.UTC(year, monthIdx, 1));
   const end = new Date(Date.UTC(year, monthIdx + 1, 0));
   return { start, end };
 }
 
-// 本機儲存
+/* 本機儲存 */
 function loadLocal(){ try{ const raw=localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : []; }catch(e){ return []; } }
 function saveLocal(list){ localStorage.setItem(LS_KEY, JSON.stringify(list)); }
 function loadInitialsLocal(){ try{ const raw=localStorage.getItem(INITIALS_KEY); return raw ? JSON.parse(raw) : {}; }catch(e){ return {}; } }
@@ -436,7 +445,6 @@ async function googleLogout(){
   entries = loaded.list; initials = loaded.initials;
   renderWithEnsure();
 }
-
 firebase.auth().onAuthStateChanged(async (user)=>{
   if(user){
     CURRENT_UID = user.uid;
@@ -452,7 +460,6 @@ firebase.auth().onAuthStateChanged(async (user)=>{
     renderWithEnsure();
   }
 });
-
 function updateLoginUI(user){
   if(user){
     $("#fbWho").textContent = `已登入：${user.email || "Google 帳號"}`;
@@ -466,26 +473,20 @@ function updateLoginUI(user){
 }
 
 /* ============== 事件：新增/刪除/匯出/匯入/清空 ============== */
-const notePreset = $("#notePreset");
-const noteCustom = $("#noteCustom");
-notePreset.addEventListener("change", () => {
-  if(notePreset.value === "__custom__"){
-    noteCustom.style.display = "block";
-    noteCustom.focus();
-  }else{
-    noteCustom.style.display = "none";
-    noteCustom.value = "";
-  }
-});
-
 $("#entryForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const date = $("#date").value;
   const type = $("#type").value; // 'income' | 'expense'
   const amountStr = $("#amount").value.trim();
   const category = type === "expense" ? $("#category").value : "";
-  const note = (notePreset.value === "__custom__" ? noteCustom.value.trim()
-               : (notePreset.value || "")).trim();
+let note = "";
+const noteSelect = $("#noteSelect");
+const noteInput = $("#noteInput");
+if (noteSelect.value === "custom") {
+  note = noteInput.value.trim();
+} else {
+  note = noteSelect.value;
+}
 
   if(!date || !type || !amountStr){ return; }
   const amount = parseFloat(amountStr);
@@ -495,17 +496,15 @@ $("#entryForm").addEventListener("submit", async (e) => {
   entries.push(entry);
   await saveUnified();
 
-  $("#amount").value = ""; notePreset.value=""; noteCustom.value=""; noteCustom.style.display="none";
+  $("#amount").value = ""; $("#note").value = "";
   renderWithEnsure();
 });
-
 async function removeEntry(id){
   if(!confirm("確定刪除此筆？")) return;
   entries = entries.filter(e => e.id !== id);
   await saveUnified();
   renderWithEnsure();
 }
-
 $("#exportBtn").addEventListener("click", () => {
   const blob = new Blob([JSON.stringify({entries, initials}, null, 2)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
@@ -538,7 +537,7 @@ $("#clearBtn").addEventListener("click", async () => {
   }
 });
 
-/* ============== 類別選單：收入隱藏、支出顯示 ============== */
+/* 類別選單：收入隱藏、支出顯示 */
 $("#type").addEventListener("change", () => {
   $("#category").style.display = ($("#type").value === "income") ? "none" : "block";
 });
@@ -575,7 +574,6 @@ function ensureInitialForMonth(y, m){
   }
   saveUnified();
 }
-
 document.getElementById("editInitBtn").addEventListener("click", async () => {
   const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
   const mk = monthKey(y, m);
@@ -605,7 +603,6 @@ function renderWithEnsure(){
   ensureInitialForMonth(y, m);
   render();
 }
-
 function render(){
   const [y, m] = monthPicker.value.split("-").map(x=>parseInt(x,10));
   const {start, end} = getMonthRange(y, m - 1);
@@ -618,7 +615,7 @@ function render(){
     .filter(e => { const d = toDate(e.date); return d >= start && d <= end; })
     .sort((a,b) => (a.date === b.date ? a.createdAt - b.createdAt : a.date.localeCompare(b.date)));
 
-  // 表格
+  // 明細表
   const tbody = $("#tbody");
   tbody.innerHTML = "";
   for(const it of monthItems){
@@ -636,7 +633,7 @@ function render(){
   }
   $$("#tbody .del").forEach(btn => btn.addEventListener("click", () => removeEntry(btn.dataset.id)));
 
-  // 統計
+  // 統計（收入/支出/淨額）
   let income = 0, expense = 0;
   for(const it of monthItems){ if(it.type === "income") income += it.amount; else expense += it.amount; }
   income = round2(income); expense = round2(expense);
@@ -655,19 +652,19 @@ function render(){
   // 分類小計 + 圓餅圖
   renderCategorySummary(monthItems);
 
-  // 每週統計（本月）
-  renderWeekly(monthItems, y, m);
-
-  // 最常記的 5 筆（支出：金額+類別 綁定）
+  // 最常記的 5 筆（金額＋類別）
   renderFrequentPairs(monthItems);
+
+  // 每週支出統計
+  renderWeekly(monthItems, y, m);
 }
 
-// 分類小計（僅支出）＋ 圓餅圖
+/* 分類小計（僅支出）＋ 圓餅圖（吃=橘、交通=黃、玩=淡藍、其他=灰） */
 function renderCategorySummary(monthItems){
   const cats = ["吃","交通","玩","洗衣服","其他"];
-  const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff", "洗衣服":"#a88bff", "其他":"#aaaaaa" };
+  const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff","洗衣服": "#b19cd9", "其他":"#aaaaaa" };
 
-  const map = new Map(cats.map(c => [c, {sum:0, count:0}]));
+  const map = new Map(cats.map(c => [c, {sum:0, count:0}]));  
   for(const it of monthItems){
     if(it.type !== "expense") continue;
     const key = (it.category || "").trim();
@@ -699,7 +696,6 @@ function renderCategorySummary(monthItems){
         }).join(" ");
   }
 }
-
 function drawPie(canvasId, data, total){
   const canvas = document.getElementById(canvasId);
   if(!canvas) return;
@@ -712,7 +708,7 @@ function drawPie(canvasId, data, total){
     ctx.strokeStyle = "rgba(255,255,255,0.15)";
     ctx.lineWidth = 10;
     ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.font = "14px system-ui, -apple-system, 'Segoe UI', Roboto";
     ctx.textAlign = "center";
     ctx.fillText("本月無支出", canvas.width/2, canvas.height/2+5);
@@ -742,46 +738,12 @@ function drawPie(canvasId, data, total){
   ctx.fillText(fmtMoney(total),cx,cy+18);
 }
 
-/* ============== 每週統計（本月） ============== */
-function renderWeekly(monthItems, y, m){
-  const {start, end} = getMonthRange(y, m-1);
-  // 以週一 ~ 週日切週（可簡易處理）
-  const weeks = [];
-  let curStart = new Date(start);
-  while(curStart <= end){
-    const curEnd = new Date(curStart);
-    curEnd.setUTCDate(curEnd.getUTCDate() + 6);
-    if(curEnd > end) curEnd.setTime(end.getTime());
-    weeks.push({ s: new Date(curStart), e: new Date(curEnd) });
-    const next = new Date(curEnd);
-    next.setUTCDate(next.getUTCDate() + 1);
-    curStart = next;
-  }
-
-  const rows = [];
-  let widx = 1;
-  for(const w of weeks){
-    let wExpense = 0;
-    for(const it of monthItems){
-      if(it.type !== "expense") continue;
-      const d = toDate(it.date);
-      if(d >= w.s && d <= w.e) wExpense += it.amount;
-    }
-    const sStr = `${String(w.s.getUTCMonth()+1).padStart(2,'0')}/${String(w.s.getUTCDate()).padStart(2,'0')}`;
-    const eStr = `${String(w.e.getUTCMonth()+1).padStart(2,'0')}/${String(w.e.getUTCDate()).padStart(2,'0')}`;
-    rows.push(`<tr><td>第 ${widx} 週</td><td>${sStr} ~ ${eStr}</td><td class="amount">${fmtMoney(round2(wExpense))}</td></tr>`);
-    widx++;
-  }
-  $("#weeklyTbody").innerHTML = rows.join("");
-}
-
-/* ============== 最常記的 5 筆（支出：金額+類別） ============== */
+/* 最常記的 5 筆（按 金額+類別 統計） */
 function renderFrequentPairs(list){
   const box = $("#freqList");
   if(!box) return;
 
-  // 以「金額(兩位小數) + 類別」為鍵（僅支出）
-  const countMap = new Map(); // key: "80.00|吃"  -> {amount:80, category:'吃', count:n, last:ts}
+  const countMap = new Map(); // key: "80.00|吃"  -> {amount:80, category:'吃', count:n, last:time}
   for(const it of list){
     if(it.type !== 'expense') continue;
     const amt = round2(it.amount);
@@ -799,12 +761,12 @@ function renderFrequentPairs(list){
 
   box.innerHTML = arr.map(p => `
     <div class="freq-item">
-      <div><strong>${fmtMoney(p.amount)}</strong>
-      <span class="muted">（${p.category||'—'}） × ${p.count}</span></div>
+      <div><strong>${fmtMoney(p.amount)}</strong> <span class="muted">（${p.category||'—'}） × ${p.count}</span></div>
       <button class="rerun" data-amount="${p.amount}" data-category="${p.category}">再記一次</button>
     </div>
   `).join("");
 
+  // 點「再記一次」：沿用金額+類別、日期=今天、type=支出
   $$("#freqList .rerun").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const amount = Number(btn.dataset.amount);
@@ -823,6 +785,45 @@ function renderFrequentPairs(list){
       renderWithEnsure();
     });
   });
+}
+
+/* 每週支出統計（本月）－ 週一~週日，範圍裁在本月內 */
+function renderWeekly(monthItems, y, m){
+  const {start, end} = getMonthRange(y, m-1);
+  // 找到本月第一個週一
+  const first = new Date(start);
+  const day = first.getUTCDay();           // 0 Sun, 1 Mon, ...
+  const diff = (day === 0) ? 1 : (1 - day); // shift to Monday
+  first.setUTCDate(first.getUTCDate() + diff);
+  if(first < start) first.setUTCDate(first.getUTCDate() + 7);
+
+  const weeks = [];
+  let ws = new Date(first);
+  let idx = 1;
+  while(ws <= end){
+    const we = new Date(ws); we.setUTCDate(we.getUTCDate() + 6);
+    const rangeStart = ws < start ? start : ws;
+    const rangeEnd   = we > end   ? end   : we;
+    weeks.push({ idx: idx++, s: new Date(rangeStart), e: new Date(rangeEnd) });
+    ws.setUTCDate(ws.getUTCDate() + 7);
+  }
+
+  // 計算每週支出
+  const tbody = $("#weeklyTbody");
+  let html = "";
+  for(const w of weeks){
+    let sum = 0;
+    for(const it of monthItems){
+      if(it.type !== 'expense') continue;
+      const d = toDate(it.date);
+      if(d >= w.s && d <= w.e) sum += it.amount;
+    }
+    sum = round2(sum);
+    const sTxt = `${String(w.s.getUTCMonth()+1).padStart(2,"0")}/${String(w.s.getUTCDate()).padStart(2,"0")}`;
+    const eTxt = `${String(w.e.getUTCMonth()+1).padStart(2,"0")}/${String(w.e.getUTCDate()).padStart(2,"0")}`;
+    html += `<tr><td>第 ${w.idx} 週</td><td>${sTxt} ~ ${eTxt}</td><td class="amount">${fmtMoney(sum)}</td></tr>`;
+  }
+  tbody.innerHTML = html || `<tr><td colspan="3" class="muted">本月尚無支出</td></tr>`;
 }
 
 /* ============== GitHub 按鈕事件 ============== */
@@ -855,18 +856,28 @@ document.getElementById("ghLoadBtn").addEventListener("click", async () => {
 document.getElementById("fbLoginBtn").addEventListener("click", googleLogin);
 document.getElementById("fbLogoutBtn").addEventListener("click", googleLogout);
 
-/* ============== 進站強制把日期設成今天（避免變更後隔天不更新） ============== */
-function initToday() {
+/* 每次開頁把「新增日期」設為今天（避免改過日期後卡住） */
+(function initToday(){
   const dateInput = document.querySelector('input[type="date"]');
   if (dateInput) {
-    const d = new Date();
-    dateInput.value = ymd(d);
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    dateInput.value = `${yyyy}-${mm}-${dd}`;
+  }
+})();
+function toggleNoteInput(sel) {
+  const input = document.getElementById("noteInput");
+  if (sel.value === "custom") {
+    input.style.display = "block";
+  } else {
+    input.style.display = "none";
+    input.value = ""; // 清空手動輸入框
   }
 }
-
-/* ======================== 啟動 ======================== */
+/* 啟動：先讀資料、再渲染 */
 (async () => {
-  initToday();
   const loaded = await loadUnified();
   entries = loaded.list;
   initials = loaded.initials;
