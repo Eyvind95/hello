@@ -2,13 +2,10 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>皮卡每日任務</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>皮卡的每日任務</title>
 
-<!-- PWA / Icons -->
-<link rel="manifest" href="daily.webmanifest">
-<link rel="icon" href="6.png">
-<meta name="theme-color" content="#0b0b0b" />
+<link rel="manifest" href="daily.webmanifest" />
 
 <!-- Firebase v8 compat -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -17,548 +14,130 @@
 
 <style>
 :root{
-  --bg:#0b0b0b;
-  --panel:#151515cc;
-  --tile:#101010cc;
-  --muted:#bbbbbb;
-  --accent:#6ee7ff;
-  --ok:#8cff9c;
+  --bg:#0b0f17;
+  --panel:#0e1726cc;
+  --panel-strong:#0e1726;
+  --border:#263041;
+  --muted:#aab8d5;
+  --ok:#71ffa5;
   --danger:#ff7b7b;
-  --border:#2a2a2a;
+  --accent:#6ee7ff;
+  --yellow:#ffd93b;
 }
 *{box-sizing:border-box}
-html,body{height:100%;}
+html,body{height:100%}
 body{
   margin:0; color:#fff;
   background:
-    linear-gradient(rgba(0,0,0,0.25), rgba(0,0,0,0.25)),
-    url("7.jpg") center/cover no-repeat fixed,
+    linear-gradient(rgba(0,0,0,.45), rgba(0,0,0,.45)),
+    url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg") center/cover no-repeat fixed,
     var(--bg);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
 }
 @media (max-width:768px){ body{ background-attachment:scroll; } }
-.container{max-width:1080px; margin:20px auto; padding:0 12px;}
-.header{
-  display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;
-  background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:10px 12px; margin-bottom:12px;
+
+.container{ max-width:1100px; margin:24px auto; padding:0 14px; }
+header{
+  display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:space-between;
+  margin-bottom:12px;
 }
-h1{font-size:22px; margin:0;}
-.header .right{display:flex; gap:8px; align-items:center;}
-.btn{
-  background:#202020; color:#fff; border:1px solid var(--border); border-radius:10px;
-  padding:8px 10px; cursor:pointer;
+.h1{
+  font-size:22px; font-weight:800; letter-spacing:.06em;
+  background:var(--panel); border:1px solid var(--border); padding:10px 12px; border-radius:14px;
 }
-.btn:hover{filter:brightness(1.08)}
-.muted{color:var(--muted)}
+.controls{
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  background:var(--panel); border:1px solid var(--border); padding:8px 10px; border-radius:14px;
+}
+.controls button{
+  background:#172033; color:#fff; border:1px solid var(--border);
+  padding:8px 10px; border-radius:10px; cursor:pointer;
+}
+.controls .muted{ color:var(--muted); font-size:14px; }
+.controls .spacer{ flex:1 }
 
 .grid{
-  display:grid; gap:12px;
-  grid-template-columns: repeat(2, 1fr);
+  display:grid; gap:14px;
+  grid-template-columns: 1fr 1fr;
 }
-@media (max-width:900px){ .grid{grid-template-columns:1fr} }
+@media (max-width: 980px){ .grid{ grid-template-columns:1fr; } }
 
 .card{
-  background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:12px;
+  background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:14px; min-width:0;
 }
-.card h2{margin:0 0 8px 0; font-size:18px}
-.card .sub{font-size:12px; color:var(--muted); margin-top:-4px; margin-bottom:8px}
-
-.game{
-  background:var(--tile); border:1px solid var(--border); border-radius:14px; padding:10px; margin-top:10px;
+.card .title{
+  display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;
 }
-.game .top{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px}
-.game .title{display:flex; align-items:center; gap:8px}
-.game img.icon{width:28px; height:28px; border-radius:6px; object-fit:cover; background:#333}
-.badge{font-size:10px; padding:2px 6px; border-radius:999px; border:1px solid var(--border); color:#ddd}
+.title .left{ display:flex; align-items:center; gap:10px; }
+.title img.icon{ width:28px; height:28px; border-radius:8px; object-fit:cover; }
+.title .name{ font-weight:700; }
+.badge{ font-size:12px; color:#000; background:var(--accent); padding:2px 8px; border-radius:999px; }
 
-.g-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 8px; border-top:1px dashed #2a2a2a; }
-.g-left{ color:#ddd; }
-.g-right{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
-.ck{ display:inline-flex; align-items:center; gap:6px; }
-.ck input{ width:18px; height:18px; }
-.pill{ background:#202020; border:1px solid var(--border); border-radius:999px; padding:4px 8px; font-size:12px; }
-.pill.ok{ color:var(--ok) }
-.pill.bad{ color:var(--danger) }
-.small{ font-size:12px; color:#aaa; }
-.val{ font-variant-numeric:tabular-nums; }
+.row{ display:flex; align-items:center; gap:10px; margin:8px 0; }
+.row .label{ color:var(--muted); min-width:88px; }
+.row .val{ font-variant-numeric:tabular-nums; }
+.row .next{ color:var(--yellow); }
+.row .subtle{ color:var(--muted); font-size:13px; }
 
-.sep{ height:8px }
-
-.footer-note{ color:#aaa; font-size:12px; margin-top:12px; text-align:center; }
-  /* ---- 樹脂/體力的數字膠囊：黑底白字 ---- */
-.counter .val,
-.pill-val,
-.resin .val,
-.stamina .val,
-.gs-resin-val {
-  background:#0d0d0d !important;
-  color:#fff !important;
-  border:1px solid var(--border, #2a2a2a);
-  border-radius:999px;
-  padding:6px 12px;
-  font-weight:700;
-  min-width:64px; text-align:center;
+.kit{
+  display:flex; align-items:center; gap:6px; flex-wrap:wrap;
 }
-
-/* ---- + / - 按鈕基礎樣式 ---- */
-.counter .btn,
-.btn-inc, .btn-dec {
-  background:#1b1b1b;
-  border:1px solid var(--border, #2a2a2a);
-  color:#fff;
-  width:28px; height:28px;
-  border-radius:999px;
-  display:grid; place-items:center;
-  cursor:pointer; user-select:none;
+.kit button{
+  background:#18243c; border:1px solid var(--border); color:#fff;
+  padding:6px 10px; border-radius:10px; cursor:pointer;
 }
+.kit .plus{ color:#10d17d; }   /* 綠色 + */
+.kit .minus{ color:#ff6b6b; }  /* 紅色 - / 重置 */
 
-/* 加號（綠色） */
-.btn-plus, .btn-inc {
-  background:rgba(34,197,94,.14);
-  border-color:#22c55e;
-  color:#86efac;
+.resinBox{
+  background:#0b1220; border:1px solid var(--border); border-radius:12px; padding:8px 10px;
+  display:inline-flex; align-items:center; gap:8px;
 }
+.resinBox .n{ font-weight:800; font-size:16px; color:#e6f2ff; } /* 永遠可讀色 */
+.resinBox small{ color:var(--muted) }
 
-/* 減號（紅色） */
-.btn-minus, .btn-dec {
-  background:rgba(239,68,68,.14);
-  border-color:#ef4444;
-  color:#fda4af;
-}
+.footer-note{ color:var(--muted); font-size:13px; margin-top:8px; }
 
-/* 數字輸入框如果有用到也強制白字 */
-input[type="number"].val,
-.resin input[type="number"],
-.stamina input[type="number"]{
-  color:#fff !important;
-}
-  /* === 絕區零體力按鈕顏色設定 === */
+hr.sep{ border:none; height:1px; background:var(--border); margin:10px 0; }
 
-/* +80 → 綠色 */
-#zzz_claim {
-  background: rgba(34,197,94,.15);
-  border: 1px solid #22c55e;
-  color: #86efac;
-}
+.checkbox{ display:flex; align-items:center; gap:8px; margin:6px 0; }
+.checkbox input{ transform: translateY(1px); }
 
-/* 滿了重置到240 → 紅色 */
-#zzz_reset {
-  background: rgba(239,68,68,.15);
-  border: 1px solid #ef4444;
-  color: #fda4af;
-}
+.warn{ color:#ffb7b7 }
+.ok{ color:#98ffb7 }
 </style>
 </head>
 <body>
 <div class="container">
-  <div class="header">
-    <div>
-      <h1>皮卡每日任務</h1>
-      <div class="muted small">今天（<span id="todayStr"></span>）05:00 作為換日點｜未完成每日：<span id="pendingCount" class="val">0</span> 個</div>
+  <header>
+    <div class="h1">皮卡的每日任務</div>
+    <div class="controls" style="flex:1">
+      <span class="muted" id="todayInfo">今天（05:00 作為換日點）</span>
+      <div class="spacer"></div>
+      <button id="loginBtn">登入 Google</button>
+      <button id="logoutBtn" style="display:none;">登出</button>
+      <span class="muted" id="who">(未登入：僅本機)</span>
     </div>
-    <div class="right">
-      <span id="who" class="muted">(未登入：僅本機)</span>
-      <button class="btn" id="btnLogin">Google 登入</button>
-      <button class="btn" id="btnLogout" style="display:none">登出</button>
-    </div>
+  </header>
+
+  <div class="controls">
+    <span>尚未完成每日：<b id="pendingCount">0</b> 個</span>
+    <div class="spacer"></div>
+    <span class="muted">提醒：版本更新前兩天會在此顯示 ⚠️</span>
   </div>
 
-  <div class="grid">
-    <!-- 左欄 -->
-    <section class="card">
-      <h2>米家三兄弟</h2><div class="sub">原神（台/亞）、崩壞：星穹鐵道、HoyoLAB</div>
+  <div class="grid" id="cards"><!-- 動態插入卡片 --></div>
 
-      <!-- 原神（台服） -->
-      <div class="game" id="gs-tw">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="a.jpg" onerror="this.src='6.png'">
-            <strong>原神・台服</strong>
-          </div>
-          <span class="badge">每日＋月更</span>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">樹脂（8 分鐘 +1 ／ Max 200）</div>
-          <div class="g-right">
-            <button class="pill" id="gsTw_resin_minus10">-10</button>
-            <button class="pill" id="gsTw_resin_minus1">-1</button>
-            <span class="pill val" id="gsTw_resin_view">160</span>
-            <button class="pill" id="gsTw_resin_plus1">+1</button>
-            <button class="pill" id="gsTw_resin_plus10">+10</button>
-            <span class="small">（距離滿：<span id="gsTw_resin_eta" class="val">--</span>）</span>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">每日委託</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="gsTw_daily"></label></div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">淵月螺旋（每月 1 ＆ 16）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="gsTw_abyss_next" class="val">--</span></span>
-            <label class="ck"><input type="checkbox" id="gsTw_abyss_done"> 本輪狀態</label>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">劇詩（每月 1）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="gsTw_poem_next" class="val">--</span></span>
-            <label class="ck"><input type="checkbox" id="gsTw_poem_done"> 本輪狀態</label>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">版本更新（42 天）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="gsTw_ver_next" class="val">--</span></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 原神（亞服） -->
-      <div class="game" id="gs-as">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="a.jpg" onerror="this.src='6.png'">
-            <strong>原神・亞服</strong>
-          </div>
-          <span class="badge">每日＋月更</span>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">樹脂（8 分鐘 +1 ／ Max 200）</div>
-          <div class="g-right">
-            <button class="pill" id="gsAs_resin_minus10">-10</button>
-            <button class="pill" id="gsAs_resin_minus1">-1</button>
-            <span class="pill val" id="gsAs_resin_view">160</span>
-            <button class="pill" id="gsAs_resin_plus1">+1</button>
-            <button class="pill" id="gsAs_resin_plus10">+10</button>
-            <span class="small">（距離滿：<span id="gsAs_resin_eta" class="val">--</span>）</span>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">每日委託</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="gsAs_daily"></label></div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">淵月螺旋（每月 1 ＆ 16）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="gsAs_abyss_next" class="val">--</span></span>
-            <label class="ck"><input type="checkbox" id="gsAs_abyss_done"> 本輪狀態</label>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">劇詩（每月 1）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="gsAs_poem_next" class="val">--</span></span>
-            <label class="ck"><input type="checkbox" id="gsAs_poem_done"> 本輪狀態</label>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">版本更新（42 天）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="gsAs_ver_next" class="val">--</span></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 崩壞：星穹鐵道 -->
-      <div class="game" id="hsr">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="b.jpg" onerror="this.src='6.png'">
-            <strong>崩壞：星穹鐵道</strong>
-          </div>
-          <span class="badge">每日＋多個 42 天檔期</span>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">每日</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="hsr_daily"></label></div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">混沌回憶（42 天）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="hsr_mem_next" class="val">--</span></span>
-            <label class="ck"><input type="checkbox" id="hsr_mem_done"> 本輪狀態</label>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">虛構敘事（42 天）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="hsr_pure_next" class="val">--</span></span>
-            <label class="ck"><input type="checkbox" id="hsr_pure_done"> 本輪狀態</label>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">末日幻影（42 天）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="hsr_ape_next" class="val">--</span></span>
-            <label class="ck"><input type="checkbox" id="hsr_ape_done"> 本輪狀態</label>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">異相仲裁（42 天）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="hsr_arbi_next" class="val">--</span></span>
-            <label class="ck"><input type="checkbox" id="hsr_arbi_done"> 本輪狀態</label>
-          </div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">版本更新（42 天）</div>
-          <div class="g-right"><span class="small">下次：<span id="hsr_ver_next" class="val">--</span></span></div>
-        </div>
-      </div>
-
-      <!-- HoyoLAB -->
-      <div class="game" id="hoyo">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="d.png" onerror="this.src='6.png'">
-            <strong>HoyoLAB</strong>
-          </div>
-          <span class="badge">每日</span>
-        </div>
-        <div class="g-row">
-          <div class="g-left">每日簽到</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="hoyo_daily"></label></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 右欄 -->
-    <section class="card">
-      <h2>其他</h2><div class="sub">絕區零、貓咪大戰爭、Pokémon GO、諾提里森、新世界狂歡</div>
-
-      <!-- 絕區零（懶人版能量） -->
-      <div class="game" id="zzz">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="c.png" onerror="this.src='6.png'">
-            <strong>絕區零</strong>
-          </div>
-          <span class="badge">每日＋能量</span>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">每日</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="zzz_daily"></label></div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">體力（懶人版）</div>
-          <div class="g-right">
-            <span class="pill val" id="zzz_energy_view">240</span>
-            <button class="pill" id="zzz_claim">收取 +80</button>
-            <button class="pill" id="zzz_reset">滿了重置到 240</button>
-            <span class="small">區間 240~960，滿後自動回 240</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 貓咪大戰爭 -->
-      <div class="game" id="cats">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="e.jpg" onerror="this.src='6.png'">
-            <strong>貓咪大戰爭</strong>
-          </div>
-          <span class="badge">週末限定</span>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">每日</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="cats_daily"></label></div>
-        </div>
-
-        <div class="g-row" id="cats_weekend_row">
-          <div class="g-left">週末關卡（六、日）</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="cats_weekend"></label><span class="small">週末 05:00 重置</span></div>
-        </div>
-      </div>
-
-      <!-- Pokémon GO -->
-      <div class="game" id="pogo">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="f.jpg" onerror="this.src='6.png'">
-            <strong>Pokémon GO</strong>
-          </div>
-          <span class="badge">每日</span>
-        </div>
-        <div class="g-row">
-          <div class="g-left">轉一個補給站</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="pogo_spin"></label></div>
-        </div>
-        <div class="g-row">
-          <div class="g-left">捉一隻寶可夢</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="pogo_catch"></label></div>
-        </div>
-      </div>
-
-      <!-- 諾提里森 -->
-      <div class="game" id="noti">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="g.jpg" onerror="this.src='6.png'">
-            <strong>諾提里森</strong>
-          </div>
-          <span class="badge">每日</span>
-        </div>
-        <div class="g-row">
-          <div class="g-left">每日</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="noti_daily"></label></div>
-        </div>
-      </div>
-
-      <!-- 新世界狂歡 -->
-      <div class="game" id="nsfw">
-        <div class="top">
-          <div class="title">
-            <img class="icon" src="h.jpg" onerror="this.src='6.png'">
-            <strong>新世界狂歡</strong>
-          </div>
-          <span class="badge">每日＋金幣卷</span>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">每日</div>
-          <div class="g-right"><label class="ck"><input type="checkbox" id="nsfw_daily"></label></div>
-        </div>
-
-        <div class="g-row">
-          <div class="g-left">金幣卷（3 天一次，循環 0→1→2→0）</div>
-          <div class="g-right">
-            <span class="pill val" id="nsfw_ticket_ctr">0 / 3</span>
-            <button class="pill" id="nsfw_ticket_inc">完成 +1</button>
-            <button class="pill" id="nsfw_ticket_reset">歸 0</button>
-          </div>
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <div class="footer-note">※ 晚上 20:00 與 22:00 若尚有「每日」未打勾，會在前端提醒（需在網頁前景開著）。</div>
+  <p class="footer-note">
+    ※ 資料會自動儲存到雲端（登入後）與本機。若離線操作，恢復網路會自動同步。<br>
+    ※ 週六、週日才會顯示《貓咪大戰爭》的「週末關卡」，每天 05:00 重置。<br>
+    ※ 絕區零電池：按「+80」增加，滿 960 會自動重設到 240（按鈕顏色：綠＝增加、紅＝重置）。<br>
+    ※ 原神樹脂：每 8 分鐘 +1，手動 +1/+10/-1/-10；數字永遠可讀色。<br>
+  </p>
 </div>
 
 <script>
-/* ------------ 小工具 ------------- */
-const $ = sel => document.querySelector(sel);
-const $$ = sel => Array.from(document.querySelectorAll(sel));
-const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-const toLocal5AM = (d=new Date()) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 5, 0, 0, 0);
-function isTodayAfter5(now=new Date()){
-  return now >= toLocal5AM(now);
-}
-function inWeekend(d=new Date()){
-  const w = d.getDay(); // 0 Sun
-  return (w === 0 || w === 6);
-}
-function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
-function fmtDate(d){ if(!d) return '--'; const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; }
-function nextAbyssBase(from){ // 每月 1 & 16
-  const d = new Date(from);
-  const day = d.getDate();
-  const m = d.getMonth();
-  const y = d.getFullYear();
-  if(day < 1){ return new Date(y, m, 1); }
-  if(day < 16){ return new Date(y, m, 16); }
-  return new Date(y, m+1, 1);
-}
-function nextMonth1(from){
-  const d = new Date(from);
-  return new Date(d.getFullYear(), d.getMonth()+1, 1);
-}
-function next42(from){
-  const d = new Date(from);
-  d.setDate(d.getDate()+42);
-  return d;
-}
-
-/* ------------ 預設狀態 ------------- */
-function defaultState(){
-  const today = new Date();
-  const baseAbyss = nextAbyssBase(today);
-  const basePoem  = nextMonth1(today);
-
-  return {
-    // 原神：台、亞
-    gsTw:{
-      resin:{ val:160, last: Date.now() }, // 8 分鐘 +1，max 200
-      daily:{ last:null },
-      abyss:{ next: baseAbyss, done:false },
-      poem: { next: basePoem , done:false },
-      ver:  { next: next42(today) }
-    },
-    gsAs:{
-      resin:{ val:160, last: Date.now() },
-      daily:{ last:null },
-      abyss:{ next: baseAbyss, done:false },
-      poem: { next: basePoem , done:false },
-      ver:  { next: next42(today) }
-    },
-    // 星穹鐵道
-    hsr:{
-      daily:{ last:null },
-      mem: { next: new Date('2025-10-27'), done:false },
-      pure:{ next: new Date('2025-11-24'), done:false },
-      ape: { next: new Date('2025-11-10'), done:false },
-      arbi:{ next: new Date('2025-11-05'), done:false },
-      ver: { next: new Date('2025-11-05') }
-    },
-    // HoyoLAB
-    hoyo:{ daily:{ last:null } },
-    // ZZZ
-    zzz:{ daily:{ last:null }, energy:240 },
-    // 貓咪
-    cats:{ daily:{ last:null }, weekend:{ last:null } },
-    // POGO
-    pogo:{ spin:{ last:null }, catch:{ last:null } },
-    // 諾提
-    noti:{ daily:{ last:null } },
-    // 新世界狂歡
-    nsfw:{ daily:{ last:null }, ticket:0 },
-
-    // 元資訊：重置點與今天字串
-    meta:{
-      lastReset: null // 儲存「上一次 05:00 換日後的日期(yyyy-mm-dd)」
-    }
-  };
-}
-
-/* 深度合併（用 default 補缺，不覆蓋現有值） */
-function deepMergeDefaults(def, cur){
-  if (cur === undefined || cur === null) return def;
-  if (Array.isArray(def) || Array.isArray(cur)) return cur ?? def;
-  if (typeof def !== 'object' || typeof cur !== 'object') return (cur === undefined || cur === null) ? def : cur;
-  const out = {...cur};
-  for (const k of Object.keys(def)){
-    out[k] = deepMergeDefaults(def[k], cur[k]);
-  }
-  return out;
-}
-
-/* ------------ 本機儲存 ------------- */
-const LS_KEY = "daily_state_v1";
-function loadLocal(){
-  try{ const raw=localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
-}
-function saveLocal(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
-
-/* ------------ Firebase ------------- */
+/* ========== Firebase config（同記帳本） ========== */
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
   authDomain: "eyvind95-182f0.firebaseapp.com",
@@ -567,349 +146,552 @@ const firebaseConfig = {
   messagingSenderId: "105770576221",
   appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
 };
-if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); }
+if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 const db = firebase.firestore();
 let CURRENT_UID = null;
-const provider = new firebase.auth.GoogleAuthProvider();
-provider.setCustomParameters({ prompt:'select_account' });
+function userDoc(){ return db.collection('users').doc(CURRENT_UID); }
 
-function userDoc(){ return db.collection('daily').doc(CURRENT_UID); }
+/* ========== 快捷工具 ========== */
+const $ = (s)=>document.querySelector(s);
+const $$ = (s)=>Array.from(document.querySelectorAll(s));
+const today5 = ()=>{ // 05:00為換日
+  const now = new Date();
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0, 0);
+  return { now, base };
+};
+function ymd(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+
+/* ========== State 定義 ========== */
+/* 圖標：a~h 對應 原神、星穹、ZZZ、HoYoLAB、貓戰、PoGo、諾提里森、新世界狂歡 */
+const ICONS = {
+  gj:  "../data/a.jpg",
+  sr:  "../data/b.jpg",
+  zzz: "../data/c.png",
+  hoyo:"../data/d.png",
+  cat: "../data/e.jpg",
+  pogo:"../data/f.jpg",
+  noted:"../data/g.jpg",
+  nsr: "../data/h.jpg"
+};
+
+const STATE_KEY = "daily_state_v1";
+
+/* 預設（初始值） */
+function defaultState(){
+  const now = new Date();
+  // 下個版本日期（可自行調整；原神：固定 42 天）
+  const vers42 = (base)=> ymd(addDays(new Date(base), 42));
+  // 你有提供的下一次們（例）
+  const gj_next_ver = "2025-10-22"; // 之後會自動+42天
+  const sr_memoria = "2025-10-27";
+  const sr_fiction = "2025-11-24";
+  const sr_apoc   = "2025-11-10";
+  const sr_arbit  = "2025-11-05";
+  const sr_ver    = "2025-11-05";
+
+  return {
+    updatedAt: Date.now(),
+
+    genshin_asia:{
+      resin:200, max:200, // 8分鐘+1
+      daily:false,
+      abyssNext: nextAbyss(new Date()),  // 每月 1 / 16
+      chronicleNext: nextMonth1(new Date()), // 每月1
+      versionNext: gj_next_ver, // 42天
+      round:{ abyss:false, chronicle:false, version:false } // 本輪是否已處理
+    },
+    genshin_tw:{
+      resin:200, max:200,
+      daily:false,
+      abyssNext: nextAbyss(new Date()),
+      chronicleNext: nextMonth1(new Date()),
+      versionNext: gj_next_ver,
+      round:{ abyss:false, chronicle:false, version:false }
+    },
+
+    starrail:{
+      daily:false,
+      memoNext:  sr_memoria, // 混沌回憶
+      ficNext:   sr_fiction, // 虛構敘事
+      doomNext:  sr_apoc,    // 末日幻影
+      arbNext:   sr_arbit,   // 異相仲裁
+      verNext:   sr_ver,
+      round:{
+        memo:false, fic:false, doom:false, arb:false, ver:false
+      }
+    },
+
+    zzz:{
+      daily:false,
+      power:480, min:240, max:960 // +80，滿960重置到240
+    },
+
+    hoyolab:{ daily:false },
+
+    cat:{ weekend:false, lastReset:null }, // 只在六/日顯示；每日05:00重置
+    pogo:{ spin:false, catch:false },
+    noted:{ daily:false },
+    nsr:{ daily:false, coinRoll:0 } // 金幣券：0~3，滿自動歸0
+  };
+}
+
+/* 幫手：每月 1 / 16 的下一個，與每月 1 的下一個 */
+function nextAbyss(ref){
+  const d = new Date(ref);
+  const day = d.getDate();
+  if(day <= 1)  { d.setDate(1);  }
+  else if(day <= 16){ d.setDate(16); }
+  else { // 下個月1
+    d.setMonth(d.getMonth()+1); d.setDate(1);
+  }
+  return ymd(d);
+}
+function nextMonth1(ref){
+  const d = new Date(ref);
+  if(d.getDate()<=1) d.setDate(1);
+  else { d.setMonth(d.getMonth()+1); d.setDate(1); }
+  return ymd(d);
+}
+
+/* ========== 本機/雲端存取 ========== */
+function loadLocal(){ try{ return JSON.parse(localStorage.getItem(STATE_KEY)||"{}"); }catch{ return {}; } }
+function saveLocal(s){ localStorage.setItem(STATE_KEY, JSON.stringify(s)); }
 
 async function cloudLoad(){
   if(!CURRENT_UID) return null;
-  const snap = await userDoc().get();
+  const snap = await userDoc().collection('daily').doc('state').get();
   return snap.exists ? snap.data() : null;
 }
-async function cloudSave(state){
+async function cloudSave(s){
   if(!CURRENT_UID) return;
-  await userDoc().set(state);
+  await userDoc().collection('daily').doc('state').set({
+    ...s,
+    _updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge:true });
 }
 
-/* ------------ 全域狀態 ------------- */
-let STATE = null;
-
-/* ------------ 換日邏輯（05:00） ------------- */
-function ensureDailyReset(){
-  const now = new Date();
-  const dayToken = ymd(isTodayAfter5(now) ? now : addDays(now,-1)); // 當天 05:00 之後算今天；否則算昨天
-  if(STATE.meta.lastReset === dayToken) return;
-
-  // 通用的「每日」欄位：把 last 清掉（表示可勾）
-  function resetDaily(obj){
-    if(!obj) return;
-    Object.keys(obj).forEach(k=>{
-      const v = obj[k];
-      if(v && typeof v === 'object' && 'last' in v){
-        v.last = null;
-      }
-    });
-  }
-
-  // 重置各區塊
-  resetDaily(STATE.gsTw);
-  resetDaily(STATE.gsAs);
-  resetDaily(STATE.hsr);
-  resetDaily(STATE.hoyo);
-  resetDaily(STATE.zzz);
-  resetDaily(STATE.cats);
-  resetDaily(STATE.pogo);
-  resetDaily(STATE.noti);
-  resetDaily(STATE.nsfw);
-
-  // 週末關卡：只要在週末（六日），每天重置一次
-  if(inWeekend(now)){
-    STATE.cats.weekend.last = null;
-  }
-
-  STATE.meta.lastReset = dayToken;
-}
-
-/* ------------ 原神樹脂自動回復 ------------- */
-function tickResinAutoOne(node){
-  const now = Date.now();
-  let {val,last} = node;
-  if(val>=200){ node.val=200; node.last=now; return; }
-  const mins = Math.floor((now - last)/60000);
-  if(mins <= 0) return;
-  const add = Math.floor(mins/8);
-  if(add>0){
-    node.val = Math.min(200, val + add);
-    node.last = last + add*8*60000;
-  }
-}
-function tickResinAuto(){
-  tickResinAutoOne(STATE.gsTw.resin);
-  tickResinAutoOne(STATE.gsAs.resin);
-}
-
-/* ------------ UI 綁定 ------------- */
-// 通用「每日 checkbox」
-function bindDailyCheckbox(idPath, model){
-  const el = document.getElementById(idPath);
-  if(!el) return;
-  el.checked = !!model.last;
-  el.onchange = async ()=>{
-    model.last = el.checked ? Date.now() : null;
-    await persist();
-    renderPending();
-  }
-}
-function bindSpin(id, model){ // POGO
-  const el = document.getElementById(id);
-  el.checked = !!model.last;
-  el.onchange = async ()=>{ model.last = el.checked ? Date.now() : null; await persist(); renderPending(); }
-}
-function bindPoGo(idCatch, idSpin){
-  bindSpin(idSpin, STATE.pogo.spin);
-  bindSpin(idCatch, STATE.pogo.catch);
-}
-
-function setText(id, txt){ const el=$(id.startsWith('#')?id:('#'+id)); if(el) el.textContent=txt; }
-
-function etaTo200(resin){
-  if(resin.val>=200) return '滿';
-  const remain = 200 - resin.val;
-  const mins = remain*8; // 分鐘
-  const h = Math.floor(mins/60);
-  const m = mins % 60;
-  return `${h}小時 ${m}分`;
-}
-
-/* 原神區：台/亞 綁定 */
-function bindGenshinOne(prefix, node){
-  const v = id => document.getElementById(prefix + '_' + id);
-
-  // 樹脂
-  const view = v('resin_view'), eta = v('resin_eta');
-  function paintResin(){
-    view.textContent = node.resin.val;
-    eta.textContent = etaTo200(node.resin);
-  }
-  v('resin_minus10').onclick = async ()=>{ node.resin.val = Math.max(0, node.resin.val-10); node.resin.last=Date.now(); paintResin(); await persist(); };
-  v('resin_minus1').onclick  = async ()=>{ node.resin.val = Math.max(0, node.resin.val-1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
-  v('resin_plus1').onclick   = async ()=>{ node.resin.val = Math.min(200, node.resin.val+1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
-  v('resin_plus10').onclick  = async ()=>{ node.resin.val = Math.min(200, node.resin.val+10); node.resin.last=Date.now(); paintResin(); await persist(); };
-  paintResin();
-
-  // 每日
-  bindDailyCheckbox(prefix+"_daily", node.daily);
-
-  // 螺旋
-  setText(prefix+"_abyss_next", fmtDate(node.abyss.next));
-  const ckA = v('abyss_done'); ckA.checked = !!node.abyss.done;
-  ckA.onchange = async ()=>{ node.abyss.done = ckA.checked; await persist(); };
-
-  // 劇詩
-  setText(prefix+"_poem_next", fmtDate(node.poem.next));
-  const ckP = v('poem_done'); ckP.checked = !!node.poem.done;
-  ckP.onchange = async ()=>{ node.poem.done = ckP.checked; await persist(); };
-
-  // 版本
-  setText(prefix+"_ver_next", fmtDate(node.ver.next));
-}
-
-/* 星穹鐵道 */
-function bindHSR(){
-  bindDailyCheckbox("hsr_daily", STATE.hsr.daily);
-
-  function one(key, labelId, ckId){
-    setText(labelId, fmtDate(STATE.hsr[key].next));
-    const ck = document.getElementById(ckId);
-    ck.checked = !!STATE.hsr[key].done;
-    ck.onchange = async ()=>{ STATE.hsr[key].done = ck.checked; await persist(); };
-  }
-  one('mem', "hsr_mem_next", "hsr_mem_done");
-  one('pure',"hsr_pure_next","hsr_pure_done");
-  one('ape',"hsr_ape_next","hsr_ape_done");
-  one('arbi',"hsr_arbi_next","hsr_arbi_done");
-  setText("hsr_ver_next", fmtDate(STATE.hsr.ver.next));
-}
-
-/* HoyoLAB */
-function bindHoyo(){ bindDailyCheckbox("hoyo_daily", STATE.hoyo.daily); }
-
-/* ZZZ（懶人版） */
-function bindZZZ(){
-  bindDailyCheckbox("zzz_daily", STATE.zzz.daily);
-
-  const view = $("#zzz_energy_view");
-  function paint(){ view.textContent = STATE.zzz.energy; }
-  paint();
-
-  $("#zzz_claim").onclick = async ()=>{
-    STATE.zzz.energy = Math.min(STATE.zzz.energy + 80, 960);
-    if (STATE.zzz.energy >= 960) STATE.zzz.energy = 240;
-    paint(); await persist();
-  };
-  $("#zzz_reset").onclick = async ()=>{ STATE.zzz.energy = 240; paint(); await persist(); };
-}
-
-/* 貓咪：週末行顯示控管 */
-function toggleWeekendRow(){
-  const row = $("#cats_weekend_row");
-  if(!row) return;
-  row.style.display = inWeekend() ? "" : "none";
-}
-function bindCats(){
-  bindDailyCheckbox("cats_daily", STATE.cats.daily);
-  toggleWeekendRow();
-  const ck = $("#cats_weekend");
-  if(ck){
-    ck.checked = !!STATE.cats.weekend.last;
-    ck.onchange = async ()=>{ STATE.cats.weekend.last = ck.checked ? Date.now() : null; await persist(); };
-  }
-}
-
-/* POGO */
-function bindPoGoAll(){ bindPoGo("pogo_catch", "pogo_spin"); }
-
-/* 諾提里森 */
-function bindNoti(){ bindDailyCheckbox("noti_daily", STATE.noti.daily); }
-
-/* 新世界狂歡（自動循環 0→1→2→0） */
-function bindNSFW(){
-  bindDailyCheckbox("nsfw_daily", STATE.nsfw.daily);
-  const ctr=$("#nsfw_ticket_ctr"), inc=$("#nsfw_ticket_inc"), rst=$("#nsfw_ticket_reset");
-  function paint(){ ctr.textContent = `${STATE.nsfw.ticket} / 3`; }
-  paint();
-  inc.onclick = async ()=>{ STATE.nsfw.ticket = (STATE.nsfw.ticket + 1) % 3; paint(); await persist(); };
-  rst.onclick = async ()=>{ STATE.nsfw.ticket = 0; paint(); await persist(); };
-}
-/* 自動替按鈕加上顏色 class（依照文字內容 + / -） */
-function colorizePlusMinus(){
-  document.querySelectorAll('.counter .btn, .btn-inc, .btn-dec, button').forEach(b=>{
-    const t = (b.textContent || '').trim();
-    // 先清掉舊標記
-    b.classList.remove('btn-plus','btn-minus');
-    // 判斷字面上是否是 + 或 -
-    if (t.startsWith('+')) b.classList.add('btn-plus');
-    if (t.startsWith('-')) b.classList.add('btn-minus');
-  });
-}
-/* 如果你有 render() 或初始化，結尾呼叫一下 */
-window.addEventListener('load', colorizePlusMinus);
-/* 若你的頁面有重新渲染 UI 的流程，記得在 render() 結尾也加上 colorizePlusMinus(); */
-/* ------------ Pending 統計 & 提醒 ------------- */
-function renderPending(){
-  // 統計所有「每日」還沒打勾的
-  const arr = [
-    STATE.gsTw.daily, STATE.gsAs.daily, STATE.hsr.daily, STATE.hoyo.daily, STATE.zzz.daily,
-    STATE.cats.daily, STATE.pogo.spin, STATE.pogo.catch, STATE.noti.daily, STATE.nsfw.daily
-  ];
-  const cnt = arr.filter(x => !x.last).length;
-  $("#pendingCount").textContent = cnt;
-}
-function scheduleLocalReminders(){
-  // 前端簡單信息：20:00 / 22:00 若 pending>0 就 alert（頁面開著才會觸發）
-  function plan(hour){
-    const now = new Date(), t = new Date();
-    t.setHours(hour,0,0,0);
-    if(t <= now) t.setDate(t.getDate()+1);
-    const ms = t - now;
-    setTimeout(()=>{ renderPending(); const n=parseInt($("#pendingCount").textContent||"0",10);
-      if(n>0) alert(`提醒：你還有 ${n} 個每日尚未完成喔！`);
-      plan(hour); // 續約
-    }, ms);
-  }
-  plan(20); plan(22);
-}
-
-/* ------------ 渲染 ------------- */
-function render(){
-  // 日期條
-  const now = new Date();
-  $("#todayStr").textContent = ymd(now);
-
-  // 流程：自動回復樹脂 → 渲染各塊
-  tickResinAuto();
-
-  // Genshin
-  bindGenshinOne("gsTw", STATE.gsTw);
-  bindGenshinOne("gsAs", STATE.gsAs);
-
-  // HSR / Hoyo / ZZZ / Cats / PoGo / Noti / NSFW
-  bindHSR(); bindHoyo(); bindZZZ(); bindCats(); bindPoGoAll(); bindNoti(); bindNSFW();
-
-  renderPending();
-}
-
-/* ------------ 永久化（雲端優先） ------------- */
-async function persist(){
-  saveLocal(STATE);
-  if(CURRENT_UID){
-    try{ await cloudSave(STATE); }catch(e){ console.error(e); }
-  }
-}
-
-/* ------------ 登入 UI ------------- */
-function updateLoginUI(user){
-  if(user){
-    $("#who").textContent = `已登入：${user.email||'Google'}`;
-    $("#btnLogin").style.display="none";
-    $("#btnLogout").style.display="";
-  }else{
-    $("#who").textContent = "(未登入：僅本機)";
-    $("#btnLogin").style.display="";
-    $("#btnLogout").style.display="none";
-  }
-}
-
-/* ------------ 啟動 ------------- */
-(async function bootstrap(){
-  // Service Worker（若檔案存在就會註冊成功）
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
-  }
-
-  // 載入狀態（雲端或本機）→ 合併預設 → 05:00 換日 → 自動回復 → 存 → 渲染
-  let local = loadLocal();
-  STATE = deepMergeDefaults(defaultState(), local||{});
-
-  ensureDailyReset();
-  tickResinAuto();
-  await persist();
-  render();
-
-  // Google Auth 監聽
-  firebase.auth().onAuthStateChanged(async (user)=>{
-    CURRENT_UID = user ? user.uid : null;
-    updateLoginUI(user);
-    try{
-      if(user){
-        const cloud = await cloudLoad();
-        STATE = deepMergeDefaults(defaultState(), cloud || STATE || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render();
-      }else{
-        // 登出回本機
-        const loc = loadLocal();
-        STATE = deepMergeDefaults(defaultState(), loc || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render();
-      }
-    }catch(e){ console.error(e); }
-  });
-
-  // Login/Logout
-  $("#btnLogin").onclick = async ()=>{
-    try{ await firebase.auth().signInWithPopup(provider); }
-    catch(e){
-      const fallback = ["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"];
-      if(fallback.includes(e.code||"")) await firebase.auth().signInWithRedirect(provider);
-      else alert("登入失敗：" + e.message);
+async function loadUnified(){
+  try{
+    if(CURRENT_UID){
+      const cloud = await cloudLoad();
+      if(cloud) { saveLocal(cloud); return cloud; }
     }
-  };
-  $("#btnLogout").onclick = async ()=>{ await firebase.auth().signOut(); };
+  }catch(e){ console.warn("雲端讀取失敗，改用本機", e); }
+  const local = loadLocal();
+  return Object.keys(local).length ? local : defaultState();
+}
+async function saveUnified(s){
+  saveLocal(s);
+  try{ if(CURRENT_UID) await cloudSave(s); }catch(e){ console.warn("雲端儲存失敗，先留本機", e); }
+}
 
-  // 前端提醒排程
-  scheduleLocalReminders();
+/* ========== 畫面/邏輯 ========== */
+let state = defaultState();
 
-  // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
-  setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
+function isWeekend(d=new Date()){
+  const wd = d.getDay(); // 0 Sun ... 6 Sat
+  return wd===0 || wd===6;
+}
+
+/* 重置點：每日 05:00 */
+function checkDailyReset(){
+  const { now, base } = today5();
+  const last = new Date(state.updatedAt || 0);
+  // 若上一次更新 < 今日 05:00，做重置
+  if(last < base){
+    // 每日重置
+    state.genshin_asia.daily = false;
+    state.genshin_tw.daily   = false;
+    state.starrail.daily     = false;
+    state.zzz.daily          = false;
+    state.hoyolab.daily      = false;
+    state.pogo.spin          = false;
+    state.pogo.catch         = false;
+    state.noted.daily        = false;
+    state.nsr.daily          = false;
+
+    // 貓戰（六/日才顯示，但每天都重置顯示框）
+    state.cat.weekend = false;
+    state.cat.lastReset = ymd(now);
+  }
+  state.updatedAt = Date.now();
+}
+
+/* 排程提醒：距離版本更新兩天顯示警告（僅視覺提示） */
+function versionWarningHtml(nextStr){
+  try{
+    const next = new Date(nextStr+"T00:00:00");
+    const diff = Math.ceil((next - new Date())/86400000);
+    if(diff<=2) return ` <span class="warn">⚠️ ${diff} 天後版本更新</span>`;
+  }catch{}
+  return "";
+}
+
+/* 原神樹脂自動 +1/8min */
+let resinTimer = null;
+function startResinTimer(){
+  if(resinTimer) clearInterval(resinTimer);
+  resinTimer = setInterval(()=>{
+    ["genshin_asia","genshin_tw"].forEach(key=>{
+      const o = state[key];
+      if(!o) return;
+      if(o.resin < o.max){ o.resin += 1; }
+    });
+    state.updatedAt = Date.now();
+    saveUnified(state);
+    render();
+  }, 8*60*1000);
+}
+
+/* ZZZ：+80；滿 960 變 240（紅色） */
+function zzzAdd80(){
+  const o = state.zzz;
+  const before = o.power;
+  o.power = Math.min(o.max, o.power + 80);
+  if(o.power >= o.max){ o.power = o.min; } // 滿就重置到240
+}
+
+/* 新世界狂歡 金幣卷 3 天輪迴（滿就 0）→ 這裡當作簡易按鈕切換 */
+function nsrCoinTick(){
+  state.nsr.coinRoll = (state.nsr.coinRoll + 1) % 3;
+}
+
+/* 工具：切換勾選 */
+function toggle(path){
+  // path 例："genshin_asia.daily"
+  const seg = path.split(".");
+  let p = state;
+  for(let i=0;i<seg.length-1;i++){ p = p[seg[i]]; }
+  const k = seg[seg.length-1];
+  p[k] = !p[k];
+}
+
+/* 下一個日期（42天 or 月1/16/月1）按鈕：本輪完成 → 推進下一次 */
+function stepDate(path){
+  // path 例："genshin_asia.abyssNext" / "genshin_asia.chronicleNext" / "genshin_asia.versionNext"
+  const seg = path.split(".");
+  let p = state; for(let i=0;i<seg.length-1;i++){ p = p[seg[i]]; }
+  const k = seg[seg.length-1];
+
+  const cur = new Date((p[k]||ymd(new Date()))+"T00:00:00");
+  if(k.includes("abyss"))       p[k] = nextAbyss(addDays(cur,1));
+  else if(k.includes("chroni")) p[k] = nextMonth1(addDays(cur,1));
+  else if(k.includes("ver"))    p[k] = ymd(addDays(cur,42));
+}
+
+/* 渲染卡片 */
+function render(){
+  checkDailyReset();
+
+  $("#todayInfo").textContent = `今天（05:00 作為換日點）`;
+
+  // 未完成每日統計
+  let pending = 0;
+  function chk(b){ if(!b) pending++; }
+
+  // 卡片 HTML
+  const html = [];
+
+  /* 原神 ——— 亞服 */
+  html.push(cardGenshin("原神（亞服）", ICONS.gj, state.genshin_asia, "genshin_asia"));
+  chk(state.genshin_asia.daily===true);
+  /* 原神 ——— 台服 */
+  html.push(cardGenshin("原神（台服）", ICONS.gj, state.genshin_tw, "genshin_tw"));
+  chk(state.genshin_tw.daily===true);
+
+  /* 星穹鐵道 */
+  html.push(cardStarRail());
+  chk(state.starrail.daily===true);
+
+  /* 絕區零 */
+  html.push(cardZZZ());
+  chk(state.zzz.daily===true);
+
+  /* HoYoLAB */
+  html.push(cardSimple("HoYoLAB", ICONS.hoyo, [
+    checkbox("每日", "hoyolab.daily")
+  ]));
+
+  /* Pokémon GO */
+  html.push(cardSimple("Pokémon GO", ICONS.pogo, [
+    checkbox("轉一個補給站", "pogo.spin"),
+    checkbox("捉一隻寶可夢", "pogo.catch")
+  ]));
+
+  /* 諾提里森 */
+  html.push(cardSimple("諾提里森", ICONS.noted, [
+    checkbox("每日", "noted.daily")
+  ]));
+
+  /* 新世界狂歡 */
+  html.push(cardNSR());
+
+  /* 貓咪大戰爭（週六/日顯示） */
+  if(isWeekend()){
+    html.push(cardCat());
+  }
+
+  $("#cards").innerHTML = html.join("");
+
+  // 綁定所有 input / button
+  $$("#cards input[data-path]").forEach(el=>{
+    el.checked = getByPath(el.dataset.path)===true;
+    el.addEventListener("change", ()=>{
+      toggle(el.dataset.path);
+      state.updatedAt = Date.now();
+      saveUnified(state);
+      render();
+    });
+  });
+  $$("#cards button[data-path]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const p = btn.dataset.path;
+      if(p==="zzz.plus"){
+        zzzAdd80();
+      }else if(p.endsWith(".resin+1")){
+        const o=getByPath(p.split(".").slice(0,-1).join(".")); o.resin=Math.min(o.max, o.resin+1);
+      }else if(p.endsWith(".resin+10")){
+        const o=getByPath(p.split(".").slice(0,-1).join(".")); o.resin=Math.min(o.max, o.resin+10);
+      }else if(p.endsWith(".resin-1")){
+        const o=getByPath(p.split(".").slice(0,-1).join(".")); o.resin=Math.max(0, o.resin-1);
+      }else if(p.endsWith(".resin-10")){
+        const o=getByPath(p.split(".").slice(0,-1).join(".")); o.resin=Math.max(0, o.resin-10);
+      }else if(p.endsWith("Next.step")){
+        stepDate(p.replace(".step",""));
+        // 並將本輪狀態歸 0
+        const base = p.split(".")[0];
+        if(base==="genshin_asia"||base==="genshin_tw"){
+          const o = state[base];
+          if(p.includes("abyss")) o.round.abyss=false;
+          else if(p.includes("chroni")) o.round.chronicle=false;
+          else if(p.includes("ver")) o.round.version=false;
+        }else if(base==="starrail"){
+          const r = state.starrail.round;
+          if(p.includes("memo")) r.memo=false;
+          else if(p.includes("fic")) r.fic=false;
+          else if(p.includes("doom")) r.doom=false;
+          else if(p.includes("arb")) r.arb=false;
+          else if(p.includes("ver")) r.ver=false;
+        }
+      }else if(p==="nsr.coin"){
+        nsrCoinTick();
+      }
+      state.updatedAt = Date.now();
+      saveUnified(state);
+      render();
+    });
+  });
+
+  $("#pendingCount").textContent = String(pending);
+}
+
+/* 取物件路徑 */
+function getByPath(path){
+  const seg=path.split("."); let p=state;
+  for(const s of seg){ if(p==null) return undefined; p=p[s]; }
+  return p;
+}
+
+/* 卡片元件們 */
+function cardHeader(name, icon, rightHtml=""){
+  return `
+  <div class="title">
+    <div class="left">
+      <img class="icon" src="${icon}" alt="">
+      <div class="name">${name}</div>
+    </div>
+    <div>${rightHtml}</div>
+  </div>`;
+}
+function checkbox(label, path){
+  return `<label class="checkbox"><input type="checkbox" data-path="${path}"><span>${label}</span></label>`;
+}
+function cardSimple(name, icon, rows){
+  return `<section class="card">
+    ${cardHeader(name, icon)}
+    ${rows.join("")}
+  </section>`;
+}
+
+/* 原神卡片 */
+function cardGenshin(name, icon, obj, baseKey){
+  const warn = versionWarningHtml(obj.versionNext);
+  return `
+  <section class="card">
+    ${cardHeader(name, icon, `<span class="badge">每日＋排程</span>`)}
+    <div class="row">
+      <div class="label">體力（樹脂）</div>
+      <div class="resinBox">
+        <span class="n">${obj.resin}</span><small>/ ${obj.max}</small>
+      </div>
+      <div class="kit">
+        <button class="minus" data-path="${baseKey}.resin-10">-10</button>
+        <button class="minus" data-path="${baseKey}.resin-1">-1</button>
+        <button class="plus"  data-path="${baseKey}.resin+1">+1</button>
+        <button class="plus"  data-path="${baseKey}.resin+10">+10</button>
+        <span class="subtle">（每 8 分鐘 +1）</span>
+      </div>
+    </div>
+    ${checkbox("每日", `${baseKey}.daily`)}
+    <hr class="sep">
+    <div class="row"><div class="label">淵月螺旋（每月 1 & 16）</div>
+      <div class="val next">${obj.abyssNext}</div>
+      <div class="kit">
+        ${checkbox("本輪狀態", `${baseKey}.round.abyss`)}
+        <button class="plus" data-path="${baseKey}.abyssNext.step">推到下一次</button>
+      </div>
+    </div>
+    <div class="row"><div class="label">劇詩（每月 1）</div>
+      <div class="val next">${obj.chronicleNext}</div>
+      <div class="kit">
+        ${checkbox("本輪狀態", `${baseKey}.round.chronicle`)}
+        <button class="plus" data-path="${baseKey}.chronicleNext.step">推到下一次</button>
+      </div>
+    </div>
+    <div class="row"><div class="label">版本更新（42 天）</div>
+      <div class="val next">${obj.versionNext}${warn}</div>
+      <div class="kit">
+        ${checkbox("本輪狀態", `${baseKey}.round.version`)}
+        <button class="plus" data-path="${baseKey}.versionNext.step">推到下一次</button>
+      </div>
+    </div>
+  </section>`;
+}
+
+/* 星穹卡片 */
+function cardStarRail(){
+  const s = state.starrail;
+  function row(label, keyPath, nextStr){
+    return `
+    <div class="row">
+      <div class="label">${label}（42 天）</div>
+      <div class="val next">${nextStr}</div>
+      <div class="kit">
+        ${checkbox("本輪已完成", `starrail.round.${keyPath}`)}
+        <button class="plus" data-path="starrail.${keyPath}Next.step">推到下一次</button>
+      </div>
+    </div>`;
+  }
+  const warn = versionWarningHtml(s.verNext);
+  return `
+  <section class="card">
+    ${cardHeader("崩壞：星穹鐵道", ICONS.sr, `<span class="badge">每日＋42天排程</span>`)}
+    ${checkbox("每日", "starrail.daily")}
+    <hr class="sep">
+    ${row("混沌回憶","memo", s.memoNext)}
+    ${row("虛構敘事","fic",  s.ficNext)}
+    ${row("末日幻影","doom", s.doomNext)}
+    ${row("異相仲裁","arb",  s.arbNext)}
+    <div class="row">
+      <div class="label">版本更新（42 天）</div>
+      <div class="val next">${s.verNext}${warn}</div>
+      <div class="kit">
+        ${checkbox("本輪已完成", "starrail.round.ver")}
+        <button class="plus" data-path="starrail.verNext.step">推到下一次</button>
+      </div>
+    </div>
+  </section>`;
+}
+
+/* ZZZ 卡片 */
+function cardZZZ(){
+  const z = state.zzz;
+  // 按鈕顏色：+80 綠、滿→重置紅（文字反映在提示上）
+  const willReset = (z.power+80)>=z.max;
+  return `
+  <section class="card">
+    ${cardHeader("絕區零", ICONS.zzz, `<span class="badge">每日＋電池</span>`)}
+    ${checkbox("每日", "zzz.daily")}
+    <div class="row">
+      <div class="label">電力（懶人版）</div>
+      <div class="val">${z.power} / ${z.max}（底 ${z.min}）</div>
+      <div class="kit">
+        <button class="${willReset?'minus':'plus'}" data-path="zzz.plus">${willReset? '滿 → 回到 240' : '+80'}</button>
+      </div>
+      <div class="subtle">滿 960 會自動回到 240</div>
+    </div>
+  </section>`;
+}
+
+/* 貓咪大戰爭（週末） */
+function cardCat(){
+  return `
+  <section class="card">
+    ${cardHeader("貓咪大戰爭", ICONS.cat, `<span class="badge">週末關卡</span>`)}
+    ${checkbox("週末關卡（僅週六/週日顯示）", "cat.weekend")}
+    <div class="subtle">每天 05:00 重置</div>
+  </section>`;
+}
+
+/* 新世界狂歡 */
+function cardNSR(){
+  const n = state.nsr;
+  return `
+  <section class="card">
+    ${cardHeader("新世界狂歡", ICONS.nsr, `<span class="badge">每日＋金幣卷</span>`)}
+    ${checkbox("每日", "nsr.daily")}
+    <div class="row">
+      <div class="label">金幣卷（3 天一輪）</div>
+      <div class="val">${n.coinRoll} / 3</div>
+      <div class="kit"><button class="plus" data-path="nsr.coin">+1（滿即歸 0）</button></div>
+    </div>
+  </section>`;
+}
+
+/* ========== 登入/登出 ========== */
+async function googleLogin(){
+  try{
+    const res = await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  }catch(e){
+    const code = e.code || "";
+    if(["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"].includes(code)){
+      await firebase.auth().signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+    }else{
+      alert("Google 登入失敗：" + e.message);
+    }
+  }
+}
+async function googleLogout(){ await firebase.auth().signOut(); }
+
+$("#loginBtn").addEventListener("click", googleLogin);
+$("#logoutBtn").addEventListener("click", googleLogout);
+
+firebase.auth().onAuthStateChanged(async (user)=>{
+  if(user){
+    CURRENT_UID = user.uid;
+    $("#who").textContent = `已登入：${user.email||"Google 帳號"}`;
+    $("#loginBtn").style.display="none";
+    $("#logoutBtn").style.display="";
+    const cloud = await cloudLoad();
+    const local = loadLocal();
+    state = cloud || local || defaultState();
+    if(!cloud && local) await cloudSave(state); // 首登入，把本機上傳
+  }else{
+    CURRENT_UID = null;
+    $("#who").textContent = "(未登入：僅本機)";
+    $("#loginBtn").style.display="";
+    $("#logoutBtn").style.display="none";
+    state = loadLocal();
+    if(!Object.keys(state).length) state = defaultState();
+  }
+  render();
+});
+
+/* ========== 啟動 ========== */
+(async()=>{
+  state = await loadUnified();
+  render();
+  startResinTimer();
 })();
+
+/* ========== SW 註冊（快取/離線） ========== */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
-
-
-
-
-
