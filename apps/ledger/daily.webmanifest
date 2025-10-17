@@ -1,7 +1,8 @@
 {
   "name": "皮卡的每日任務",
   "short_name": "每日任務",
-  "start_url": "/hello/apps/ledger/daily.html",
+  "start_url": "./daily.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0b0b0b",
   "theme_color": "#0b0b0b",
