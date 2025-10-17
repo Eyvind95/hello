@@ -147,7 +147,10 @@ input[type="number"].val,
   border: 1px solid #ef4444;
   color: #fda4af;
 }
-
+/* 讓所有 val 都是白字、等寬數字 */
+.val{ color:#fff !important; font-variant-numeric: tabular-nums; }
+/* 小字也給白一點，避免被背景吃掉 */
+.small{ color:#ddd; }
 </style>
 </head>
 <body>
@@ -717,9 +720,10 @@ function bindPoGo(idCatch, idSpin){
 function setText(id, txt){ const el=$(id.startsWith('#')?id:('#'+id)); if(el) el.textContent=txt; }
 
 function etaTo200(resin){
-  if(resin.val>=200) return '滿';
-  const remain = 200 - resin.val;
-  const mins = remain*8; // 分鐘
+  if (!resin || typeof resin.val !== 'number' || !Number.isFinite(resin.val)) return '--';
+  if (resin.val >= 200) return '滿';
+  const remain = Math.max(0, 200 - resin.val);
+  const mins = remain * 8;
   const h = Math.floor(mins/60);
   const m = mins % 60;
   return `${h}小時 ${m}分`;
@@ -729,18 +733,26 @@ function etaTo200(resin){
 function bindGenshinOne(prefix, node){
   const v = id => document.getElementById(prefix + '_' + id);
 
-  // 樹脂
+  // --- 樹脂（加強版） ---
+  // 若缺 last 就補現在時間；若缺 val 就補 160
+  if (!node.resin || typeof node.resin.val !== 'number') {
+    node.resin = { val: 160, last: Date.now() };
+  }
+  if (!node.resin.last) node.resin.last = Date.now();
+
   const view = v('resin_view'), eta = v('resin_eta');
   function paintResin(){
-    view.textContent = node.resin.val;
-    eta.textContent = etaTo200(node.resin);
+    if (view) view.textContent = node.resin.val;
+    if (eta)  eta.textContent  = etaTo200(node.resin);
   }
-  v('resin_minus10').onclick = async ()=>{ node.resin.val = Math.max(0, node.resin.val-10); node.resin.last=Date.now(); paintResin(); await persist(); };
-  v('resin_minus1').onclick  = async ()=>{ node.resin.val = Math.max(0, node.resin.val-1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
-  v('resin_plus1').onclick   = async ()=>{ node.resin.val = Math.min(200, node.resin.val+1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
-  v('resin_plus10').onclick  = async ()=>{ node.resin.val = Math.min(200, node.resin.val+10); node.resin.last=Date.now(); paintResin(); await persist(); };
-  paintResin();
+  const m10 = v('resin_minus10'), m1 = v('resin_minus1'),
+        p1  = v('resin_plus1'),  p10= v('resin_plus10');
 
+  if (m10) m10.onclick = async ()=>{ node.resin.val = Math.max(0,   node.resin.val-10); node.resin.last=Date.now(); paintResin(); await persist(); };
+  if (m1)  m1.onclick  = async ()=>{ node.resin.val = Math.max(0,   node.resin.val-1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
+  if (p1)  p1.onclick  = async ()=>{ node.resin.val = Math.min(200, node.resin.val+1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
+  if (p10) p10.onclick = async ()=>{ node.resin.val = Math.min(200, node.resin.val+10); node.resin.last=Date.now(); paintResin(); await persist(); };
+paintResin();
   // 每日
   bindDailyCheckbox(prefix+"_daily", node.daily);
 
@@ -853,6 +865,9 @@ function scheduleLocalReminders(){
 
 /* ------------ 渲染 ------------- */
 function render(){
+  document.querySelectorAll('button').forEach(b => {
+  if (!b.getAttribute('type')) b.setAttribute('type', 'button');
+});
   // 日期條
   const now = new Date();
   $("#todayStr").textContent = ymd(now);
