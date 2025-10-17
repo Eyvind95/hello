@@ -559,33 +559,81 @@ function loadLocal(){
 }
 function saveLocal(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
 
-/* ------------ Firebase ------------- */
+// ---- Firebase 初始化 ----
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
   authDomain: "eyvind95-182f0.firebaseapp.com",
   projectId: "eyvind95-182f0",
-  storageBucket: "eyvind95-182f0.firebasestorage.app",
+  // 小提醒：storage 不用也沒差，但通常是 *.appspot.com
+  storageBucket: "eyvind95-182f0.appspot.com",
   messagingSenderId: "105770576221",
-  appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
+  appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4",
 };
-if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); }
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
 const db = firebase.firestore();
+
+// ---- Google Provider（全域只留這一個）----
 let CURRENT_UID = null;
-const provider = new firebase.auth.GoogleAuthProvider();
-provider.setCustomParameters({ prompt:'select_account' });
+const googleProvider = new firebase.auth.GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
 
-function userDoc(){ return db.collection('daily').doc(CURRENT_UID); }
+// ---- Firestore 路徑 ----
+function userDoc() {
+  // 這裡用你每日任務的根集合 daily（每個使用者一份文檔）
+  return db.collection("daily").doc(CURRENT_UID);
+}
 
-async function cloudLoad(){
-  if(!CURRENT_UID) return null;
+/* ========= 將 state 正規化後再存（把 Date 轉 number），讀回再還原 ========= */
+// 把任意物件內的 Date 轉成 number（timestamp），其餘維持原型別
+function normalizeForSave(x) {
+  if (x == null) return x;
+  if (x instanceof Date) return x.getTime();
+  if (Array.isArray(x)) return x.map(normalizeForSave);
+  if (typeof x === "object") {
+    const out = {};
+    for (const k in x) out[k] = normalizeForSave(x[k]);
+    return out;
+  }
+  return x;
+}
+
+// 把 number 看起來像 timestamp 的欄位還原成 Date（本專案只還原 next/last）
+function reviveFromCloud(x) {
+  if (x == null) return x;
+  if (Array.isArray(x)) return x.map(reviveFromCloud);
+  if (typeof x === "object") {
+    const out = {};
+    for (const k in x) {
+      const v = x[k];
+      if (
+        (k === "next" || k === "last") &&
+        typeof v === "number" &&
+        v > 1e11 && v < 1e13 // 粗略判斷毫秒級 timestamp
+      ) {
+        out[k] = new Date(v);
+      } else {
+        out[k] = reviveFromCloud(v);
+      }
+    }
+    return out;
+  }
+  return x;
+}
+
+// ---- 雲端載入 / 儲存 ----
+async function cloudLoad() {
+  if (!CURRENT_UID) return null;
   const snap = await userDoc().get();
-  return snap.exists ? snap.data() : null;
-}
-async function cloudSave(state){
-  if(!CURRENT_UID) return;
-  await userDoc().set(state);
+  if (!snap.exists) return null;
+  return reviveFromCloud(snap.data());
 }
 
+async function cloudSave(state) {
+  if (!CURRENT_UID) return;
+  const clean = normalizeForSave(state);
+  await userDoc().set(clean, { merge: true });
+}
 /* ------------ 全域狀態 ------------- */
 let STATE = null;
 
@@ -873,39 +921,40 @@ window.addEventListener('load', colorizePlusMinus);
   render();
 
   // Google Auth 監聽
-firebase.auth().onAuthStateChanged(async (user)=>{
+firebase.auth().onAuthStateChanged(async (user) => {
   CURRENT_UID = user ? user.uid : null;
   updateLoginUI(user);
-  try{
-    if (user){
-      const cloud = await cloudLoad();
-      const revived = cloud ? reviveFromCloud(cloud) : null;
-      STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
-    }else{
-      STATE = deepMergeDefaults(defaultState(), loadLocal() || {});
-    }
-    ensureDailyReset();
-    tickResinAuto();
-    await persist();
-    render();            // 這行很關鍵：把所有按鈕/checkbox 綁上事件
-  }catch(e){ console.error(e); }
+  if (user) {
+    const cloud = await cloudLoad();       // ← 已含 revive
+    STATE = deepMergeDefaults(defaultState(), cloud || STATE || {});
+  } else {
+    STATE = deepMergeDefaults(defaultState(), loadLocal() || {});
+  }
+  ensureDailyReset(); tickResinAuto(); await persist(); render();
 });
 
-  // Login/Logout
-document.getElementById('btnLogin').addEventListener('click', async () => {
-  try { await firebase.auth().signInWithPopup(googleProvider); }
-  catch(e){
-    const fb = [
+// Login
+document.getElementById('btnLogin').onclick = async () => {
+  try {
+    await firebase.auth().signInWithPopup(googleProvider);   // ← 用 googleProvider
+  } catch (e) {
+    const fallback = [
       "auth/operation-not-supported-in-this-environment",
-      "auth/popup-blocked", "auth/popup-closed-by-user"
+      "auth/popup-blocked",
+      "auth/popup-closed-by-user",
     ];
-    if (fb.includes(e.code||"")) await firebase.auth().signInWithRedirect(googleProvider);
-    else alert("登入失敗：" + e.message);
+    if (fallback.includes(e.code || "")) {
+      await firebase.auth().signInWithRedirect(googleProvider);  // ← 這裡也一樣
+    } else {
+      alert("登入失敗：" + e.message);
+    }
   }
-});
-document.getElementById('btnLogout').addEventListener('click', async () => {
+};
+
+// Logout
+document.getElementById('btnLogout').onclick = async () => {
   await firebase.auth().signOut();
-});
+};
   // 前端提醒排程
   scheduleLocalReminders();
 
