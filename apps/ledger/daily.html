@@ -147,10 +147,7 @@ input[type="number"].val,
   border: 1px solid #ef4444;
   color: #fda4af;
 }
-/* 讓所有 val 都是白字、等寬數字 */
-.val{ color:#fff !important; font-variant-numeric: tabular-nums; }
-/* 小字也給白一點，避免被背景吃掉 */
-.small{ color:#ddd; }
+
 </style>
 </head>
 <body>
@@ -472,11 +469,7 @@ function inWeekend(d=new Date()){
   return (w === 0 || w === 6);
 }
 function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
-function fmtDate(d){
-  const x = asDate(d);
-  if (!x) return '--';
-  return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
-}
+function fmtDate(d){ if(!d) return '--'; const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; }
 function nextAbyssBase(from){ // 每月 1 & 16
   const d = new Date(from);
   const day = d.getDate();
@@ -495,52 +488,7 @@ function next42(from){
   d.setDate(d.getDate()+42);
   return d;
 }
-// 讓任何 Date / Firestore Timestamp / number / string 都能轉回 Date
-function asDate(x){
-  if (!x) return null;
-  if (x instanceof Date) return x;
-  if (typeof x === 'number' || typeof x === 'string') return new Date(x);
-  if (x && typeof x.toDate === 'function') return x.toDate(); // Firestore Timestamp
-  return null;
-}
-// 轉成儲存用的毫秒數（保證雲端是 number，而不是 Date / Timestamp）
-function toMillis(x){
-  const d = asDate(x);
-  return d ? d.getTime() : null;
-}
-// 深走訪，把所有 { last:*, next:* } 或是 Date/Timestamp 欄位轉成 number
-function normalizeForSave(obj){
-  if (obj == null || typeof obj !== 'object') return obj;
-  if (obj instanceof Date) return obj.getTime();
-  if (typeof obj.toDate === 'function') return obj.toDate().getTime(); // Timestamp
-  const out = Array.isArray(obj) ? [] : {};
-  for (const k in obj){
-    const v = obj[k];
-    // 這些欄位慣例上是時間
-    if (k === 'last' || k === 'next'){
-      out[k] = toMillis(v);
-    }else{
-      out[k] = normalizeForSave(v);
-    }
-  }
-  return out;
-}
-// 深走訪，把 number（毫秒）或 Timestamp 轉回 Date 物件給前端使用
-function reviveFromCloud(obj){
-  if (obj == null || typeof obj !== 'object') return obj;
-  if (typeof obj.toDate === 'function') return obj.toDate();       // Timestamp
-  if (typeof obj === 'number') return new Date(obj);               // 毫秒
-  const out = Array.isArray(obj) ? [] : {};
-  for (const k in obj){
-    const v = obj[k];
-    if (k === 'last' || k === 'next' || v instanceof Date || typeof v === 'number' || (v && typeof v.toDate === 'function')){
-      out[k] = asDate(v);
-    }else{
-      out[k] = reviveFromCloud(v);
-    }
-  }
-  return out;
-}
+
 /* ------------ 預設狀態 ------------- */
 function defaultState(){
   const today = new Date();
@@ -680,19 +628,19 @@ function ensureDailyReset(){
 /* ------------ 原神樹脂自動回復 ------------- */
 function tickResinAutoOne(node){
   const now = Date.now();
-  let last = toMillis(node.last) ?? now;   // 安全轉換
-  let val  = Number(node.val) || 0;
-
-  if (val >= 200){ node.val = 200; node.last = now; return; }
-
+  let {val,last} = node;
+  if(val>=200){ node.val=200; node.last=now; return; }
   const mins = Math.floor((now - last)/60000);
-  if (mins <= 0) return;
-
+  if(mins <= 0) return;
   const add = Math.floor(mins/8);
-  if (add > 0){
-    node.val  = Math.min(200, val + add);
-    node.last = last + add*8*60000;        // 儲存回毫秒
+  if(add>0){
+    node.val = Math.min(200, val + add);
+    node.last = last + add*8*60000;
   }
+}
+function tickResinAuto(){
+  tickResinAutoOne(STATE.gsTw.resin);
+  tickResinAutoOne(STATE.gsAs.resin);
 }
 
 /* ------------ UI 綁定 ------------- */
@@ -720,10 +668,9 @@ function bindPoGo(idCatch, idSpin){
 function setText(id, txt){ const el=$(id.startsWith('#')?id:('#'+id)); if(el) el.textContent=txt; }
 
 function etaTo200(resin){
-  if (!resin || typeof resin.val !== 'number' || !Number.isFinite(resin.val)) return '--';
-  if (resin.val >= 200) return '滿';
-  const remain = Math.max(0, 200 - resin.val);
-  const mins = remain * 8;
+  if(resin.val>=200) return '滿';
+  const remain = 200 - resin.val;
+  const mins = remain*8; // 分鐘
   const h = Math.floor(mins/60);
   const m = mins % 60;
   return `${h}小時 ${m}分`;
@@ -733,26 +680,18 @@ function etaTo200(resin){
 function bindGenshinOne(prefix, node){
   const v = id => document.getElementById(prefix + '_' + id);
 
-  // --- 樹脂（加強版） ---
-  // 若缺 last 就補現在時間；若缺 val 就補 160
-  if (!node.resin || typeof node.resin.val !== 'number') {
-    node.resin = { val: 160, last: Date.now() };
-  }
-  if (!node.resin.last) node.resin.last = Date.now();
-
+  // 樹脂
   const view = v('resin_view'), eta = v('resin_eta');
   function paintResin(){
-    if (view) view.textContent = node.resin.val;
-    if (eta)  eta.textContent  = etaTo200(node.resin);
+    view.textContent = node.resin.val;
+    eta.textContent = etaTo200(node.resin);
   }
-  const m10 = v('resin_minus10'), m1 = v('resin_minus1'),
-        p1  = v('resin_plus1'),  p10= v('resin_plus10');
+  v('resin_minus10').onclick = async ()=>{ node.resin.val = Math.max(0, node.resin.val-10); node.resin.last=Date.now(); paintResin(); await persist(); };
+  v('resin_minus1').onclick  = async ()=>{ node.resin.val = Math.max(0, node.resin.val-1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
+  v('resin_plus1').onclick   = async ()=>{ node.resin.val = Math.min(200, node.resin.val+1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
+  v('resin_plus10').onclick  = async ()=>{ node.resin.val = Math.min(200, node.resin.val+10); node.resin.last=Date.now(); paintResin(); await persist(); };
+  paintResin();
 
-  if (m10) m10.onclick = async ()=>{ node.resin.val = Math.max(0,   node.resin.val-10); node.resin.last=Date.now(); paintResin(); await persist(); };
-  if (m1)  m1.onclick  = async ()=>{ node.resin.val = Math.max(0,   node.resin.val-1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
-  if (p1)  p1.onclick  = async ()=>{ node.resin.val = Math.min(200, node.resin.val+1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
-  if (p10) p10.onclick = async ()=>{ node.resin.val = Math.min(200, node.resin.val+10); node.resin.last=Date.now(); paintResin(); await persist(); };
-paintResin();
   // 每日
   bindDailyCheckbox(prefix+"_daily", node.daily);
 
@@ -865,9 +804,6 @@ function scheduleLocalReminders(){
 
 /* ------------ 渲染 ------------- */
 function render(){
-  document.querySelectorAll('button').forEach(b => {
-  if (!b.getAttribute('type')) b.setAttribute('type', 'button');
-});
   // 日期條
   const now = new Date();
   $("#todayStr").textContent = ymd(now);
@@ -885,73 +821,85 @@ function render(){
   renderPending();
 }
 
-/* ------------- 將狀態轉成可存雲端的純值（Date -> number） ------------- */
-function normalizeForSave(x){
-  if (x instanceof Date) return x.getTime();
-  if (Array.isArray(x)) return x.map(normalizeForSave);
-  if (x && typeof x === 'object'){
-    const out = {};
-    for (const k in x) out[k] = normalizeForSave(x[k]);
-    return out;
-  }
-  return x;
-}
-
-/* ------------- 從雲端載回後復原（依欄位名把 time number -> Date） ------------- */
-function reviveFromCloud(x){
-  if (Array.isArray(x)) return x.map(reviveFromCloud);
-  if (x && typeof x === 'object'){
-    const out = {};
-    for (const k in x){
-      const v = x[k];
-      if (typeof v === 'number' && (k === 'last' || k === 'next' || k.endsWith('At'))){
-        out[k] = new Date(v);
-      }else{
-        out[k] = reviveFromCloud(v);
-      }
-    }
-    return out;
-  }
-  return x;
-}
-
 /* ------------ 永久化（雲端優先） ------------- */
 async function persist(){
-  // 先本機
   saveLocal(STATE);
-
-  if (CURRENT_UID){
-    try{
-      // 轉成純 number/原始型別再寫雲
-      const clean = normalizeForSave(STATE);
-      await cloudSave(clean);
-    }catch(e){ console.error(e); }
+  if(CURRENT_UID){
+    try{ await cloudSave(STATE); }catch(e){ console.error(e); }
   }
 }
 
 /* ------------ 登入 UI ------------- */
-function updateLoginUI(user){
-  if(user){
-    $("#who").textContent = `已登入：${user.email||'Google'}`;
-    $("#btnLogin").style.display="none";
-    $("#btnLogout").style.display="";
-  }else{
-    $("#who").textContent = "(未登入：僅本機)";
-    $("#btnLogin").style.display="";
-    $("#btnLogout").style.display="none";
+async function googleLogin(){
+  try{
+    const res = await firebase.auth().signInWithPopup(googleProvider);
+    CURRENT_UID = res.user.uid;
+    updateLoginUI(res.user);
+    const loaded = await loadUnified();
+    entries = loaded.list; initials = loaded.initials;
+    renderWithEnsure();
+    alert("Google 登入成功！");
+  }catch(e){
+    const fallback = [
+      "auth/operation-not-supported-in-this-environment",
+      "auth/popup-blocked",
+      "auth/popup-closed-by-user",
+    ];
+    if(fallback.includes(e.code||"")){
+      await firebase.auth().signInWithRedirect(googleProvider);
+      return;
+    }
+    alert("Google 登入失敗：" + e.message);
   }
 }
-
+async function googleLogout(){
+  await firebase.auth().signOut();
+  CURRENT_UID = null;
+  updateLoginUI(null);
+  const loaded = await loadUnified();
+  entries = loaded.list; initials = loaded.initials;
+  renderWithEnsure();
+}
+firebase.auth().onAuthStateChanged(async (user)=>{
+  if(user){
+    CURRENT_UID = user.uid;
+    updateLoginUI(user);
+    const loaded = await loadUnified();
+    entries = loaded.list; initials = loaded.initials;
+    renderWithEnsure();
+  }else{
+    CURRENT_UID = null;
+    updateLoginUI(null);
+    const loaded = await loadUnified();
+    entries = loaded.list; initials = loaded.initials;
+    renderWithEnsure();
+  }
+});
+function updateLoginUI(user){
+  if(user){
+    $("#fbWho").textContent = `已登入：${user.email || "Google 帳號"}`;
+    $("#fbLoginBtn").style.display="none";
+    $("#fbLogoutBtn").style.display="";
+  }else{
+    $("#fbWho").textContent = "(未登入：匿名模式，僅本裝置)";
+    $("#fbLoginBtn").style.display="";
+    $("#fbLogoutBtn").style.display="none";
+  }
+}
 /* 自動替按鈕加上顏色 class（依照文字內容 + / -） */
 function colorizePlusMinus(){
   document.querySelectorAll('.counter .btn, .btn-inc, .btn-dec, button').forEach(b=>{
     const t = (b.textContent || '').trim();
+    // 先清掉舊標記
     b.classList.remove('btn-plus','btn-minus');
+    // 判斷字面上是否是 + 或 -
     if (t.startsWith('+')) b.classList.add('btn-plus');
     if (t.startsWith('-')) b.classList.add('btn-minus');
   });
 }
+/* 如果你有 render() 或初始化，結尾呼叫一下 */
 window.addEventListener('load', colorizePlusMinus);
+/* 若你的頁面有重新渲染 UI 的流程，記得在 render() 結尾也加上 colorizePlusMinus(); */
 
 /* ------------ 啟動 ------------- */
 (async function bootstrap(){
@@ -959,11 +907,6 @@ window.addEventListener('load', colorizePlusMinus);
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
-
-  // 保險：把所有 <button> 設為 type="button"
-  document.querySelectorAll('button').forEach(b=>{
-    if(!b.getAttribute('type')) b.setAttribute('type','button');
-  });
 
   // 載入狀態（雲端或本機）→ 合併預設 → 05:00 換日 → 自動回復 → 存 → 渲染
   let local = loadLocal();
@@ -973,7 +916,6 @@ window.addEventListener('load', colorizePlusMinus);
   tickResinAuto();
   await persist();
   render();
-  colorizePlusMinus();
 
   // Google Auth 監聽
   firebase.auth().onAuthStateChanged(async (user)=>{
@@ -982,14 +924,13 @@ window.addEventListener('load', colorizePlusMinus);
     try{
       if(user){
         const cloud = await cloudLoad();
-        const revived = cloud ? reviveFromCloud(cloud) : null;
-        STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render(); colorizePlusMinus();
+        STATE = deepMergeDefaults(defaultState(), cloud || STATE || {});
+        ensureDailyReset(); tickResinAuto(); await persist(); render();
       }else{
         // 登出回本機
         const loc = loadLocal();
         STATE = deepMergeDefaults(defaultState(), loc || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render(); colorizePlusMinus();
+        ensureDailyReset(); tickResinAuto(); await persist(); render();
       }
     }catch(e){ console.error(e); }
   });
@@ -998,24 +939,19 @@ window.addEventListener('load', colorizePlusMinus);
   $("#btnLogin").onclick = async ()=>{
     try{ await firebase.auth().signInWithPopup(provider); }
     catch(e){
-      const fallback = [
-        "auth/operation-not-supported-in-this-environment",
-        "auth/popup-blocked",
-        "auth/popup-closed-by-user"
-      ];
+      const fallback = ["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"];
       if(fallback.includes(e.code||"")) await firebase.auth().signInWithRedirect(provider);
       else alert("登入失敗：" + e.message);
     }
   };
   $("#btnLogout").onclick = async ()=>{ await firebase.auth().signOut(); };
 
-  // 前端提醒排程（20:00 / 22:00）
+  // 前端提醒排程
   scheduleLocalReminders();
 
   // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
   setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
 })();
-
 </script>
 </body>
 </html>
