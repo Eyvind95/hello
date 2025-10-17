@@ -559,80 +559,37 @@ function loadLocal(){
 }
 function saveLocal(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
 
-// ---- Firebase 初始化 ----
+// --- Firebase 初始化（你已經有，保持不動） ---
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
   authDomain: "eyvind95-182f0.firebaseapp.com",
   projectId: "eyvind95-182f0",
-  // 小提醒：storage 不用也沒差，但通常是 *.appspot.com
-  storageBucket: "eyvind95-182f0.appspot.com",
+  storageBucket: "eyvind95-182f0.firebasestorage.app",
   messagingSenderId: "105770576221",
-  appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4",
+  appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
 };
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-
+if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
 const db = firebase.firestore();
 
-// ---- Google Provider（全域只留這一個）----
+// --- 重要：統一用 googleProvider 這個名字 ---
 let CURRENT_UID = null;
 const googleProvider = new firebase.auth.GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: "select_account" });
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// ---- Firestore 路徑 ----
+// Firestore 路徑：/daily/<UID>
 function userDoc() {
-  // 這裡用你每日任務的根集合 daily（每個使用者一份文檔）
-  return db.collection("daily").doc(CURRENT_UID);
+  return db.collection('daily').doc(CURRENT_UID);
 }
 
-/* ========= 將 state 正規化後再存（把 Date 轉 number），讀回再還原 ========= */
-// 把任意物件內的 Date 轉成 number（timestamp），其餘維持原型別
-function normalizeForSave(x) {
-  if (x == null) return x;
-  if (x instanceof Date) return x.getTime();
-  if (Array.isArray(x)) return x.map(normalizeForSave);
-  if (typeof x === "object") {
-    const out = {};
-    for (const k in x) out[k] = normalizeForSave(x[k]);
-    return out;
-  }
-  return x;
-}
-
-// 把 number 看起來像 timestamp 的欄位還原成 Date（本專案只還原 next/last）
-function reviveFromCloud(x) {
-  if (x == null) return x;
-  if (Array.isArray(x)) return x.map(reviveFromCloud);
-  if (typeof x === "object") {
-    const out = {};
-    for (const k in x) {
-      const v = x[k];
-      if (
-        (k === "next" || k === "last") &&
-        typeof v === "number" &&
-        v > 1e11 && v < 1e13 // 粗略判斷毫秒級 timestamp
-      ) {
-        out[k] = new Date(v);
-      } else {
-        out[k] = reviveFromCloud(v);
-      }
-    }
-    return out;
-  }
-  return x;
-}
-
-// ---- 雲端載入 / 儲存 ----
-async function cloudLoad() {
-  if (!CURRENT_UID) return null;
+// 讀寫雲端
+async function cloudLoad(){
+  if(!CURRENT_UID) return null;
   const snap = await userDoc().get();
-  if (!snap.exists) return null;
-  return reviveFromCloud(snap.data());
+  return snap.exists ? snap.data() : null;
 }
-
-async function cloudSave(state) {
-  if (!CURRENT_UID) return;
-  const clean = normalizeForSave(state);
-  await userDoc().set(clean, { merge: true });
+async function cloudSave(state){
+  if(!CURRENT_UID) return;
+  await userDoc().set(state, { merge:true }); // merge 以免覆蓋
 }
 /* ------------ 全域狀態 ------------- */
 let STATE = null;
@@ -877,16 +834,16 @@ async function persist(){
   }
 }
 
-/* ------------ 登入 UI ------------- */
+// 更新右上角登入狀態
 function updateLoginUI(user){
   if(user){
-    $("#who").textContent = `已登入：${user.email||'Google'}`;
-    $("#btnLogin").style.display="none";
-    $("#btnLogout").style.display="";
+    document.getElementById("who").textContent = `已登入：${user.email || 'Google'}`;
+    document.getElementById("btnLogin").style.display = "none";
+    document.getElementById("btnLogout").style.display = "";
   }else{
-    $("#who").textContent = "(未登入：僅本機)";
-    $("#btnLogin").style.display="";
-    $("#btnLogout").style.display="none";
+    document.getElementById("who").textContent = "(未登入：僅本機)";
+    document.getElementById("btnLogin").style.display = "";
+    document.getElementById("btnLogout").style.display = "none";
   }
 }
 /* 自動替按鈕加上顏色 class（依照文字內容 + / -） */
@@ -921,40 +878,50 @@ window.addEventListener('load', colorizePlusMinus);
   render();
 
   // Google Auth 監聽
-firebase.auth().onAuthStateChanged(async (user) => {
+firebase.auth().onAuthStateChanged(async (user)=>{
   CURRENT_UID = user ? user.uid : null;
   updateLoginUI(user);
-  if (user) {
-    const cloud = await cloudLoad();       // ← 已含 revive
-    STATE = deepMergeDefaults(defaultState(), cloud || STATE || {});
-  } else {
-    STATE = deepMergeDefaults(defaultState(), loadLocal() || {});
+
+  try{
+    if(user){
+      // 先讀雲 → 合併 local → 存回雲（讓雲端長出 /daily/<UID>）
+      const cloud = await cloudLoad();         // 可能為 null（第一次）
+      const local = loadLocal() || {};         // 你原本的本機存取
+      STATE = deepMergeDefaults(defaultState(), cloud || local || {});
+      ensureDailyReset(); tickResinAuto();
+      await cloudSave(STATE);                  // 寫回雲（第一次就會建立文件）
+      saveLocal(STATE);                        // 順便覆蓋本機一致
+      render();
+    }else{
+      // 登出就回本機
+      const local = loadLocal() || {};
+      STATE = deepMergeDefaults(defaultState(), local);
+      ensureDailyReset(); tickResinAuto(); saveLocal(STATE); render();
+    }
+  }catch(err){
+    console.error(err);
   }
-  ensureDailyReset(); tickResinAuto(); await persist(); render();
 });
 
-// Login
-document.getElementById('btnLogin').onclick = async () => {
-  try {
-    await firebase.auth().signInWithPopup(googleProvider);   // ← 用 googleProvider
-  } catch (e) {
+document.getElementById("btnLogin").addEventListener("click", async () => {
+  try{
+    await firebase.auth().signInWithPopup(googleProvider);
+  }catch(e){
     const fallback = [
       "auth/operation-not-supported-in-this-environment",
       "auth/popup-blocked",
       "auth/popup-closed-by-user",
     ];
     if (fallback.includes(e.code || "")) {
-      await firebase.auth().signInWithRedirect(googleProvider);  // ← 這裡也一樣
-    } else {
+      await firebase.auth().signInWithRedirect(googleProvider);
+    }else{
       alert("登入失敗：" + e.message);
     }
   }
-};
-
-// Logout
-document.getElementById('btnLogout').onclick = async () => {
+});
+document.getElementById("btnLogout").addEventListener("click", async () => {
   await firebase.auth().signOut();
-};
+});
   // 前端提醒排程
   scheduleLocalReminders();
 
