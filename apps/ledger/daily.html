@@ -7,7 +7,7 @@
 
 <link rel="manifest" href="daily.webmanifest" />
 
-<!-- Firebase v8 compat -->
+<!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
@@ -36,7 +36,7 @@ body{
 }
 @media (max-width:768px){ body{ background-attachment:scroll; } }
 
-.container{ max-width:1100px; margin:24px auto; padding:0 14px; }
+.container{ max-width:1120px; margin:24px auto; padding:0 14px; }
 header{
   display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:space-between;
   margin-bottom:12px;
@@ -74,7 +74,7 @@ header{
 .badge{ font-size:12px; color:#000; background:var(--accent); padding:2px 8px; border-radius:999px; }
 
 .row{ display:flex; align-items:center; gap:10px; margin:8px 0; }
-.row .label{ color:var(--muted); min-width:88px; }
+.row .label{ color:var(--muted); min-width:112px; }
 .row .val{ font-variant-numeric:tabular-nums; }
 .row .next{ color:var(--yellow); }
 .row .subtle{ color:var(--muted); font-size:13px; }
@@ -96,13 +96,12 @@ header{
 .resinBox .n{ font-weight:800; font-size:16px; color:#e6f2ff; } /* 永遠可讀色 */
 .resinBox small{ color:var(--muted) }
 
-.footer-note{ color:var(--muted); font-size:13px; margin-top:8px; }
-
 hr.sep{ border:none; height:1px; background:var(--border); margin:10px 0; }
 
 .checkbox{ display:flex; align-items:center; gap:8px; margin:6px 0; }
 .checkbox input{ transform: translateY(1px); }
 
+.footer-note{ color:var(--muted); font-size:13px; margin-top:8px; }
 .warn{ color:#ffb7b7 }
 .ok{ color:#98ffb7 }
 </style>
@@ -123,21 +122,20 @@ hr.sep{ border:none; height:1px; background:var(--border); margin:10px 0; }
   <div class="controls">
     <span>尚未完成每日：<b id="pendingCount">0</b> 個</span>
     <div class="spacer"></div>
-    <span class="muted">提醒：版本更新前兩天會在此顯示 ⚠️</span>
+    <span class="muted">版本更新前兩天會顯示 ⚠️ 提醒</span>
   </div>
 
-  <div class="grid" id="cards"><!-- 動態插入卡片 --></div>
+  <div class="grid" id="cards"><!-- 動態卡片 --></div>
 
   <p class="footer-note">
-    ※ 資料會自動儲存到雲端（登入後）與本機。若離線操作，恢復網路會自動同步。<br>
-    ※ 週六、週日才會顯示《貓咪大戰爭》的「週末關卡」，每天 05:00 重置。<br>
-    ※ 絕區零電池：按「+80」增加，滿 960 會自動重設到 240（按鈕顏色：綠＝增加、紅＝重置）。<br>
-    ※ 原神樹脂：每 8 分鐘 +1，手動 +1/+10/-1/-10；數字永遠可讀色。<br>
+    ※ 週六、週日才顯示《貓咪大戰爭》的「週末關卡」，每天 05:00 重置。<br>
+    ※ 絕區零電池：按「+80」增加，滿 960 會自動回到 240（綠＝增加、紅＝重置）。<br>
+    ※ 原神樹脂：每 8 分鐘 +1；數字永遠可讀色。<br>
   </p>
 </div>
 
 <script>
-/* ========== Firebase config（同記帳本） ========== */
+/* ---------------- Firebase ---------------- */
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
   authDomain: "eyvind95-182f0.firebaseapp.com",
@@ -152,22 +150,15 @@ const db = firebase.firestore();
 let CURRENT_UID = null;
 function userDoc(){ return db.collection('users').doc(CURRENT_UID); }
 
-/* ========== 快捷工具 ========== */
-const $ = (s)=>document.querySelector(s);
-const $$ = (s)=>Array.from(document.querySelectorAll(s));
-const today5 = ()=>{ // 05:00為換日
-  const now = new Date();
-  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0, 0);
-  return { now, base };
-};
-function ymd(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
-function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+/* ---------------- helpers ---------------- */
+const $ = s=>document.querySelector(s);
+const $$ = s=>Array.from(document.querySelectorAll(s));
 
-/* ========== State 定義 ========== */
-/* 圖標：a~h 對應 原神、星穹、ZZZ、HoYoLAB、貓戰、PoGo、諾提里森、新世界狂歡 */
+const STATE_KEY = "daily_state_v1";
+
 const ICONS = {
-  gj:  "../data/a.jpg",
-  sr:  "../data/b.jpg",
+  gj:  "../data/a.jpg", // 原神
+  sr:  "../data/b.jpg", // 星穹
   zzz: "../data/c.png",
   hoyo:"../data/d.png",
   cat: "../data/e.jpg",
@@ -176,150 +167,72 @@ const ICONS = {
   nsr: "../data/h.jpg"
 };
 
-const STATE_KEY = "daily_state_v1";
-
-/* 預設（初始值） */
-function defaultState(){
+function ymd(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function today5(){
   const now = new Date();
-  // 下個版本日期（可自行調整；原神：固定 42 天）
-  const vers42 = (base)=> ymd(addDays(new Date(base), 42));
-  // 你有提供的下一次們（例）
-  const gj_next_ver = "2025-10-22"; // 之後會自動+42天
-  const sr_memoria = "2025-10-27";
-  const sr_fiction = "2025-11-24";
-  const sr_apoc   = "2025-11-10";
-  const sr_arbit  = "2025-11-05";
-  const sr_ver    = "2025-11-05";
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0, 0);
+  return { now, base };
+}
+function isWeekend(d=new Date()){ const w=d.getDay(); return w===0||w===6; }
 
+/* 每月 1 與 1/16 */
+function nextAbyss(ref){ const d=new Date(ref); const day=d.getDate(); if(day<=1){d.setDate(1);} else if(day<=16){d.setDate(16);} else {d.setMonth(d.getMonth()+1); d.setDate(1);} return ymd(d); }
+function nextMonth1(ref){ const d=new Date(ref); if(d.getDate()<=1)d.setDate(1); else{ d.setMonth(d.getMonth()+1); d.setDate(1);} return ymd(d); }
+
+/* ---------------- default state ---------------- */
+function defaultState(){
   return {
     updatedAt: Date.now(),
-
-    genshin_asia:{
-      resin:200, max:200, // 8分鐘+1
-      daily:false,
-      abyssNext: nextAbyss(new Date()),  // 每月 1 / 16
-      chronicleNext: nextMonth1(new Date()), // 每月1
-      versionNext: gj_next_ver, // 42天
-      round:{ abyss:false, chronicle:false, version:false } // 本輪是否已處理
-    },
-    genshin_tw:{
-      resin:200, max:200,
-      daily:false,
-      abyssNext: nextAbyss(new Date()),
-      chronicleNext: nextMonth1(new Date()),
-      versionNext: gj_next_ver,
-      round:{ abyss:false, chronicle:false, version:false }
-    },
-
+    genshin_asia:{ resin:200, max:200, daily:false, abyssNext:nextAbyss(new Date()), chronicleNext:nextMonth1(new Date()), versionNext:"2025-10-22", round:{abyss:false,chronicle:false,version:false}},
+    genshin_tw:  { resin:200, max:200, daily:false, abyssNext:nextAbyss(new Date()), chronicleNext:nextMonth1(new Date()), versionNext:"2025-10-22", round:{abyss:false,chronicle:false,version:false}},
     starrail:{
       daily:false,
-      memoNext:  sr_memoria, // 混沌回憶
-      ficNext:   sr_fiction, // 虛構敘事
-      doomNext:  sr_apoc,    // 末日幻影
-      arbNext:   sr_arbit,   // 異相仲裁
-      verNext:   sr_ver,
-      round:{
-        memo:false, fic:false, doom:false, arb:false, ver:false
-      }
+      memoNext:"2025-10-27", ficNext:"2025-11-24", doomNext:"2025-11-10", arbNext:"2025-11-05", verNext:"2025-11-05",
+      round:{memo:false, fic:false, doom:false, arb:false, ver:false}
     },
-
-    zzz:{
-      daily:false,
-      power:480, min:240, max:960 // +80，滿960重置到240
-    },
-
+    zzz:{ daily:false, power:480, min:240, max:960 },
     hoyolab:{ daily:false },
-
-    cat:{ weekend:false, lastReset:null }, // 只在六/日顯示；每日05:00重置
+    cat:{ weekend:false, lastReset:null },
     pogo:{ spin:false, catch:false },
     noted:{ daily:false },
-    nsr:{ daily:false, coinRoll:0 } // 金幣券：0~3，滿自動歸0
+    nsr:{ daily:false, coinRoll:0 }
   };
 }
 
-/* 幫手：每月 1 / 16 的下一個，與每月 1 的下一個 */
-function nextAbyss(ref){
-  const d = new Date(ref);
-  const day = d.getDate();
-  if(day <= 1)  { d.setDate(1);  }
-  else if(day <= 16){ d.setDate(16); }
-  else { // 下個月1
-    d.setMonth(d.getMonth()+1); d.setDate(1);
-  }
-  return ymd(d);
-}
-function nextMonth1(ref){
-  const d = new Date(ref);
-  if(d.getDate()<=1) d.setDate(1);
-  else { d.setMonth(d.getMonth()+1); d.setDate(1); }
-  return ymd(d);
-}
-
-/* ========== 本機/雲端存取 ========== */
+/* ---------------- storage ---------------- */
 function loadLocal(){ try{ return JSON.parse(localStorage.getItem(STATE_KEY)||"{}"); }catch{ return {}; } }
 function saveLocal(s){ localStorage.setItem(STATE_KEY, JSON.stringify(s)); }
 
-async function cloudLoad(){
-  if(!CURRENT_UID) return null;
-  const snap = await userDoc().collection('daily').doc('state').get();
-  return snap.exists ? snap.data() : null;
-}
-async function cloudSave(s){
-  if(!CURRENT_UID) return;
-  await userDoc().collection('daily').doc('state').set({
-    ...s,
-    _updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge:true });
-}
+async function cloudLoad(){ if(!CURRENT_UID) return null; const snap = await userDoc().collection('daily').doc('state').get(); return snap.exists ? snap.data() : null; }
+async function cloudSave(s){ if(!CURRENT_UID) return; await userDoc().collection('daily').doc('state').set({...s,_updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true}); }
 
 async function loadUnified(){
   try{
     if(CURRENT_UID){
       const cloud = await cloudLoad();
-      if(cloud) { saveLocal(cloud); return cloud; }
+      if(cloud){ saveLocal(cloud); return cloud; }
     }
-  }catch(e){ console.warn("雲端讀取失敗，改用本機", e); }
+  }catch(e){ console.warn("雲端讀取失敗，用本機", e); }
   const local = loadLocal();
   return Object.keys(local).length ? local : defaultState();
 }
-async function saveUnified(s){
-  saveLocal(s);
-  try{ if(CURRENT_UID) await cloudSave(s); }catch(e){ console.warn("雲端儲存失敗，先留本機", e); }
-}
+async function saveUnified(s){ saveLocal(s); try{ if(CURRENT_UID) await cloudSave(s); }catch(e){ console.warn("雲端儲存失敗，先留本機", e); } }
 
-/* ========== 畫面/邏輯 ========== */
-let state = defaultState();
-
-function isWeekend(d=new Date()){
-  const wd = d.getDay(); // 0 Sun ... 6 Sat
-  return wd===0 || wd===6;
-}
-
-/* 重置點：每日 05:00 */
+/* ---------------- daily reset 05:00 ---------------- */
 function checkDailyReset(){
   const { now, base } = today5();
-  const last = new Date(state.updatedAt || 0);
-  // 若上一次更新 < 今日 05:00，做重置
+  const last = new Date(state.updatedAt||0);
   if(last < base){
-    // 每日重置
-    state.genshin_asia.daily = false;
-    state.genshin_tw.daily   = false;
-    state.starrail.daily     = false;
-    state.zzz.daily          = false;
-    state.hoyolab.daily      = false;
-    state.pogo.spin          = false;
-    state.pogo.catch         = false;
-    state.noted.daily        = false;
-    state.nsr.daily          = false;
-
-    // 貓戰（六/日才顯示，但每天都重置顯示框）
-    state.cat.weekend = false;
-    state.cat.lastReset = ymd(now);
+    ["genshin_asia","genshin_tw"].forEach(k=> state[k].daily=false);
+    state.starrail.daily=false; state.zzz.daily=false; state.hoyolab.daily=false;
+    state.pogo.spin=false; state.pogo.catch=false; state.noted.daily=false; state.nsr.daily=false;
+    state.cat.weekend=false; state.cat.lastReset=ymd(now);
   }
   state.updatedAt = Date.now();
 }
 
-/* 排程提醒：距離版本更新兩天顯示警告（僅視覺提示） */
+/* ---------------- version warn ---------------- */
 function versionWarningHtml(nextStr){
   try{
     const next = new Date(nextStr+"T00:00:00");
@@ -329,15 +242,14 @@ function versionWarningHtml(nextStr){
   return "";
 }
 
-/* 原神樹脂自動 +1/8min */
-let resinTimer = null;
+/* ---------------- resin timer ---------------- */
+let resinTimer=null;
 function startResinTimer(){
   if(resinTimer) clearInterval(resinTimer);
   resinTimer = setInterval(()=>{
     ["genshin_asia","genshin_tw"].forEach(key=>{
       const o = state[key];
-      if(!o) return;
-      if(o.resin < o.max){ o.resin += 1; }
+      if(o.resin < o.max) o.resin += 1;
     });
     state.updatedAt = Date.now();
     saveUnified(state);
@@ -345,187 +257,38 @@ function startResinTimer(){
   }, 8*60*1000);
 }
 
-/* ZZZ：+80；滿 960 變 240（紅色） */
+/* ---------------- ZZZ/NSR 行為 ---------------- */
 function zzzAdd80(){
-  const o = state.zzz;
-  const before = o.power;
-  o.power = Math.min(o.max, o.power + 80);
-  if(o.power >= o.max){ o.power = o.min; } // 滿就重置到240
+  const z=state.zzz; z.power = Math.min(z.max, z.power+80);
+  if(z.power>=z.max) z.power=z.min; // 滿就回 240
+}
+function nsrCoinTick(){ state.nsr.coinRoll = (state.nsr.coinRoll+1)%3; }
+
+/* ---------------- small utils ---------------- */
+function getByPath(p){ return p.split(".").reduce((o,k)=>o&&o[k], state); }
+function setByPath(p,fn){
+  const seg=p.split("."); let o=state;
+  for(let i=0;i<seg.length-1;i++) o=o[seg[i]];
+  o[seg.at(-1)] = fn(o[seg.at(-1)]);
 }
 
-/* 新世界狂歡 金幣卷 3 天輪迴（滿就 0）→ 這裡當作簡易按鈕切換 */
-function nsrCoinTick(){
-  state.nsr.coinRoll = (state.nsr.coinRoll + 1) % 3;
-}
+/* ---------------- render ---------------- */
+let state = defaultState();
 
-/* 工具：切換勾選 */
-function toggle(path){
-  // path 例："genshin_asia.daily"
-  const seg = path.split(".");
-  let p = state;
-  for(let i=0;i<seg.length-1;i++){ p = p[seg[i]]; }
-  const k = seg[seg.length-1];
-  p[k] = !p[k];
-}
-
-/* 下一個日期（42天 or 月1/16/月1）按鈕：本輪完成 → 推進下一次 */
-function stepDate(path){
-  // path 例："genshin_asia.abyssNext" / "genshin_asia.chronicleNext" / "genshin_asia.versionNext"
-  const seg = path.split(".");
-  let p = state; for(let i=0;i<seg.length-1;i++){ p = p[seg[i]]; }
-  const k = seg[seg.length-1];
-
-  const cur = new Date((p[k]||ymd(new Date()))+"T00:00:00");
-  if(k.includes("abyss"))       p[k] = nextAbyss(addDays(cur,1));
-  else if(k.includes("chroni")) p[k] = nextMonth1(addDays(cur,1));
-  else if(k.includes("ver"))    p[k] = ymd(addDays(cur,42));
-}
-
-/* 渲染卡片 */
-function render(){
-  checkDailyReset();
-
-  $("#todayInfo").textContent = `今天（05:00 作為換日點）`;
-
-  // 未完成每日統計
-  let pending = 0;
-  function chk(b){ if(!b) pending++; }
-
-  // 卡片 HTML
-  const html = [];
-
-  /* 原神 ——— 亞服 */
-  html.push(cardGenshin("原神（亞服）", ICONS.gj, state.genshin_asia, "genshin_asia"));
-  chk(state.genshin_asia.daily===true);
-  /* 原神 ——— 台服 */
-  html.push(cardGenshin("原神（台服）", ICONS.gj, state.genshin_tw, "genshin_tw"));
-  chk(state.genshin_tw.daily===true);
-
-  /* 星穹鐵道 */
-  html.push(cardStarRail());
-  chk(state.starrail.daily===true);
-
-  /* 絕區零 */
-  html.push(cardZZZ());
-  chk(state.zzz.daily===true);
-
-  /* HoYoLAB */
-  html.push(cardSimple("HoYoLAB", ICONS.hoyo, [
-    checkbox("每日", "hoyolab.daily")
-  ]));
-
-  /* Pokémon GO */
-  html.push(cardSimple("Pokémon GO", ICONS.pogo, [
-    checkbox("轉一個補給站", "pogo.spin"),
-    checkbox("捉一隻寶可夢", "pogo.catch")
-  ]));
-
-  /* 諾提里森 */
-  html.push(cardSimple("諾提里森", ICONS.noted, [
-    checkbox("每日", "noted.daily")
-  ]));
-
-  /* 新世界狂歡 */
-  html.push(cardNSR());
-
-  /* 貓咪大戰爭（週六/日顯示） */
-  if(isWeekend()){
-    html.push(cardCat());
-  }
-
-  $("#cards").innerHTML = html.join("");
-
-  // 綁定所有 input / button
-  $$("#cards input[data-path]").forEach(el=>{
-    el.checked = getByPath(el.dataset.path)===true;
-    el.addEventListener("change", ()=>{
-      toggle(el.dataset.path);
-      state.updatedAt = Date.now();
-      saveUnified(state);
-      render();
-    });
-  });
-  $$("#cards button[data-path]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const p = btn.dataset.path;
-      if(p==="zzz.plus"){
-        zzzAdd80();
-      }else if(p.endsWith(".resin+1")){
-        const o=getByPath(p.split(".").slice(0,-1).join(".")); o.resin=Math.min(o.max, o.resin+1);
-      }else if(p.endsWith(".resin+10")){
-        const o=getByPath(p.split(".").slice(0,-1).join(".")); o.resin=Math.min(o.max, o.resin+10);
-      }else if(p.endsWith(".resin-1")){
-        const o=getByPath(p.split(".").slice(0,-1).join(".")); o.resin=Math.max(0, o.resin-1);
-      }else if(p.endsWith(".resin-10")){
-        const o=getByPath(p.split(".").slice(0,-1).join(".")); o.resin=Math.max(0, o.resin-10);
-      }else if(p.endsWith("Next.step")){
-        stepDate(p.replace(".step",""));
-        // 並將本輪狀態歸 0
-        const base = p.split(".")[0];
-        if(base==="genshin_asia"||base==="genshin_tw"){
-          const o = state[base];
-          if(p.includes("abyss")) o.round.abyss=false;
-          else if(p.includes("chroni")) o.round.chronicle=false;
-          else if(p.includes("ver")) o.round.version=false;
-        }else if(base==="starrail"){
-          const r = state.starrail.round;
-          if(p.includes("memo")) r.memo=false;
-          else if(p.includes("fic")) r.fic=false;
-          else if(p.includes("doom")) r.doom=false;
-          else if(p.includes("arb")) r.arb=false;
-          else if(p.includes("ver")) r.ver=false;
-        }
-      }else if(p==="nsr.coin"){
-        nsrCoinTick();
-      }
-      state.updatedAt = Date.now();
-      saveUnified(state);
-      render();
-    });
-  });
-
-  $("#pendingCount").textContent = String(pending);
-}
-
-/* 取物件路徑 */
-function getByPath(path){
-  const seg=path.split("."); let p=state;
-  for(const s of seg){ if(p==null) return undefined; p=p[s]; }
-  return p;
-}
-
-/* 卡片元件們 */
-function cardHeader(name, icon, rightHtml=""){
-  return `
-  <div class="title">
-    <div class="left">
-      <img class="icon" src="${icon}" alt="">
-      <div class="name">${name}</div>
-    </div>
-    <div>${rightHtml}</div>
-  </div>`;
-}
 function checkbox(label, path){
   return `<label class="checkbox"><input type="checkbox" data-path="${path}"><span>${label}</span></label>`;
 }
-function cardSimple(name, icon, rows){
-  return `<section class="card">
-    ${cardHeader(name, icon)}
-    ${rows.join("")}
-  </section>`;
+function cardHeader(name, icon, rightHtml=""){
+  return `<div class="title"><div class="left"><img class="icon" src="${icon}" alt=""><div class="name">${name}</div></div><div>${rightHtml}</div></div>`;
 }
 
-/* 原神卡片 */
 function cardGenshin(name, icon, obj, baseKey){
   const warn = versionWarningHtml(obj.versionNext);
-  return `
-  <section class="card">
+  return `<section class="card">
     ${cardHeader(name, icon, `<span class="badge">每日＋排程</span>`)}
     <div class="row">
       <div class="label">體力（樹脂）</div>
-      <div class="resinBox">
-        <span class="n">${obj.resin}</span><small>/ ${obj.max}</small>
-      </div>
+      <div class="resinBox"><span class="n">${obj.resin}</span><small>/ ${obj.max}</small></div>
       <div class="kit">
         <button class="minus" data-path="${baseKey}.resin-10">-10</button>
         <button class="minus" data-path="${baseKey}.resin-1">-1</button>
@@ -560,30 +323,26 @@ function cardGenshin(name, icon, obj, baseKey){
   </section>`;
 }
 
-/* 星穹卡片 */
 function cardStarRail(){
-  const s = state.starrail;
-  function row(label, keyPath, nextStr){
-    return `
+  const s=state.starrail;
+  const warn=versionWarningHtml(s.verNext);
+  const row=(label,key,next)=>`
     <div class="row">
       <div class="label">${label}（42 天）</div>
-      <div class="val next">${nextStr}</div>
+      <div class="val next">${next}</div>
       <div class="kit">
-        ${checkbox("本輪已完成", `starrail.round.${keyPath}`)}
-        <button class="plus" data-path="starrail.${keyPath}Next.step">推到下一次</button>
+        ${checkbox("本輪已完成", `starrail.round.${key}`)}
+        <button class="plus" data-path="starrail.${key}Next.step">推到下一次</button>
       </div>
     </div>`;
-  }
-  const warn = versionWarningHtml(s.verNext);
-  return `
-  <section class="card">
+  return `<section class="card">
     ${cardHeader("崩壞：星穹鐵道", ICONS.sr, `<span class="badge">每日＋42天排程</span>`)}
     ${checkbox("每日", "starrail.daily")}
     <hr class="sep">
     ${row("混沌回憶","memo", s.memoNext)}
-    ${row("虛構敘事","fic",  s.ficNext)}
+    ${row("虛構敘事","fic", s.ficNext)}
     ${row("末日幻影","doom", s.doomNext)}
-    ${row("異相仲裁","arb",  s.arbNext)}
+    ${row("異相仲裁","arb", s.arbNext)}
     <div class="row">
       <div class="label">版本更新（42 天）</div>
       <div class="val next">${s.verNext}${warn}</div>
@@ -595,41 +354,33 @@ function cardStarRail(){
   </section>`;
 }
 
-/* ZZZ 卡片 */
 function cardZZZ(){
-  const z = state.zzz;
-  // 按鈕顏色：+80 綠、滿→重置紅（文字反映在提示上）
-  const willReset = (z.power+80)>=z.max;
-  return `
-  <section class="card">
+  const z=state.zzz; const willReset=(z.power+80)>=z.max;
+  return `<section class="card">
     ${cardHeader("絕區零", ICONS.zzz, `<span class="badge">每日＋電池</span>`)}
     ${checkbox("每日", "zzz.daily")}
     <div class="row">
       <div class="label">電力（懶人版）</div>
       <div class="val">${z.power} / ${z.max}（底 ${z.min}）</div>
       <div class="kit">
-        <button class="${willReset?'minus':'plus'}" data-path="zzz.plus">${willReset? '滿 → 回到 240' : '+80'}</button>
+        <button class="${willReset?'minus':'plus'}" data-path="zzz.plus">${willReset?'滿 → 回到 240':'+80'}</button>
       </div>
       <div class="subtle">滿 960 會自動回到 240</div>
     </div>
   </section>`;
 }
 
-/* 貓咪大戰爭（週末） */
 function cardCat(){
-  return `
-  <section class="card">
+  return `<section class="card">
     ${cardHeader("貓咪大戰爭", ICONS.cat, `<span class="badge">週末關卡</span>`)}
     ${checkbox("週末關卡（僅週六/週日顯示）", "cat.weekend")}
     <div class="subtle">每天 05:00 重置</div>
   </section>`;
 }
 
-/* 新世界狂歡 */
 function cardNSR(){
-  const n = state.nsr;
-  return `
-  <section class="card">
+  const n=state.nsr;
+  return `<section class="card">
     ${cardHeader("新世界狂歡", ICONS.nsr, `<span class="badge">每日＋金幣卷</span>`)}
     ${checkbox("每日", "nsr.daily")}
     <div class="row">
@@ -640,13 +391,85 @@ function cardNSR(){
   </section>`;
 }
 
-/* ========== 登入/登出 ========== */
+function cardSimple(name, icon, rows){ return `<section class="card">${cardHeader(name,icon)}${rows.join("")}</section>`; }
+
+function render(){
+  checkDailyReset();
+  $("#todayInfo").textContent = `今天（05:00 作為換日點）`;
+
+  let pending=0;
+  function need(b){ if(!b) pending++; }
+
+  const out=[];
+
+  out.push(cardGenshin("原神（亞服）", ICONS.gj, state.genshin_asia, "genshin_asia"));
+  need(state.genshin_asia.daily);
+  out.push(cardGenshin("原神（台服）", ICONS.gj, state.genshin_tw, "genshin_tw"));
+  need(state.genshin_tw.daily);
+
+  out.push(cardStarRail());  need(state.starrail.daily);
+  out.push(cardZZZ());       need(state.zzz.daily);
+  out.push(cardSimple("HoYoLAB", ICONS.hoyo, [checkbox("每日","hoyolab.daily")]));
+  out.push(cardSimple("Pokémon GO", ICONS.pogo, [checkbox("轉一個補給站","pogo.spin"), checkbox("捉一隻寶可夢","pogo.catch")]));
+  out.push(cardSimple("諾提里森", ICONS.noted, [checkbox("每日","noted.daily")]));
+  out.push(cardNSR());
+  if(isWeekend()) out.push(cardCat());
+
+  $("#cards").innerHTML = out.join("");
+
+  // 綁定勾選
+  $$("#cards input[data-path]").forEach(el=>{
+    const v = getByPath(el.dataset.path)===true;
+    el.checked = v;
+    el.addEventListener("change", ()=>{
+      setByPath(el.dataset.path, old=>!old);
+      state.updatedAt=Date.now(); saveUnified(state); render();
+    });
+  });
+
+  // 綁定按鈕
+  $$("#cards button[data-path]").forEach(btn=>{
+    const p=btn.dataset.path;
+    btn.addEventListener("click", ()=>{
+      if(p==="zzz.plus"){ zzzAdd80(); }
+      else if(p.endsWith(".resin+1"))  setByPath(p.split(".").slice(0,-1).join("."), o=>{o.resin=Math.min(o.max,o.resin+1); return o;});
+      else if(p.endsWith(".resin+10")) setByPath(p.split(".").slice(0,-1).join("."), o=>{o.resin=Math.min(o.max,o.resin+10); return o;});
+      else if(p.endsWith(".resin-1"))  setByPath(p.split(".").slice(0,-1).join("."), o=>{o.resin=Math.max(0,o.resin-1); return o;});
+      else if(p.endsWith(".resin-10")) setByPath(p.split(".").slice(0,-1).join("."), o=>{o.resin=Math.max(0,o.resin-10); return o;});
+      else if(p.endsWith(".step")){
+        const path=p.replace(".step","");
+        const base=path.split(".")[0];
+        // 推下一次
+        const cur=getByPath(path); const dt=new Date(cur+"T00:00:00");
+        if(path.includes("abyss"))       setByPath(path, _=> nextAbyss(addDays(dt,1)));
+        else if(path.includes("chroni")) setByPath(path, _=> nextMonth1(addDays(dt,1)));
+        else                             setByPath(path, _=> ymd(addDays(dt,42)));
+        // 把「本輪已完成」/「本輪狀態」清掉
+        if(base==="genshin_asia"||base==="genshin_tw"){
+          if(path.includes("abyss")) setByPath(base+".round.abyss", _=>false);
+          else if(path.includes("chroni")) setByPath(base+".round.chronicle", _=>false);
+          else setByPath(base+".round.version", _=>false);
+        }else if(base==="starrail"){
+          if(path.includes("memo")) setByPath("starrail.round.memo", _=>false);
+          else if(path.includes("fic")) setByPath("starrail.round.fic", _=>false);
+          else if(path.includes("doom")) setByPath("starrail.round.doom", _=>false);
+          else if(path.includes("arb")) setByPath("starrail.round.arb", _=>false);
+          else setByPath("starrail.round.ver", _=>false);
+        }
+      }
+      state.updatedAt=Date.now(); saveUnified(state); render();
+    });
+  });
+
+  $("#pendingCount").textContent = String(pending);
+}
+
+/* ---------------- auth ---------------- */
 async function googleLogin(){
   try{
-    const res = await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
   }catch(e){
-    const code = e.code || "";
-    if(["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"].includes(code)){
+    if(["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"].includes(e.code||"")){
       await firebase.auth().signInWithRedirect(new firebase.auth.GoogleAuthProvider());
     }else{
       alert("Google 登入失敗：" + e.message);
@@ -660,37 +483,31 @@ $("#logoutBtn").addEventListener("click", googleLogout);
 
 firebase.auth().onAuthStateChanged(async (user)=>{
   if(user){
-    CURRENT_UID = user.uid;
+    CURRENT_UID=user.uid;
     $("#who").textContent = `已登入：${user.email||"Google 帳號"}`;
-    $("#loginBtn").style.display="none";
-    $("#logoutBtn").style.display="";
-    const cloud = await cloudLoad();
-    const local = loadLocal();
+    $("#loginBtn").style.display="none"; $("#logoutBtn").style.display="";
+    const cloud=await cloudLoad(); const local=loadLocal();
     state = cloud || local || defaultState();
-    if(!cloud && local) await cloudSave(state); // 首登入，把本機上傳
+    if(!cloud && local) await cloudSave(state);
   }else{
-    CURRENT_UID = null;
-    $("#who").textContent = "(未登入：僅本機)";
-    $("#loginBtn").style.display="";
-    $("#logoutBtn").style.display="none";
-    state = loadLocal();
-    if(!Object.keys(state).length) state = defaultState();
+    CURRENT_UID=null;
+    $("#who").textContent="(未登入：僅本機)";
+    $("#loginBtn").style.display=""; $("#logoutBtn").style.display="none";
+    state = loadLocal(); if(!Object.keys(state).length) state=defaultState();
   }
   render();
 });
 
-/* ========== 啟動 ========== */
+/* ---------------- boot ---------------- */
 (async()=>{
   state = await loadUnified();
   render();
   startResinTimer();
 })();
 
-/* ========== SW 註冊（快取/離線） ========== */
+/* ---------------- SW ---------------- */
 if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
-  });
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
 }
 </script>
 </body>
