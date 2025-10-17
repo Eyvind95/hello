@@ -860,7 +860,7 @@ window.addEventListener('load', colorizePlusMinus);
 (async function bootstrap(){
   // Service Worker（若檔案存在就會註冊成功）
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    navigator.serviceWorker.register('./sw-daily.js').catch(()=>{});
   }
 
   // 載入狀態（雲端或本機）→ 合併預設 → 05:00 換日 → 自動回復 → 存 → 渲染
@@ -873,34 +873,39 @@ window.addEventListener('load', colorizePlusMinus);
   render();
 
   // Google Auth 監聽
-  firebase.auth().onAuthStateChanged(async (user)=>{
-    CURRENT_UID = user ? user.uid : null;
-    updateLoginUI(user);
-    try{
-      if(user){
-        const cloud = await cloudLoad();
-        STATE = deepMergeDefaults(defaultState(), cloud || STATE || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render();
-      }else{
-        // 登出回本機
-        const loc = loadLocal();
-        STATE = deepMergeDefaults(defaultState(), loc || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render();
-      }
-    }catch(e){ console.error(e); }
-  });
+firebase.auth().onAuthStateChanged(async (user)=>{
+  CURRENT_UID = user ? user.uid : null;
+  updateLoginUI(user);
+  try{
+    if (user){
+      const cloud = await cloudLoad();
+      const revived = cloud ? reviveFromCloud(cloud) : null;
+      STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
+    }else{
+      STATE = deepMergeDefaults(defaultState(), loadLocal() || {});
+    }
+    ensureDailyReset();
+    tickResinAuto();
+    await persist();
+    render();            // 這行很關鍵：把所有按鈕/checkbox 綁上事件
+  }catch(e){ console.error(e); }
+});
 
   // Login/Logout
-  $("#btnLogin").onclick = async ()=>{
-    try{ await firebase.auth().signInWithPopup(provider); }
-    catch(e){
-      const fallback = ["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"];
-      if(fallback.includes(e.code||"")) await firebase.auth().signInWithRedirect(provider);
-      else alert("登入失敗：" + e.message);
-    }
-  };
-  $("#btnLogout").onclick = async ()=>{ await firebase.auth().signOut(); };
-
+document.getElementById('btnLogin').addEventListener('click', async () => {
+  try { await firebase.auth().signInWithPopup(googleProvider); }
+  catch(e){
+    const fb = [
+      "auth/operation-not-supported-in-this-environment",
+      "auth/popup-blocked", "auth/popup-closed-by-user"
+    ];
+    if (fb.includes(e.code||"")) await firebase.auth().signInWithRedirect(googleProvider);
+    else alert("登入失敗：" + e.message);
+  }
+});
+document.getElementById('btnLogout').addEventListener('click', async () => {
+  await firebase.auth().signOut();
+});
   // 前端提醒排程
   scheduleLocalReminders();
 
