@@ -568,13 +568,14 @@ const firebaseConfig = {
   messagingSenderId: "105770576221",
   appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
 };
-if(!firebase.apps.length){ firebase.initializeApp(firebaseConfig); }
+/* ============== Firestore 與 UID（daily 專用） ============== */
 const db = firebase.firestore();
 let CURRENT_UID = null;
-const provider = new firebase.auth.GoogleAuthProvider();
-provider.setCustomParameters({ prompt:'select_account' });
+const googleProvider = new firebase.auth.GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
 
-function userDoc(){ return db.collection('daily').doc(CURRENT_UID); }
+// 這個 app 用 daily/{uid} 存整個 STATE
+function userDoc(){ return db.collection("daily").doc(CURRENT_UID); }
 
 async function cloudLoad(){
   if(!CURRENT_UID) return null;
@@ -583,7 +584,36 @@ async function cloudLoad(){
 }
 async function cloudSave(state){
   if(!CURRENT_UID) return;
-  await userDoc().set(state);
+  await userDoc().set(state, { merge: true });
+}
+
+// 把 number(時間戳)還原成 Date（僅針對 last/next/*At）
+function reviveFromCloud(x){
+  if (Array.isArray(x)) return x.map(reviveFromCloud);
+  if (x && typeof x === "object"){
+    const out = {};
+    for (const k in x){
+      const v = x[k];
+      if (typeof v === "number" && (k === "last" || k === "next" || k.endsWith("At"))){
+        out[k] = new Date(v);
+      }else{
+        out[k] = reviveFromCloud(v);
+      }
+    }
+    return out;
+  }
+  return x;
+}
+// 存到雲端前，把 Date 轉 number
+function normalizeForSave(x){
+  if (x instanceof Date) return x.getTime();
+  if (Array.isArray(x)) return x.map(normalizeForSave);
+  if (x && typeof x === "object"){
+    const out = {};
+    for (const k in x) out[k] = normalizeForSave(x[k]);
+    return out;
+  }
+  return x;
 }
 
 /* ------------ 全域狀態 ------------- */
@@ -823,67 +853,27 @@ function render(){
 
 /* ------------ 永久化（雲端優先） ------------- */
 async function persist(){
+  // 先本機
   saveLocal(STATE);
-  if(CURRENT_UID){
-    try{ await cloudSave(STATE); }catch(e){ console.error(e); }
+
+  if (CURRENT_UID){
+    try{
+      // 轉成純 number/原始型別再寫雲
+      const clean = normalizeForSave(STATE);
+      await cloudSave(clean);
+    }catch(e){ console.error(e); }
   }
 }
 
-/* ------------ 登入 UI ------------- */
-async function googleLogin(){
-  try{
-    const res = await firebase.auth().signInWithPopup(googleProvider);
-    CURRENT_UID = res.user.uid;
-    updateLoginUI(res.user);
-    const loaded = await loadUnified();
-    entries = loaded.list; initials = loaded.initials;
-    renderWithEnsure();
-    alert("Google 登入成功！");
-  }catch(e){
-    const fallback = [
-      "auth/operation-not-supported-in-this-environment",
-      "auth/popup-blocked",
-      "auth/popup-closed-by-user",
-    ];
-    if(fallback.includes(e.code||"")){
-      await firebase.auth().signInWithRedirect(googleProvider);
-      return;
-    }
-    alert("Google 登入失敗：" + e.message);
-  }
-}
-async function googleLogout(){
-  await firebase.auth().signOut();
-  CURRENT_UID = null;
-  updateLoginUI(null);
-  const loaded = await loadUnified();
-  entries = loaded.list; initials = loaded.initials;
-  renderWithEnsure();
-}
-firebase.auth().onAuthStateChanged(async (user)=>{
-  if(user){
-    CURRENT_UID = user.uid;
-    updateLoginUI(user);
-    const loaded = await loadUnified();
-    entries = loaded.list; initials = loaded.initials;
-    renderWithEnsure();
-  }else{
-    CURRENT_UID = null;
-    updateLoginUI(null);
-    const loaded = await loadUnified();
-    entries = loaded.list; initials = loaded.initials;
-    renderWithEnsure();
-  }
-});
 function updateLoginUI(user){
   if(user){
-    $("#fbWho").textContent = `已登入：${user.email || "Google 帳號"}`;
-    $("#fbLoginBtn").style.display="none";
-    $("#fbLogoutBtn").style.display="";
+    $("#who").textContent = `已登入：${user.email||'Google'}`;
+    $("#btnLogin").style.display="none";
+    $("#btnLogout").style.display="";
   }else{
-    $("#fbWho").textContent = "(未登入：匿名模式，僅本裝置)";
-    $("#fbLoginBtn").style.display="";
-    $("#fbLogoutBtn").style.display="none";
+    $("#who").textContent = "(未登入：僅本機)";
+    $("#btnLogin").style.display="";
+    $("#btnLogout").style.display="none";
   }
 }
 /* 自動替按鈕加上顏色 class（依照文字內容 + / -） */
@@ -916,35 +906,46 @@ window.addEventListener('load', colorizePlusMinus);
   tickResinAuto();
   await persist();
   render();
-
-  // Google Auth 監聽
-  firebase.auth().onAuthStateChanged(async (user)=>{
-    CURRENT_UID = user ? user.uid : null;
-    updateLoginUI(user);
-    try{
-      if(user){
-        const cloud = await cloudLoad();
-        STATE = deepMergeDefaults(defaultState(), cloud || STATE || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render();
-      }else{
-        // 登出回本機
-        const loc = loadLocal();
-        STATE = deepMergeDefaults(defaultState(), loc || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render();
-      }
-    }catch(e){ console.error(e); }
-  });
-
-  // Login/Logout
-  $("#btnLogin").onclick = async ()=>{
-    try{ await firebase.auth().signInWithPopup(provider); }
-    catch(e){
-      const fallback = ["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"];
-      if(fallback.includes(e.code||"")) await firebase.auth().signInWithRedirect(provider);
-      else alert("登入失敗：" + e.message);
+/* ============== 登入狀態監聽 ============== */
+firebase.auth().onAuthStateChanged(async (user)=>{
+  CURRENT_UID = user ? user.uid : null;
+  updateLoginUI(user);
+  try{
+    if(user){
+      const cloud = await cloudLoad();
+      const revived = cloud ? reviveFromCloud(cloud) : null;
+      STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
+    }else{
+      const loc = loadLocal();
+      STATE = deepMergeDefaults(defaultState(), loc || {});
     }
-  };
-  $("#btnLogout").onclick = async ()=>{ await firebase.auth().signOut(); };
+    ensureDailyReset();
+    tickResinAuto();         // 樹脂 ETA 才會正常
+    await persist();         // 寫回(雲/本機)
+    render();                // 重綁所有 + / - 按鈕與 checkbox
+  }catch(e){ console.error(e); }
+});
+
+ /* ============== Google 登入 / 登出 ============== */
+async function googleLogin(){
+  try{
+    await firebase.auth().signInWithPopup(googleProvider);
+  }catch(e){
+    const fallback = [
+      "auth/operation-not-supported-in-this-environment",
+      "auth/popup-blocked",
+      "auth/popup-closed-by-user",
+    ];
+    if(fallback.includes(e.code||"")){
+      await firebase.auth().signInWithRedirect(googleProvider);
+      return;
+    }
+    alert("Google 登入失敗：" + e.message);
+  }
+}
+async function googleLogout(){
+  await firebase.auth().signOut();
+}
 
   // 前端提醒排程
   scheduleLocalReminders();
@@ -952,6 +953,8 @@ window.addEventListener('load', colorizePlusMinus);
   // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
   setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
 })();
+document.getElementById("btnLogin").addEventListener("click", googleLogin);
+document.getElementById("btnLogout").addEventListener("click", googleLogout);
 </script>
 </body>
 </html>
