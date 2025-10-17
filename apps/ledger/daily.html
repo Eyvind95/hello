@@ -760,7 +760,22 @@ function bindNSFW(){
   inc.onclick = async ()=>{ STATE.nsfw.ticket = (STATE.nsfw.ticket + 1) % 3; paint(); await persist(); };
   rst.onclick = async ()=>{ STATE.nsfw.ticket = 0; paint(); await persist(); };
 }
-
+<script>
+/* 自動替按鈕加上顏色 class（依照文字內容 + / -） */
+function colorizePlusMinus(){
+  document.querySelectorAll('.counter .btn, .btn-inc, .btn-dec, button').forEach(b=>{
+    const t = (b.textContent || '').trim();
+    // 先清掉舊標記
+    b.classList.remove('btn-plus','btn-minus');
+    // 判斷字面上是否是 + 或 -
+    if (t.startsWith('+')) b.classList.add('btn-plus');
+    if (t.startsWith('-')) b.classList.add('btn-minus');
+  });
+}
+/* 如果你有 render() 或初始化，結尾呼叫一下 */
+window.addEventListener('load', colorizePlusMinus);
+/* 若你的頁面有重新渲染 UI 的流程，記得在 render() 結尾也加上 colorizePlusMinus(); */
+</script>
 /* ------------ Pending 統計 & 提醒 ------------- */
 function renderPending(){
   // 統計所有「每日」還沒打勾的
@@ -841,22 +856,6 @@ function updateLoginUI(user){
   tickResinAuto();
   await persist();
   render();
-<script>
-/* 自動替按鈕加上顏色 class（依照文字內容 + / -） */
-function colorizePlusMinus(){
-  document.querySelectorAll('.counter .btn, .btn-inc, .btn-dec, button').forEach(b=>{
-    const t = (b.textContent || '').trim();
-    // 先清掉舊標記
-    b.classList.remove('btn-plus','btn-minus');
-    // 判斷字面上是否是 + 或 -
-    if (t.startsWith('+')) b.classList.add('btn-plus');
-    if (t.startsWith('-')) b.classList.add('btn-minus');
-  });
-}
-/* 如果你有 render() 或初始化，結尾呼叫一下 */
-window.addEventListener('load', colorizePlusMinus);
-/* 若你的頁面有重新渲染 UI 的流程，記得在 render() 結尾也加上 colorizePlusMinus(); */
-</script>
 
   // Google Auth 監聽
   firebase.auth().onAuthStateChanged(async (user)=>{
@@ -896,5 +895,6 @@ window.addEventListener('load', colorizePlusMinus);
 </script>
 </body>
 </html>
+
 
 
