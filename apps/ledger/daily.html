@@ -870,6 +870,36 @@ function render(){
   renderPending();
 }
 
+/* ------------- 將狀態轉成可存雲端的純值（Date -> number） ------------- */
+function normalizeForSave(x){
+  if (x instanceof Date) return x.getTime();
+  if (Array.isArray(x)) return x.map(normalizeForSave);
+  if (x && typeof x === 'object'){
+    const out = {};
+    for (const k in x) out[k] = normalizeForSave(x[k]);
+    return out;
+  }
+  return x;
+}
+
+/* ------------- 從雲端載回後復原（依欄位名把 time number -> Date） ------------- */
+function reviveFromCloud(x){
+  if (Array.isArray(x)) return x.map(reviveFromCloud);
+  if (x && typeof x === 'object'){
+    const out = {};
+    for (const k in x){
+      const v = x[k];
+      if (typeof v === 'number' && (k === 'last' || k === 'next' || k.endsWith('At'))){
+        out[k] = new Date(v);
+      }else{
+        out[k] = reviveFromCloud(v);
+      }
+    }
+    return out;
+  }
+  return x;
+}
+
 /* ------------ 永久化（雲端優先） ------------- */
 async function persist(){
   // 先本機
@@ -883,6 +913,7 @@ async function persist(){
     }catch(e){ console.error(e); }
   }
 }
+
 /* ------------ 登入 UI ------------- */
 function updateLoginUI(user){
   if(user){
@@ -895,20 +926,17 @@ function updateLoginUI(user){
     $("#btnLogout").style.display="none";
   }
 }
+
 /* 自動替按鈕加上顏色 class（依照文字內容 + / -） */
 function colorizePlusMinus(){
   document.querySelectorAll('.counter .btn, .btn-inc, .btn-dec, button').forEach(b=>{
     const t = (b.textContent || '').trim();
-    // 先清掉舊標記
     b.classList.remove('btn-plus','btn-minus');
-    // 判斷字面上是否是 + 或 -
     if (t.startsWith('+')) b.classList.add('btn-plus');
     if (t.startsWith('-')) b.classList.add('btn-minus');
   });
 }
-/* 如果你有 render() 或初始化，結尾呼叫一下 */
 window.addEventListener('load', colorizePlusMinus);
-/* 若你的頁面有重新渲染 UI 的流程，記得在 render() 結尾也加上 colorizePlusMinus(); */
 
 /* ------------ 啟動 ------------- */
 (async function bootstrap(){
@@ -916,6 +944,11 @@ window.addEventListener('load', colorizePlusMinus);
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
+
+  // 保險：把所有 <button> 設為 type="button"
+  document.querySelectorAll('button').forEach(b=>{
+    if(!b.getAttribute('type')) b.setAttribute('type','button');
+  });
 
   // 載入狀態（雲端或本機）→ 合併預設 → 05:00 換日 → 自動回復 → 存 → 渲染
   let local = loadLocal();
@@ -925,6 +958,7 @@ window.addEventListener('load', colorizePlusMinus);
   tickResinAuto();
   await persist();
   render();
+  colorizePlusMinus();
 
   // Google Auth 監聽
   firebase.auth().onAuthStateChanged(async (user)=>{
@@ -932,15 +966,15 @@ window.addEventListener('load', colorizePlusMinus);
     updateLoginUI(user);
     try{
       if(user){
-const cloud = await cloudLoad();
-const revived = cloud ? reviveFromCloud(cloud) : null;
-STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render();
+        const cloud = await cloudLoad();
+        const revived = cloud ? reviveFromCloud(cloud) : null;
+        STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
+        ensureDailyReset(); tickResinAuto(); await persist(); render(); colorizePlusMinus();
       }else{
         // 登出回本機
         const loc = loadLocal();
         STATE = deepMergeDefaults(defaultState(), loc || {});
-        ensureDailyReset(); tickResinAuto(); await persist(); render();
+        ensureDailyReset(); tickResinAuto(); await persist(); render(); colorizePlusMinus();
       }
     }catch(e){ console.error(e); }
   });
@@ -949,19 +983,24 @@ STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
   $("#btnLogin").onclick = async ()=>{
     try{ await firebase.auth().signInWithPopup(provider); }
     catch(e){
-      const fallback = ["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"];
+      const fallback = [
+        "auth/operation-not-supported-in-this-environment",
+        "auth/popup-blocked",
+        "auth/popup-closed-by-user"
+      ];
       if(fallback.includes(e.code||"")) await firebase.auth().signInWithRedirect(provider);
       else alert("登入失敗：" + e.message);
     }
   };
   $("#btnLogout").onclick = async ()=>{ await firebase.auth().signOut(); };
 
-  // 前端提醒排程
+  // 前端提醒排程（20:00 / 22:00）
   scheduleLocalReminders();
 
   // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
   setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
 })();
+
 </script>
 </body>
 </html>
