@@ -680,9 +680,7 @@ function scheduleDailyReminders() {
     }
   }, 60000);
 }
-...
 (async function bootstrap(){
-   ...
    await initFCM().then(scheduleDailyReminders);
 /* ------------ 全域狀態 ------------- */
 let STATE = null;
@@ -1091,4 +1089,5 @@ initFCM().then(scheduleDailyReminders);
 </script>
 </body>
 </html>
+
 
