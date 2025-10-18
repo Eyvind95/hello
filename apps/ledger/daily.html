@@ -14,7 +14,8 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
+  
 <style>
 :root{
   --bg:#0b0b0b;
@@ -569,7 +570,50 @@ const firebaseConfig = {
 };
 if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
 const db = firebase.firestore();
+/* ========== Firebase Cloud Messaging (推播通知) ========== */
+let messaging = null;
+try {
+  if (firebase.messaging && 'Notification' in window) {
+    messaging = firebase.messaging();
+  } else {
+    console.warn('此環境不支援通知或缺少 messaging SDK');
+  }
+} catch (e) {
+  console.warn('初始化 messaging 失敗：', e);
+  messaging = null;
+}
 
+const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
+
+async function initFCM() {
+  if (!messaging) return; // 沒有就不要做，避免中斷其他功能
+
+  try {
+    // 註冊專用的 Messaging SW（與快取 SW 共存沒問題）
+    const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+    messaging.useServiceWorker(reg);
+
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      console.warn('使用者未授權通知');
+      return;
+    }
+
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+    console.log('📢 FCM Token:', token);
+
+    if (CURRENT_UID && token) {
+      await db.collection('tokens').doc(CURRENT_UID).set({ token });
+    }
+
+    messaging.onMessage(payload => {
+      const { title, body } = payload.notification || {};
+      if (title) new Notification(title, { body });
+    });
+  } catch (err) {
+    console.error('FCM 初始化失敗：', err);
+  }
+}
 // --- 重要：統一用 googleProvider 這個名字 ---
 let CURRENT_UID = null;
 const googleProvider = new firebase.auth.GoogleAuthProvider();
@@ -932,7 +976,9 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 
   // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
   setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
+  initFCM();
 })();
 </script>
 </body>
 </html>
+
