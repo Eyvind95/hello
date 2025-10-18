@@ -585,7 +585,8 @@ try {
 
 const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
 
-async function initFCM() {
+const messaging = firebase.messaging();
+  async function initFCM() {
   if (!messaging) return; // 沒有就不要做，避免中斷其他功能
 
   try {
@@ -935,7 +936,7 @@ window.addEventListener('load', colorizePlusMinus);
   tickResinAuto();
   await persist();
   render();
-
+initFCM();
   // Google Auth 監聽
 firebase.auth().onAuthStateChanged(async (user)=>{
   CURRENT_UID = user ? user.uid : null;
@@ -991,5 +992,6 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 </script>
 </body>
 </html>
+
 
 
