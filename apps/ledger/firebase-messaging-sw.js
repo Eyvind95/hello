@@ -1,12 +1,19 @@
-// 自訂背景通知外觀
-self.addEventListener('push', (event) => {
-  let data = {};
-  try { data = event.data.json(); } catch(e) {}
-  const title = data.notification?.title || '每日提醒';
-  const body  = data.notification?.body  || '你有未勾選的每日！';
-  const icon  = './6.png';
+importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
+importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js');
 
-  event.waitUntil(
-    self.registration.showNotification(title, { body, icon, data })
-  );
+firebase.initializeApp({
+  apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
+  authDomain: "eyvind95-182f0.firebaseapp.com",
+  projectId: "eyvind95-182f0",
+  storageBucket: "eyvind95-182f0.firebasestorage.app",
+  messagingSenderId: "105770576221",
+  appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
+});
+
+const messaging = firebase.messaging();
+
+messaging.setBackgroundMessageHandler(function(payload) {
+  console.log("🔔 背景推播：", payload);
+  const { title, body } = payload.notification || {};
+  return self.registration.showNotification(title, { body });
 });
