@@ -23,7 +23,7 @@ messaging.setBackgroundMessageHandler(function (payload) {
   const body  = n.body  || d.body  || '還有未勾的每日喔！';
 
   // 用「絕對網址」保險，避免 SW 相對路徑抓不到圖
-  const icon  = 'https://eyvind95.github.io/hello/apps/ledger/6.png';
+  const icon  = 'https://eyvind95.github.io/hello/apps/ledger/8.png';
 
   return self.registration.showNotification(title, { body, icon, data: d });
 });
