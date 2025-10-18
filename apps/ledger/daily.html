@@ -559,7 +559,7 @@ function loadLocal(){
 }
 function saveLocal(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
 
-// --- Firebase 初始化（你已經有，保持不動） ---
+/* ========== Firebase 設定（放在推播區塊上面） ========== */
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
   authDomain: "eyvind95-182f0.firebaseapp.com",
@@ -568,8 +568,15 @@ const firebaseConfig = {
   messagingSenderId: "105770576221",
   appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
 };
-if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
 const db = firebase.firestore();
+let CURRENT_UID = null;
+const googleProvider = new firebase.auth.GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+function userDoc(){ return db.collection('daily').doc(CURRENT_UID); }
+
 /* ========== Firebase Cloud Messaging (推播通知) ========== */
 let messaging = null;
 try {
@@ -584,9 +591,9 @@ try {
 }
 
 const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
+const NOTI_ICON_URL = "https://eyvind95.github.io/hello/6.png";
 
-const messaging = firebase.messaging();
-  async function initFCM() {
+async function initFCM() {
   if (!messaging) return; // 沒有就不要做，避免中斷其他功能
 
   try {
@@ -600,21 +607,27 @@ const messaging = firebase.messaging();
       return;
     }
 
-    const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     console.log('📢 FCM Token:', token);
 
+    // 登入後才保存 token（綁定 UID）
     if (CURRENT_UID && token) {
-      await db.collection('tokens').doc(CURRENT_UID).set({ token });
+      await userDoc().set({
+        meta: { tokens: firebase.firestore.FieldValue.arrayUnion(token) }
+      }, { merge:true });
     }
 
+    // 前景收到通知時顯示
     messaging.onMessage(payload => {
       const { title, body } = payload.notification || {};
-      if (title) new Notification(title, { body });
-    });   
+      if (title) new Notification(title, { body, icon: NOTI_ICON_URL });
+    });
+
   } catch (err) {
     console.error('FCM 初始化失敗：', err);
   }
 }
+
 // --- 重要：統一用 googleProvider 這個名字 ---
 let CURRENT_UID = null;
 const googleProvider = new firebase.auth.GoogleAuthProvider();
@@ -701,7 +714,30 @@ function bindDailyCheckbox(idPath, model){
   el.onchange = async ()=>{
     model.last = el.checked ? Date.now() : null;
     await persist();
-    renderPending();
+    // 回傳 {count, list}：list 會列出顯示名稱，給推播用
+function computePendingAndList(){
+  const map = [];
+  function push(name, x){ if(!x || !('last' in x)) return; if(!x.last) map.push(name); }
+
+  // 依你的版面順序填顯示名
+  push('原神-台  每日',   STATE.gsTw.daily);
+  push('原神-亞  每日',   STATE.gsAs.daily);
+  push('星穹鐵道 每日',   STATE.hsr.daily);
+  push('HoyoLAB 每日',    STATE.hoyo.daily);
+  push('絕區零   每日',   STATE.zzz.daily);
+  push('貓咪大戰爭 每日', STATE.cats.daily);
+  push('貓咪週末關卡',     STATE.cats.weekend);
+  push('Pokemon GO 轉補給站', STATE.pogo.spin);
+  push('Pokemon GO 捉一隻',   STATE.pogo.catch);
+  push('諾提里森 每日',   STATE.noti.daily);
+  push('新世界狂歡 每日', STATE.nsfw.daily);
+
+  return { count: map.length, list: map };
+}
+function renderPending(){
+  const {count} = computePendingAndList();
+  $("#pendingCount").textContent = count;
+}
   }
 }
 function bindSpin(id, model){ // POGO
@@ -910,6 +946,41 @@ function colorizePlusMinus(){
 /* 如果你有 render() 或初始化，結尾呼叫一下 */
 window.addEventListener('load', colorizePlusMinus);
 /* 若你的頁面有重新渲染 UI 的流程，記得在 render() 結尾也加上 colorizePlusMinus(); */
+  // 取得未完成數量與清單（若你已有同名工具就略過）
+function computePendingAndList(){
+  const list = [];
+  function push(name, x){ if (x && 'last' in x && !x.last) list.push(name); }
+
+  push('原神-台 每日',   STATE.gsTw.daily);
+  push('原神-亞 每日',   STATE.gsAs.daily);
+  push('星穹鐵道 每日',   STATE.hsr.daily);
+  push('HoyoLAB 每日',    STATE.hoyo.daily);
+  push('絕區零 每日',     STATE.zzz.daily);
+  push('貓咪大戰爭 每日', STATE.cats.daily);
+  push('貓咪週末關卡',     STATE.cats.weekend);
+  push('Pokemon GO 轉補給站', STATE.pogo.spin);
+  push('Pokemon GO 捉一隻',   STATE.pogo.catch);
+  push('諾提里森 每日',   STATE.noti.daily);
+  push('新世界狂歡 每日', STATE.nsfw.daily);
+
+  return { count:list.length, list };
+}
+
+// ==== 永久化（先本機，再雲端；同時寫入 pending 資訊）====
+async function persist(){
+  const { count, list } = computePendingAndList();
+  STATE.meta = { ...(STATE.meta||{}), pending: count, pendingList: list };
+
+  // 本機
+  localStorage.setItem("daily_state_v1", JSON.stringify(STATE));
+
+  // 雲端（登入才寫）
+  if (CURRENT_UID){
+    try {
+      await userDoc().set(STATE, { merge:true });
+    } catch(e){ console.error(e); }
+  }
+}
 
 /* ------------ 啟動 ------------- */
 (async function bootstrap(){
@@ -942,6 +1013,7 @@ firebase.auth().onAuthStateChanged(async (user)=>{
       await cloudSave(STATE);                  // 寫回雲（第一次就會建立文件）
       saveLocal(STATE);                        // 順便覆蓋本機一致
       render();
+      await initFCM();
     }else{
       // 登出就回本機
       const local = loadLocal() || {};
@@ -951,6 +1023,7 @@ firebase.auth().onAuthStateChanged(async (user)=>{
   }catch(err){
     console.error(err);
   }
+   await setupMessagingAndSaveToken();
 });
 
 document.getElementById("btnLogin").addEventListener("click", async () => {
@@ -982,6 +1055,7 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 </script>
 </body>
 </html>
+
 
 
 
