@@ -610,6 +610,16 @@ async function initFCM() {
       const { title, body } = payload.notification || {};
       if (title) new Notification(title, { body });
     });
+// === 本地測試用：每 30 秒自動顯示一次通知 ===
+setInterval(() => {
+  if (Notification.permission === 'granted') {
+    new Notification("📢 測試通知", {
+      body: "這是每日任務通知測試（每 30 秒）",
+      icon: "./6.png" // 你網站圖示，可換成 Pikachu 那張
+    });
+  }
+}, 30000);
+    
   } catch (err) {
     console.error('FCM 初始化失敗：', err);
   }
@@ -981,4 +991,5 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 </script>
 </body>
 </html>
+
 
