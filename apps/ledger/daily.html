@@ -559,7 +559,7 @@ function loadLocal(){
 }
 function saveLocal(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
 
-/* ========== Firebase 設定（放在推播區塊上面） ========== */
+/* ========= Firebase（唯一份） ========= */
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
   authDomain: "eyvind95-182f0.firebaseapp.com",
@@ -568,82 +568,52 @@ const firebaseConfig = {
   messagingSenderId: "105770576221",
   appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
 };
-/* ================= Firebase 初始化（只留一份） ================= */
 if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
 
-/* ----- Auth 全域（只留一份） ----- */
-/* ================= Firebase 初始化（只留一份） ================= */
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-
-/* ----- Auth 全域（只留一份） ----- */
-let CURRENT_UID = null;
-const googleProvider = new firebase.auth.GoogleAuthProvider();
+const db = firebase.firestore();               // ← 只能有這一行
+let CURRENT_UID = null;                        // ← 只能有這一行
+const googleProvider = new firebase.auth.GoogleAuthProvider();  // ← 只能有這一行
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-/* ----- Firestore 路徑與雲端讀寫（只留一份） ----- */
-function userDoc(){ return db.collection('daily').doc(CURRENT_UID); }
+function userDoc(){ return db.collection('daily').doc(CURRENT_UID); } // ← 只能有這一個
 
-async function cloudLoad(){
-  if (!CURRENT_UID) return null;
-  const snap = await userDoc().get();
-  return snap.exists ? snap.data() : null;
-}
-async function cloudSave(state){
-  if (!CURRENT_UID) return;
-  await userDoc().set(state, { merge: true }); // 用 merge 避免整筆覆蓋
-}
-
-/* ================= FCM 推播（只留一份） ================= */
-let messaging = null;
+/* ========= FCM（唯一份） ========= */
+let messaging = null;                          // ← 只能有這一個
 const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
-const NOTI_ICON_URL = "https://eyvind95.github.io/hello/6.png";
+const NOTI_ICON_URL = "https://eyvind95.github.io/hello/apps/ledger/6.png";
+const NOTI_BADGE_URL = "https://eyvind95.github.io/hello/apps/ledger/8.png";
 
-async function initFCM() {
-  try {
-    // 環境/SDK 檢查
-    if (!('Notification' in window) || !firebase.messaging) {
-      console.warn('此環境不支援通知或缺少 messaging SDK');
-      return;
-    }
+async function initFCM(){
+  try{
+    if (!('Notification' in window) || !firebase.messaging) return;
     if (!messaging) messaging = firebase.messaging();
 
-    // 註冊 FCM 專用 SW（與快取 SW 可共存）
+    // 用專用 SW（與快取 SW 共存 OK）
     const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
-    // v8 仍可用（若不存在就略過）
-    if (messaging.useServiceWorker) messaging.useServiceWorker(reg);
+    if (messaging.useServiceWorker) messaging.useServiceWorker(reg); // v8 兼容
 
-    // 取得權限
     const perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      console.warn('使用者未授權通知');
-      return;
-    }
+    if (perm !== 'granted') return;
 
-    // 取 token
-    const token = await messaging.getToken({
-      vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: reg
-    });
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     console.log('📢 FCM Token:', token);
 
-    // 綁定使用者（已登入才寫入）
-    if (CURRENT_UID && token) {
-      await userDoc().set(
-        { meta: { tokens: firebase.firestore.FieldValue.arrayUnion(token) } },
-        { merge: true }
-      );
+    // 登入後才綁定 token 到雲端
+    if (CURRENT_UID && token){
+      await userDoc().set({
+        meta: { tokens: firebase.firestore.FieldValue.arrayUnion(token) }
+      }, { merge: true });
     }
 
     // 前景訊息
-    messaging.onMessage(({ notification }) => {
-      if (!notification) return;
-      const { title, body, icon } = notification;
-      new Notification(title || '通知', { body: body || '', icon: icon || NOTI_ICON_URL });
+    messaging.onMessage(payload=>{
+      const n = payload.notification || {};
+      if (n.title){
+        new Notification(n.title, { body: n.body, icon: NOTI_ICON_URL, badge: NOTI_BADGE_URL });
+      }
     });
-  } catch (err) {
-    console.error('FCM 初始化失敗：', err);
+  }catch(e){
+    console.error('FCM 初始化失敗', e);
   }
 }
 
