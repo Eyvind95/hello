@@ -594,6 +594,10 @@ async function cloudSave(state){
 let messaging = null;
 const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
 const NOTI_ICON_URL = "https://eyvind95.github.io/hello/apps/ledger/8.png";
+  messaging.onMessage(payload => {
+  const { title, body } = payload.notification || {};
+  if (title) new Notification(title, { body, icon: NOTI_ICON_URL });
+});
 
 async function initFCM() {
   try {
@@ -1087,3 +1091,4 @@ initFCM().then(scheduleDailyReminders);
 </script>
 </body>
 </html>
+
