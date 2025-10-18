@@ -569,43 +569,6 @@ const firebaseConfig = {
 };
 if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
 const db = firebase.firestore();
-/* ========== Firebase Cloud Messaging (推播通知) ========== */
-const messaging = firebase.messaging();
-const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
-
-/* 初始化通知權限與 Token */
-async function initFCM() {
-  try {
-    const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
-    messaging.useServiceWorker(reg);
-
-    // 取得通知權限
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      console.warn('通知權限未授予');
-      return;
-    }
-
-    // 取得 Token
-    const token = await messaging.getToken({ vapidKey: VAPID_KEY });
-    console.log("📢 FCM Token:", token);
-
-    // 可以選擇存到 Firestore
-    if (CURRENT_UID && token) {
-      await db.collection('tokens').doc(CURRENT_UID).set({ token });
-    }
-
-    // 前景訊息處理
-    messaging.onMessage(payload => {
-      console.log("🔔 收到前景通知:", payload);
-      const { title, body } = payload.notification || {};
-      if (title) new Notification(title, { body });
-    });
-
-  } catch (err) {
-    console.error("FCM 初始化失敗：", err);
-  }
-}
 
 // --- 重要：統一用 googleProvider 這個名字 ---
 let CURRENT_UID = null;
@@ -969,10 +932,7 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 
   // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
   setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
-    // 啟動推播初始化
-  initFCM();
 })();
 </script>
 </body>
 </html>
-
