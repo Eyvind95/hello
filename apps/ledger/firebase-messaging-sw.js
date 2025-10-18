@@ -1,3 +1,4 @@
+// firebase-messaging-sw.js
 importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
 importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js');
 
@@ -13,7 +14,6 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.setBackgroundMessageHandler(function(payload) {
-  console.log("🔔 背景推播：", payload);
   const { title, body } = payload.notification || {};
-  return self.registration.showNotification(title, { body });
+  return self.registration.showNotification(title || '每日提醒', { body: body || '你有未勾的每日！', icon: './6.png' });
 });
