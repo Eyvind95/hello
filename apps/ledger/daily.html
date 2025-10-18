@@ -593,7 +593,7 @@ async function cloudSave(state){
 /* ================= FCM 推播（只留一份） ================= */
 let messaging = null;
 const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
-const NOTI_ICON_URL = "https://eyvind95.github.io/hello/6.png";
+const NOTI_ICON_URL = "https://eyvind95.github.io/hello/apps/ledger/8.png";
 
 async function initFCM() {
   try {
@@ -641,6 +641,45 @@ async function initFCM() {
     console.error('FCM 初始化失敗：', err);
   }
 }
+  /* ========== 每日任務提醒（FireStore版） ========== */
+async function hasUnfinishedTasks() {
+  if (!CURRENT_UID) return false;
+  try {
+    const snap = await userDoc().get();
+    const data = snap.data() || {};
+    const tasks = Object.entries(data)
+      .filter(([key]) => !["meta", "timestamp"].includes(key))
+      .map(([_, v]) => v);
+    return tasks.some(v => v === false);
+  } catch (err) {
+    console.warn("讀取任務狀態失敗：", err);
+    return false;
+  }
+}
+
+function scheduleDailyReminders() {
+  const targetHours = [20, 22];
+  setInterval(async () => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    if (targetHours.includes(h) && m === 0) {
+      const unfinished = await hasUnfinishedTasks();
+      if (unfinished && Notification.permission === "granted") {
+        new Notification("每日任務提醒", {
+          body: `現在是 ${h}:00，還有未完成的每日任務喔！`,
+          icon: "https://eyvind95.github.io/hello/6.png"
+        });
+      } else {
+        console.log("🎉 所有每日任務已完成，不推播通知");
+      }
+    }
+  }, 60000);
+}
+...
+(async function bootstrap(){
+   ...
+   await initFCM().then(scheduleDailyReminders);
 /* ------------ 全域狀態 ------------- */
 let STATE = null;
 
@@ -1043,15 +1082,8 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 
   // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
   setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
-  initFCM();
+initFCM().then(scheduleDailyReminders);
 })();
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
