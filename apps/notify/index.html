@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>推播測試（FCM + 本機通知）</title>
+
+  <!-- 最簡 manifest（含 gcm_sender_id 讓 FCM 正常工作） -->
+  <link rel="manifest" href="./manifest.webmanifest">
+
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC"; margin: 24px; }
+    button { padding: 8px 12px; margin-right: 8px; }
+    pre { background: #111; color: #0f0; padding: 10px; border-radius: 8px; white-space: pre-wrap; }
+    .muted { color:#666; }
+  </style>
+
+  <!-- Firebase v8（與你 daily 一致） -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
+</head>
+<body>
+  <h1>推播測試</h1>
+  <p class="muted">步驟：1) 按「啟用推播」取得 Token → 2) 去 Firebase Console 送測試訊息（貼這裡顯示的 Token） → 3) 前景/背景都應該能收到。</p>
+
+  <div style="margin:16px 0;">
+    <button id="btnPerm">啟用推播（要按一次）</button>
+    <button id="btnLocal">本機通知（立即測試）</button>
+  </div>
+
+  <h3>Token</h3>
+  <pre id="tokenBox">(尚未取得)</pre>
+
+  <h3>前景訊息（onMessage）</h3>
+  <pre id="fgBox">(尚未收到)</pre>
+
+  <script>
+    // 你的 Firebase Config（保持與 daily 相同）
+    const firebaseConfig = {
+      apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
+      authDomain: "eyvind95-182f0.firebaseapp.com",
+      projectId: "eyvind95-182f0",
+      storageBucket: "eyvind95-182f0.firebasestorage.app",
+      messagingSenderId: "105770576221",
+      appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
+    };
+
+    // ★ 改成你的 Web Push 公開金鑰（Firebase Console 上的 VAPID）
+    const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
+
+    // 初始化
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+
+    const $ = s => document.querySelector(s);
+    const tokenBox = $("#tokenBox");
+    const fgBox = $("#fgBox");
+
+    // 註冊自訂 SW，並交給 Messaging 使用（讓 SW 可以放在 /apps/notify/ 之下）
+    let swReg = null;
+    async function ensureSW() {
+      if ('serviceWorker' in navigator) {
+        swReg = await navigator.serviceWorker.register('./fm-sw.js');
+        messaging.useServiceWorker(swReg);
+      } else {
+        alert("這個瀏覽器不支援 serviceWorker");
+      }
+    }
+
+    // 申請通知權限 + 取得 FCM Token
+    async function enablePush() {
+      await ensureSW();
+
+      // 通知權限
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        alert('使用者沒有同意通知權限');
+        return;
+      }
+
+      try {
+        const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+        if (!token) {
+          tokenBox.textContent = '(無法取得 token，請檢查 VAPID 金鑰 / HTTPS / 權限設定)';
+          return;
+        }
+        tokenBox.textContent = token;
+      } catch (e) {
+        tokenBox.textContent = '取得 token 失敗：' + (e && e.message ? e.message : e);
+      }
+    }
+
+    // 前景訊息（頁面開著、同分頁時收到）
+    messaging.onMessage(payload => {
+      const ts = new Date().toLocaleTimeString();
+      fgBox.textContent = `[${ts}]\n` + JSON.stringify(payload, null, 2) + "\n\n" + fgBox.textContent;
+    });
+
+    // 本機立即通知（純前端，跟 FCM 無關）
+    async function localNotify() {
+      await ensureSW();
+      if (Notification.permission !== 'granted') {
+        const p = await Notification.requestPermission();
+        if (p !== 'granted') return;
+      }
+      swReg.showNotification("本機通知測試", {
+        body: "這是不用 FCM 的即時通知",
+        icon: "../6.png",
+        tag: "local-test"
+      });
+    }
+
+    // 綁定按鈕
+    $("#btnPerm").addEventListener('click', enablePush);
+    $("#btnLocal").addEventListener('click', localNotify);
+  </script>
+</body>
+</html>
