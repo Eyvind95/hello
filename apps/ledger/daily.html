@@ -10,12 +10,11 @@
 <link rel="icon" href="6.png">
 <meta name="theme-color" content="#0b0b0b" />
 
-<!-- Firebase v8 compat -->
+<!-- Firebase v8 compat（不載入 messaging） -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
-  
+
 <style>
 :root{
   --bg:#0b0b0b;
@@ -87,6 +86,8 @@ h1{font-size:22px; margin:0;}
 .sep{ height:8px }
 
 .footer-note{ color:#aaa; font-size:12px; margin-top:12px; text-align:center; }
+
+/* 數值膠囊 */
 .counter .val,
 .pill-val,
 .resin .val,
@@ -101,7 +102,7 @@ h1{font-size:22px; margin:0;}
   min-width:64px; text-align:center;
 }
 
-/* ---- + / - 按鈕基礎樣式 ---- */
+/* + / - 按鈕基礎樣式 */
 .counter .btn,
 .btn-inc, .btn-dec {
   background:#1b1b1b;
@@ -112,43 +113,14 @@ h1{font-size:22px; margin:0;}
   display:grid; place-items:center;
   cursor:pointer; user-select:none;
 }
+/* 加號（綠） */
+.btn-plus, .btn-inc { background:rgba(34,197,94,.14); border-color:#22c55e; color:#86efac; }
+/* 減號（紅） */
+.btn-minus, .btn-dec { background:rgba(239,68,68,.14); border-color:#ef4444; color:#fda4af; }
 
-/* 加號（綠色） */
-.btn-plus, .btn-inc {
-  background:rgba(34,197,94,.14);
-  border-color:#22c55e;
-  color:#86efac;
-}
-
-/* 減號（紅色） */
-.btn-minus, .btn-dec {
-  background:rgba(239,68,68,.14);
-  border-color:#ef4444;
-  color:#fda4af;
-}
-
-/* 數字輸入框如果有用到也強制白字 */
-input[type="number"].val,
-.resin input[type="number"],
-.stamina input[type="number"]{
-  color:#fff !important;
-}
-/* === 絕區零體力按鈕顏色設定 === */
-
-/* +80 → 綠色 */
-#zzz_claim {
-  background: rgba(34,197,94,.15);
-  border: 1px solid #22c55e;
-  color: #86efac;
-}
-
-/* 滿了重置到240 → 紅色 */
-#zzz_reset {
-  background: rgba(239,68,68,.15);
-  border: 1px solid #ef4444;
-  color: #fda4af;
-}
-
+/* 絕區零體力按鈕色 */
+#zzz_claim { background: rgba(34,197,94,.15); border: 1px solid #22c55e; color: #86efac; }
+#zzz_reset { background: rgba(239,68,68,.15); border: 1px solid #ef4444; color: #fda4af; }
 </style>
 </head>
 <body>
@@ -266,9 +238,7 @@ input[type="number"].val,
 
         <div class="g-row">
           <div class="g-left">版本更新（42 天）</div>
-          <div class="g-right">
-            <span class="small">下次：<span id="gsAs_ver_next" class="val">--</span></span>
-          </div>
+          <div class="g-right"><span class="small">下次：<span id="gsAs_ver_next" class="val">--</span></span></div>
         </div>
       </div>
 
@@ -345,7 +315,7 @@ input[type="number"].val,
     <section class="card">
       <h2>其他</h2><div class="sub">絕區零、貓咪大戰爭、Pokémon GO、諾提里森、新世界狂歡</div>
 
-      <!-- 絕區零（懶人版能量） -->
+      <!-- 絕區零 -->
       <div class="game" id="zzz">
         <div class="top">
           <div class="title">
@@ -442,10 +412,10 @@ input[type="number"].val,
         </div>
 
         <div class="g-row">
-   <div class="g-left">金幣卷（3 天一次，循環 0→1→2→0）</div>
-  <div class="g-right">
-    <span class="pill val" id="nsfw_ticket_ctr">0 / 3</span>
-    <button class="pill btn-plus" id="nsfw_ticket_inc">+1</button>
+          <div class="g-left">金幣卷（3 天一次，循環 0→1→2→0）</div>
+          <div class="g-right">
+            <span class="pill val" id="nsfw_ticket_ctr">0 / 3</span>
+            <button class="pill btn-inc" id="nsfw_ticket_inc">完成 +1</button>
           </div>
         </div>
       </div>
@@ -455,88 +425,51 @@ input[type="number"].val,
   <div class="footer-note">※ 晚上 20:00 與 22:00 若尚有「每日」未打勾，會在前端提醒（需在網頁前景開著）。</div>
 </div>
 
+<!-- 下面接 Script（見第 2 段） -->
 <script>
 /* ------------ 小工具 ------------- */
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const toLocal5AM = (d=new Date()) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 5, 0, 0, 0);
-function isTodayAfter5(now=new Date()){
-  return now >= toLocal5AM(now);
-}
-function inWeekend(d=new Date()){
-  const w = d.getDay(); // 0 Sun
-  return (w === 0 || w === 6);
-}
+function isTodayAfter5(now=new Date()){ return now >= toLocal5AM(now); }
+function inWeekend(d=new Date()){ const w = d.getDay(); return (w === 0 || w === 6); }
 function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
-function fmtDate(d){ if(!d) return '--'; const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; }
+function fmtDate(d){
+  if(d==null) return '--';
+  const x = (d instanceof Date) ? d : new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+}
 function nextAbyssBase(from){ // 每月 1 & 16
-  const d = new Date(from);
-  const day = d.getDate();
-  const m = d.getMonth();
-  const y = d.getFullYear();
-  if(day < 1){ return new Date(y, m, 1); }
-  if(day < 16){ return new Date(y, m, 16); }
+  const d = new Date(from), day = d.getDate(), m = d.getMonth(), y = d.getFullYear();
+  if(day < 1)  return new Date(y, m, 1);
+  if(day < 16) return new Date(y, m, 16);
   return new Date(y, m+1, 1);
 }
-function nextMonth1(from){
-  const d = new Date(from);
-  return new Date(d.getFullYear(), d.getMonth()+1, 1);
-}
-function next42(from){
-  const d = new Date(from);
-  d.setDate(d.getDate()+42);
-  return d;
-}
+function nextMonth1(from){ const d = new Date(from); return new Date(d.getFullYear(), d.getMonth()+1, 1); }
+function next42(from){ const d = new Date(from); d.setDate(d.getDate()+42); return d; }
 
 /* ------------ 預設狀態 ------------- */
 function defaultState(){
   const today = new Date();
   const baseAbyss = nextAbyssBase(today);
   const basePoem  = nextMonth1(today);
-
   return {
-    // 原神：台、亞
-    gsTw:{
-      resin:{ val:160, last: Date.now() }, // 8 分鐘 +1，max 200
-      daily:{ last:null },
-      abyss:{ next: baseAbyss, done:false },
-      poem: { next: basePoem , done:false },
-      ver:  { next: next42(today) }
-    },
-    gsAs:{
-      resin:{ val:160, last: Date.now() },
-      daily:{ last:null },
-      abyss:{ next: baseAbyss, done:false },
-      poem: { next: basePoem , done:false },
-      ver:  { next: next42(today) }
-    },
-    // 星穹鐵道
-    hsr:{
-      daily:{ last:null },
-      mem: { next: new Date('2025-10-27'), done:false },
-      pure:{ next: new Date('2025-11-24'), done:false },
-      ape: { next: new Date('2025-11-10'), done:false },
-      arbi:{ next: new Date('2025-11-05'), done:false },
-      ver: { next: new Date('2025-11-05') }
-    },
-    // HoyoLAB
+    gsTw:{ resin:{ val:160, last: Date.now() }, daily:{ last:null }, abyss:{ next: +baseAbyss, done:false }, poem:{ next:+basePoem, done:false }, ver:{ next:+next42(today) } },
+    gsAs:{ resin:{ val:160, last: Date.now() }, daily:{ last:null }, abyss:{ next: +baseAbyss, done:false }, poem:{ next:+basePoem, done:false }, ver:{ next:+next42(today) } },
+    hsr: { daily:{ last:null },
+           mem:{ next:+new Date('2025-10-27'), done:false },
+           pure:{ next:+new Date('2025-11-24'), done:false },
+           ape:{ next:+new Date('2025-11-10'), done:false },
+           arbi:{ next:+new Date('2025-11-05'), done:false },
+           ver:{ next:+new Date('2025-11-05') } },
     hoyo:{ daily:{ last:null } },
-    // ZZZ
-    zzz:{ daily:{ last:null }, energy:240 },
-    // 貓咪
+    zzz: { daily:{ last:null }, energy:240 },
     cats:{ daily:{ last:null }, weekend:{ last:null } },
-    // POGO
     pogo:{ spin:{ last:null }, catch:{ last:null } },
-    // 諾提
     noti:{ daily:{ last:null } },
-    // 新世界狂歡
     nsfw:{ daily:{ last:null }, ticket:0 },
-
-    // 元資訊：重置點與今天字串
-    meta:{
-      lastReset: null // 儲存「上一次 05:00 換日後的日期(yyyy-mm-dd)」
-    }
+    meta:{ lastReset: null }
   };
 }
 
@@ -546,20 +479,34 @@ function deepMergeDefaults(def, cur){
   if (Array.isArray(def) || Array.isArray(cur)) return cur ?? def;
   if (typeof def !== 'object' || typeof cur !== 'object') return (cur === undefined || cur === null) ? def : cur;
   const out = {...cur};
-  for (const k of Object.keys(def)){
-    out[k] = deepMergeDefaults(def[k], cur[k]);
-  }
+  for (const k of Object.keys(def)){ out[k] = deepMergeDefaults(def[k], cur[k]); }
   return out;
 }
 
+/* 將狀態中的 Date 轉為 number（ms） */
+function normalizeForSave(s){
+  const j = JSON.parse(JSON.stringify(s)); // 深拷貝
+  // 保證所有日期欄位是 number
+  const fix = (node)=>{
+    if(!node || typeof node!=='object') return;
+    for(const k in node){
+      const v = node[k];
+      if(v instanceof Date){ node[k] = +v; }
+      else if(v && typeof v==='object'){ fix(v); }
+    }
+  };
+  fix(j);
+  return j;
+}
+/* 將雲端讀回的 number 還原為 number（本頁皆用 number 存 epoch，fmtDate 時再 new Date）*/
+function reviveFromCloud(s){ return s || null; }
+
 /* ------------ 本機儲存 ------------- */
 const LS_KEY = "daily_state_v1";
-function loadLocal(){
-  try{ const raw=localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
-}
+function loadLocal(){ try{ const raw=localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; } }
 function saveLocal(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
 
-/* ========== Firebase 設定（放在推播區塊上面） ========== */
+/* ------------ Firebase（Auth + Firestore） ------------- */
 const firebaseConfig = {
   apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
   authDomain: "eyvind95-182f0.firebaseapp.com",
@@ -568,101 +515,35 @@ const firebaseConfig = {
   messagingSenderId: "105770576221",
   appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
 };
-/* ================= Firebase 初始化（只留一份） ================= */
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-
-/* ----- Auth 全域（只留一份） ----- */
 let CURRENT_UID = null;
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-/* ----- Firestore 路徑與雲端讀寫（只留一份） ----- */
 function userDoc(){ return db.collection('daily').doc(CURRENT_UID); }
+async function cloudLoad(){ if(!CURRENT_UID) return null; const snap = await userDoc().get(); return snap.exists ? snap.data() : null; }
+async function cloudSave(state){ if(!CURRENT_UID) return; await userDoc().set(state); }
 
-async function cloudLoad(){
-  if (!CURRENT_UID) return null;
-  const snap = await userDoc().get();
-  return snap.exists ? snap.data() : null;
-}
-async function cloudSave(state){
-  if (!CURRENT_UID) return;
-  await userDoc().set(state, { merge: true }); // 用 merge 避免整筆覆蓋
-}
-
-/* ================= FCM 推播（只留一份） ================= */
-let messaging = null;
-const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
-const NOTI_ICON_URL = "https://eyvind95.github.io/apps/ledger/6.png";
-const NOTI_BADGE_URL = "https://eyvind95.github.io/hello/apps/ledger/8.png";
-
-async function initFCM() {
-  try {
-    // 環境/SDK 檢查
-    if (!('Notification' in window) || !firebase.messaging) {
-      console.warn('此環境不支援通知或缺少 messaging SDK');
-      return;
-    }
-    if (!messaging) messaging = firebase.messaging();
-
-    // 註冊 FCM 專用 SW（與快取 SW 可共存）
-    const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
-    // v8 仍可用（若不存在就略過）
-    if (messaging.useServiceWorker) messaging.useServiceWorker(reg);
-
-    // 取得權限
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      console.warn('使用者未授權通知');
-      return;
-    }
-
-    // 取 token
-    const token = await messaging.getToken({
-      vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: reg
-    });
-    console.log('📢 FCM Token:', token);
-
-    // 綁定使用者（已登入才寫入）
-    if (CURRENT_UID && token) {
-      await userDoc().set(
-        { meta: { tokens: firebase.firestore.FieldValue.arrayUnion(token) } },
-        { merge: true }
-      );
-    }
-
-    // 前景訊息
-    messaging.onMessage(({ notification }) => {
-      if (!notification) return;
-      const { title, body, icon } = notification;
-      new Notification(title || '通知', { body: body || '', icon: icon || NOTI_ICON_URL });
-    });
-  } catch (err) {
-    console.error('FCM 初始化失敗：', err);
-  }
-}
 /* ------------ 全域狀態 ------------- */
 let STATE = null;
 
 /* ------------ 換日邏輯（05:00） ------------- */
 function ensureDailyReset(){
   const now = new Date();
-  const dayToken = ymd(isTodayAfter5(now) ? now : addDays(now,-1)); // 當天 05:00 之後算今天；否則算昨天
+  const dayToken = ymd(isTodayAfter5(now) ? now : addDays(now,-1));
   if(STATE.meta.lastReset === dayToken) return;
 
-  // 通用的「每日」欄位：把 last 清掉（表示可勾）
-  function resetDaily(obj){
+  const resetDaily = (obj)=>{
     if(!obj) return;
     Object.keys(obj).forEach(k=>{
       const v = obj[k];
-      if(v && typeof v === 'object' && 'last' in v){
+      if(v && typeof v === 'object' && Object.prototype.hasOwnProperty.call(v,'last')){
         v.last = null;
       }
     });
-  }
+  };
 
-  // 重置各區塊
   resetDaily(STATE.gsTw);
   resetDaily(STATE.gsAs);
   resetDaily(STATE.hsr);
@@ -673,11 +554,7 @@ function ensureDailyReset(){
   resetDaily(STATE.noti);
   resetDaily(STATE.nsfw);
 
-  // 週末關卡：只要在週末（六日），每天重置一次
-  if(inWeekend(now)){
-    STATE.cats.weekend.last = null;
-  }
-
+  if(inWeekend(now)){ STATE.cats.weekend.last = null; }
   STATE.meta.lastReset = dayToken;
 }
 
@@ -694,77 +571,41 @@ function tickResinAutoOne(node){
     node.last = last + add*8*60000;
   }
 }
-function tickResinAuto(){
-  tickResinAutoOne(STATE.gsTw.resin);
-  tickResinAutoOne(STATE.gsAs.resin);
+function tickResinAuto(){ tickResinAutoOne(STATE.gsTw.resin); tickResinAutoOne(STATE.gsAs.resin); }
+function etaTo200(resin){
+  if(resin.val>=200) return '滿';
+  const remain = 200 - resin.val;
+  const mins = remain*8;
+  const h = Math.floor(mins/60), m = mins%60;
+  return `${h}小時 ${m}分`;
 }
 
 /* ------------ UI 綁定 ------------- */
-// 通用「每日 checkbox」
+function setText(id, txt){ const el=$(id.startsWith('#')?id:('#'+id)); if(el) el.textContent=txt; }
+
 function bindDailyCheckbox(idPath, model){
   const el = document.getElementById(idPath);
   if(!el) return;
   el.checked = !!model.last;
   el.onchange = async ()=>{
     model.last = el.checked ? Date.now() : null;
-    await persist();
-    // 回傳 {count, list}：list 會列出顯示名稱，給推播用
-function computePendingAndList(){
-  const map = [];
-  function push(name, x){ if(!x || !('last' in x)) return; if(!x.last) map.push(name); }
-
-  // 依你的版面順序填顯示名
-  push('原神-台  每日',   STATE.gsTw.daily);
-  push('原神-亞  每日',   STATE.gsAs.daily);
-  push('星穹鐵道 每日',   STATE.hsr.daily);
-  push('HoyoLAB 每日',    STATE.hoyo.daily);
-  push('絕區零   每日',   STATE.zzz.daily);
-  push('貓咪大戰爭 每日', STATE.cats.daily);
-  push('貓咪週末關卡',     STATE.cats.weekend);
-  push('Pokemon GO 轉補給站', STATE.pogo.spin);
-  push('Pokemon GO 捉一隻',   STATE.pogo.catch);
-  push('諾提里森 每日',   STATE.noti.daily);
-  push('新世界狂歡 每日', STATE.nsfw.daily);
-
-  return { count: map.length, list: map };
+    await persist(); renderPending();
+  };
 }
-function renderPending(){
-  const {count} = computePendingAndList();
-  $("#pendingCount").textContent = count;
-}
-  }
-}
-function bindSpin(id, model){ // POGO
-  const el = document.getElementById(id);
+function bindSpin(id, model){ const el = document.getElementById(id); if(!el) return;
   el.checked = !!model.last;
-  el.onchange = async ()=>{ model.last = el.checked ? Date.now() : null; await persist(); renderPending(); }
+  el.onchange = async ()=>{ model.last = el.checked ? Date.now() : null; await persist(); renderPending(); };
 }
-function bindPoGo(idCatch, idSpin){
-  bindSpin(idSpin, STATE.pogo.spin);
-  bindSpin(idCatch, STATE.pogo.catch);
-}
+function bindPoGo(idCatch, idSpin){ bindSpin(idSpin, STATE.pogo.spin); bindSpin(idCatch, STATE.pogo.catch); }
 
-function setText(id, txt){ const el=$(id.startsWith('#')?id:('#'+id)); if(el) el.textContent=txt; }
-
-function etaTo200(resin){
-  if(resin.val>=200) return '滿';
-  const remain = 200 - resin.val;
-  const mins = remain*8; // 分鐘
-  const h = Math.floor(mins/60);
-  const m = mins % 60;
-  return `${h}小時 ${m}分`;
-}
-
-/* 原神區：台/亞 綁定 */
+/* 原神（單一帳） */
 function bindGenshinOne(prefix, node){
   const v = id => document.getElementById(prefix + '_' + id);
 
   // 樹脂
   const view = v('resin_view'), eta = v('resin_eta');
-  function paintResin(){
-    view.textContent = node.resin.val;
-    eta.textContent = etaTo200(node.resin);
-  }
+  function paintResin(){ view.textContent = node.resin.val; eta.textContent = etaTo200(node.resin); }
+
   v('resin_minus10').onclick = async ()=>{ node.resin.val = Math.max(0, node.resin.val-10); node.resin.last=Date.now(); paintResin(); await persist(); };
   v('resin_minus1').onclick  = async ()=>{ node.resin.val = Math.max(0, node.resin.val-1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
   v('resin_plus1').onclick   = async ()=>{ node.resin.val = Math.min(200, node.resin.val+1 ); node.resin.last=Date.now(); paintResin(); await persist(); };
@@ -776,13 +617,11 @@ function bindGenshinOne(prefix, node){
 
   // 螺旋
   setText(prefix+"_abyss_next", fmtDate(node.abyss.next));
-  const ckA = v('abyss_done'); ckA.checked = !!node.abyss.done;
-  ckA.onchange = async ()=>{ node.abyss.done = ckA.checked; await persist(); };
+  const ckA = v('abyss_done'); if(ckA){ ckA.checked = !!node.abyss.done; ckA.onchange = async ()=>{ node.abyss.done = ckA.checked; await persist(); }; }
 
   // 劇詩
   setText(prefix+"_poem_next", fmtDate(node.poem.next));
-  const ckP = v('poem_done'); ckP.checked = !!node.poem.done;
-  ckP.onchange = async ()=>{ node.poem.done = ckP.checked; await persist(); };
+  const ckP = v('poem_done'); if(ckP){ ckP.checked = !!node.poem.done; ckP.onchange = async ()=>{ node.poem.done = ckP.checked; await persist(); }; }
 
   // 版本
   setText(prefix+"_ver_next", fmtDate(node.ver.next));
@@ -791,14 +630,14 @@ function bindGenshinOne(prefix, node){
 /* 星穹鐵道 */
 function bindHSR(){
   bindDailyCheckbox("hsr_daily", STATE.hsr.daily);
-
   function one(key, labelId, ckId){
     setText(labelId, fmtDate(STATE.hsr[key].next));
     const ck = document.getElementById(ckId);
+    if(!ck) return;
     ck.checked = !!STATE.hsr[key].done;
     ck.onchange = async ()=>{ STATE.hsr[key].done = ck.checked; await persist(); };
   }
-  one('mem', "hsr_mem_next", "hsr_mem_done");
+  one('mem',"hsr_mem_next","hsr_mem_done");
   one('pure',"hsr_pure_next","hsr_pure_done");
   one('ape',"hsr_ape_next","hsr_ape_done");
   one('arbi',"hsr_arbi_next","hsr_arbi_done");
@@ -811,60 +650,39 @@ function bindHoyo(){ bindDailyCheckbox("hoyo_daily", STATE.hoyo.daily); }
 /* ZZZ（懶人版） */
 function bindZZZ(){
   bindDailyCheckbox("zzz_daily", STATE.zzz.daily);
-
   const view = $("#zzz_energy_view");
   function paint(){ view.textContent = STATE.zzz.energy; }
   paint();
-
-  $("#zzz_claim").onclick = async ()=>{
-    STATE.zzz.energy = Math.min(STATE.zzz.energy + 80, 960);
-    if (STATE.zzz.energy >= 960) STATE.zzz.energy = 240;
-    paint(); await persist();
-  };
+  $("#zzz_claim").onclick = async ()=>{ STATE.zzz.energy = Math.min(STATE.zzz.energy + 80, 960); if(STATE.zzz.energy>=960) STATE.zzz.energy = 240; paint(); await persist(); };
   $("#zzz_reset").onclick = async ()=>{ STATE.zzz.energy = 240; paint(); await persist(); };
 }
 
-/* 貓咪：週末行顯示控管 */
-function toggleWeekendRow(){
-  const row = $("#cats_weekend_row");
-  if(!row) return;
-  row.style.display = inWeekend() ? "" : "none";
-}
+/* 貓咪週末行顯示 */
+function toggleWeekendRow(){ const row = $("#cats_weekend_row"); if(row) row.style.display = inWeekend() ? "" : "none"; }
 function bindCats(){
   bindDailyCheckbox("cats_daily", STATE.cats.daily);
   toggleWeekendRow();
   const ck = $("#cats_weekend");
-  if(ck){
-    ck.checked = !!STATE.cats.weekend.last;
-    ck.onchange = async ()=>{ STATE.cats.weekend.last = ck.checked ? Date.now() : null; await persist(); };
-  }
+  if(ck){ ck.checked = !!STATE.cats.weekend.last; ck.onchange = async ()=>{ STATE.cats.weekend.last = ck.checked ? Date.now() : null; await persist(); }; }
 }
 
-/* POGO */
-function bindPoGoAll(){ bindPoGo("pogo_catch", "pogo_spin"); }
+/* Pokémon GO */
+function bindPoGoAll(){ bindPoGo("pogo_catch","pogo_spin"); }
 
 /* 諾提里森 */
 function bindNoti(){ bindDailyCheckbox("noti_daily", STATE.noti.daily); }
 
-/* 新世界狂歡（自動循環 0→1→2→0） */
+/* 新世界狂歡（票 0→1→2→0） */
 function bindNSFW(){
   bindDailyCheckbox("nsfw_daily", STATE.nsfw.daily);
-  const ctr = $("#nsfw_ticket_ctr");
-  const inc = $("#nsfw_ticket_inc");
-
+  const ctr=$("#nsfw_ticket_ctr"), inc=$("#nsfw_ticket_inc");
   function paint(){ ctr.textContent = `${STATE.nsfw.ticket} / 3`; }
   paint();
-
-  inc.onclick = async () => {
-    STATE.nsfw.ticket = (STATE.nsfw.ticket + 1) % 3;
-    paint();
-    await persist();
-  };
+  inc.onclick = async ()=>{ STATE.nsfw.ticket = (STATE.nsfw.ticket + 1) % 3; paint(); await persist(); };
 }
 
-/* ------------ Pending 統計 & 提醒 ------------- */
+/* ------------ Pending 統計 & 前端提醒（20:00 / 22:00） ------------- */
 function renderPending(){
-  // 統計所有「每日」還沒打勾的
   const arr = [
     STATE.gsTw.daily, STATE.gsAs.daily, STATE.hsr.daily, STATE.hoyo.daily, STATE.zzz.daily,
     STATE.cats.daily, STATE.pogo.spin, STATE.pogo.catch, STATE.noti.daily, STATE.nsfw.daily
@@ -873,207 +691,112 @@ function renderPending(){
   $("#pendingCount").textContent = cnt;
 }
 function scheduleLocalReminders(){
-  // 前端簡單信息：20:00 / 22:00 若 pending>0 就 alert（頁面開著才會觸發）
-function plan(hour){
+  function plan(hour){
     const now = new Date(), t = new Date();
     t.setHours(hour,0,0,0);
     if(t <= now) t.setDate(t.getDate()+1);
     const ms = t - now;
-    setTimeout(()=>{ 
-      renderPending(); 
-      // 新增：若所有任務已完成就不發通知
-      const { count } = computePendingAndList();
-      if (count === 0) { plan(hour); return; }
-
+    setTimeout(()=>{
+      renderPending();
       const n = parseInt($("#pendingCount").textContent||"0",10);
       if(n>0) alert(`提醒：你還有 ${n} 個每日尚未完成喔！`);
-      plan(hour); // 續約
+      plan(hour);
     }, ms);
   }
   plan(20); plan(22);
 }
 
 /* ------------ 渲染 ------------- */
-function render(){
-  // 日期條
-  const now = new Date();
-  $("#todayStr").textContent = ymd(now);
-
-  // 流程：自動回復樹脂 → 渲染各塊
-  tickResinAuto();
-
-  // Genshin
-  bindGenshinOne("gsTw", STATE.gsTw);
-  bindGenshinOne("gsAs", STATE.gsAs);
-
-  // HSR / Hoyo / ZZZ / Cats / PoGo / Noti / NSFW
-  bindHSR(); bindHoyo(); bindZZZ(); bindCats(); bindPoGoAll(); bindNoti(); bindNSFW();
-
-  renderPending();
-}
-
-/* ------------ 永久化（雲端優先） ------------- */
-async function persist(){
-  saveLocal(STATE);
-  if(CURRENT_UID){
-    try{ await cloudSave(STATE); }catch(e){ console.error(e); }
-  }
-}
-
-// 更新右上角登入狀態
-function updateLoginUI(user){
-  if(user){
-    document.getElementById("who").textContent = `已登入：${user.email || 'Google'}`;
-    document.getElementById("btnLogin").style.display = "none";
-    document.getElementById("btnLogout").style.display = "";
-  }else{
-    document.getElementById("who").textContent = "(未登入：僅本機)";
-    document.getElementById("btnLogin").style.display = "";
-    document.getElementById("btnLogout").style.display = "none";
-  }
-}
-/* 自動替按鈕加上顏色 class（依照文字內容 + / -） */
 function colorizePlusMinus(){
-  document.querySelectorAll('.counter .btn, .btn-inc, .btn-dec, button').forEach(b=>{
-    const t = (b.textContent || '').trim();
-    // 先清掉舊標記
+  document.querySelectorAll('button').forEach(b=>{
+    const t = (b.textContent||'').trim();
     b.classList.remove('btn-plus','btn-minus');
-    // 判斷字面上是否是 + 或 -
     if (t.startsWith('+')) b.classList.add('btn-plus');
     if (t.startsWith('-')) b.classList.add('btn-minus');
   });
 }
-/* 如果你有 render() 或初始化，結尾呼叫一下 */
-window.addEventListener('load', colorizePlusMinus);
-/* 若你的頁面有重新渲染 UI 的流程，記得在 render() 結尾也加上 colorizePlusMinus(); */
-  // 取得未完成數量與清單（若你已有同名工具就略過）
-function computePendingAndList(){
-  const list = [];
-  function push(name, x){ if (x && 'last' in x && !x.last) list.push(name); }
-
-  push('原神-台 每日',   STATE.gsTw.daily);
-  push('原神-亞 每日',   STATE.gsAs.daily);
-  push('星穹鐵道 每日',   STATE.hsr.daily);
-  push('HoyoLAB 每日',    STATE.hoyo.daily);
-  push('絕區零 每日',     STATE.zzz.daily);
-  push('貓咪大戰爭 每日', STATE.cats.daily);
-  push('貓咪週末關卡',     STATE.cats.weekend);
-  push('Pokemon GO 轉補給站', STATE.pogo.spin);
-  push('Pokemon GO 捉一隻',   STATE.pogo.catch);
-  push('諾提里森 每日',   STATE.noti.daily);
-  push('新世界狂歡 每日', STATE.nsfw.daily);
-
-  return { count:list.length, list };
+function render(){
+  const now = new Date();
+  $("#todayStr").textContent = ymd(now);
+  tickResinAuto();
+  bindGenshinOne("gsTw", STATE.gsTw);
+  bindGenshinOne("gsAs", STATE.gsAs);
+  bindHSR(); bindHoyo(); bindZZZ(); bindCats(); bindPoGoAll(); bindNoti(); bindNSFW();
+  renderPending();
+  colorizePlusMinus();
 }
 
-// ==== 永久化（先本機，再雲端；同時寫入 pending 資訊）====
+/* ------------ 永久化（雲端優先） ------------- */
 async function persist(){
-  const { count, list } = computePendingAndList();
-  STATE.meta = { ...(STATE.meta||{}), pending: count, pendingList: list };
-
-  // 本機
-  localStorage.setItem("daily_state_v1", JSON.stringify(STATE));
-
-  // 雲端（登入才寫）
+  // 優先本機
+  saveLocal(STATE);
+  // 雲端（登入才存）
   if (CURRENT_UID){
-    try {
-      await userDoc().set(STATE, { merge:true });
-    } catch(e){ console.error(e); }
+    try{
+      const clean = normalizeForSave(STATE);
+      await cloudSave(clean);
+    }catch(e){ console.error(e); }
+  }
+}
+
+/* ------------ 登入 UI ------------- */
+function updateLoginUI(user){
+  if(user){
+    $("#who").textContent = `已登入：${user.email||'Google'}`;
+    $("#btnLogin").style.display="none";
+    $("#btnLogout").style.display="";
+  }else{
+    $("#who").textContent = "(未登入：僅本機)";
+    $("#btnLogin").style.display="";
+    $("#btnLogout").style.display="none";
   }
 }
 
 /* ------------ 啟動 ------------- */
 (async function bootstrap(){
-  // Service Worker（若檔案存在就會註冊成功）
+  // 僅註冊快取 SW（不註冊 firebase-messaging-sw.js）
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw-daily.js').catch(()=>{});
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
 
-  // 載入狀態（雲端或本機）→ 合併預設 → 05:00 換日 → 自動回復 → 存 → 渲染
+  // 載入狀態 → 合併預設 → 05:00 換日 → 自動回復 → 存 → 渲染
   let local = loadLocal();
   STATE = deepMergeDefaults(defaultState(), local||{});
+  ensureDailyReset(); tickResinAuto(); await persist(); render();
 
-  ensureDailyReset();
-  tickResinAuto();
-  await persist();
-  render();
-initFCM();
-  // Google Auth 監聽
-firebase.auth().onAuthStateChanged(async (user)=>{
-  CURRENT_UID = user ? user.uid : null;
-  updateLoginUI(user);
-
-  try{
-    if(user){
-      // 先讀雲 → 合併 local → 存回雲（讓雲端長出 /daily/<UID>）
-      const cloud = await cloudLoad();         // 可能為 null（第一次）
-      const local = loadLocal() || {};         // 你原本的本機存取
-      STATE = deepMergeDefaults(defaultState(), cloud || local || {});
-      ensureDailyReset(); tickResinAuto();
-      await cloudSave(STATE);                  // 寫回雲（第一次就會建立文件）
-      saveLocal(STATE);                        // 順便覆蓋本機一致
-      render();
-      await initFCM();
-    }else{
-      // 登出就回本機
-      const local = loadLocal() || {};
-      STATE = deepMergeDefaults(defaultState(), local);
-      ensureDailyReset(); tickResinAuto(); saveLocal(STATE); render();
-    }
-  }catch(err){
-    console.error(err);
-  }
-   await setupMessagingAndSaveToken();
-});
-
-document.getElementById("btnLogin").addEventListener("click", async () => {
-  try{
-    await firebase.auth().signInWithPopup(googleProvider);
-  }catch(e){
-    const fallback = [
-      "auth/operation-not-supported-in-this-environment",
-      "auth/popup-blocked",
-      "auth/popup-closed-by-user",
-    ];
-    if (fallback.includes(e.code || "")) {
-      await firebase.auth().signInWithRedirect(googleProvider);
-    }else{
-      alert("登入失敗：" + e.message);
-    }
-  }
-});
-document.getElementById("btnLogout").addEventListener("click", async () => {
-  await firebase.auth().signOut();
-});
-  // 前端提醒排程
-  scheduleLocalReminders();
-function scheduleLocalReminders(){
-  const now = new Date();
-  const hours = now.getHours();
-
-  // 若未到8點或10點，排定提醒
-  const targets = [20, 22]; // 8pm、10pm
-  for (const h of targets){
-    const diff = ((h - hours + 24) % 24) * 3600 * 1000
-      - now.getMinutes()*60000 - now.getSeconds()*1000;
-    setTimeout(()=>{
-      // 新增：若所有任務已完成就不發通知
-      const { count } = computePendingAndList();
-      if (count === 0) return;
-      if (Notification.permission === 'granted'){
-        new Notification('每日任務提醒', { 
-          body: '該檢查任務囉～', 
-          icon: NOTI_ICON_URL, 
-          badge: NOTI_BADGE_URL 
-        });
+  // Auth 監聽
+  firebase.auth().onAuthStateChanged(async (user)=>{
+    CURRENT_UID = user ? user.uid : null;
+    updateLoginUI(user);
+    try{
+      if(user){
+        const cloud = await cloudLoad();
+        const revived = cloud ? reviveFromCloud(cloud) : null;
+        STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
+      }else{
+        const loc = loadLocal();
+        STATE = deepMergeDefaults(defaultState(), loc || {});
       }
-    }, diff);
-  }
-}
+      ensureDailyReset(); tickResinAuto(); await persist(); render();
+    }catch(e){ console.error(e); }
+  });
 
-  // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
+  // Login/Logout
+  $("#btnLogin").onclick = async ()=>{
+    try{ await firebase.auth().signInWithPopup(googleProvider); }
+    catch(e){
+      const fallback = ["auth/operation-not-supported-in-this-environment","auth/popup-blocked","auth/popup-closed-by-user"];
+      if(fallback.includes(e.code||"")) await firebase.auth().signInWithRedirect(googleProvider);
+      else alert("登入失敗：" + e.message);
+    }
+  };
+  $("#btnLogout").onclick = async ()=>{ await firebase.auth().signOut(); };
+
+  // 前端提醒（需頁面在前景或至少開著）
+  scheduleLocalReminders();
+
+  // 每分鐘：樹脂 tick、週末行顯示、Pending 更新
   setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
-  initFCM();
 })();
 </script>
 </body>
