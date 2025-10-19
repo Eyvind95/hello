@@ -515,16 +515,46 @@ const firebaseConfig = {
   messagingSenderId: "105770576221",
   appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
 };
-if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 let CURRENT_UID = null;
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-function userDoc(){ return db.collection('daily').doc(CURRENT_UID); }
-async function cloudLoad(){ if(!CURRENT_UID) return null; const snap = await userDoc().get(); return snap.exists ? snap.data() : null; }
-async function cloudSave(state){ if(!CURRENT_UID) return; await userDoc().set(state); }
+function userDoc() {
+  return db.collection('daily').doc(CURRENT_UID);
+}
 
+// === 雲端讀取 ===
+async function cloudLoad() {
+  if (!CURRENT_UID) return null;
+  const snap = await userDoc().get();
+  return snap.exists ? snap.data() : null;
+}
+
+// === 雲端儲存（保留其他欄位，例如 meta.tokens）===
+async function cloudSave(state) {
+  if (!CURRENT_UID) return;
+  await userDoc().set(state, { merge: true });
+}
+
+// === 專門給 GitHub Actions 判斷用：同步待辦數量 ===
+async function savePendingCountToCloud(pending) {
+  if (!CURRENT_UID) return;
+  const dateStr = new Date().toLocaleDateString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  await userDoc().set({
+    meta: {
+      pendingCount: pending,
+      dayToken: dateStr
+    }
+  }, { merge: true });
+}
 /* ------------ 全域狀態 ------------- */
 let STATE = null;
 
@@ -589,7 +619,9 @@ function bindDailyCheckbox(idPath, model){
   el.checked = !!model.last;
   el.onchange = async ()=>{
     model.last = el.checked ? Date.now() : null;
-    await persist(); renderPending();
+    await persist(); 
+    renderPending();
+    updatePendingDisplay();
   };
 }
 function bindSpin(id, model){ const el = document.getElementById(id); if(!el) return;
@@ -690,6 +722,15 @@ function renderPending(){
   const cnt = arr.filter(x => !x.last).length;
   $("#pendingCount").textContent = cnt;
 }
+  function updatePendingDisplay(){
+  const arr = [
+    STATE.gsTw.daily, STATE.gsAs.daily, STATE.hsr.daily, STATE.hoyo.daily, STATE.zzz.daily,
+    STATE.cats.daily, STATE.pogo.spin, STATE.pogo.catch, STATE.noti.daily, STATE.nsfw.daily
+  ];
+  const pending = arr.filter(x => !x.last).length;
+  $("#pendingCount").textContent = pending;
+  savePendingCountToCloud(pending); // ← 這行會同步 Firestore
+}
 function scheduleLocalReminders(){
   function plan(hour){
     const now = new Date(), t = new Date();
@@ -723,6 +764,7 @@ function render(){
   bindGenshinOne("gsAs", STATE.gsAs);
   bindHSR(); bindHoyo(); bindZZZ(); bindCats(); bindPoGoAll(); bindNoti(); bindNSFW();
   renderPending();
+  updatePendingDisplay();
   colorizePlusMinus();
 }
 
@@ -773,6 +815,9 @@ function updateLoginUI(user){
         const cloud = await cloudLoad();
         const revived = cloud ? reviveFromCloud(cloud) : null;
         STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
+        render();
+    const pending = calcPendingCount();
+    savePendingCountToCloud(pending);
       }else{
         const loc = loadLocal();
         STATE = deepMergeDefaults(defaultState(), loc || {});
@@ -801,4 +846,5 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
