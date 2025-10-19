@@ -816,7 +816,7 @@ function updateLoginUI(user){
         const revived = cloud ? reviveFromCloud(cloud) : null;
         STATE = deepMergeDefaults(defaultState(), revived || STATE || {});
         render();
-    const pending = calcPendingCount();
+    const pending = 0;
     savePendingCountToCloud(pending);
       }else{
         const loc = loadLocal();
@@ -846,6 +846,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
