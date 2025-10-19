@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8" />
+<title>Get FCM Web Token</title>
+
+<!-- Firebase v8（跟你現有 SW 相容） -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
+
+<body style="font-family:system-ui;padding:24px">
+  <h1>FCM Web Token 工具</h1>
+  <button id="btn">取得/更新 Token</button>
+  <pre id="out" style="white-space:pre-wrap;margin-top:16px"></pre>
+
+<script>
+  // 你的專案設定（跟 daily.html 相同）
+  const firebaseConfig = {
+    apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
+    authDomain: "eyvind95-182f0.firebaseapp.com",
+    projectId: "eyvind95-182f0",
+    storageBucket: "eyvind95-182f0.firebasestorage.app",
+    messagingSenderId: "105770576221",
+    appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
+  };
+  const VAPID = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpM0i0oONRSxmbgVPY"; // 你那把
+
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
+  const out = document.getElementById('out');
+  const btn = document.getElementById('btn');
+
+  btn.onclick = async () => {
+    try {
+      // 1) 註冊跟你一樣路徑的 SW（檔案已存在）
+      const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+
+      // 2) 要通知許可
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') throw new Error('使用者未授權通知');
+
+      // 3) 取 token
+      const messaging = firebase.messaging();
+      if (messaging.useServiceWorker) messaging.useServiceWorker(reg); // v8 相容
+      const token = await messaging.getToken({ vapidKey: VAPID, serviceWorkerRegistration: reg });
+
+      out.textContent = `FCM_TOKEN:\n${token}\n\n請複製後貼到 GitHub Secrets（FCM_TOKEN）`;
+      console.log('FCM_TOKEN =>', token);
+    } catch (e) {
+      out.textContent = '失敗：' + (e && e.message ? e.message : e);
+      console.error(e);
+    }
+  };
+</script>
+</body>
+</html>
