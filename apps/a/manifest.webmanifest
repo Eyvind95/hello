@@ -1,16 +1,12 @@
 {
   "name": "我的記帳本",
   "short_name": "記帳本",
-  "start_url": "./hello/apps/leaver/myself.html",
+  "start_url": "./hello/apps/ledger/myself.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0b0b0b",
   "theme_color": "#0b0b0b",
   "icons": [
-    {
-      "src": "6.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "6.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
