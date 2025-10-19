@@ -593,7 +593,8 @@ async function cloudSave(state){
 /* ================= FCM 推播（只留一份） ================= */
 let messaging = null;
 const VAPID_KEY = "BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY";
-const NOTI_ICON_URL = "https://eyvind95.github.io/hello/6.png";
+const NOTI_ICON_URL = "https://eyvind95.github.io/apps/ledger/6.png";
+const NOTI_BADGE_URL = "https://eyvind95.github.io/hello/apps/ledger/8.png";
 
 async function initFCM() {
   try {
@@ -873,12 +874,18 @@ function renderPending(){
 }
 function scheduleLocalReminders(){
   // 前端簡單信息：20:00 / 22:00 若 pending>0 就 alert（頁面開著才會觸發）
-  function plan(hour){
+function plan(hour){
     const now = new Date(), t = new Date();
     t.setHours(hour,0,0,0);
     if(t <= now) t.setDate(t.getDate()+1);
     const ms = t - now;
-    setTimeout(()=>{ renderPending(); const n=parseInt($("#pendingCount").textContent||"0",10);
+    setTimeout(()=>{ 
+      renderPending(); 
+      // 新增：若所有任務已完成就不發通知
+      const { count } = computePendingAndList();
+      if (count === 0) { plan(hour); return; }
+
+      const n = parseInt($("#pendingCount").textContent||"0",10);
       if(n>0) alert(`提醒：你還有 ${n} 個每日尚未完成喔！`);
       plan(hour); // 續約
     }, ms);
@@ -1040,6 +1047,29 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 });
   // 前端提醒排程
   scheduleLocalReminders();
+function scheduleLocalReminders(){
+  const now = new Date();
+  const hours = now.getHours();
+
+  // 若未到8點或10點，排定提醒
+  const targets = [20, 22]; // 8pm、10pm
+  for (const h of targets){
+    const diff = ((h - hours + 24) % 24) * 3600 * 1000
+      - now.getMinutes()*60000 - now.getSeconds()*1000;
+    setTimeout(()=>{
+      // 新增：若所有任務已完成就不發通知
+      const { count } = computePendingAndList();
+      if (count === 0) return;
+      if (Notification.permission === 'granted'){
+        new Notification('每日任務提醒', { 
+          body: '該檢查任務囉～', 
+          icon: NOTI_ICON_URL, 
+          badge: NOTI_BADGE_URL 
+        });
+      }
+    }, diff);
+  }
+}
 
   // 每分鐘 tick 樹脂一次 & 檢查週末行顯示
   setInterval(()=>{ tickResinAuto(); toggleWeekendRow(); renderPending(); }, 60000);
@@ -1048,4 +1078,3 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 </script>
 </body>
 </html>
-
