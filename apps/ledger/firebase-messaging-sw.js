@@ -1,4 +1,4 @@
-// === Firebase Messaging Service Worker (v8) ===
+// v8 版 SW：只放背景處理
 importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
 importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js');
 
@@ -19,16 +19,14 @@ messaging.setBackgroundMessageHandler(payload => {
   const body  = n.body  || '還有未勾的每日喔！';
   const icon  = 'https://eyvind95.github.io/hello/apps/ledger/6.png';
   const badge = 'https://eyvind95.github.io/hello/apps/ledger/8.png';
-  return self.registration.showNotification(title, {
-    body, icon, badge, vibrate:[100,50,100], tag:'daily-reminder'
-  });
+  return self.registration.showNotification(title, { body, icon, badge, tag: 'daily-reminder' });
 });
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   const url = 'https://eyvind95.github.io/hello/apps/ledger/daily.html';
   e.waitUntil(
-    clients.matchAll({ type:'window', includeUncontrolled:true }).then(list=>{
+    clients.matchAll({type:'window', includeUncontrolled:true}).then(list=>{
       for (const c of list) if (c.url.includes('/hello/apps/ledger/daily.html')) return c.focus();
       return clients.openWindow(url);
     })
