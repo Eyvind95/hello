@@ -14,18 +14,14 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # 給足 Firebase Messaging 的 scope
+          scopes: https://www.googleapis.com/auth/firebase.messaging
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Send FCM HTTP v1
-        shell: bash
+      - name: Build payload
         run: |
-          set -euo pipefail
-
-          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
-
-          # 只寫入 **一個** 合法 JSON 物件
           cat > payload.json <<'JSON'
           {
             "message": {
@@ -51,9 +47,29 @@ jobs:
             }
           }
           JSON
+          echo "Payload built:"
+          cat payload.json
 
-          curl -sS -X POST \
+      - name: Send FCM HTTP v1 (with verbose output)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+          echo "Access token acquired (length: ${#ACCESS_TOKEN})"
+
+          # 用 curl 抓 HTTP 狀態與 body
+          HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json; charset=UTF-8" \
             "https://fcm.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/messages:send" \
-            -d @payload.json
+            -d @payload.json)
+
+          echo "HTTP_STATUS=${HTTP_STATUS}"
+          echo "RESPONSE:"
+          cat response.json
+          
+          # 不是 200 就失敗，方便你一眼看出問題
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "FCM send failed."
+            exit 1
+          fi
