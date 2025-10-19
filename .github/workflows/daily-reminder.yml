@@ -1,0 +1,55 @@
+name: Daily reminder push
+
+on:
+  schedule:
+    - cron: "0 12 * * *"   # 台北 20:00（UTC+8）
+    - cron: "0 14 * * *"   # 台北 22:00（UTC+8）
+  workflow_dispatch: {}
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auth to Google
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Send FCM HTTP v1
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+
+          # 先把 payload 寫到檔案，避免 YAML/heredoc 縮排問題
+          cat > payload.json <<'JSON'
+          {
+            "message": {
+              "token": "${{ secrets.FCM_TOKEN }}",
+              "notification": {
+                "title": "每日任務提醒",
+                "body": "你還有未完成的每日任務喔！"
+              },
+              "webpush": {
+                "fcm_options": {
+                  "link": "https://eyvind95.github.io/hello/apps/ledger/daily.html"
+                },
+                "headers": { "Urgency": "high" },
+                "notification": {
+                  "icon": "https://eyvind95.github.io/hello/apps/ledger/8.png",
+                  "badge": "https://eyvind95.github.io/hello/apps/ledger/8.png"
+                }
+              }
+            }
+          }
+          JSON
+
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json; UTF-8" \
+            "https://fcm.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/messages:send" \
+            -d @payload.json
