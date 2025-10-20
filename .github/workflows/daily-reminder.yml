@@ -34,22 +34,34 @@ jobs:
           echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
 
       # 5️⃣ 從 Firestore 讀取 pendingCount
-      - name: Read pendingCount from Firestore
-        id: firestore
-        run: |
-          echo "📥 Fetching Firestore document..."
-          curl -sS -X GET \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            "https://firestore.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/databases/(default)/documents/daily/${{ secrets.FIREBASE_UID }}" \
-            -o firestore.json
+- name: Read pendingCount from Firestore
+  id: firestore
+  run: |
+    echo "📥 Fetching Firestore document..."
+    curl -sS -X GET \
+      -H "Authorization: Bearer $ACCESS_TOKEN" \
+      -H "Content-Type: application/json" \
+      "https://firestore.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/databases/(default)/documents/daily/${{ secrets.FIREBASE_UID }}" \
+      -o firestore.json
 
-          echo "Firestore response:"
-          cat firestore.json
+    echo "Firestore response (truncated):"
+    jq 'del(.fields | .. | objects | .[]? |= (type=="string" and (.|length>200)? then .[0:200]+"..." else . end))' firestore.json | head -n 80
 
-          # 解析 pendingCount
-          pendingCount=$(jq -r '.fields.pendingCount.integerValue // 0' firestore.json)
-          echo "pendingCount=${pendingCount}" >> $GITHUB_ENV
+    # 依序嘗試：
+    # 1) 根層 pendingCount
+    # 2) meta.pendingCount
+    # 都沒有 => 0
+    pendingCount=$(jq -r '
+      if (.fields.pendingCount.integerValue? // empty) then
+        .fields.pendingCount.integerValue
+      elif (.fields.meta.mapValue.fields.pendingCount.integerValue? // empty) then
+        .fields.meta.mapValue.fields.pendingCount.integerValue
+      else
+        "0"
+      end
+    ' firestore.json)
+
+    echo "pendingCount=${pendingCount}" | tee -a $GITHUB_ENV
 
       # 6️⃣ 檢查是否需要發通知
       - name: Skip push (nothing pending)
