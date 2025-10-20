@@ -753,6 +753,11 @@ function renderPending(){
   const cnt = arr.filter(x => !x.last).length;
   $("#pendingCount").textContent = cnt;
     savePendingCountToCloud(cnt);
+    // ← 新增：把 pending 寫回 Firestore，讓 GitHub Actions 能讀到
+  if (CURRENT_UID) {
+    const dayToken = ymd(new Date()); // 或你用的日標
+    userDoc().set({ meta: { pendingCount: cnt, dayToken } }, { merge: true });
+  }
 }
   function updatePendingDisplay(){
   const arr = [
@@ -878,6 +883,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
