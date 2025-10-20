@@ -9,10 +9,6 @@ on:
 jobs:
   push:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-
     steps:
       - name: Auth to Google
         uses: google-github-actions/auth@v2
@@ -24,40 +20,37 @@ jobs:
         with:
           project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
-      - name: Install jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
+      - name: Install jq (for JSON parsing)
+        run: sudo apt-get install -y jq
 
       - name: Get access token
         id: token
-        run: |
-          echo "token=$(gcloud auth application-default print-access-token)" >> "$GITHUB_OUTPUT"
+        run: echo "ACCESS_TOKEN=$(gcloud auth application-default print-access-token)" >> $GITHUB_ENV
 
       - name: Read pendingCount from Firestore
-        id: fs
         shell: bash
         run: |
           set -euo pipefail
           DOC_PATH="projects/${{ secrets.FIREBASE_PROJECT_ID }}/databases/(default)/documents/daily/${{ secrets.FIREBASE_UID }}"
-          curl -sS -H "Authorization: Bearer ${{ steps.token.outputs.token }}" \
-            "https://firestore.googleapis.com/v1/$DOC_PATH" > doc.json || true
+          FIRESTORE_DOC="$(gcloud firestore documents get "$DOC_PATH" --format=json || true)"
+          echo "*** Firestore doc:"
+          echo "$FIRESTORE_DOC"
+          echo "***"
 
-          echo "Firestore doc:"
-          cat doc.json
+          # 優先讀 meta.pendingCount；沒有就讀根層 pendingCount；都沒有時預設為 999（代表讀不到）
+          PENDING="$(echo "$FIRESTORE_DOC" \
+            | jq -r '
+                .fields.meta.mapValue.fields.pendingCount.integerValue
+                // .fields.pendingCount.integerValue
+                // "999"
+              '
+          )"
 
-          # 同時支援 meta.pendingCount 和 daily.pendingCount
-          PENDING=$(jq -r '
-            (.fields.meta.mapValue.fields.pendingCount.integerValue // empty) as $m |
-            (.fields.daily.mapValue.fields.pendingCount.integerValue // empty) as $d |
-            ($m // $d // "0")
-          ' doc.json)
-
-          echo "pending=${PENDING}" >> "$GITHUB_OUTPUT"
-          echo "Pending from Firestore = ${PENDING}"
+          echo "Pending from Firestore = $PENDING"
+          echo "PENDING_COUNT=$PENDING" >> $GITHUB_ENV
 
       - name: Build FCM payload
-        if: ${{ steps.fs.outputs.pending != '0' }}
+        if: ${{ env.PENDING_COUNT != '0' }}
         run: |
           cat > payload.json <<'JSON'
           {
@@ -84,15 +77,12 @@ jobs:
             }
           }
           JSON
-          echo "Payload built:"
-          cat payload.json
+          echo "Payload built:"; cat payload.json
 
       - name: Send FCM HTTP v1
-        if: ${{ steps.fs.outputs.pending != '0' }}
         shell: bash
         run: |
           set -euo pipefail
-          ACCESS_TOKEN="${{ steps.token.outputs.token }}"
           HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json; charset=UTF-8" \
@@ -100,9 +90,10 @@ jobs:
             -d @payload.json)
 
           echo "HTTP_STATUS=${HTTP_STATUS}"
-          echo "RESPONSE:" && cat response.json
-
-          if [ "${HTTP_STATUS}" != "200" ]; then
-            echo "FCM send failed."
-            exit 1
+          echo "RESPONSE:"; cat response.json
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "FCM send failed."; exit 1
           fi
+
+      - name: Complete job
+        run: echo "🎉 Daily reminder completed successfully."
