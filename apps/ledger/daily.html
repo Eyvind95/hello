@@ -626,7 +626,21 @@ function etaTo200(resin){
   const h = Math.floor(mins/60), m = mins%60;
   return `${h}小時 ${m}分`;
 }
-
+// —— 把未完成數量存到雲端 /daily/<UID> 的 meta.pendingCount —— 
+async function savePendingCountToCloud(pending){
+  // 只有登入（有 UID）才回報；未登入時保持「本機模式」不寫雲
+  if (!CURRENT_UID) return;
+  try{
+    await userDoc().set({
+      meta: {
+        pendingCount: pending,
+        pendingUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }
+    }, { merge:true });
+  }catch(e){
+    console.error('savePendingCountToCloud failed:', e);
+  }
+}
 /* ------------ UI 綁定 ------------- */
 function setText(id, txt){ const el=$(id.startsWith('#')?id:('#'+id)); if(el) el.textContent=txt; }
 
@@ -738,6 +752,7 @@ function renderPending(){
   ];
   const cnt = arr.filter(x => !x.last).length;
   $("#pendingCount").textContent = cnt;
+    savePendingCountToCloud(cnt);
 }
   function updatePendingDisplay(){
   const arr = [
@@ -863,6 +878,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
