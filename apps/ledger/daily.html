@@ -556,20 +556,22 @@ async function cloudSave(state) {
   await userDoc().set(state, { merge: true });
 }
 
-// === 專門給 GitHub Actions 判斷用：同步待辦數量 ===
+// === 專門給 GitHub Actions 判斷用 ===
 async function savePendingCountToCloud(pending) {
-  if (!CURRENT_UID) return;
+  if (!CURRENT_UID) {
+    console.warn("尚未登入，無法寫入 pendingCount");
+    return;
+  }
 
-  const dayToken = new Date().toISOString().slice(0, 10); // "2025-10-21"
+  const dayToken = new Date().toISOString().slice(0, 10);
 
   try {
     await userDoc().update({
-      'meta.pendingCount': pending, // ✅ 用巢狀 key
+      'meta.pendingCount': pending,
       'meta.dayToken': dayToken,
       'meta.pendingUpdatedAt': firebase.firestore.FieldValue.serverTimestamp()
     });
   } catch (e) {
-    // 若文件不存在（第一次寫入），改用 set 建立
     if (e.code === 'not-found') {
       await userDoc().set({
         meta: {
@@ -917,6 +919,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
