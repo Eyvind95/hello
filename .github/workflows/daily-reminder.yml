@@ -2,13 +2,14 @@ name: Daily reminder push
 
 on:
   schedule:
-    - cron: "0 12 * * *"   # 台北 20:00（UTC+8）
-    - cron: "0 14 * * *"   # 台北 22:00（UTC+8）
+    - cron: "0 12 * * *"   # 台北 20:00
+    - cron: "0 14 * * *"   # 台北 22:00
   workflow_dispatch: {}
 
 jobs:
   push:
     runs-on: ubuntu-latest
+
     steps:
       - name: Auth to Google
         uses: google-github-actions/auth@v2
@@ -21,36 +22,74 @@ jobs:
           project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
       - name: Install jq (for JSON parsing)
-        run: sudo apt-get install -y jq
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
 
       - name: Get access token
         id: token
-        run: echo "ACCESS_TOKEN=$(gcloud auth application-default print-access-token)" >> $GITHUB_ENV
-
-      - name: Read pendingCount from Firestore
         shell: bash
         run: |
           set -euo pipefail
+          echo "ACCESS_TOKEN=$(gcloud auth application-default print-access-token)" >> "$GITHUB_OUTPUT"
+
+      - name: Read pendingCount from Firestore
+        id: read_pending
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 以台北時區產生今天字串
+          TODAY=$(TZ=Asia/Taipei date +%Y-%m-%d)
+
+          # 指向 daily/<UID> 文件
           DOC_PATH="projects/${{ secrets.FIREBASE_PROJECT_ID }}/databases/(default)/documents/daily/${{ secrets.FIREBASE_UID }}"
-          FIRESTORE_DOC="$(gcloud firestore documents get "$DOC_PATH" --format=json || true)"
-          echo "*** Firestore doc:"
-          echo "$FIRESTORE_DOC"
-          echo "***"
+          echo "DOC_PATH=${DOC_PATH}"
 
-          # 優先讀 meta.pendingCount；沒有就讀根層 pendingCount；都沒有時預設為 999（代表讀不到）
-          PENDING="$(echo "$FIRESTORE_DOC" \
-            | jq -r '
-                .fields.meta.mapValue.fields.pendingCount.integerValue
-                // .fields.pendingCount.integerValue
-                // "999"
-              '
-          )"
+          # 抓文件（不存在時不噴錯）
+          DOC_JSON="$(gcloud firestore documents get "${DOC_PATH}" --format=json || true)"
+          echo "Raw Firestore doc ↓↓↓"
+          echo "${DOC_JSON}"
 
-          echo "Pending from Firestore = $PENDING"
-          echo "PENDING_COUNT=$PENDING" >> $GITHUB_ENV
+          # 嚴謹擷取：轉型並給預設值
+          PENDING=$(
+            echo "${DOC_JSON}" | jq -r 'try (.fields.meta.mapValue.fields.pendingCount.integerValue|tonumber) catch 0'
+          )
+          DAYTOKEN=$(
+            echo "${DOC_JSON}" | jq -r 'try (.fields.meta.mapValue.fields.dayToken.stringValue) catch ""'
+          )
+
+          echo "Parsed -> pending=${PENDING} (type:number), dayToken='${DAYTOKEN}', today='${TODAY}'"
+
+          echo "pending=${PENDING}"   >> "$GITHUB_OUTPUT"
+          echo "dayToken=${DAYTOKEN}" >> "$GITHUB_OUTPUT"
+          echo "today=${TODAY}"       >> "$GITHUB_OUTPUT"
+
+      - name: Decide to push?
+        id: decide
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=${{ steps.read_pending.outputs.pending }}
+          D='${{ steps.read_pending.outputs.dayToken }}'
+          T='${{ steps.read_pending.outputs.today }}'
+
+          echo "Decision inputs -> pending=${P}, dayToken='${D}', today='${T}'"
+
+          # 僅當：有未完成，且 dayToken 正是今天，才推播
+          if [ "${P}" -gt 0 ] && [ -n "${D}" ] && [ "${D}" = "${T}" ]; then
+            echo "should_push=true" >> "$GITHUB_OUTPUT"
+            echo "Decision: PUSH (pending>0 & dayToken=today)"
+          else
+            echo "should_push=false" >> "$GITHUB_OUTPUT"
+            REASON="pending==0"
+            if [ "${P}" -gt 0 ] && [ "${D}" != "${T}" ]; then REASON="dayToken!=today (${D} != ${T})"; fi
+            if [ -z "${D}" ]; then REASON="dayToken is empty"; fi
+            echo "Decision: SKIP (${REASON})"
+          fi
 
       - name: Build FCM payload
-        if: ${{ env.PENDING_COUNT != '0' }}
+        if: ${{ steps.decide.outputs.should_push == 'true' }}
         run: |
           cat > payload.json <<'JSON'
           {
@@ -61,13 +100,8 @@ jobs:
                 "body": "你還有未完成的每日任務喔！"
               },
               "webpush": {
-                "headers": {
-                  "Urgency": "high",
-                  "TTL": "300"
-                },
-                "fcm_options": {
-                  "link": "https://eyvind95.github.io/hello/apps/ledger/daily.html"
-                },
+                "headers": { "Urgency": "high", "TTL": "300" },
+                "fcm_options": { "link": "https://eyvind95.github.io/hello/apps/ledger/daily.html" },
                 "notification": {
                   "icon": "https://eyvind95.github.io/hello/apps/ledger/6.png",
                   "badge": "https://eyvind95.github.io/hello/apps/ledger/8.png",
@@ -77,23 +111,25 @@ jobs:
             }
           }
           JSON
-          echo "Payload built:"; cat payload.json
+          echo "Payload built:"
+          cat payload.json
 
       - name: Send FCM HTTP v1
+        if: ${{ steps.decide.outputs.should_push == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
+          ACCESS_TOKEN="${{ steps.token.outputs.ACCESS_TOKEN }}"
           HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json; charset=UTF-8" \
             "https://fcm.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/messages:send" \
             -d @payload.json)
-
           echo "HTTP_STATUS=${HTTP_STATUS}"
           echo "RESPONSE:"; cat response.json
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "FCM send failed."; exit 1
-          fi
+          [ "$HTTP_STATUS" = "200" ] || { echo "FCM send failed"; exit 1; }
 
-      - name: Complete job
-        run: echo "🎉 Daily reminder completed successfully."
+      - name: Skip push (no need)
+        if: ${{ steps.decide.outputs.should_push != 'true' }}
+        run: echo "Skip push：pending==0 或 dayToken != today（或為空）。"
+        
