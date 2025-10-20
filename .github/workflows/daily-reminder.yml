@@ -9,59 +9,69 @@ on:
 jobs:
   push:
     runs-on: ubuntu-latest
+
     steps:
       - name: Auth to Google
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          # 要能讀 Firestore + 發 FCM（兩個 scope 都給）
-          scopes: >-
-            https://www.googleapis.com/auth/cloud-platform,
-            https://www.googleapis.com/auth/datastore,
-            https://www.googleapis.com/auth/firebase.messaging
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
-      - name: Read pendingCount from Firestore
-        id: read
+      - name: Install jq (for JSON parsing)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get access token
+        id: tok
         shell: bash
         run: |
           set -euo pipefail
           ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+          echo "len=${#ACCESS_TOKEN}"
+          echo "token=${ACCESS_TOKEN}" >> $GITHUB_OUTPUT
 
-          # Firestore REST：讀 /daily/<UID>
-          URL="https://firestore.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/databases/(default)/documents/daily/${{ secrets.FIREBASE_UID }}"
-          echo "GET $URL"
+      - name: Read pendingCount from Firestore
+        id: read
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          UID:        ${{ secrets.FIRESTORE_UID }}
+          TOKEN:      ${{ steps.tok.outputs.token }}
+        run: |
+          set -euo pipefail
+          DOC_URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/daily/${UID}"
+          echo "GET ${DOC_URL}"
+          HTTP_STATUS=$(curl -sS -o doc.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${TOKEN}" "${DOC_URL}")
 
-          curl -sS -H "Authorization: Bearer ${ACCESS_TOKEN}" "$URL" -o doc.json || {
-            echo "Failed to fetch Firestore document."
-            cat doc.json || true
-            exit 1
-          }
+          echo "FS_STATUS=${HTTP_STATUS}"
+          cat doc.json || true
 
-          echo "Raw doc.json:"
-          cat doc.json
+          # 預設值 0
+          PENDING=0
+          if [ "$HTTP_STATUS" = "200" ]; then
+            # 嘗試從 meta.pendingCount 取數字（integer/string 都照顧）
+            PENDING=$(jq -r '
+              .fields.meta.mapValue.fields.pendingCount //
+              empty
+            | ( .integerValue // .stringValue // "0") | tonumber
+            ' doc.json 2>/dev/null || echo 0)
+          elif [ "$HTTP_STATUS" = "404" ]; then
+            echo "Firestore document not found => 視為 0"
+            PENDING=0
+          else
+            echo "Firestore read error (${HTTP_STATUS}) => 視為 0"
+            PENDING=0
+          fi
 
-          # 取 meta.pendingCount（可能是 integerValue 或 doubleValue）
-          PENDING=$(jq -r '
-            .fields.meta.mapValue.fields.pendingCount.integerValue
-            // .fields.meta.mapValue.fields.pendingCount.doubleValue
-            // "0"
-          ' doc.json)
+          echo "pending=${PENDING}"
+          echo "pending=${PENDING}" >> $GITHUB_OUTPUT
 
-          # 空字串保底成 0
-          if [ -z "$PENDING" ] || [ "$PENDING" = "null" ]; then PENDING=0; fi
-
-          echo "pendingCount = $PENDING"
-          echo "pending=$PENDING" >> $GITHUB_OUTPUT
-
-      - name: Skip if no pending
-        if: steps.read.outputs.pending == '0'
-        run: echo "✅ All done. Skip push."
-
-      - name: Build payload
-        if: steps.read.outputs.pending != '0'
+      - name: Build FCM payload
+        if: ${{ steps.read.outputs.pending != '0' }}
         run: |
           cat > payload.json <<'JSON'
           {
@@ -88,26 +98,26 @@ jobs:
             }
           }
           JSON
-          echo "Payload built:"
+          echo "Payload:"
           cat payload.json
 
-      - name: Send FCM HTTP v1 (only when pending > 0)
-        if: steps.read.outputs.pending != '0'
+      - name: Send FCM HTTP v1
+        if: ${{ steps.read.outputs.pending != '0' }}
         shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          TOKEN:      ${{ steps.tok.outputs.token }}
         run: |
           set -euo pipefail
-          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+          URL="https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send"
           HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
-            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Authorization: Bearer ${TOKEN}" \
             -H "Content-Type: application/json; charset=UTF-8" \
-            "https://fcm.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/messages:send" \
-            -d @payload.json)
-
+            "${URL}" -d @payload.json)
           echo "HTTP_STATUS=${HTTP_STATUS}"
-          echo "RESPONSE:"
-          cat response.json
+          echo "RESPONSE:" && cat response.json
+          [ "$HTTP_STATUS" = "200" ] || (echo "FCM send failed" && exit 1)
 
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "FCM send failed."
-            exit 1
-          fi
+      - name: Skip push (nothing pending)
+        if: ${{ steps.read.outputs.pending == '0' }}
+        run: echo "🎉 pendingCount=0，跳過通知。"
