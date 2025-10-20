@@ -745,20 +745,32 @@ function bindNSFW(){
 }
 
 /* ------------ Pending 統計 & 前端提醒（20:00 / 22:00） ------------- */
-function renderPending(){
+async function renderPending() {
   const arr = [
     STATE.gsTw.daily, STATE.gsAs.daily, STATE.hsr.daily, STATE.hoyo.daily, STATE.zzz.daily,
     STATE.cats.daily, STATE.pogo.spin, STATE.pogo.catch, STATE.noti.daily, STATE.nsfw.daily
   ];
+
   const cnt = arr.filter(x => !x.last).length;
   $("#pendingCount").textContent = cnt;
-    savePendingCountToCloud(cnt);
-    // ← 新增：把 pending 寫回 Firestore，讓 GitHub Actions 能讀到
+
+  // 寫回 Firestore，讓 GitHub Actions 能讀到
   if (CURRENT_UID) {
-    const dayToken = ymd(new Date()); // 或你用的日標
-    userDoc().set({ meta: { pendingCount: cnt, dayToken } }, { merge: true });
+    try {
+      const dayToken = ymd(new Date()); // 你的日標，可照原樣保留
+      await userDoc().set({
+        meta: {
+          pendingCount: cnt,
+          dayToken
+        }
+      }, { merge: true });
+    } catch (e) {
+      console.error("[renderPending] Firestore 寫入失敗：", e);
+    }
   }
 }
+
+
   function updatePendingDisplay(){
   const arr = [
     STATE.gsTw.daily, STATE.gsAs.daily, STATE.hsr.daily, STATE.hoyo.daily, STATE.zzz.daily,
@@ -883,6 +895,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
