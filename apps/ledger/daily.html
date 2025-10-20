@@ -557,21 +557,26 @@ async function cloudSave(state) {
 }
 
 // === 專門給 GitHub Actions 判斷用：同步待辦數量 ===
+// --- 專門給 GitHub Actions 判斷用：同步待辦數量 ---
 async function savePendingCountToCloud(pending) {
-  if (!CURRENT_UID) return;
-  const dateStr = new Date().toLocaleDateString('zh-TW', {
-    timeZone: 'Asia/Taipei',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  await userDoc().set({
-    meta: {
-      pendingCount: pending,
-      dayToken: dateStr
-    }
-  }, { merge: true });
+  if (!CURRENT_UID) return; // 必須登入
+
+  // 穩定的日旗標（UTC）-> "2025-10-20"
+  const dayToken = new Date().toISOString().slice(0, 10);
+
+  try {
+    await userDoc().set({
+      meta: {
+        pendingCount: pending,
+        dayToken, // 若不需要，可刪掉這行
+        pendingUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }
+    }, { merge: true });
+  } catch (e) {
+    console.error('savePendingCountToCloud failed:', e);
+  }
 }
+
 /* ------------ 全域狀態 ------------- */
 let STATE = null;
 
@@ -905,6 +910,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
