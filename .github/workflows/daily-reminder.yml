@@ -14,13 +14,54 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          # 給足 Firebase Messaging 的 scope
-          scopes: https://www.googleapis.com/auth/firebase.messaging
+          # 要能讀 Firestore + 發 FCM（兩個 scope 都給）
+          scopes: >-
+            https://www.googleapis.com/auth/cloud-platform,
+            https://www.googleapis.com/auth/datastore,
+            https://www.googleapis.com/auth/firebase.messaging
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Read pendingCount from Firestore
+        id: read
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+
+          # Firestore REST：讀 /daily/<UID>
+          URL="https://firestore.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/databases/(default)/documents/daily/${{ secrets.FIREBASE_UID }}"
+          echo "GET $URL"
+
+          curl -sS -H "Authorization: Bearer ${ACCESS_TOKEN}" "$URL" -o doc.json || {
+            echo "Failed to fetch Firestore document."
+            cat doc.json || true
+            exit 1
+          }
+
+          echo "Raw doc.json:"
+          cat doc.json
+
+          # 取 meta.pendingCount（可能是 integerValue 或 doubleValue）
+          PENDING=$(jq -r '
+            .fields.meta.mapValue.fields.pendingCount.integerValue
+            // .fields.meta.mapValue.fields.pendingCount.doubleValue
+            // "0"
+          ' doc.json)
+
+          # 空字串保底成 0
+          if [ -z "$PENDING" ] || [ "$PENDING" = "null" ]; then PENDING=0; fi
+
+          echo "pendingCount = $PENDING"
+          echo "pending=$PENDING" >> $GITHUB_OUTPUT
+
+      - name: Skip if no pending
+        if: steps.read.outputs.pending == '0'
+        run: echo "✅ All done. Skip push."
+
       - name: Build payload
+        if: steps.read.outputs.pending != '0'
         run: |
           cat > payload.json <<'JSON'
           {
@@ -50,14 +91,12 @@ jobs:
           echo "Payload built:"
           cat payload.json
 
-      - name: Send FCM HTTP v1 (with verbose output)
+      - name: Send FCM HTTP v1 (only when pending > 0)
+        if: steps.read.outputs.pending != '0'
         shell: bash
         run: |
           set -euo pipefail
           ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
-          echo "Access token acquired (length: ${#ACCESS_TOKEN})"
-
-          # 用 curl 抓 HTTP 狀態與 body
           HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json; charset=UTF-8" \
@@ -67,8 +106,7 @@ jobs:
           echo "HTTP_STATUS=${HTTP_STATUS}"
           echo "RESPONSE:"
           cat response.json
-          
-          # 不是 200 就失敗，方便你一眼看出問題
+
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "FCM send failed."
             exit 1
