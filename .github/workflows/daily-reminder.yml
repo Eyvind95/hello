@@ -46,11 +46,11 @@ jobs:
           echo "Firestore doc:"
           cat doc.json
 
-          # 讀 meta.pendingCount（可能是 integer 或 string）
+          # 同時支援 meta.pendingCount 和 daily.pendingCount
           PENDING=$(jq -r '
-            .fields.meta.mapValue.fields.pendingCount.integerValue
-            // .fields.meta.mapValue.fields.pendingCount.stringValue
-            // "0"
+            (.fields.meta.mapValue.fields.pendingCount.integerValue // empty) as $m |
+            (.fields.daily.mapValue.fields.pendingCount.integerValue // empty) as $d |
+            ($m // $d // "0")
           ' doc.json)
 
           echo "pending=${PENDING}" >> "$GITHUB_OUTPUT"
