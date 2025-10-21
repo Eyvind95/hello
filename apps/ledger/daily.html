@@ -644,6 +644,9 @@ function etaTo200(resin){
 async function savePendingCountToCloud(pending){
   // 只有登入（有 UID）才回報；未登入時保持「本機模式」不寫雲
   if (!CURRENT_UID) return;
+    const dateStr = new Date().toLocaleDateString('zh-TW',{ timeZone:'Asia/Taipei', year:'numeric', month:'2-digit', day:'2-digit' })
+                    .replace(/\//g,'-'); // 2025-10-21
+  await userDoc().set({ meta: { pendingCount: pending, dayToken: dateStr } }, { merge: true });
   try{
     await userDoc().set({
       meta: {
@@ -919,6 +922,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
