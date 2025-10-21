@@ -10,56 +10,65 @@ jobs:
   push:
     runs-on: ubuntu-latest
     steps:
-      # 1) Google 身分驗證（用 service account JSON）
+      # 1) 用服務帳戶登入
       - name: Auth to Google
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      # 2) 安裝 gcloud 並設定專案
+      # 2) 安裝 gcloud 並指定專案
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
-      # 3) 安裝 jq（解析 JSON 用）
+      # 3) 安裝 jq
       - name: Install jq (for JSON parsing)
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      # 4) 取得存取權杖（FCM HTTP v1 要用）
+      # 4) 取 Access Token（給 Firestore / FCM 用）
       - name: Get access token
         id: token
         run: echo "ACCESS_TOKEN=$(gcloud auth application-default print-access-token)" >> $GITHUB_OUTPUT
 
-      # 5) 從 Firestore 讀取 meta.pendingCount / meta.dayToken
-      - name: Read pendingCount from Firestore
+      # 5) 用 REST 讀取 Firestore：daily/{UID}
+      - name: Read pendingCount from Firestore (REST)
         id: read_pending
         shell: bash
         env:
           PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          UID: ${{ secrets.FIREBASE_UID }}     # 你的使用者 doc id（如：pogm0xw...）
+          UID: ${{ secrets.FIREBASE_UID }}           # 例如：pogm0xwb6eX...（你剛確認的那個）
+          ACCESS_TOKEN: ${{ steps.token.outputs.ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          DOC_PATH="projects/${PROJECT_ID}/databases/(default)/documents/daily/${UID}"
-          echo "DOC_PATH=${DOC_PATH}"
+          URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/daily/${UID}"
+          echo "GET ${URL}"
 
-          # 允許沒有文件時不中斷（2>/dev/null 避免噪音）
-          set +e
-          DOC_JSON="$(gcloud firestore documents describe "${DOC_PATH}" --format=json 2>/dev/null)"
-          rc=$?
-          set -e
+          HTTP_STATUS=$(curl -sS -o doc.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Accept: application/json" \
+            "${URL}")
 
-          echo "Raw doc (first 60 lines) ↓↓↓"
-          echo "${DOC_JSON}" | head -n 60 || true
+          echo "HTTP_STATUS=${HTTP_STATUS}"
+          echo "----- Raw doc (first 80 lines) -----"
+          head -n 80 doc.json || true
+          echo "------------------------------------"
 
-          PENDING="$(echo "${DOC_JSON}" | jq -r '.fields.meta.mapValue.fields.pendingCount.integerValue // empty')"
-          DAYTOKEN="$(echo "${DOC_JSON}" | jq -r '.fields.meta.mapValue.fields.dayToken.stringValue // empty')"
+          if [ "${HTTP_STATUS}" != "200" ]; then
+            echo "Firestore read failed (maybe doc not found?)."
+            echo "pending="  >> $GITHUB_OUTPUT
+            echo "dayToken=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PENDING=$(jq -r '.fields.meta.mapValue.fields.pendingCount.integerValue // empty' doc.json)
+          DAYTOKEN=$(jq -r '.fields.meta.mapValue.fields.dayToken.stringValue // empty' doc.json)
 
           echo "parsed pending='${PENDING}', dayToken='${DAYTOKEN}'"
           echo "pending=${PENDING}"   >> $GITHUB_OUTPUT
           echo "dayToken=${DAYTOKEN}" >> $GITHUB_OUTPUT
 
-      # 6) 判斷是否需要推播（今天且未清空才送）
+      # 6) 決策：今天且未清空才推
       - name: Decide to push?
         id: decide
         shell: bash
@@ -69,7 +78,6 @@ jobs:
           DT="${{ steps.read_pending.outputs.dayToken }}"
           TODAY="$(TZ=Asia/Taipei date +%Y-%m-%d)"
 
-          # 數值護欄：非數字或空字串一律視為 0
           PN=0
           if [[ "${P}" =~ ^[0-9]+$ ]]; then
             PN="${P}"
@@ -85,7 +93,7 @@ jobs:
             echo "Decision: SKIP (no pending or not today)"
           fi
 
-      # 7) 組 FCM payload（僅在需要時）
+      # 7) 組 FCM payload
       - name: Build FCM payload
         if: steps.decide.outputs.should_send == 'true'
         run: |
@@ -117,7 +125,7 @@ jobs:
           echo "Payload built:"
           cat payload.json
 
-      # 8) 送 FCM HTTP v1（僅在需要時）
+      # 8) 打 FCM HTTP v1
       - name: Send FCM HTTP v1
         if: steps.decide.outputs.should_send == 'true'
         shell: bash
@@ -139,7 +147,7 @@ jobs:
           fi
           echo "Send OK."
 
-      # 9) 跳過訊息時的說明
+      # 9) 跳過時的說明
       - name: Skip push (no need)
         if: steps.decide.outputs.should_send != 'true'
         run: |
