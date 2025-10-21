@@ -38,29 +38,37 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          # 以台北時區產生今天字串
           TODAY=$(TZ=Asia/Taipei date +%Y-%m-%d)
-
-          # 指向 daily/<UID> 文件
           DOC_PATH="projects/${{ secrets.FIREBASE_PROJECT_ID }}/databases/(default)/documents/daily/${{ secrets.FIREBASE_UID }}"
-          echo "DOC_PATH=${DOC_PATH}"
 
-          # 抓文件（不存在時不噴錯）
+          # 讀文件（不存在不噴錯）
           DOC_JSON="$(gcloud firestore documents get "${DOC_PATH}" --format=json || true)"
-          echo "Raw Firestore doc ↓↓↓"
+          echo "Raw doc ↓↓↓"
           echo "${DOC_JSON}"
 
-          # 嚴謹擷取：轉型並給預設值
+          # 兼容 integer/double/string 三種欄位；轉成純數字字串
           PENDING=$(
-            echo "${DOC_JSON}" | jq -r 'try (.fields.meta.mapValue.fields.pendingCount.integerValue|tonumber) catch 0'
+            echo "${DOC_JSON}" | jq -r '
+              (
+                try .fields.meta.mapValue.fields.pendingCount.integerValue catch empty //
+                try .fields.meta.mapValue.fields.pendingCount.doubleValue  catch empty //
+                try .fields.meta.mapValue.fields.pendingCount.stringValue  catch "0"
+              ) | tostring
+            '
           )
+
+          # dayToken 可能是 string 或 timestamp，timestamp 取日期部分
           DAYTOKEN=$(
-            echo "${DOC_JSON}" | jq -r 'try (.fields.meta.mapValue.fields.dayToken.stringValue) catch ""'
+            echo "${DOC_JSON}" | jq -r '
+              try .fields.meta.mapValue.fields.dayToken.stringValue    catch empty //
+              try .fields.meta.mapValue.fields.dayToken.timestampValue catch empty
+            '
           )
+          if [[ "${DAYTOKEN}" == *T* ]]; then
+            DAYTOKEN="${DAYTOKEN%%T*}"
+          fi
 
-          echo "Parsed -> pending=${PENDING} (type:number), dayToken='${DAYTOKEN}', today='${TODAY}'"
-
+          echo "Parsed -> pending='${PENDING}', dayToken='${DAYTOKEN}', today='${TODAY}'"
           echo "pending=${PENDING}"   >> "$GITHUB_OUTPUT"
           echo "dayToken=${DAYTOKEN}" >> "$GITHUB_OUTPUT"
           echo "today=${TODAY}"       >> "$GITHUB_OUTPUT"
@@ -70,22 +78,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          P=${{ steps.read_pending.outputs.pending }}
+          P='${{ steps.read_pending.outputs.pending }}'
           D='${{ steps.read_pending.outputs.dayToken }}'
           T='${{ steps.read_pending.outputs.today }}'
 
-          echo "Decision inputs -> pending=${P}, dayToken='${D}', today='${T}'"
+          # 把 pending 轉成純整數；不是數字就當 0
+          if [[ "${P}" =~ ^[0-9]+$ ]]; then
+            PN="${P}"
+          else
+            PN=0
+          fi
 
-          # 僅當：有未完成，且 dayToken 正是今天，才推播
-          if [ "${P}" -gt 0 ] && [ -n "${D}" ] && [ "${D}" = "${T}" ]; then
+          # dayToken 空 → 視為今天，避免空值把推播擋掉
+          REASON=""
+          if [ -z "${D}" ]; then
+            D="${T}"
+            REASON="(dayToken empty → assume today)"
+          fi
+
+          echo "Decision inputs -> pending=${PN}, dayToken='${D}', today='${T}' ${REASON}"
+
+          if [ "${PN}" -gt 0 ] && [ "${D}" = "${T}" ]; then
             echo "should_push=true" >> "$GITHUB_OUTPUT"
             echo "Decision: PUSH (pending>0 & dayToken=today)"
           else
             echo "should_push=false" >> "$GITHUB_OUTPUT"
-            REASON="pending==0"
-            if [ "${P}" -gt 0 ] && [ "${D}" != "${T}" ]; then REASON="dayToken!=today (${D} != ${T})"; fi
-            if [ -z "${D}" ]; then REASON="dayToken is empty"; fi
-            echo "Decision: SKIP (${REASON})"
+            WHY="pending==0"
+            if [ "${PN}" -gt 0 ] && [ "${D}" != "${T}" ]; then WHY="dayToken!=today (${D} != ${T})"; fi
+            echo "Decision: SKIP (${WHY})"
           fi
 
       - name: Build FCM payload
