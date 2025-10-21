@@ -9,92 +9,99 @@ on:
 jobs:
   push:
     runs-on: ubuntu-latest
-    env:
-      PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-      UID:        ${{ secrets.FIREBASE_UID }}
     steps:
-      # 1) 用服務帳戶登入
+      # 1) 服務帳戶登入（不要 scopes，才不會出現黃字警告）
       - name: Auth to Google
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          scopes: https://www.googleapis.com/auth/datastore,https://www.googleapis.com/auth/firebase.messaging
+          create_credentials_file: true
+          export_environment_variables: true
 
-      # 2) 裝 gcloud（取 access token 用）
+      # 2) 設定 gcloud 專案
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
-      # 3) jq（JSON 解析）
-      - name: Install jq (for JSON parsing)
+      # 3) jq：runner 有就用，沒有才裝（避免 20~30s 的 apt-get）
+      - name: Ensure jq (fast path)
+        shell: bash
         run: |
-          sudo apt-get update && sudo apt-get install -y jq
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y jq
+          else
+            jq --version
+          fi
 
-      # 4) 拿 access token（給 REST 用）
-      - name: Get access token
-        id: token
-        run: echo "ACCESS_TOKEN=$(gcloud auth application-default print-access-token)" >> $GITHUB_OUTPUT
-
-      # 5) 用 REST 讀取 Firestore 的 daily/{UID}
+      # 4) 讀 Firestore（REST API）
+      #    取 daily/<UID>/meta.pendingCount 與 meta.dayToken
       - name: Read pendingCount from Firestore (REST)
-        id: read_pending
+        id: read
+        shell: bash
         env:
-          ACCESS_TOKEN: ${{ steps.token.outputs.ACCESS_TOKEN }}
+          PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          UID: ${{ secrets.FIREBASE_UID }}
         run: |
           set -euo pipefail
-          URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/daily/${UID}"
 
-          HTTP_STATUS=$(curl -sS -o resp.json -w "%{http_code}" \
+          DOC_URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/daily/${UID}"
+
+          # 取 access token（走 ADC；auth@v2 已建立憑證）
+          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+
+          # 抓文件（可能 404）
+          HTTP_STATUS=$(curl -sS -o doc.json -w "%{http_code}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            -H "Accept: application/json" \
-            "$URL")
-
-          echo "HTTP_STATUS=${HTTP_STATUS}"
-          echo "----- Raw doc (first 100 lines) -----"
-          head -n 100 resp.json || true
-          echo "-------------------------------------"
+            -H "Content-Type: application/json; charset=UTF-8" \
+            "${DOC_URL}")
 
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "Firestore read failed (status ${HTTP_STATUS})."
-            # 給預設空值，後面判斷會自動 SKIP
-            echo "pending="   >> "$GITHUB_OUTPUT"
-            echo "dayToken="  >> "$GITHUB_OUTPUT"
+            echo "Firestore GET status=${HTTP_STATUS}（大多是 404 表示文件尚未寫入過）"
+            echo "pending=" >> "$GITHUB_OUTPUT"
+            echo "dayToken=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          PENDING=$(jq -r '.fields.meta.mapValue.fields.pendingCount.integerValue // "0"' resp.json)
-          DAYTOKEN=$(jq -r '.fields.meta.mapValue.fields.dayToken.stringValue // ""' resp.json)
+          # 解析 meta.pendingCount / meta.dayToken
+          PENDING="$(jq -r '.fields.meta.mapValue.fields.pendingCount.integerValue // empty' doc.json)"
+          DAYTOKEN="$(jq -r '.fields.meta.mapValue.fields.dayToken.stringValue // empty' doc.json)"
 
           echo "parsed pending='${PENDING}', dayToken='${DAYTOKEN}'"
           echo "pending=${PENDING}"  >> "$GITHUB_OUTPUT"
           echo "dayToken=${DAYTOKEN}" >> "$GITHUB_OUTPUT"
 
-      # 6) 決定要不要發（>0 且同一天才發）
+      # 5) 判斷要不要送
       - name: Decide to push?
         id: decide
+        shell: bash
+        env:
+          PENDING: ${{ steps.read.outputs.pending }}
+          DAYTOKEN: ${{ steps.read.outputs.dayToken }}
         run: |
           set -euo pipefail
-          P="${{ steps.read_pending.outputs.pending }}"
-          DT="${{ steps.read_pending.outputs.dayToken }}"
           TODAY="$(TZ=Asia/Taipei date +%Y-%m-%d)"
 
-          # 避免空值造成數字比較錯誤
-          if [ -z "$P" ]; then P=0; fi
-          case "$P" in
-            ''|*[!0-9]* ) P=0 ;;
-          esac
-
-          if [ "$P" -gt 0 ] && [ "$DT" = "$TODAY" ]; then
-            SEND=1
-            echo "Decision: SEND (pending=$P, dayToken=$DT, today=$TODAY)"
-          else
-            SEND=0
-            echo "Decision: SKIP (pending=$P, dayToken='$DT', today='$TODAY')"
+          # 空值處理：只要其中一個是空，就視為不送
+          if [ -z "${PENDING}" ] || [ -z "${DAYTOKEN}" ]; then
+            echo "should_send=false" >> "$GITHUB_OUTPUT"
+            echo "Decision: SKIP (missing pending/dayToken)"
+            exit 0
           fi
-          echo "send=${SEND}" >> "$GITHUB_OUTPUT"
 
-      # 7) Build payload（只有要發時才跑）
+          if [ "${PENDING}" -gt 0 ] && [ "${DAYTOKEN}" = "${TODAY}" ]; then
+            echo "should_send=true" >> "$GITHUB_OUTPUT"
+            echo "Decision: SEND (pending=${PENDING}, today=${TODAY})"
+          else
+            echo "should_send=false" >> "$GITHUB_OUTPUT"
+            echo "Decision: SKIP (pending=${PENDING}, dayToken=${DAYTOKEN}, today=${TODAY})"
+          fi
+
+      # 6) 組 payload（只有 should_send=true 才會跑）
       - name: Build FCM payload
-        if: steps.decide.outputs.send == '1'
+        if: steps.decide.outputs.should_send == 'true'
+        shell: bash
         run: |
           cat > payload.json <<'JSON'
           {
@@ -107,15 +114,15 @@ jobs:
               "webpush": {
                 "headers": {
                   "Urgency": "high",
-                  "TTL": "300"
+                  "TTL": "120"
                 },
                 "fcm_options": {
                   "link": "https://eyvind95.github.io/hello/apps/ledger/daily.html"
                 },
                 "notification": {
-                  "icon":  "https://eyvind95.github.io/hello/apps/ledger/6.png",
-                  "badge": "https://eyvind95.github.io/hello/apps/ledger/8.png",
-                  "tag":   "daily-reminder"
+                  "icon":  "https://eyvind95.github.io/hello/apps/ledger/6.png?v=4",
+                  "badge": "https://eyvind95.github.io/hello/apps/ledger/8.png?v=4",
+                  "tag": "daily-reminder"
                 }
               }
             }
@@ -124,25 +131,30 @@ jobs:
           echo "Payload built:"
           cat payload.json
 
-      # 8) 送 FCM（只有要發時才跑）
+      # 7) 送 FCM（只有 should_send=true 才會跑）
       - name: Send FCM HTTP v1
-        if: steps.decide.outputs.send == '1'
+        if: steps.decide.outputs.should_send == 'true'
+        shell: bash
         env:
-          ACCESS_TOKEN: ${{ steps.token.outputs.ACCESS_TOKEN }}
+          PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
         run: |
           set -euo pipefail
+          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
           HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json; charset=UTF-8" \
-            "https://fcm.googleapis.com/v1/projects/${{ secrets.FIREBASE_PROJECT_ID }}/messages:send" \
+            "https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send" \
             -d @payload.json)
 
           echo "HTTP_STATUS=${HTTP_STATUS}"
-          echo "RESPONSE:"; cat response.json
-          test "$HTTP_STATUS" = "200"
+          echo "RESPONSE:" && cat response.json
+          if [ "${HTTP_STATUS}" != "200" ]; then
+            echo "FCM send failed." >&2
+            exit 1
+          fi
 
-      # 9) 若不需推播就記錄一下
+      # 8) 不需要發送時，明確輸出原因
       - name: Skip push (no need)
-        if: steps.decide.outputs.send != '1'
+        if: steps.decide.outputs.should_send != 'true'
         run: |
-          echo "Skip push：pending='${{ steps.read_pending.outputs.pending }}' dayToken='${{ steps.read_pending.outputs.dayToken }}' today='$(TZ=Asia/Taipei date +%Y-%m-%d)'"
+          echo "Skip push: pending='${{ steps.read.outputs.pending }}' dayToken='${{ steps.read.outputs.dayToken }}' today='$(TZ=Asia/Taipei date +%Y-%m-%d)'"
