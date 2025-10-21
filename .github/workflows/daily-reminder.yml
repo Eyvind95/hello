@@ -37,7 +37,7 @@ jobs:
         shell: bash
         env:
           PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          UID: ${{ secrets.FIREBASE_UID }}           # 例如：pogm0xwb6eX...（你剛確認的那個）
+          UID: ${{ secrets.FIREBASE_UID }}     # 確定這裡是 pogm... 那個 UID
           ACCESS_TOKEN: ${{ steps.token.outputs.ACCESS_TOKEN }}
         run: |
           set -euo pipefail
@@ -50,12 +50,12 @@ jobs:
             "${URL}")
 
           echo "HTTP_STATUS=${HTTP_STATUS}"
-          echo "----- Raw doc (first 80 lines) -----"
-          head -n 80 doc.json || true
-          echo "------------------------------------"
+          echo "----- Raw doc (first 100 lines) -----"
+          head -n 100 doc.json || true
+          echo "-------------------------------------"
 
           if [ "${HTTP_STATUS}" != "200" ]; then
-            echo "Firestore read failed (maybe doc not found?)."
+            echo "Firestore read failed (status ${HTTP_STATUS})."
             echo "pending="  >> $GITHUB_OUTPUT
             echo "dayToken=" >> $GITHUB_OUTPUT
             exit 0
