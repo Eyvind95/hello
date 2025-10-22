@@ -619,49 +619,69 @@ function ensureDailyReset(){
   STATE.meta.lastReset = dayToken;
 }
 
-/* -------------- 原神樹脂自動回復（修正版） -------------- */
+/* -------------- 原神樹脂自動回復（完整防呆版） -------------- */
 function tickResinAutoOne(node) {
-  const now = Date.now();
+  try {
+    const now = Date.now();
 
-  // 🩵 初始化防呆：第一次沒有 val 或 last
-  if (!Number.isFinite(node.val)) node.val = 0;
-  if (!node.last) {
-    node.last = now;
-    return;
+    // 初始化：沒有數值就設 0
+    if (!node || typeof node !== "object") return;
+    if (!Number.isFinite(node.val)) node.val = 0;
+
+    // last 可能是字串或 undefined
+    if (typeof node.last !== "number") {
+      const t = Date.parse(node.last);
+      node.last = Number.isFinite(t) ? t : now;
+    }
+
+    // 若樹脂滿或異常，直接更新時間不處理
+    if (node.val >= 200) {
+      node.val = 200;
+      node.last = now;
+      return;
+    }
+
+    // 計算時間差
+    const mins = Math.floor((now - node.last) / 60000);
+    if (mins < 8) return; // 未滿 8 分鐘不加
+
+    const add = Math.floor(mins / 8);
+    if (add <= 0) return;
+
+    // 增加樹脂
+    node.val = Math.min(200, node.val + add);
+    node.last = node.last + add * 8 * 60000;
+  } catch (err) {
+    console.error("tickResinAutoOne error:", err);
   }
-
-  // ⏱ 計算經過的分鐘數
-  const mins = Math.floor((now - node.last) / 60000);
-  if (mins <= 0) return;
-
-  // 每 8 分鐘恢復 1 點樹脂
-  const add = Math.floor(mins / 8);
-  if (add <= 0) return;
-
-  // 💧 加值後再做上限限制（不再一開始強制 200）
-  node.val = Math.min(200, node.val + add);
-
-  // ⏰ 調整 last，讓它準確停在加值後的時間點
-  node.last = node.last + add * 8 * 60000;
 }
 
 function tickResinAuto() {
-  // 🔁 一次更新所有區服
-  tickResinAutoOne(STATE.gsTw.resin);
-  tickResinAutoOne(STATE.gsAs.resin);
-  tickResinAutoOne(STATE.hsr.resin);
-  tickResinAutoOne(STATE.hoyo.resin);
-  tickResinAutoOne(STATE.zzz.resin);
+  try {
+    tickResinAutoOne(STATE.gsTw.resin);
+    tickResinAutoOne(STATE.gsAs.resin);
+    tickResinAutoOne(STATE.hsr.resin);
+    tickResinAutoOne(STATE.hoyo.resin);
+    tickResinAutoOne(STATE.zzz.resin);
+  } catch (err) {
+    console.error("tickResinAuto error:", err);
+  }
 }
 
 function etaTo200(resin) {
-  // 📅 計算距離滿樹脂剩餘時間
-  if (resin.val >= 200) return '滿';
-  const remain = 200 - resin.val;
-  const mins = remain * 8;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h}小時${m}分`;
+  try {
+    if (!resin || !Number.isFinite(resin.val)) return "-";
+    if (resin.val >= 200) return "滿";
+
+    const remain = 200 - resin.val;
+    const mins = remain * 8;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}小時${m}分`;
+  } catch (err) {
+    console.error("etaTo200 error:", err);
+    return "-";
+  }
 }
 // —— 把未完成數量存到雲端 /daily/<UID> 的 meta.pendingCount —— 
 async function savePendingCountToCloud(pending){
@@ -865,6 +885,7 @@ function render(){
   renderPending();
   updatePendingDisplay();
   colorizePlusMinus();
+  setInterval(tickResinAuto, 60 * 1000);
 }
 
 /* ------------ 永久化（雲端優先） ------------- */
@@ -945,6 +966,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
