@@ -2,7 +2,7 @@ name: Daily reminder push
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # 測試
+    - cron: "*/6 * * * *"   # 測試
   workflow_dispatch: {}
 
 jobs:
