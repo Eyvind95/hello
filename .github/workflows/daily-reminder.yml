@@ -26,10 +26,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # 讀判斷依據
+      # 讀判斷依據（pendingCount / dayToken）
       - name: Read pendingCount & dayToken from Firestore (REST)
         id: read_pending
-        shell: bash
         env:
           PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           UID: ${{ secrets.FIREBASE_UID }}
@@ -44,13 +43,14 @@ jobs:
             "$DOC_URL")
           echo "HTTP_STATUS=${HTTP_STATUS}"
           head -n 80 doc.json || true
-          # 防呆：不是 200 或檔案空，都當成無資料
+
           if [ "$HTTP_STATUS" != "200" ] || [ ! -s doc.json ]; then
             echo "pending=" >> "$GITHUB_OUTPUT"
             echo "dayToken=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # 若不是 JSON，補成空物件避免 jq 炸掉
+
+          # 防呆：非 JSON 先補 {}
           if ! head -c1 doc.json | grep -q '{'; then echo '{}' > doc.json; fi
 
           PENDING=$(jq -r 'try .fields.meta.mapValue.fields.pendingCount.integerValue // empty' doc.json)
@@ -59,10 +59,8 @@ jobs:
           echo "pending=${PENDING}"   >> "$GITHUB_OUTPUT"
           echo "dayToken=${DAYTOKEN}" >> "$GITHUB_OUTPUT"
 
-      # 是否發送
       - name: Decide to push?
         id: decide
-        shell: bash
         run: |
           set -euo pipefail
           PENDING="${{ steps.read_pending.outputs.pending }}"
@@ -70,27 +68,18 @@ jobs:
           TODAY="$(TZ=Asia/Taipei date +%Y-%m-%d)"
           TS="$(TZ=Asia/Taipei date +%Y%m%d-%H%M)"
           echo "ts=${TS}" >> "$GITHUB_OUTPUT"
-
           echo "Today=${TODAY}, pending='${PENDING}', dayToken='${DT}'"
 
-          if [ -z "${DT}" ] || [ -z "${PENDING}" ]; then
-            echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
+          if [ -z "${DT}" ] || [ -z "${PENDING}" ]; then echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0; fi
           if ! [[ "$PENDING" =~ ^[0-9]+$ ]]; then PENDING=0; fi
-          if [ "$DT" != "$TODAY" ]; then
-            echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          if [ "$PENDING" -le 0 ]; then
-            echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-
+          if [ "$DT" != "$TODAY" ]; then echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$PENDING" -le 0 ]; then echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0; fi
           echo "do_send=true" >> "$GITHUB_OUTPUT"
 
-      # 讀 tokens 子集合
+      # 讀取 /daily/<uid>/tokens 子集合
       - name: List device tokens
         if: steps.decide.outputs.do_send == 'true'
         id: list_tokens
-        shell: bash
         env:
           PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           UID: ${{ secrets.FIREBASE_UID }}
@@ -100,14 +89,11 @@ jobs:
           BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
           PARENT="${BASE}/daily/${UID}/tokens"
           PAGE_TOKEN=""
-
           : > tokens.txt
 
-          while true; do
+          while :; do
             URL="${PARENT}"
-            if [ -n "$PAGE_TOKEN" ]; then
-              URL="${URL}?pageToken=${PAGE_TOKEN}"
-            fi
+            if [ -n "$PAGE_TOKEN" ]; then URL="${URL}?pageToken=${PAGE_TOKEN}"; fi
 
             HTTP_STATUS=$(curl -sS -o tokens.json -w "%{http_code}" \
               -H "Authorization: Bearer ${ACCESS_TOKEN}" \
@@ -122,7 +108,6 @@ jobs:
             if ! head -c1 tokens.json | grep -q '{'; then echo '{}' > tokens.json; fi
 
             jq -r 'try .documents[]?.name | capture("(?<id>[^/]+)$").id // empty' tokens.json >> tokens.txt
-
             PAGE_TOKEN=$(jq -r 'try .nextPageToken // empty' tokens.json)
             [ -z "$PAGE_TOKEN" ] && break
           done
@@ -130,10 +115,9 @@ jobs:
           echo "---- tokens ----"
           cat tokens.txt || true
 
-      # 逐顆發送（data-only），遇到 UNREGISTERED 就刪 doc
+      # 逐顆發送（data-only），UNREGISTERED 就刪 doc（tokenId 需 URL encode）
       - name: Send FCM to each token
         if: steps.decide.outputs.do_send == 'true'
-        shell: bash
         env:
           PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           UID: ${{ secrets.FIREBASE_UID }}
@@ -143,20 +127,15 @@ jobs:
           TS="${{ steps.decide.outputs.ts }}"
           BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
 
-          urlenc() {
-            python3 - <<'PY'
-import sys, urllib.parse
-print(urllib.parse.quote(sys.argv[1], safe=''))
-PY
-          }
-
           while IFS= read -r TOK; do
             [ -z "$TOK" ] && continue
 
-            cat > payload.json <<JSON
+            printf '%s' "$TOK" > tok.txt
+
+            cat > payload.json <<'JSON'
             {
               "message": {
-                "token": "${TOK}",
+                "token": "__TOKEN__",
                 "webpush": {
                   "headers": { "Urgency": "high", "TTL": "1800" },
                   "fcm_options": { "link": "https://eyvind95.github.io/hello/apps/ledger/daily.html" }
@@ -164,11 +143,15 @@ PY
                 "data": {
                   "title": "每日任務提醒",
                   "body":  "你還有未完成的每日任務喔！",
-                  "ts":    "${TS}"
+                  "ts":    "__TS__"
                 }
               }
             }
             JSON
+
+            # 替換 token 與 ts
+            sed -i "s/__TOKEN__/$(printf '%s' "$TOK" | sed 's/[&/\]/\\&/g')/" payload.json
+            sed -i "s/__TS__/${TS}/" payload.json
 
             HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
               -H "Authorization: Bearer ${ACCESS_TOKEN}" \
@@ -177,16 +160,12 @@ PY
               -d @payload.json)
 
             echo "[${TOK}] HTTP_STATUS=${HTTP_STATUS}"
-            # 防呆：空或非 JSON → 補 {}
             if [ ! -s response.json ] || ! head -c1 response.json | grep -q '{'; then echo '{}' > response.json; fi
-
-            # 友善訊息
             jq -r 'try .name // .error.message // empty' response.json || true
 
-            # 若 token 已失效 → 刪掉 /daily/<uid>/tokens/<tokenDocId>
+            # UNREGISTERED → 刪 /daily/<uid>/tokens/<tokenId>（URL encode 用 jq @uri）
             if jq -e 'try .error.details[]? | select(.errorCode=="UNREGISTERED") | true catch false' response.json >/dev/null 2>&1; then
-              echo "UNREGISTERED → delete token doc"
-              ENCODED="$(urlenc "${TOK}")"
+              ENCODED="$(printf '%s' "$TOK" | jq -sRr @uri)"
               curl -sS -X DELETE -o /dev/null -w "%{http_code}" \
                 -H "Authorization: Bearer ${ACCESS_TOKEN}" \
                 -H "Content-Type: application/json; charset=UTF-8" \
