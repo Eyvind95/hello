@@ -2,8 +2,8 @@ name: Daily reminder push
 
 on:
   schedule:
-    - cron: "0 12 * * *"   
-    - cron: "0 14 * * *"   
+    - cron: "0 12 * * *"   # 台灣時間 20:00
+    - cron: "0 14 * * *"   # 台灣時間 22:00
   workflow_dispatch: {}
 
 jobs:
@@ -11,25 +11,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) 用服務帳戶登入（走 ADC；curl/REST 也會用到）
+      # 1) 登入 Google（ADC 用於 REST 與 FCM）
       - name: Auth to Google
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      # 2) 安裝 gcloud 並指定專案（可讓 print-access-token 正常）
+      # 2) 安裝 gcloud 並指定專案
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
       # 3) 安裝 jq（解析 JSON 用）
-      - name: Install jq (for JSON parsing)
+      - name: Install jq
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # 4) 從 Firestore 讀 meta.pendingCount / meta.dayToken（以 REST）
+      # 4) 從 Firestore 讀取 pendingCount / dayToken
       - name: Read pendingCount & dayToken from Firestore (REST)
         id: read_pending
         shell: bash
@@ -39,13 +39,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "${UID:-}" ]; then
-            echo "FIREBASE_UID secret is missing"; exit 1
-          fi
-
           DOC_URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/daily/${UID}"
-
-          # 取 ADC access token（auth@v2 已建立 ADC）
           ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
 
           echo "GET $DOC_URL"
@@ -57,23 +51,20 @@ jobs:
           echo "HTTP_STATUS=${HTTP_STATUS}"
           head -n 80 doc.json || true
 
-          # 若 404，當成空文件處理
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "Firestore read failed (status ${HTTP_STATUS}). Treat as empty."
+            echo "Firestore read failed (status ${HTTP_STATUS})"
             echo "pending=" >> "$GITHUB_OUTPUT"
             echo "dayToken=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # 解析 fields（注意 REST 的型別包裝）
           PENDING=$(jq -r '.fields.meta.mapValue.fields.pendingCount.integerValue // empty' doc.json)
           DAYTOKEN=$(jq -r '.fields.meta.mapValue.fields.dayToken.stringValue // empty' doc.json)
 
-          echo "parsed pending='${PENDING}', dayToken='${DAYTOKEN}'"
           echo "pending=${PENDING}"   >> "$GITHUB_OUTPUT"
           echo "dayToken=${DAYTOKEN}" >> "$GITHUB_OUTPUT"
 
-      # 5) 依當天與 pending 判斷是否發送
+      # 5) 判斷是否要發送通知
       - name: Decide to push?
         id: decide
         shell: bash
@@ -82,67 +73,57 @@ jobs:
           PENDING="${{ steps.read_pending.outputs.pending }}"
           DT="${{ steps.read_pending.outputs.dayToken }}"
           TODAY="$(TZ=Asia/Taipei date +%Y-%m-%d)"
+          TS="$(TZ=Asia/Taipei date +%Y%m%d-%H%M)"
+          echo "ts=${TS}" >> "$GITHUB_OUTPUT"
 
           echo "Today=${TODAY}, pending='${PENDING}', dayToken='${DT}'"
 
           if [ -z "${DT}" ] || [ -z "${PENDING}" ]; then
-            echo "理由：缺 dayToken 或 pending → 跳過"
             echo "do_send=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # bash 整數比較前，先保底轉成 0
-          if ! [[ "$PENDING" =~ ^[0-9]+$ ]]; then
-            PENDING=0
-          fi
-
+          if ! [[ "$PENDING" =~ ^[0-9]+$ ]]; then PENDING=0; fi
           if [ "$DT" != "$TODAY" ]; then
-            echo "理由：dayToken != today → 跳過"
             echo "do_send=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           if [ "$PENDING" -le 0 ]; then
-            echo "理由：pending == 0 → 跳過"
             echo "do_send=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "條件成立（同一天且 pending>0）→ 發送"
           echo "do_send=true" >> "$GITHUB_OUTPUT"
 
-      # 6) 組 FCM payload（僅在要發送時）
-      - name: Build FCM payload
+      # 6) 組成 data-only FCM payload（由 SW 控制顯示通知）
+      - name: Build FCM payload (data-only)
         if: steps.decide.outputs.do_send == 'true'
         shell: bash
         run: |
           set -euo pipefail
           FCM_TOKEN="${{ secrets.FCM_TOKEN }}"
+          TS="${{ steps.decide.outputs.ts }}"
           if [ -z "$FCM_TOKEN" ]; then
-            echo "Error: FCM_TOKEN secret missing"; exit 1
+            echo "Error: FCM_TOKEN missing"; exit 1
           fi
 
           cat > payload.json <<JSON
           {
             "message": {
               "token": "$FCM_TOKEN",
-              "notification": {
-                "title": "每日任務提醒",
-                "body": "你還有未完成的每日任務喔！"
-              },
               "webpush": {
                 "headers": {
                   "Urgency": "high",
-                  "TTL": "300"
+                  "TTL": "1800"
                 },
                 "fcm_options": {
                   "link": "https://eyvind95.github.io/hello/apps/ledger/daily.html"
-                },
-                "notification": {
-                  "icon": "https://eyvind95.github.io/hello/apps/ledger/6.png",
-                  "badge": "https://eyvind95.github.io/hello/apps/ledger/8.png",
-                  "tag": "daily-reminder"
                 }
+              },
+              "data": {
+                "title": "每日任務提醒",
+                "body":  "你還有未完成的每日任務喔！",
+                "ts":    "${TS}"
               }
             }
           }
@@ -151,7 +132,7 @@ jobs:
           echo "Payload built:"
           cat payload.json
 
-      # 7) 送 FCM HTTP v1（僅在要發送時）
+      # 7) 發送 FCM HTTP v1
       - name: Send FCM HTTP v1
         if: steps.decide.outputs.do_send == 'true'
         shell: bash
@@ -160,7 +141,6 @@ jobs:
         run: |
           set -euo pipefail
           ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
-
           HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json; charset=UTF-8" \
@@ -168,15 +148,14 @@ jobs:
             -d @payload.json)
 
           echo "HTTP_STATUS=${HTTP_STATUS}"
-          echo "RESPONSE:"
           cat response.json
+          jq -r '.name // .error.message' response.json || true
 
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "FCM send failed."; exit 1
           fi
 
-      # 8) 如果不需發送，輸出原因
+      # 8) 若不需發送，僅顯示原因
       - name: Skip push (no need)
         if: steps.decide.outputs.do_send != 'true'
-        run: |
-          echo "Skip push：不符合條件（非今日或 pending==0 或無資料）"
+        run: echo "Skip push：非今日或 pending==0 或缺資料"
