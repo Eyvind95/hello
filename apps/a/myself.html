@@ -929,6 +929,11 @@ async function forceUpdate() {
   location.replace(location.pathname + '?v=' + Date.now());
 }
 </script>
+  <script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js'); // 相對於 /hello/apps/a/
+}
+</script>
 </script>
 </body>
 </html>
