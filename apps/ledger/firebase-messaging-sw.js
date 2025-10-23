@@ -14,20 +14,30 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.setBackgroundMessageHandler(payload => {
-  const n = payload.notification || {};
-  const title = n.title || '每日任務';
-  const body  = n.body  || '還有未勾的每日喔！';
+  const d = payload.data || {};
+  const title = d.title || '每日任務';
+  const body  = d.body  || '還有未勾的每日喔！';
+  const ts    = d.ts || Date.now();
   const icon  = 'https://eyvind95.github.io/hello/apps/ledger/6.png';
   const badge = 'https://eyvind95.github.io/hello/apps/ledger/8.png';
-  return self.registration.showNotification(title, { body, icon, badge, tag: 'daily-reminder' });
+
+  return self.registration.showNotification(title, {
+    body,
+    icon,
+    badge,
+    tag: 'daily-reminder-' + ts,  // 每次唯一，避免被靜默取代
+    renotify: true,
+    vibrate: [100, 50, 100]
+  });
 });
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   const url = 'https://eyvind95.github.io/hello/apps/ledger/daily.html';
   e.waitUntil(
-    clients.matchAll({type:'window', includeUncontrolled:true}).then(list=>{
-      for (const c of list) if (c.url.includes('/hello/apps/ledger/daily.html')) return c.focus();
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list)
+        if (c.url.includes('/hello/apps/ledger/daily.html')) return c.focus();
       return clients.openWindow(url);
     })
   );
