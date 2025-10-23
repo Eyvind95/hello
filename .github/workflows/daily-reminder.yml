@@ -11,22 +11,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1) Google 身分（提供 ADC 給 Firestore/FCM REST）
       - name: Auth to Google
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
+      # 2) 安裝 gcloud 並指定專案
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
+      # 3) jq
       - name: Install jq
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # 讀判斷依據
+      # 4) 讀判斷依據（pendingCount / dayToken）
       - name: Read pendingCount & dayToken from Firestore (REST)
         id: read_pending
         shell: bash
@@ -46,8 +49,8 @@ jobs:
           head -n 80 doc.json || true
 
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "pending=" >> "$GITHUB_OUTPUT"
-            echo "dayToken=" >> "$GITHUB_OUTPUT"
+            echo "pending="   >> "$GITHUB_OUTPUT"
+            echo "dayToken="  >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -57,7 +60,7 @@ jobs:
           echo "pending=${PENDING}"   >> "$GITHUB_OUTPUT"
           echo "dayToken=${DAYTOKEN}" >> "$GITHUB_OUTPUT"
 
-      # 是否發送
+      # 5) 是否要發送
       - name: Decide to push?
         id: decide
         shell: bash
@@ -66,7 +69,7 @@ jobs:
           PENDING="${{ steps.read_pending.outputs.pending }}"
           DT="${{ steps.read_pending.outputs.dayToken }}"
           TODAY="$(TZ=Asia/Taipei date +%Y-%m-%d)"
-          TS="$(TZ=Asia/Taipei date +%Y%m%d-%H%M)"
+          TS="$(TZ=Asia/Taipei date +%Y%m%d-%H%M)"   # 當作通知 tag 後綴
           echo "ts=${TS}" >> "$GITHUB_OUTPUT"
 
           echo "Today=${TODAY}, pending='${PENDING}', dayToken='${DT}'"
@@ -84,7 +87,7 @@ jobs:
 
           echo "do_send=true" >> "$GITHUB_OUTPUT"
 
-      # 讀取 tokens 子集合 → 保存到 tokens.txt（每行一個 tokenId）
+      # 6) 列出 /daily/<uid>/tokens 全部 token（docId=token）
       - name: List device tokens
         if: steps.decide.outputs.do_send == 'true'
         id: list_tokens
@@ -98,7 +101,6 @@ jobs:
           BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
           PARENT="${BASE}/daily/${UID}/tokens"
           PAGE_TOKEN=""
-
           : > tokens.txt
 
           while true; do
@@ -118,7 +120,7 @@ jobs:
               break
             fi
 
-            # docId = token（我們以 token 當 docId）
+            # 取 docId（我們以 token 當 docId）
             jq -r '.documents[]?.name | capture("(?<id>[^/]+)$").id' tokens.json >> tokens.txt
 
             PAGE_TOKEN=$(jq -r '.nextPageToken // empty' tokens.json)
@@ -128,7 +130,7 @@ jobs:
           echo "---- tokens ----"
           cat tokens.txt || true
 
-      # 逐顆發送（data-only），遇到 UNREGISTERED 就刪 doc
+      # 7) 逐顆送出 data-only；UNREGISTERED 就刪該 token doc
       - name: Send FCM to each token
         if: steps.decide.outputs.do_send == 'true'
         shell: bash
@@ -170,9 +172,9 @@ jobs:
             echo "[${TOK}] HTTP_STATUS=${HTTP_STATUS}"
             jq -r '.name // .error.message' response.json || true
 
-            # 若 token 已失效 → 刪掉 /daily/<uid>/tokens/<tokenDocId>
+            # Token 已失效 → 刪除 /daily/<uid>/tokens/<token>
             if jq -e '.error.details[]? | select(.errorCode=="UNREGISTERED")' response.json >/dev/null 2>&1; then
-              echo "UNREGISTERED → delete token doc"
+              echo "UNREGISTERED → delete token doc: ${TOK}"
               curl -sS -X DELETE -o /dev/null -w "%{http_code}" \
                 -H "Authorization: Bearer ${ACCESS_TOKEN}" \
                 -H "Content-Type: application/json; charset=UTF-8" \
@@ -181,6 +183,7 @@ jobs:
 
           done < tokens.txt
 
+      # 8) 不需發送時的說明
       - name: Skip push (no need)
         if: steps.decide.outputs.do_send != 'true'
         run: echo "Skip push：非今日或 pending==0 或缺資料"
