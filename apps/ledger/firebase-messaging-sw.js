@@ -1,4 +1,4 @@
-// v8 版 SW：只放背景處理
+// v8 版 SW：只放背景處理（data-only）
 importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
 importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js');
 
@@ -25,7 +25,7 @@ messaging.setBackgroundMessageHandler(payload => {
     body,
     icon,
     badge,
-    tag: 'daily-reminder-' + ts,  // 每次唯一，避免被靜默取代
+    tag: 'daily-reminder-' + ts,  // 動態，避免靜默取代
     renotify: true,
     vibrate: [100, 50, 100]
   });
@@ -36,8 +36,7 @@ self.addEventListener('notificationclick', e => {
   const url = 'https://eyvind95.github.io/hello/apps/ledger/daily.html';
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-      for (const c of list)
-        if (c.url.includes('/hello/apps/ledger/daily.html')) return c.focus();
+      for (const c of list) if (c.url.includes('/hello/apps/ledger/daily.html')) return c.focus();
       return clients.openWindow(url);
     })
   );
