@@ -571,22 +571,7 @@ async function savePendingCountToCloud(pending) {
     }
   }
 }
-  const messaging = firebase.messaging();
-  messaging.onMessage(function(payload){
-    const d = payload.data || {};
-    const title = d.title || '每日任務';
-    const body  = d.body  || '還有未勾的每日喔！';
-    // 最簡單：直接叫瀏覽器通知；若被阻擋就改成 alert 或畫面內 toast
-    if (Notification.permission === 'granted') {
-      try { new Notification(title, {
-        body,
-        icon: 'https://eyvind95.github.io/hello/apps/ledger/6.png',
-        badge:'https://eyvind95.github.io/hello/apps/ledger/8.png'
-      }); } catch(e) { alert(`${title}\n${body}`); }
-    } else {
-      alert(`${title}\n${body}`);
-    }
-  });
+
 /* === 新增：自動取得並上傳通知 token === */
 firebase.auth().onAuthStateChanged(async user => {
   if (!user) return;
@@ -1023,6 +1008,7 @@ function updateLoginUI(user){
 </script>
 </body>
 </html>
+
 
 
 
