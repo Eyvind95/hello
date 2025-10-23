@@ -11,25 +11,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) 登入 Google（ADC 用於 REST 與 FCM）
       - name: Auth to Google
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      # 2) 安裝 gcloud 並指定專案
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
-      # 3) 安裝 jq（解析 JSON 用）
       - name: Install jq
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # 4) 從 Firestore 讀取 pendingCount / dayToken
+      # 讀判斷依據
       - name: Read pendingCount & dayToken from Firestore (REST)
         id: read_pending
         shell: bash
@@ -38,21 +35,17 @@ jobs:
           UID: ${{ secrets.FIREBASE_UID }}
         run: |
           set -euo pipefail
-
-          DOC_URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/daily/${UID}"
           ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+          DOC_URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/daily/${UID}"
 
-          echo "GET $DOC_URL"
           HTTP_STATUS=$(curl -sS -o doc.json -w "%{http_code}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json; charset=UTF-8" \
             "$DOC_URL")
-
           echo "HTTP_STATUS=${HTTP_STATUS}"
           head -n 80 doc.json || true
 
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "Firestore read failed (status ${HTTP_STATUS})"
             echo "pending=" >> "$GITHUB_OUTPUT"
             echo "dayToken=" >> "$GITHUB_OUTPUT"
             exit 0
@@ -64,7 +57,7 @@ jobs:
           echo "pending=${PENDING}"   >> "$GITHUB_OUTPUT"
           echo "dayToken=${DAYTOKEN}" >> "$GITHUB_OUTPUT"
 
-      # 5) 判斷是否要發送通知
+      # 是否發送
       - name: Decide to push?
         id: decide
         shell: bash
@@ -79,83 +72,115 @@ jobs:
           echo "Today=${TODAY}, pending='${PENDING}', dayToken='${DT}'"
 
           if [ -z "${DT}" ] || [ -z "${PENDING}" ]; then
-            echo "do_send=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-
           if ! [[ "$PENDING" =~ ^[0-9]+$ ]]; then PENDING=0; fi
           if [ "$DT" != "$TODAY" ]; then
-            echo "do_send=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           if [ "$PENDING" -le 0 ]; then
-            echo "do_send=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
 
           echo "do_send=true" >> "$GITHUB_OUTPUT"
 
-      # 6) 組成 data-only FCM payload（由 SW 控制顯示通知）
-      - name: Build FCM payload (data-only)
+      # 讀取 tokens 子集合 → 保存到 tokens.txt（每行一個 tokenId）
+      - name: List device tokens
         if: steps.decide.outputs.do_send == 'true'
+        id: list_tokens
         shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          UID: ${{ secrets.FIREBASE_UID }}
         run: |
           set -euo pipefail
-          FCM_TOKEN="${{ secrets.FCM_TOKEN }}"
-          TS="${{ steps.decide.outputs.ts }}"
-          if [ -z "$FCM_TOKEN" ]; then
-            echo "Error: FCM_TOKEN missing"; exit 1
-          fi
+          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+          BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
+          PARENT="${BASE}/daily/${UID}/tokens"
+          PAGE_TOKEN=""
 
-          cat > payload.json <<JSON
-          {
-            "message": {
-              "token": "$FCM_TOKEN",
-              "webpush": {
-                "headers": {
-                  "Urgency": "high",
-                  "TTL": "1800"
-                },
-                "fcm_options": {
-                  "link": "https://eyvind95.github.io/hello/apps/ledger/daily.html"
-                }
-              },
-              "data": {
-                "title": "每日任務提醒",
-                "body":  "你還有未完成的每日任務喔！",
-                "ts":    "${TS}"
-              }
-            }
-          }
-          JSON
+          : > tokens.txt
 
-          echo "Payload built:"
-          cat payload.json
+          while true; do
+            URL="${PARENT}"
+            if [ -n "$PAGE_TOKEN" ]; then
+              URL="${URL}?pageToken=${PAGE_TOKEN}"
+            fi
 
-      # 7) 發送 FCM HTTP v1
-      - name: Send FCM HTTP v1
+            HTTP_STATUS=$(curl -sS -o tokens.json -w "%{http_code}" \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              -H "Content-Type: application/json; charset=UTF-8" \
+              "$URL")
+
+            if [ "$HTTP_STATUS" != "200" ]; then
+              echo "List tokens failed with ${HTTP_STATUS}"
+              cat tokens.json || true
+              break
+            fi
+
+            # docId = token（我們以 token 當 docId）
+            jq -r '.documents[]?.name | capture("(?<id>[^/]+)$").id' tokens.json >> tokens.txt
+
+            PAGE_TOKEN=$(jq -r '.nextPageToken // empty' tokens.json)
+            [ -z "$PAGE_TOKEN" ] && break
+          done
+
+          echo "---- tokens ----"
+          cat tokens.txt || true
+
+      # 逐顆發送（data-only），遇到 UNREGISTERED 就刪 doc
+      - name: Send FCM to each token
         if: steps.decide.outputs.do_send == 'true'
         shell: bash
         env:
           PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          UID: ${{ secrets.FIREBASE_UID }}
         run: |
           set -euo pipefail
           ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
-          HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
-            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            -H "Content-Type: application/json; charset=UTF-8" \
-            "https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send" \
-            -d @payload.json)
+          TS="${{ steps.decide.outputs.ts }}"
+          BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
 
-          echo "HTTP_STATUS=${HTTP_STATUS}"
-          cat response.json
-          jq -r '.name // .error.message' response.json || true
+          while IFS= read -r TOK; do
+            [ -z "$TOK" ] && continue
 
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "FCM send failed."; exit 1
-          fi
+            cat > payload.json <<JSON
+            {
+              "message": {
+                "token": "${TOK}",
+                "webpush": {
+                  "headers": { "Urgency": "high", "TTL": "1800" },
+                  "fcm_options": { "link": "https://eyvind95.github.io/hello/apps/ledger/daily.html" }
+                },
+                "data": {
+                  "title": "每日任務提醒",
+                  "body":  "你還有未完成的每日任務喔！",
+                  "ts":    "${TS}"
+                }
+              }
+            }
+            JSON
 
-      # 8) 若不需發送，僅顯示原因
+            HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              -H "Content-Type: application/json; charset=UTF-8" \
+              "https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send" \
+              -d @payload.json)
+
+            echo "[${TOK}] HTTP_STATUS=${HTTP_STATUS}"
+            jq -r '.name // .error.message' response.json || true
+
+            # 若 token 已失效 → 刪掉 /daily/<uid>/tokens/<tokenDocId>
+            if jq -e '.error.details[]? | select(.errorCode=="UNREGISTERED")' response.json >/dev/null 2>&1; then
+              echo "UNREGISTERED → delete token doc"
+              curl -sS -X DELETE -o /dev/null -w "%{http_code}" \
+                -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+                -H "Content-Type: application/json; charset=UTF-8" \
+                "${BASE}/daily/${UID}/tokens/${TOK}" || true
+            fi
+
+          done < tokens.txt
+
       - name: Skip push (no need)
         if: steps.decide.outputs.do_send != 'true'
         run: echo "Skip push：非今日或 pending==0 或缺資料"
