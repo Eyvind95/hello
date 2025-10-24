@@ -2,8 +2,8 @@ name: Daily reminder push
 
 on:
   schedule:
-    - cron: "0 12 * * *"   # 台灣時間 20:00
-    - cron: "0 14 * * *"   # 台灣時間 22:00
+    - cron: "20 11 * * *"   # 台灣時間 20:00
+    - cron: "20 13 * * *"   # 台灣時間 22:00
   workflow_dispatch: {}
 
 jobs:
