@@ -1,3 +1,4 @@
+// __SW_BUILD__: 2025-10-23-01  // ← 每次改這串
 // v8 版 SW：只放背景處理（data-only）
 importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
 importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js');
