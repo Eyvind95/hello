@@ -540,44 +540,125 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 function userDoc(){ return db.collection('daily').doc(CURRENT_UID); }
 
 /* =========================
-   FCM（前端）自動註冊與上傳 token
+   FCM（前端）自動註冊與上傳 token  v2025-10-23
+   需求：已載入 v8 的 firebase-app/auth/firestore/messaging
    ========================= */
-const messaging = firebase.messaging();
+
 const VAPID_PUBLIC_KEY = 'BHwAITz4c7tcvzHApW6ZzMU9DOIZ0ZpiKbufVx1Uq46io--d2mvbcVmve9_wsxFzaQrOapYpMOi0oNRsxmbgVPY';
 
+// 1) 先拿 messaging；若環境不支援（非 HTTPS 或瀏覽器不支援），直接略過
+let messaging = null;
+try {
+  messaging = firebase.messaging();
+} catch (e) {
+  console.warn('[FCM] 當前環境不支援 messaging：', e);
+}
+
+/** 取得/確保正確註冊的 SW（用絕對路徑與正確 scope） */
+async function ensureSW() {
+  if (!('serviceWorker' in navigator)) throw new Error('ServiceWorker not supported');
+  const reg = await navigator.serviceWorker.register(
+    '/hello/apps/ledger/firebase-messaging-sw.js',
+    { scope: '/hello/apps/ledger/' }
+  );
+  // 若 SW 剛更新，請它立即接管（對應 SW 內的 skipWaiting/clients.claim）
+  if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+  await navigator.serviceWorker.ready;
+  return reg;
+}
+
+/** 申請通知權限（只有 default 情況才彈窗） */
+async function ensureNotificationPermission() {
+  if (!('Notification' in window)) throw new Error('Notification not supported');
+  if (Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+  return Notification.permission === 'granted';
+}
+
+/** 寫 token 至 /daily/<uid>/tokens/<token>，避免重複寫入 */
+async function upsertTokenToFirestore(uid, token) {
+  const docRef = userDoc().collection('tokens').doc(token);
+  await docRef.set({
+    token,
+    ua: navigator.userAgent,
+    platform: navigator.platform || null,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  localStorage.setItem('fcm-token', token);
+  console.log('[FCM] token 已寫入 Firestore：', token.slice(0, 12) + '…');
+}
+
+/** 取得 token 並上傳（會檢查權限、SW、以及是否真的改變） */
+async function ensurePushToken(reg, uid) {
+  if (!messaging) return null;
+
+  const granted = await ensureNotificationPermission();
+  if (!granted) { console.warn('[FCM] 使用者未允許通知'); return null; }
+
+  const token = await messaging.getToken({
+    vapidKey: VAPID_PUBLIC_KEY,
+    serviceWorkerRegistration: reg
+  });
+
+  if (!token) { console.warn('[FCM] getToken() 回傳空'); return null; }
+
+  const last = localStorage.getItem('fcm-token');
+  if (token !== last) {
+    await upsertTokenToFirestore(uid, token);
+  } else {
+    // 仍以 merge:true 再寫一次，確保 serverTimestamp 更新（可改為註解以減少寫入）
+    await upsertTokenToFirestore(uid, token);
+  }
+
+  return token;
+}
+
+/** 前景訊息處理（Actions 走 data-only，不會觸發這個；若之後用 notification 欄位可在前景顯示） */
+if (messaging) {
+  messaging.onMessage((payload) => {
+    console.log('[FCM] 前景訊息：', payload);
+    // 你可以在這顯示一個前景 toast/snackbar
+  });
+}
+
+/** 監聽 token 變更（瀏覽器或 SW 更新、權限重置等） */
+async function bindTokenRefresh(reg, uid) {
+  if (!messaging || !messaging.onTokenRefresh) return;
+  messaging.onTokenRefresh(async () => {
+    try {
+      const newToken = await messaging.getToken({
+        vapidKey: VAPID_PUBLIC_KEY,
+        serviceWorkerRegistration: reg
+      });
+      if (!newToken) return;
+      await upsertTokenToFirestore(uid, newToken);
+      console.log('[FCM] token refreshed');
+    } catch (e) {
+      console.error('[FCM] refresh token 失敗', e);
+    }
+  });
+}
+
+/** 與登入流程串接 */
 firebase.auth().onAuthStateChanged(async (user) => {
   CURRENT_UID = user ? user.uid : null;
-  updateLoginUI(user);
+  if (typeof updateLoginUI === 'function') updateLoginUI(user);
 
-  if (!user) return;
+  if (!user || !messaging) return;
 
-  // 註冊 FCM SW（絕對路徑 + 正確 scope）
-  const reg = await navigator.serviceWorker.register('/hello/apps/ledger/firebase-messaging-sw.js', { scope: '/hello/apps/ledger/' });
-  await navigator.serviceWorker.ready;
-
-  // 啟用通知權限
-  const perm = await Notification.requestPermission();
-  if (perm !== 'granted') { console.warn('使用者未允許通知'); return; }
-
-  // 取 token 並上傳（每台裝置一份）
-  await ensurePushToken(reg);
-
-  // token 變更時重傳
-  messaging.onTokenRefresh(async ()=>{ try{ await ensurePushToken(reg); }catch(e){ console.error(e); } });
+  try {
+    const reg = await ensureSW();
+    await ensurePushToken(reg, user.uid);
+    await bindTokenRefresh(reg, user.uid);
+  } catch (e) {
+    console.error('[FCM] 初始化失敗：', e);
+  }
 });
 
-async function ensurePushToken(reg){
-  try{
-    const token = await messaging.getToken({ vapidKey: VAPID_PUBLIC_KEY, serviceWorkerRegistration: reg });
-    if (!token || !CURRENT_UID) return;
-    await userDoc().collection('tokens').doc(token).set({
-      token, ua: navigator.userAgent,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge:true });
-    console.log('已更新推播 token 到雲端：', token);
-  }catch(err){
-    console.error('getToken() 失敗', err);
-  }
+// 可選：登出時清理本機快取（不刪雲端，保留裝置清單）
+async function clearLocalFcmCacheOnSignOut() {
+  localStorage.removeItem('fcm-token');
 }
 
 /* =========================
@@ -936,5 +1017,6 @@ $("#btnLogout")?.addEventListener('click', async ()=>{ await firebase.auth().sig
 </script>
 </body>
 </html>
+
 
 
