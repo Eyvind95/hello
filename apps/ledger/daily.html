@@ -447,7 +447,24 @@ function nextAbyssBase(from){ // 每月 1 & 16
 }
 function nextMonth1(from){ const d=new Date(from); return new Date(d.getFullYear(), d.getMonth()+1, 1); }
 function next42(from){ const d=new Date(from); d.setDate(d.getDate()+42); return d; }
-
+// 以今天 05:00 為基準，回傳下一個「大於今天」的 1 號或 16 號
+function nextAbyssAfter(now = new Date()){
+  const t5 = toLocal5AM(now);
+  const y  = t5.getFullYear();
+  const m  = t5.getMonth();
+  const cands = [ new Date(y, m, 1), new Date(y, m, 16), new Date(y, m+1, 1), new Date(y, m+1, 16) ];
+  for (const d of cands) if (d > t5) return d;
+  return new Date(y, m+2, 1); // 理論上不會到這
+}
+// 以今天 05:00 為基準，回傳下一個「大於今天」的每月 1 號
+function nextMonth1After(now = new Date()){
+  const t5 = toLocal5AM(now);
+  const y  = t5.getFullYear();
+  const m  = t5.getMonth();
+  const c1 = new Date(y, m, 1);
+  const c2 = new Date(y, m+1, 1);
+  return (c1 > t5) ? c1 : c2;
+}
 // 「今天」的日鍵：以 05:00 為分日界
 function dayKey(now = new Date()){
   const five = toLocal5AM(now);
@@ -475,8 +492,8 @@ function advanceByDaysUntilFuture(nextDate, periodDays){
    ========================= */
 function defaultState(){
   const today = new Date();
-  const baseAbyss = nextAbyssBase(today);
-  const basePoem  = nextMonth1(today);
+const baseAbyss = nextAbyssAfter(today);
+const basePoem  = nextMonth1After(today);
   return {
     gsTw:{ resin:{ val:160, last: Date.now() }, daily:{ last:null }, abyss:{ next:+baseAbyss, done:false }, poem:{ next:+basePoem, done:false }, ver:{ next:+next42(today) } },
     gsAs:{ resin:{ val:160, last: Date.now() }, daily:{ last:null }, abyss:{ next:+baseAbyss, done:false }, poem:{ next:+basePoem, done:false }, ver:{ next:+next42(today) } },
@@ -639,33 +656,46 @@ function refreshCyclesOnOne(obj, kind){
     if (lk && lk !== todayK){ obj.last = null; changed = true; }
   }
 
-  if (kind==='abyss'){ // 每月 1 & 16
-    if (obj && obj.next){
-      const cur = new Date(obj.next);
-      let future = nextAbyssBase(cur);
-      const today5 = toLocal5AM(new Date());
-      while (future <= today5) future = nextAbyssBase(addDays(future,1));
-      if (+future !== +cur){ obj.done=false; obj.next=+future; changed=true; }
+if (kind === 'abyss'){ // 淵月螺旋：以「今天」直接取下一個 1/16
+  if (obj){
+    const future = nextAbyssAfter(new Date());
+    if (!obj.next || +future !== +new Date(obj.next)){
+      obj.done = false;
+      obj.next = +future;
+      changed  = true;
     }
   }
+}
 
-  if (kind==='poem'){ // 每月 1 日
-    if (obj && obj.next){
-      const cur = new Date(obj.next);
-      let future = nextMonth1(cur);
-      const today5 = toLocal5AM(new Date());
-      while (future <= today5) future = nextMonth1(addDays(future,1));
-      if (+future !== +cur){ obj.done=false; obj.next=+future; changed=true; }
+if (kind === 'poem'){ // 劇詩：以「今天」直接取下一個每月 1 日
+  if (obj){
+    const future = nextMonth1After(new Date());
+    if (!obj.next || +future !== +new Date(obj.next)){
+      obj.done = false;
+      obj.next = +future;
+      changed  = true;
     }
   }
-
-  if (kind==='ver' || kind==='hsr42'){ // 42 天檔
-    if (obj && obj.next){
-      const cur = new Date(obj.next);
-      const future = advanceByDaysUntilFuture(cur, 42);
-      if (+future !== +cur){ if('done' in obj) obj.done=false; obj.next=+future; changed=true; }
+}
+if (kind === 'ver'){
+  if (obj && obj.next){
+    const cur    = new Date(obj.next);
+    const future = advanceByDaysUntilFuture(cur, 42);
+    if (+future !== +cur){ if ('done' in obj) obj.done = false; obj.next = +future; changed = true; }
+  }
+}
+if (kind === 'hsr42'){
+  if (obj && obj.next){
+    const nextAt      = new Date(obj.next);
+    const boundary    = toLocal5AM(nextAt);     // 到期日 05:00
+    const earlyBound  = addDays(boundary, -1);  // 提前一天 05:00
+    const today5      = toLocal5AM(new Date());
+    if (today5 >= earlyBound){
+      const future = advanceByDaysUntilFuture(nextAt, 42);
+      if (+future !== +nextAt){ if ('done' in obj) obj.done = false; obj.next = +future; changed = true; }
     }
   }
+}  
   return changed;
 }
 function refreshAllCycles(STATE){
@@ -906,4 +936,5 @@ $("#btnLogout")?.addEventListener('click', async ()=>{ await firebase.auth().sig
 </script>
 </body>
 </html>
+
 
