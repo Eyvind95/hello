@@ -170,7 +170,7 @@ h1{font-size:22px; margin:0;}
         </div>
 
         <div class="g-row">
-          <div class="g-left">淵月螺旋（每月 1 ＆ 16）</div>
+          <div class="g-left">淵月螺旋（每月 16）</div>
           <div class="g-right">
             <span class="small">下次：<span id="gsTw_abyss_next" class="val">--</span></span>
             <label class="ck"><input type="checkbox" id="gsTw_abyss_done"> 本輪狀態</label>
@@ -439,22 +439,15 @@ function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x;
 function fmtDate(d){ if(d==null) return '--'; const x=(d instanceof Date)?d:new Date(d); return ymd(x); }
 function inWeekend(d=new Date()){ const w=d.getDay(); return (w===0||w===6); }
 
-function nextAbyssBase(from){ // 每月 1 & 16
-  const d = new Date(from), day=d.getDate(), m=d.getMonth(), y=d.getFullYear();
-  if(day < 1)  return new Date(y, m, 1);
-  if(day < 16) return new Date(y, m, 16);
-  return new Date(y, m+1, 1);
-}
-function nextMonth1(from){ const d=new Date(from); return new Date(d.getFullYear(), d.getMonth()+1, 1); }
-function next42(from){ const d=new Date(from); d.setDate(d.getDate()+42); return d; }
-// 以今天 05:00 為基準，回傳下一個「大於今天」的 1 號或 16 號
-function nextAbyssAfter(now = new Date()){
-  const t5 = toLocal5AM(now);
-  const y  = t5.getFullYear();
-  const m  = t5.getMonth();
-  const cands = [ new Date(y, m, 1), new Date(y, m, 16), new Date(y, m+1, 1), new Date(y, m+1, 16) ];
-  for (const d of cands) if (d > t5) return d;
-  return new Date(y, m+2, 1); // 理論上不會到這
+// 每月 16 號重置：回傳「下一個 > 現在」的 16 號 05:00
+function nextAbyssBase(from = new Date()) {
+  const d = new Date(from);
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const base5 = new Date(y, m, d.getDate(), 5, 0, 0, 0);
+  const this16 = new Date(y, m, 16, 5, 0, 0, 0);
+  const next16 = new Date(y, m + 1, 16, 5, 0, 0, 0);
+  return (base5 < this16) ? this16 : next16;
 }
 // 以今天 05:00 為基準，回傳下一個「大於今天」的每月 1 號
 function nextMonth1After(now = new Date()){
@@ -1017,6 +1010,7 @@ $("#btnLogout")?.addEventListener('click', async ()=>{ await firebase.auth().sig
 </script>
 </body>
 </html>
+
 
 
 
