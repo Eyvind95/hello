@@ -439,24 +439,23 @@ function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x;
 function fmtDate(d){ if(d==null) return '--'; const x=(d instanceof Date)?d:new Date(d); return ymd(x); }
 function inWeekend(d=new Date()){ const w=d.getDay(); return (w===0||w===6); }
 
-// 每月 16 號重置：回傳「下一個 > 現在」的 16 號 05:00
+// —— 淵月（每月 16 號 05:00）——
 function nextAbyssBase(from = new Date()) {
-  const d = new Date(from);
-  const y = d.getFullYear();
-  const m = d.getMonth();
-  const base5 = new Date(y, m, d.getDate(), 5, 0, 0, 0);
+  const base5  = toLocal5AM(from);
+  const y = base5.getFullYear(), m = base5.getMonth();
   const this16 = new Date(y, m, 16, 5, 0, 0, 0);
-  const next16 = new Date(y, m + 1, 16, 5, 0, 0, 0);
-  return (base5 < this16) ? this16 : next16;
+  const next16 = new Date(y, m+1, 16, 5, 0, 0, 0);
+  return (this16 > base5) ? this16 : next16;
 }
-// 以今天 05:00 為基準，回傳下一個「大於今天」的每月 1 號
+function nextAbyssAfter(now = new Date()) { return nextAbyssBase(now); }
+
+// —— 劇詩（每月 1 號 05:00）——
 function nextMonth1After(now = new Date()){
-  const t5 = toLocal5AM(now);
-  const y  = t5.getFullYear();
-  const m  = t5.getMonth();
-  const c1 = new Date(y, m, 1);
-  const c2 = new Date(y, m+1, 1);
-  return (c1 > t5) ? c1 : c2;
+  const base5 = toLocal5AM(now);
+  const y = base5.getFullYear(), m = base5.getMonth();
+  const this1 = new Date(y, m, 1, 5, 0, 0, 0);
+  const next1 = new Date(y, m+1, 1, 5, 0, 0, 0);
+  return (this1 > base5) ? this1 : next1;
 }
 // 「今天」的日鍵：以 05:00 為分日界
 function dayKey(now = new Date()){
@@ -1010,6 +1009,7 @@ $("#btnLogout")?.addEventListener('click', async ()=>{ await firebase.auth().sig
 </script>
 </body>
 </html>
+
 
 
 
