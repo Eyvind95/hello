@@ -45,12 +45,12 @@ jobs:
           head -n 80 doc.json || true
 
           if [ "$HTTP_STATUS" != "200" ] || [ ! -s doc.json ]; then
-            echo "pending=" >> "$GITHUB_OUTPUT"
+            echo "pending="  >> "$GITHUB_OUTPUT"
             echo "dayToken=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # 防呆：非 JSON 先補 {}
+          # 防呆：非 JSON → {}
           if ! head -c1 doc.json | grep -q '{'; then echo '{}' > doc.json; fi
 
           PENDING=$(jq -r 'try .fields.meta.mapValue.fields.pendingCount.integerValue // empty' doc.json)
@@ -115,7 +115,8 @@ jobs:
           echo "---- tokens ----"
           cat tokens.txt || true
 
-      # 逐顆發送（data-only），UNREGISTERED 就刪 doc（用 jq 組 JSON，避免字元破壞）
+      # 逐顆發送（HYBRID：notification + data）
+      # 回傳 UNREGISTERED → 直接刪除 /daily/<uid>/tokens/<tokenId>
       - name: Send FCM to each token
         if: steps.decide.outputs.do_send == 'true'
         env:
@@ -127,7 +128,6 @@ jobs:
           TS="${{ steps.decide.outputs.ts }}"
           BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
 
-          # 若沒有任何 token，直接結束這步
           if [ ! -s tokens.txt ]; then
             echo "No tokens to send."
             exit 0
@@ -136,21 +136,23 @@ jobs:
           while IFS= read -r TOK; do
             [ -z "$TOK" ] && continue
 
-            # 用 jq 組 payload，確保 token/ts 都被正確 JSON escape
+            # 用 jq 組 hybrid payload（含 webpush.notification）
             jq -n \
               --arg tok "$TOK" \
               --arg ts  "$TS" \
               '{
                  message:{
                    token: $tok,
+                   notification:{ title:"每日任務", body:"你還有尚未完成的每日任務！" },
+                   data:{ title:"每日任務", body:"你還有尚未完成的每日任務！", ts:$ts },
                    webpush:{
-                     headers:{Urgency:"high", TTL:"1800"},
-                     fcm_options:{link:"https://eyvind95.github.io/hello/apps/ledger/daily.html"}
-                   },
-                   data:{
-                     title:"每日任務提醒",
-                     body:"你還有未完成的每日任務喔！",
-                     ts:$ts
+                     headers:{ Urgency:"high", TTL:"3600" },
+                     fcm_options:{ link:"https://eyvind95.github.io/hello/apps/ledger/daily.html" },
+                     notification:{
+                       icon:"https://eyvind95.github.io/hello/apps/ledger/6.png",
+                       badge:"https://eyvind95.github.io/hello/apps/ledger/8.png",
+                       tag:("daily-reminder-" + $ts)
+                     }
                    }
                  }
                }' > payload.json
@@ -162,17 +164,17 @@ jobs:
               -d @payload.json)
 
             echo "[${TOK}] HTTP_STATUS=${HTTP_STATUS}"
-            # 防呆：空或非 JSON → 補 {}
             if [ ! -s response.json ] || ! head -c1 response.json | grep -q '{'; then echo '{}' > response.json; fi
             jq -r 'try .name // .error.message // empty' response.json || true
 
-            # UNREGISTERED → 刪 /daily/<uid>/tokens/<tokenId>（URL encode 用 jq @uri）
+            # UNREGISTERED → 刪 token doc（利用 jq @uri 確保編碼）
             if jq -e 'try .error.details[]? | select(.errorCode=="UNREGISTERED") | true catch false' response.json >/dev/null 2>&1; then
               ENCODED="$(printf '%s' "$TOK" | jq -sRr @uri)"
-              curl -sS -X DELETE -o /dev/null -w "%{http_code}" \
+              DEL_STATUS=$(curl -sS -X DELETE -o /dev/null -w "%{http_code}" \
                 -H "Authorization: Bearer ${ACCESS_TOKEN}" \
                 -H "Content-Type: application/json; charset=UTF-8" \
-                "${BASE}/daily/${UID}/tokens/${ENCODED}" || true
+                "${BASE}/daily/${UID}/tokens/${ENCODED}" || true)
+              echo "Deleted stale token (${DEL_STATUS}) -> ${ENCODED}"
             fi
           done < tokens.txt
 
