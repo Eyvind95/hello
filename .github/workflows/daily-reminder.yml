@@ -6,6 +6,11 @@ on:
     - cron: "20 13 * * *"   # 台灣時間 22:00
   workflow_dispatch: {}
 
+# 避免同一時間重疊運行
+concurrency:
+  group: daily-reminder
+  cancel-in-progress: true
+
 jobs:
   push:
     runs-on: ubuntu-latest
@@ -26,7 +31,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # 讀判斷依據（pendingCount / dayToken）
+      # 讀 /daily/<uid> 判斷是否今天要推
       - name: Read pendingCount & dayToken from Firestore (REST)
         id: read_pending
         env:
@@ -45,12 +50,12 @@ jobs:
           head -n 80 doc.json || true
 
           if [ "$HTTP_STATUS" != "200" ] || [ ! -s doc.json ]; then
-            echo "pending=" >> "$GITHUB_OUTPUT"
-            echo "dayToken=" >> "$GITHUB_OUTPUT"
+            echo "pending="   >> "$GITHUB_OUTPUT"
+            echo "dayToken="  >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # 防呆：非 JSON 先補 {}
+          # 防呆：非 JSON → {}
           if ! head -c1 doc.json | grep -q '{'; then echo '{}' > doc.json; fi
 
           PENDING=$(jq -r 'try .fields.meta.mapValue.fields.pendingCount.integerValue // empty' doc.json)
@@ -76,7 +81,7 @@ jobs:
           if [ "$PENDING" -le 0 ]; then echo "do_send=false" >> "$GITHUB_OUTPUT"; exit 0; fi
           echo "do_send=true" >> "$GITHUB_OUTPUT"
 
-      # 讀取 /daily/<uid>/tokens 子集合
+      # 列出 /daily/<uid>/tokens（分頁）→ tokens.txt
       - name: List device tokens
         if: steps.decide.outputs.do_send == 'true'
         id: list_tokens
@@ -89,7 +94,7 @@ jobs:
           BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
           PARENT="${BASE}/daily/${UID}/tokens"
           PAGE_TOKEN=""
-          : > tokens.txt
+          : > tokens_raw.txt
 
           while :; do
             URL="${PARENT}"
@@ -107,15 +112,21 @@ jobs:
             fi
             if ! head -c1 tokens.json | grep -q '{'; then echo '{}' > tokens.json; fi
 
-            jq -r 'try .documents[]?.name | capture("(?<id>[^/]+)$").id // empty' tokens.json >> tokens.txt
+            # 取文件 id（= token 字串），追加到 tokens_raw.txt
+            jq -r 'try .documents[]?.name | capture("(?<id>[^/]+)$").id // empty' tokens.json >> tokens_raw.txt
             PAGE_TOKEN=$(jq -r 'try .nextPageToken // empty' tokens.json)
             [ -z "$PAGE_TOKEN" ] && break
           done
 
+          # 去重，產出 tokens.txt
+          if [ -s tokens_raw.txt ]; then
+            sort -u tokens_raw.txt > tokens.txt
+          fi
+
           echo "---- tokens ----"
           cat tokens.txt || true
 
-      # 逐顆發送（data-only），UNREGISTERED 就刪 doc（用 jq 組 JSON，避免字元破壞）
+      # 逐顆發送（data-only），UNREGISTERED → 刪除該 token 文件
       - name: Send FCM to each token
         if: steps.decide.outputs.do_send == 'true'
         env:
@@ -127,7 +138,6 @@ jobs:
           TS="${{ steps.decide.outputs.ts }}"
           BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
 
-          # 若沒有任何 token，直接結束這步
           if [ ! -s tokens.txt ]; then
             echo "No tokens to send."
             exit 0
@@ -136,7 +146,7 @@ jobs:
           while IFS= read -r TOK; do
             [ -z "$TOK" ] && continue
 
-            # 用 jq 組 payload，確保 token/ts 都被正確 JSON escape
+            # 用 jq 組 payload，確保字元被正確 JSON escape
             jq -n \
               --arg tok "$TOK" \
               --arg ts  "$TS" \
@@ -162,13 +172,13 @@ jobs:
               -d @payload.json)
 
             echo "[${TOK}] HTTP_STATUS=${HTTP_STATUS}"
-            # 防呆：空或非 JSON → 補 {}
             if [ ! -s response.json ] || ! head -c1 response.json | grep -q '{'; then echo '{}' > response.json; fi
             jq -r 'try .name // .error.message // empty' response.json || true
 
-            # UNREGISTERED → 刪 /daily/<uid>/tokens/<tokenId>（URL encode 用 jq @uri）
+            # 回傳 UNREGISTERED → 刪 /daily/<uid>/tokens/<tokenId>
             if jq -e 'try .error.details[]? | select(.errorCode=="UNREGISTERED") | true catch false' response.json >/dev/null 2>&1; then
               ENCODED="$(printf '%s' "$TOK" | jq -sRr @uri)"
+              echo "⚠️  Token 無效，刪除：$TOK"
               curl -sS -X DELETE -o /dev/null -w "%{http_code}" \
                 -H "Authorization: Bearer ${ACCESS_TOKEN}" \
                 -H "Content-Type: application/json; charset=UTF-8" \
