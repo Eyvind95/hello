@@ -23,7 +23,7 @@ function show(d = {}) {
     body,
     icon:  'https://eyvind95.github.io/hello/apps/ledger/6.png',
     badge: 'https://eyvind95.github.io/hello/apps/ledger/8.png',
-    tag:   'daily-reminder-' + ts,
+    tag:   'daily-reminder',
     renotify: true,
     vibrate: [100, 50, 100]
   });
