@@ -155,6 +155,7 @@ h1{font-size:22px; margin:0;}
         <div class="g-row">
           <div class="g-left">樹脂（8 分鐘 +1 ／ Max 200）</div>
           <div class="g-right">
+            <button class="pill" id="gsTw_resin_minus200">-200</button>
             <button class="pill" id="gsTw_resin_minus10">-10</button>
             <button class="pill" id="gsTw_resin_minus1">-1</button>
             <span class="pill val" id="gsTw_resin_view">160</span>
@@ -206,6 +207,7 @@ h1{font-size:22px; margin:0;}
         <div class="g-row">
           <div class="g-left">樹脂（8 分鐘 +1 ／ Max 200）</div>
           <div class="g-right">
+            <button class="pill" id="gsTw_resin_minus200">-200</button>
             <button class="pill" id="gsAs_resin_minus10">-10</button>
             <button class="pill" id="gsAs_resin_minus1">-1</button>
             <span class="pill val" id="gsAs_resin_view">160</span>
@@ -751,6 +753,43 @@ function etaTo200(resin){
     return `${h}小時${m}分`;
   }catch(e){ return '-'; }
 }
+/* ===== 共用：限制/更新/重繪 ===== */
+function clampResin(v){ return Math.max(0, Math.min(200, v|0)); }
+
+function renderResin(which){ // which: 'gsTw' | 'gsAs'
+  const r = STATE[which].resin;
+  const viewId = `#${which}_resin_view`;
+  const etaId  = `#${which}_resin_eta`;
+  const v = (r && Number.isFinite(r.val)) ? r.val : 0;
+  const show = document.querySelector(viewId);
+  const eta  = document.querySelector(etaId);
+  if (show) show.textContent = v;
+  if (eta)  eta.textContent  = etaTo200(STATE[which].resin);
+}
+
+function setResin(which, value){
+  const r = STATE[which].resin;
+  r.val  = clampResin(value);
+  r.last = Date.now();         // 以現在當作最新變動點
+  renderResin(which);
+  // 有存檔函式就叫它（沒有也不會壞）
+  if (typeof saveStateDebounced === 'function') saveStateDebounced();
+}
+
+function addResin(which, delta){
+  const r = STATE[which].resin;
+  setResin(which, (Number.isFinite(r.val) ? r.val : 0) + delta);
+}
+
+/* ===== 事件綁定：台服 ===== */
+// 選 A：-200
+const twMinus200 = document.querySelector('#gsTw_resin_minus200');
+if (twMinus200) twMinus200.addEventListener('click', ()=> addResin('gsTw', -200));
+
+/* ===== 事件綁定：亞服 ===== */
+// 選 A：-200
+const asMinus200 = document.querySelector('#gsAs_resin_minus200');
+if (asMinus200) asMinus200.addEventListener('click', ()=> addResin('gsAs', -200));
 
 /* =========================
    週期刷新（唯一來源）
@@ -1044,6 +1083,7 @@ $("#btnLogout")?.addEventListener('click', async ()=>{ await firebase.auth().sig
 </script>
 </body>
 </html>
+
 
 
 
