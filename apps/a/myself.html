@@ -121,6 +121,42 @@
   /* 每週支出統計 */
   .weekly{ margin-top:14px; background:#101010; border:1px solid var(--border); border-radius:14px; padding:12px; }
   .weekly h3{ margin:0 0 8px; font-size:16px; }
+    /* 左下：每週分類圓餅 */
+  .weekly-pies{
+    margin-top:14px;
+    background:#101010;
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:12px;
+  }
+  .weekly-pies h3{
+    margin:0 0 8px 0;
+    font-size:16px;
+  }
+  .week-pie{
+    margin-top:10px;
+    padding-top:8px;
+    border-top:1px solid rgba(255,255,255,0.05);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+  }
+  .week-pie:first-of-type{
+    border-top:none;
+    margin-top:4px;
+    padding-top:0;
+  }
+  .week-title{
+    font-size:13px;
+    color:var(--muted);
+  }
+  .week-pie canvas{
+    width:100%;
+    max-width:260px;
+    height:auto;
+    display:block;
+  }
 </style>
 </head>
 <body>
@@ -195,6 +231,34 @@
       <div class="freq">
         <h3>最常記的 5 筆</h3>
         <div id="freqList"></div>
+      </div>
+      <!-- 左下：每週分類圓餅（本月，支出） -->
+      <div class="weekly-pies">
+        <h3>每週分類圓餅（本月支出）</h3>
+
+        <div class="week-pie">
+          <div class="week-title" id="weekTitle1">第 1 週</div>
+          <canvas id="weekPie1" width="260" height="180"></canvas>
+          <div class="legend" id="weekLegend1"></div>
+        </div>
+
+        <div class="week-pie">
+          <div class="week-title" id="weekTitle2">第 2 週</div>
+          <canvas id="weekPie2" width="260" height="180"></canvas>
+          <div class="legend" id="weekLegend2"></div>
+        </div>
+
+        <div class="week-pie">
+          <div class="week-title" id="weekTitle3">第 3 週</div>
+          <canvas id="weekPie3" width="260" height="180"></canvas>
+          <div class="legend" id="weekLegend3"></div>
+        </div>
+
+        <div class="week-pie">
+          <div class="week-title" id="weekTitle4">第 4 週</div>
+          <canvas id="weekPie4" width="260" height="180"></canvas>
+          <div class="legend" id="weekLegend4"></div>
+        </div>
       </div>
     </section>
 
@@ -707,34 +771,45 @@ const recentItems = monthItems.filter(it => {
   // 每週支出統計（整月）
   renderWeekly(monthItems, y, m);
 }
-
-/* 分類小計（僅支出）＋ 圓餅圖（吃=橘、交通=黃、玩=淡藍、洗衣服=淡紫、其他=灰） */
+  // 左下四個：每週分類圓餅（整月）
+  renderWeeklyPie(monthItems, y, m);
+}
+const CAT_LIST   = ["吃","交通","玩","洗衣服","其他"];
+const CAT_COLORS = {
+  "吃":"#ff7f50",
+  "交通":"#ffd93b",
+  "玩":"#6ec5ff",
+  "洗衣服":"#b19cd9",
+  "其他":"#aaaaaa"
+};
+/* 分類小計（僅支出）＋ 圓餅圖 */
 function renderCategorySummary(monthItems){
-  const cats = ["吃","交通","玩","洗衣服","其他"];
-  const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff","洗衣服": "#b19cd9", "其他":"#aaaaaa" };
-
-  const map = new Map(cats.map(c => [c, {sum:0, count:0}]));  
+  const map = new Map(CAT_LIST.map(c => [c, {sum:0, count:0}]));
   for(const it of monthItems){
     if(it.type !== "expense") continue;
     const key = (it.category || "").trim();
-    if(map.has(key)){ const rec = map.get(key); rec.sum = round2(rec.sum + it.amount); rec.count += 1; }
+    if(map.has(key)){
+      const rec = map.get(key);
+      rec.sum   = round2(rec.sum + it.amount);
+      rec.count += 1;
+    }
   }
 
   // 表格
   const rows = [];
-  for(const cat of cats){
+  for(const cat of CAT_LIST){
     const rec = map.get(cat);
     rows.push(`<tr><td>${cat}</td><td class="amount">${fmtMoney(rec.sum)}</td><td>${rec.count}</td></tr>`);
   }
   const tbody = document.getElementById("catTbody");
   if(tbody) tbody.innerHTML = rows.join("");
 
-  // 圓餅圖
-  const data = cats.map(c => ({ label:c, value: map.get(c).sum, color: colors[c] }));
+  // 圓餅圖（本月）
+  const data = CAT_LIST.map(c => ({ label:c, value: map.get(c).sum, color: CAT_COLORS[c] }));
   const total = data.reduce((s,d)=>s+d.value,0);
   drawPie("catPie", data, total);
 
-  // Legend
+  // Legend（這裡還是用百分比，維持目前的行為）
   const legend = document.getElementById("catLegend");
   if(legend){
     legend.innerHTML = (total<=0)
@@ -832,14 +907,12 @@ function renderFrequentPairs(list){
     });
   });
 }
-
-/* 每週支出統計（本月）－ 週一~週日，範圍裁在本月內 */
-function renderWeekly(monthItems, y, m){
+// 取得本月各週範圍（週一~週日），回傳陣列 [{idx,s,e}, ...]
+function getWeeksOfMonth(y, m){
   const {start, end} = getMonthRange(y, m-1);
-  // 找到本月第一個週一
   const first = new Date(start);
-  const day = first.getUTCDay();           // 0 Sun, 1 Mon...
-  const diff = (day === 0) ? 1 : (1 - day);
+  const day   = first.getUTCDay();           // 0 Sun, 1 Mon...
+  const diff  = (day === 0) ? 1 : (1 - day);
   first.setUTCDate(first.getUTCDate() + diff);
   if(first < start) first.setUTCDate(first.getUTCDate() + 7);
 
@@ -853,8 +926,38 @@ function renderWeekly(monthItems, y, m){
     weeks.push({ idx: idx++, s: new Date(rangeStart), e: new Date(rangeEnd) });
     ws.setUTCDate(ws.getUTCDate() + 7);
   }
+  return weeks;
+}
+// 共用：取得本月各週範圍（週一~週日），回傳陣列 [{idx,s,e}, ...]
+function getWeeksOfMonth(y, m){
+  const {start, end} = getMonthRange(y, m-1);
+  // 找到本月第一個週一
+  const first = new Date(start);
+  const day   = first.getUTCDay();           // 0 Sun, 1 Mon...
+  const diff  = (day === 0) ? 1 : (1 - day);
+  first.setUTCDate(first.getUTCDate() + diff);
+  if(first < start) first.setUTCDate(first.getUTCDate() + 7);
 
-  // 計算每週支出
+  const weeks = [];
+  let ws = new Date(first);
+  let idx = 1;
+  while(ws <= end){
+    const we = new Date(ws); 
+    we.setUTCDate(we.getUTCDate() + 6);
+
+    const rangeStart = ws < start ? start : ws;
+    const rangeEnd   = we > end   ? end   : we;
+
+    weeks.push({ idx: idx++, s: new Date(rangeStart), e: new Date(rangeEnd) });
+    ws.setUTCDate(ws.getUTCDate() + 7);
+  }
+  return weeks;
+}
+
+function renderWeekly(monthItems, y, m){
+  const weeks = getWeeksOfMonth(y, m);
+
+  // 計算每週支出，畫右下那張「每週支出統計」表格
   const tbody = $("#weeklyTbody");
   let html = "";
   for(const w of weeks){
@@ -871,7 +974,64 @@ function renderWeekly(monthItems, y, m){
   }
   tbody.innerHTML = html || `<tr><td colspan="3" class="muted">本月尚無支出</td></tr>`;
 }
+// 左下四個：每週分類圓餅（legend 顯示金額）
+function renderWeeklyPie(monthItems, y, m){
+  const weeks = getWeeksOfMonth(y, m);
 
+  for(let i = 0; i < 4; i++){
+    const titleEl  = document.getElementById(`weekTitle${i+1}`);
+    const canvasId = `weekPie${i+1}`;
+    const legendEl = document.getElementById(`weekLegend${i+1}`);
+
+    if(!titleEl || !legendEl) continue;
+    const w = weeks[i];
+    if(!w){
+      titleEl.textContent = `第 ${i+1} 週：無資料`;
+      const cvs = document.getElementById(canvasId);
+      if(cvs){ cvs.getContext("2d").clearRect(0,0,cvs.width,cvs.height); }
+      legendEl.innerHTML = `<span class="muted">本週尚無範圍</span>`;
+      continue;
+    }
+
+    // 週標題（顯示日期範圍）
+    const sTxt = `${String(w.s.getUTCMonth()+1).padStart(2,"0")}/${String(w.s.getUTCDate()).padStart(2,"0")}`;
+    const eTxt = `${String(w.e.getUTCMonth()+1).padStart(2,"0")}/${String(w.e.getUTCDate()).padStart(2,"0")}`;
+    titleEl.textContent = `第 ${w.idx} 週：${sTxt} ~ ${eTxt}`;
+
+    // 各分類金額
+    const sumMap = new Map(CAT_LIST.map(c => [c, 0]));
+    for(const it of monthItems){
+      if(it.type !== 'expense') continue;
+      const d = toDate(it.date);
+      if(d >= w.s && d <= w.e){
+        const key = (it.category || "").trim();
+        if(sumMap.has(key)){
+          sumMap.set(key, round2(sumMap.get(key) + it.amount));
+        }
+      }
+    }
+
+    const data = CAT_LIST.map(c => ({
+      label: c,
+      value: sumMap.get(c),
+      color: CAT_COLORS[c]
+    }));
+    const total = data.reduce((s,d)=>s+d.value,0);
+
+    // 畫圓餅
+    drawPie(canvasId, data, total);
+
+    // legend：顯示金額，不顯示 %
+    if(total <= 0){
+      legendEl.innerHTML = `<span class="muted">本週尚無支出</span>`;
+    }else{
+      legendEl.innerHTML = data
+        .filter(d => d.value > 0)
+        .map(d => `<span class="key"><span class="dot" style="background:${d.color}"></span>${d.label} ${fmtMoney(d.value)}</span>`)
+        .join(" ");
+    }
+  }
+}
 /* ============== GitHub 按鈕事件 ============== */
 document.getElementById("ghLoginBtn").addEventListener("click", () => {
   const cur = ghGetToken();
