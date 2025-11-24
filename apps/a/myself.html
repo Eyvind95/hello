@@ -479,11 +479,16 @@
     d.setUTCMonth(d.getUTCMonth()-1);
     return {y:d.getUTCFullYear(), m:d.getUTCMonth()+1};
   }
-  function getMonthRange(year, monthIdx /*0-11*/){
-    const start = new Date(Date.UTC(year, monthIdx, 1));
-    const end   = new Date(Date.UTC(year, monthIdx + 1, 0));
-    return { start, end };
-  }
+// monthIdx: 0=一月, 1=二月...
+// 使用「本地時間」的 00:00 ~ 23:59:59.999，避免 UTC 偏移
+function getMonthRange(year, monthIdx /*0-11*/){
+  const start = new Date(year, monthIdx, 1);       // 本地 0:00
+  const end   = new Date(year, monthIdx + 1, 0);   // 本地這個月最後一天
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
 
   /* 本機儲存 */
   function loadLocal(){
@@ -1070,30 +1075,38 @@
     });
   }
 
-  /* 取得本月的各週範圍（週一~週日，裁在本月內） */
-  function getWeeksOfMonth(y, m){
-    const {start, end} = getMonthRange(y, m-1);
-    const first = new Date(start);
-    const day   = first.getUTCDay();           // 0 Sun, 1 Mon...
-    const diff  = (day === 0) ? 1 : (1 - day); // 調到週一
-    first.setUTCDate(first.getUTCDate() + diff);
-    if(first < start) first.setUTCDate(first.getUTCDate() + 7);
+// 回傳本月的週區間（週一~週日），全部使用「本地時間」避免時區偏移
+function getWeeksOfMonth(y, m){
+  // m: 1~12
+  const {start, end} = getMonthRange(y, m-1);   // 已經是本地 0:00 ~ 23:59:59.999
+  const first = new Date(start);                // 本地時間
 
-    const weeks = [];
-    let ws = new Date(first);
-    let idx = 1;
-    while(ws <= end){
-      const we = new Date(ws);
-      we.setUTCDate(we.getUTCDate() + 6);
+  // 把 first 調整到當週的週一
+  let day  = first.getDay();                    // 0 Sun, 1 Mon, ... 6 Sat
+  let diff = (day === 0) ? -6 : (1 - day);      // 若是週日，就退回到前一個週一
+  first.setDate(first.getDate() + diff);
+  if (first < start) first.setDate(first.getDate() + 7);
 
-      const rangeStart = ws < start ? start : ws;
-      const rangeEnd   = we > end   ? end   : we;
+  const weeks = [];
+  let ws = new Date(first);
+  let idx = 1;
 
-      weeks.push({ idx: idx++, s: new Date(rangeStart), e: new Date(rangeEnd) });
-      ws.setUTCDate(ws.getUTCDate() + 7);
-    }
-    return weeks;
+  while (ws <= end){
+    const we = new Date(ws);
+    we.setDate(we.getDate() + 6);               // 該週週日
+
+    const rangeStart = (ws < start) ? new Date(start) : new Date(ws);
+    const rangeEnd   = (we > end)   ? new Date(end)   : new Date(we);
+
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    weeks.push({ idx: idx++, s: rangeStart, e: rangeEnd });
+    ws.setDate(ws.getDate() + 7);               // 下一週週一
   }
+
+  return weeks;
+}
 
   /* 每週支出統計（本月）－右下表格用 */
   function renderWeekly(monthItems, y, m){
@@ -1109,8 +1122,8 @@
         if(d >= w.s && d <= w.e) sum += it.amount;
       }
       sum = round2(sum);
-      const sTxt = `${String(w.s.getUTCMonth()+1).padStart(2,"0")}/${String(w.s.getUTCDate()).padStart(2,"0")}`;
-      const eTxt = `${String(w.e.getUTCMonth()+1).padStart(2,"0")}/${String(w.e.getUTCDate()).padStart(2,"0")}`;
+      const sTxt = `${String(w.s.getMonth()+1).padStart(2,"0")}/${String(w.s.getDate()).padStart(2,"0")}`;
+const eTxt = `${String(w.e.getMonth()+1).padStart(2,"0")}/${String(w.e.getDate()).padStart(2,"0")}`;
       html += `<tr><td>第 ${w.idx} 週</td><td>${sTxt} ~ ${eTxt}</td><td class="amount">${fmtMoney(sum)}</td></tr>`;
     }
     tbody.innerHTML = html || `<tr><td colspan="3" class="muted">本月尚無支出</td></tr>`;
