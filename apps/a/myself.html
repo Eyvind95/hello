@@ -862,18 +862,21 @@ function getMonthRange(year, monthIdx /*0-11*/){
           : a.date.localeCompare(b.date))
       );
 
-    // 只顯示近七天的明細（畫面）
-    const todayLocal = new Date();
-    todayLocal.setHours(0, 0, 0, 0);          // 今天 00:00 本地時間
-    const sevenDaysAgo = new Date(todayLocal);
-    sevenDaysAgo.setDate(todayLocal.getDate() - 6); // 含今天共 7 天
-    const endOfToday = new Date(todayLocal);
-    endOfToday.setHours(23, 59, 59, 999);
+// 只顯示近七天 + 本月「未來日期」的明細
+// （避免不小心記到未來的帳刪不了）
+const todayLocal = new Date();
+todayLocal.setHours(0, 0, 0, 0);          // 今天 00:00 本地時間
+const sevenDaysAgo = new Date(todayLocal);
+sevenDaysAgo.setDate(todayLocal.getDate() - 6); // 含今天共 7 天
 
-    const recentItems = monthItems.filter(it => {
-      const d = toDate(it.date);
-      return d >= sevenDaysAgo && d <= endOfToday;
-    });
+const endOfToday = new Date(todayLocal);
+endOfToday.setHours(23, 59, 59, 999);
+
+const recentItems = monthItems.filter(it => {
+  const d = toDate(it.date);              // 本地 00:00
+  // 近七天 || 今天以後（未來的本月紀錄）
+  return (d >= sevenDaysAgo && d <= endOfToday) || d > endOfToday;
+});
 
     // 明細表（近 7 天）
     const tbody = $("#tbody");
