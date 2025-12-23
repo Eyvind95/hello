@@ -883,25 +883,36 @@ const recentItems = monthItems.filter(it => {
   // 近七天 || 今天以後（未來的本月紀錄）
   return (d >= sevenDaysAgo && d <= endOfToday) || d > endOfToday;
 });
-function buildWeeksOfMonth(y, m){
-  const {start, end} = getMonthRange(y, m-1);
+// 只用本地時間：週一~週日，並裁切在本月內
+function buildWeeksOfMonth(y, m){ // m:1~12
+  const start = new Date(y, m-1, 1, 0, 0, 0, 0);           // 本地
+  const end   = new Date(y, m,   0, 23,59,59,999);         // 本地
 
-  // 找到本月第一個週一（週一~週日）
+  // 找到本月第一個週一
   const first = new Date(start);
-  const day = first.getUTCDay(); // 0 Sun, 1 Mon...
-  const diff = (day === 0) ? 1 : (1 - day);
-  first.setUTCDate(first.getUTCDate() + diff);
-  if(first < start) first.setUTCDate(first.getUTCDate() + 7);
+  const day = first.getDay(); // 0 Sun..6 Sat
+  const diff = (day === 0) ? 1 : (1 - day); // 調到週一（若週日→+1）
+  first.setDate(first.getDate() + diff);
+  if(first < start) first.setDate(first.getDate() + 7);
 
   const weeks = [];
   let ws = new Date(first);
   let idx = 1;
+
   while(ws <= end){
-    const we = new Date(ws); we.setUTCDate(we.getUTCDate() + 6);
-    const rangeStart = ws < start ? start : ws;
-    const rangeEnd   = we > end   ? end   : we;
-    weeks.push({ idx: idx++, s: new Date(rangeStart), e: new Date(rangeEnd) });
-    ws.setUTCDate(ws.getUTCDate() + 7);
+    const we = new Date(ws);
+    we.setDate(we.getDate() + 6);
+    we.setHours(23,59,59,999);
+
+    const rangeStart = new Date(Math.max(ws.getTime(), start.getTime()));
+    rangeStart.setHours(0,0,0,0);
+
+    const rangeEnd = new Date(Math.min(we.getTime(), end.getTime()));
+    rangeEnd.setHours(23,59,59,999);
+
+    weeks.push({ idx: idx++, s: rangeStart, e: rangeEnd });
+    ws.setDate(ws.getDate() + 7);
+    ws.setHours(0,0,0,0);
   }
   return weeks;
 }
@@ -917,8 +928,8 @@ function renderWeeklyPies(monthItems, y, m){
 
   // 先清空，再依 weeks.length 生成
   box.innerHTML = weeks.map(w=>{
-    const sTxt = `${String(w.s.getUTCMonth()+1).padStart(2,"0")}/${String(w.s.getUTCDate()).padStart(2,"0")}`;
-    const eTxt = `${String(w.e.getUTCMonth()+1).padStart(2,"0")}/${String(w.e.getUTCDate()).padStart(2,"0")}`;
+const sTxt = `${String(w.s.getMonth()+1).padStart(2,"0")}/${String(w.s.getDate()).padStart(2,"0")}`;
+const eTxt = `${String(w.e.getMonth()+1).padStart(2,"0")}/${String(w.e.getDate()).padStart(2,"0")}`;
     return `
       <div class="week-card">
         <div class="week-title">第 ${w.idx} 週（${sTxt} ~ ${eTxt}）</div>
@@ -1004,7 +1015,7 @@ function renderWeeklyPies(monthItems, y, m){
     renderWeekly(monthItems, y, m);
 
     // 每週分類圓餅（本月支出）－左邊四個圈圈
-    renderWeeklyCategoryPies(monthItems, y, m);
+    renderWeeklyPies(monthItems, y, m);
   }
 
   /* 分類小計（僅支出）＋ 圓餅圖 */
@@ -1154,39 +1165,6 @@ function renderWeeklyPies(monthItems, y, m){
     });
   }
 
-// 回傳本月的週區間（週一~週日），全部使用「本地時間」避免時區偏移
-function getWeeksOfMonth(y, m){
-  // m: 1~12
-  const {start, end} = getMonthRange(y, m-1);   // 已經是本地 0:00 ~ 23:59:59.999
-  const first = new Date(start);                // 本地時間
-
-  // 把 first 調整到當週的週一
-  let day  = first.getDay();                    // 0 Sun, 1 Mon, ... 6 Sat
-  let diff = (day === 0) ? -6 : (1 - day);      // 若是週日，就退回到前一個週一
-  first.setDate(first.getDate() + diff);
-  if (first < start) first.setDate(first.getDate() + 7);
-
-  const weeks = [];
-  let ws = new Date(first);
-  let idx = 1;
-
-  while (ws <= end){
-    const we = new Date(ws);
-    we.setDate(we.getDate() + 6);               // 該週週日
-
-    const rangeStart = (ws < start) ? new Date(start) : new Date(ws);
-    const rangeEnd   = (we > end)   ? new Date(end)   : new Date(we);
-
-    rangeStart.setHours(0, 0, 0, 0);
-    rangeEnd.setHours(23, 59, 59, 999);
-
-    weeks.push({ idx: idx++, s: rangeStart, e: rangeEnd });
-    ws.setDate(ws.getDate() + 7);               // 下一週週一
-  }
-
-  return weeks;
-}
-
   /* 每週支出統計（本月）－右下表格用 */
 function renderWeekly(monthItems, y, m){
   const weeks = buildWeeksOfMonth(y, m);
@@ -1207,21 +1185,6 @@ function renderWeekly(monthItems, y, m){
   }
   tbody.innerHTML = html || `<tr><td colspan="3" class="muted">本月尚無支出</td></tr>`;
 }
-
-      // 如果這個月沒那麼多週 → 顯示「本月無此週」
-      if(i >= maxWeeks){
-        const ctx = canvas.getContext("2d");
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "rgba(255,255,255,0.5)";
-        ctx.font = "13px system-ui, -apple-system, 'Segoe UI', Roboto";
-        ctx.textAlign = "center";
-        ctx.fillText("本月無此週", canvas.width/2, canvas.height/2+5);
-        legend.innerHTML = "";
-        continue;
-      }
-
-      const w = weeks[i];
-
       // 計算本週各分類支出
       const map = new Map(cats.map(c => [c, 0]));
       for(const it of monthItems){
