@@ -60,6 +60,32 @@
 
   .card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px; min-width:0; }
   .card h2{margin:0 0 10px 0; font-size:20px;}
+.week-pies-grid{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.week-card{
+  background:#101010;
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px;
+}
+.week-title{
+  color:var(--muted);
+  font-size:14px;
+  margin-bottom:8px;
+}
+.week-legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  font-size:13px;
+  color:var(--muted);
+  margin-top:8px;
+}
+.week-legend .key{display:inline-flex;align-items:center;gap:6px;}
+.week-legend .dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
 
   /* 新增一筆表單 */
   form.grid{ display:grid; gap:12px; grid-template-columns: repeat(6, 1fr); }
@@ -240,32 +266,12 @@
         <div id="freqList"></div>
       </div>
 
-      <!-- 新增：左邊 4 個週別圓餅圖 -->
-      <div class="weekly">
-        <h3>每週分類餅（本月支出）</h3>
-        <div class="weekly-pies-grid">
-          <div class="week-pie">
-            <div class="week-title">第 1 週</div>
-            <canvas id="weekPie1" width="240" height="160"></canvas>
-            <div id="weekLegend1" class="legend"></div>
-          </div>
-          <div class="week-pie">
-            <div class="week-title">第 2 週</div>
-            <canvas id="weekPie2" width="240" height="160"></canvas>
-            <div id="weekLegend2" class="legend"></div>
-          </div>
-          <div class="week-pie">
-            <div class="week-title">第 3 週</div>
-            <canvas id="weekPie3" width="240" height="160"></canvas>
-            <div id="weekLegend3" class="legend"></div>
-          </div>
-          <div class="week-pie">
-            <div class="week-title">第 4 週</div>
-            <canvas id="weekPie4" width="240" height="160"></canvas>
-            <div id="weekLegend4" class="legend"></div>
-          </div>
-        </div>
-      </div>
+<!-- 新增：左邊 每週分類圓餅圖（動態產生） -->
+<div class="weekly">
+  <h3>每週分類餅（本月支出）</h3>
+  <div id="weekPies" class="week-pies-grid"></div>
+</div>
+
     </section>
 
     <!-- 右側：列表與統計 -->
@@ -877,7 +883,77 @@ const recentItems = monthItems.filter(it => {
   // 近七天 || 今天以後（未來的本月紀錄）
   return (d >= sevenDaysAgo && d <= endOfToday) || d > endOfToday;
 });
+function buildWeeksOfMonth(y, m){
+  const {start, end} = getMonthRange(y, m-1);
 
+  // 找到本月第一個週一（週一~週日）
+  const first = new Date(start);
+  const day = first.getUTCDay(); // 0 Sun, 1 Mon...
+  const diff = (day === 0) ? 1 : (1 - day);
+  first.setUTCDate(first.getUTCDate() + diff);
+  if(first < start) first.setUTCDate(first.getUTCDate() + 7);
+
+  const weeks = [];
+  let ws = new Date(first);
+  let idx = 1;
+  while(ws <= end){
+    const we = new Date(ws); we.setUTCDate(we.getUTCDate() + 6);
+    const rangeStart = ws < start ? start : ws;
+    const rangeEnd   = we > end   ? end   : we;
+    weeks.push({ idx: idx++, s: new Date(rangeStart), e: new Date(rangeEnd) });
+    ws.setUTCDate(ws.getUTCDate() + 7);
+  }
+  return weeks;
+}
+
+function renderWeeklyPies(monthItems, y, m){
+  const cats = ["吃","交通","玩","洗衣服","其他"];
+  const colors = { "吃":"#ff7f50", "交通":"#ffd93b", "玩":"#6ec5ff","洗衣服": "#b19cd9", "其他":"#aaaaaa" };
+
+  const box = document.getElementById("weekPies");
+  if(!box) return;
+
+  const weeks = buildWeeksOfMonth(y, m);
+
+  // 先清空，再依 weeks.length 生成
+  box.innerHTML = weeks.map(w=>{
+    const sTxt = `${String(w.s.getUTCMonth()+1).padStart(2,"0")}/${String(w.s.getUTCDate()).padStart(2,"0")}`;
+    const eTxt = `${String(w.e.getUTCMonth()+1).padStart(2,"0")}/${String(w.e.getUTCDate()).padStart(2,"0")}`;
+    return `
+      <div class="week-card">
+        <div class="week-title">第 ${w.idx} 週（${sTxt} ~ ${eTxt}）</div>
+        <canvas id="weekPie_${w.idx}" width="360" height="240" style="width:100%;max-width:420px;height:auto;display:block;"></canvas>
+        <div id="weekLegend_${w.idx}" class="week-legend"></div>
+      </div>
+    `;
+  }).join("");
+
+  // 每週算一次分類 sum，畫 pie + legend（顯示金額，不顯示%）
+  for(const w of weeks){
+    const sums = new Map(cats.map(c=>[c,0]));
+    for(const it of monthItems){
+      if(it.type !== "expense") continue;
+      const d = toDate(it.date);
+      if(d < w.s || d > w.e) continue;
+      const c = (it.category||"").trim();
+      if(sums.has(c)) sums.set(c, round2(sums.get(c) + it.amount));
+    }
+
+    const data = cats.map(c=>({ label:c, value:sums.get(c), color:colors[c] }));
+    const total = data.reduce((s,d)=>s+d.value,0);
+
+    drawPie(`weekPie_${w.idx}`, data, total);
+
+    const legend = document.getElementById(`weekLegend_${w.idx}`);
+    if(legend){
+      legend.innerHTML = (total<=0)
+        ? `<span class="muted">本週尚無支出</span>`
+        : data.filter(d=>d.value>0).map(d=>{
+            return `<span class="key"><span class="dot" style="background:${d.color}"></span>${d.label} ${fmtMoney(d.value)}</span>`;
+          }).join(" ");
+    }
+  }
+}
     // 明細表（近 7 天）
     const tbody = $("#tbody");
     tbody.innerHTML = "";
@@ -1112,47 +1188,25 @@ function getWeeksOfMonth(y, m){
 }
 
   /* 每週支出統計（本月）－右下表格用 */
-  function renderWeekly(monthItems, y, m){
-    const weeks = getWeeksOfMonth(y, m);
+function renderWeekly(monthItems, y, m){
+  const weeks = buildWeeksOfMonth(y, m);
 
-    const tbody = $("#weeklyTbody");
-    let html = "";
-    for(const w of weeks){
-      let sum = 0;
-      for(const it of monthItems){
-        if(it.type !== 'expense') continue;
-        const d = toDate(it.date);
-        if(d >= w.s && d <= w.e) sum += it.amount;
-      }
-      sum = round2(sum);
-      const sTxt = `${String(w.s.getMonth()+1).padStart(2,"0")}/${String(w.s.getDate()).padStart(2,"0")}`;
-const eTxt = `${String(w.e.getMonth()+1).padStart(2,"0")}/${String(w.e.getDate()).padStart(2,"0")}`;
-      html += `<tr><td>第 ${w.idx} 週</td><td>${sTxt} ~ ${eTxt}</td><td class="amount">${fmtMoney(sum)}</td></tr>`;
+  const tbody = $("#weeklyTbody");
+  let html = "";
+  for(const w of weeks){
+    let sum = 0;
+    for(const it of monthItems){
+      if(it.type !== 'expense') continue;
+      const d = toDate(it.date);
+      if(d >= w.s && d <= w.e) sum += it.amount;
     }
-    tbody.innerHTML = html || `<tr><td colspan="3" class="muted">本月尚無支出</td></tr>`;
+    sum = round2(sum);
+    const sTxt = `${String(w.s.getUTCMonth()+1).padStart(2,"0")}/${String(w.s.getUTCDate()).padStart(2,"0")}`;
+    const eTxt = `${String(w.e.getUTCMonth()+1).padStart(2,"0")}/${String(w.e.getUTCDate()).padStart(2,"0")}`;
+    html += `<tr><td>第 ${w.idx} 週</td><td>${sTxt} ~ ${eTxt}</td><td class="amount">${fmtMoney(sum)}</td></tr>`;
   }
-
-  /* 每週分類圓餅（左側四個圈圈） */
-  function renderWeeklyCategoryPies(monthItems, y, m){
-    const cats = ["吃","交通","玩","洗衣服","其他"];
-    const colors = {
-      "吃":"#ff7f50",
-      "交通":"#ffd93b",
-      "玩":"#6ec5ff",
-      "洗衣服":"#b19cd9",
-      "其他":"#aaaaaa"
-    };
-
-    const weeks = getWeeksOfMonth(y, m);
-    const maxWeeks = Math.min(4, weeks.length);
-
-    for(let i=0; i<4; i++){
-      const canvasId = `weekPie${i+1}`;
-      const legendId = `weekLegend${i+1}`;
-      const canvas = document.getElementById(canvasId);
-      const legend = document.getElementById(legendId);
-
-      if(!canvas || !legend) continue;
+  tbody.innerHTML = html || `<tr><td colspan="3" class="muted">本月尚無支出</td></tr>`;
+}
 
       // 如果這個月沒那麼多週 → 顯示「本月無此週」
       if(i >= maxWeeks){
