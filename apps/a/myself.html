@@ -618,21 +618,40 @@
   let entries = [];
   let initials = {};
 
-  const monthPicker = $("#monthPicker");
-  const today = new Date();
-  if(monthPicker) monthPicker.value = today.toISOString().slice(0,7);
-  if($("#date")) $("#date").value = ymd(today);
-  
+/* ====== 狀態與初始化：以「本地時間」設定預設年月/日期（避免 UTC 偏移） ====== */
+const monthPicker = $("#monthPicker");
+
+function ymdLocal(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function ymLocal(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+
+(function initPickersToToday(){
+  const now = new Date(); // 本地時間
+  if(monthPicker) monthPicker.value = ymLocal(now);
+  const dateEl = $("#date");
+  if(dateEl) dateEl.value = ymdLocal(now);
+})();
+
 // 日期改變時，自動切換到該年月
-$("#date").addEventListener("change", () => {
-  const d = $("#date").value; // yyyy-mm-dd
-  if(!d) return;
-  const ym = d.slice(0, 7);
-  if (monthPicker.value !== ym) {
-    monthPicker.value = ym;
-    renderWithEnsure();
-  }
-});
+const dateEl = $("#date");
+if(dateEl && monthPicker){
+  dateEl.addEventListener("change", () => {
+    const d = dateEl.value; // yyyy-mm-dd
+    if(!d) return;
+    const ym = d.slice(0,7);
+    if(monthPicker.value !== ym){
+      monthPicker.value = ym;
+      renderWithEnsure();
+    }
+  });
+}
+
   /* ============== Google 登入 / 登出 ============== */
   async function googleLogin(){
     try{
