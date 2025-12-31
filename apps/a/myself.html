@@ -622,7 +622,17 @@
   const today = new Date();
   if(monthPicker) monthPicker.value = today.toISOString().slice(0,7);
   if($("#date")) $("#date").value = ymd(today);
-
+  
+// 日期改變時，自動切換到該年月
+$("#date").addEventListener("change", () => {
+  const d = $("#date").value; // yyyy-mm-dd
+  if(!d) return;
+  const ym = d.slice(0, 7);
+  if (monthPicker.value !== ym) {
+    monthPicker.value = ym;
+    renderWithEnsure();
+  }
+});
   /* ============== Google 登入 / 登出 ============== */
   async function googleLogin(){
     try{
@@ -872,44 +882,44 @@
     renderWithEnsure();
   }
 
-  /* ============================================================
-     ✅ 週區間：週一~週日，裁切在本月內（本地時間）
-     - 回傳：[{idx, s, e}]  s/e 都是本地時間
-     ============================================================ */
-  function buildWeeksOfMonth(y, m){ // m: 1~12
-    const {start, end} = getMonthRange(y, m-1);
+// 只用本地時間：週一~週日，並裁切在本月內（會包含 1 號那週的殘週）
+function buildWeeksOfMonth(y, m){ // m:1~12
+  const start = new Date(y, m-1, 1, 0, 0, 0, 0);           // 本地
+  const end   = new Date(y, m,   0, 23,59,59,999);         // 本地
 
-    // 先找本月第一個週一（若 1 號不是週一，往後推到下一個週一）
-    const first = new Date(start);
-    const day = first.getDay(); // 0 Sun..6 Sat
-    const diffToMon = (day === 0) ? 1 : (1 - day); // 調到週一（若週日→+1）
-    first.setDate(first.getDate() + diffToMon);
-    first.setHours(0,0,0,0);
-    if(first < start) first.setDate(first.getDate() + 7);
+  // 找到「包含本月 1 號」那一週的週一（可能落在上個月）
+  const first = new Date(start);
+  const day = first.getDay(); // 0 Sun..6 Sat
+  const diff = (day === 0) ? -6 : (1 - day); // 週日->回到前週一，其它->回到本週一
+  first.setDate(first.getDate() + diff);
+  first.setHours(0,0,0,0);
 
-    const weeks = [];
-    let ws = new Date(first);
-    let idx = 1;
+  const weeks = [];
+  let ws = new Date(first);
+  let idx = 1;
 
-    while(ws <= end){
-      const we = new Date(ws);
-      we.setDate(we.getDate() + 6);
-      we.setHours(23,59,59,999);
+  while (ws <= end){
+    const we = new Date(ws);
+    we.setDate(we.getDate() + 6);
+    we.setHours(23,59,59,999);
 
-      const rangeStart = new Date(Math.max(ws.getTime(), start.getTime()));
-      rangeStart.setHours(0,0,0,0);
+    const rangeStart = new Date(Math.max(ws.getTime(), start.getTime()));
+    rangeStart.setHours(0,0,0,0);
 
-      const rangeEnd = new Date(Math.min(we.getTime(), end.getTime()));
-      rangeEnd.setHours(23,59,59,999);
+    const rangeEnd = new Date(Math.min(we.getTime(), end.getTime()));
+    rangeEnd.setHours(23,59,59,999);
 
+    // 只要這週跟本月有交集，就收進來
+    if (rangeStart <= rangeEnd){
       weeks.push({ idx: idx++, s: rangeStart, e: rangeEnd });
-
-      ws.setDate(ws.getDate() + 7);
-      ws.setHours(0,0,0,0);
     }
 
-    return weeks;
+    ws.setDate(ws.getDate() + 7);
+    ws.setHours(0,0,0,0);
   }
+
+  return weeks;
+}
 
   /* ============== 圓餅圖：共用畫法 ============== */
   function drawPie(canvasId, data, total){
