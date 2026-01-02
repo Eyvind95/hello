@@ -240,6 +240,7 @@
           <option value="交通">交通</option>
           <option value="玩">玩</option>
           <option value="洗衣服">洗衣服</option>
+          <option value="對齊現實">對齊現實</option>
           <option value="其他">其他</option>
         </select>
 
@@ -252,7 +253,6 @@
           <option value="晚餐">晚餐</option>
           <option value="宵夜">宵夜</option>
           <option value="書費">書費</option>
-          <option value="對齊現實">對齊現實</option>
           <option value="custom">請輸入備註</option>
         </select>
         <input class="col-span-3" type="text" id="noteInput" placeholder="請輸入備註" style="display:none;" />
@@ -994,12 +994,13 @@ function buildWeeksOfMonth(y, m){ // m:1~12
 
   /* ============== 分類小計（整月）＋ 月圓餅 ============== */
   function renderCategorySummary(monthItems){
-    const cats = ["吃","交通","玩","洗衣服","其他"];
+    const cats = ["吃","交通","玩","洗衣服","對齊現實","其他"];
     const colors = {
       "吃":"#ff7f50",
       "交通":"#ffd93b",
       "玩":"#6ec5ff",
       "洗衣服":"#b19cd9",
+      "對齊現實": "#9fb6c8",
       "其他":"#aaaaaa"
     };
 
@@ -1125,12 +1126,13 @@ function buildWeeksOfMonth(y, m){ // m:1~12
     const box = document.getElementById("weekPies");
     if(!box) return;
 
-    const cats = ["吃","交通","玩","洗衣服","其他"];
+    const cats = ["吃","交通","玩","洗衣服","對齊現實","其他"];
     const colors = {
       "吃":"#ff7f50",
       "交通":"#ffd93b",
       "玩":"#6ec5ff",
       "洗衣服":"#b19cd9",
+      "對齊現實": "#9fb6c8",
       "其他":"#aaaaaa"
     };
 
