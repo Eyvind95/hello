@@ -1039,9 +1039,15 @@ let STATE = null;
   }
 
   // 載入狀態 → 合併預設 → 刷新 → 存 → 渲染
-  const local = loadLocal();
-  STATE = deepMergeDefaults(defaultState(), local||{});
-  await refreshAndRenderOnce();
+const local = loadLocal();
+STATE = deepMergeDefaults(defaultState(), local||{});
+
+// ★這裡套用延期（第一次啟動就處理）
+if (applyHsrDelayIfNeeded(STATE)) {
+  saveLocal(STATE);
+}
+
+await refreshAndRenderOnce();
 
   // Auth 後再試取雲端
   firebase.auth().onAuthStateChanged(async (user)=>{
@@ -1052,6 +1058,9 @@ let STATE = null;
         const cloud = await cloudLoad();
         const merged = deepMergeDefaults(defaultState(), cloud || STATE || {});
         STATE = merged;
+        if (applyHsrDelayIfNeeded(STATE)) {
+  saveLocal(STATE);
+}
       }else{
         STATE = deepMergeDefaults(defaultState(), loadLocal() || {});
       }
@@ -1096,13 +1105,6 @@ function applyHsrDelayIfNeeded(state) {
   state.meta[MARK] = Date.now();
   return true;
 }
-
-// 你原本大概會是：
-// let state = loadLocal() || defaultState();
-// 在 render 前加這段：
-if (applyHsrDelayIfNeeded(state)) {
-  saveLocal(state);   // 你原本的 saveLocal
-}
 /* =========================
    登入 UI
    ========================= */
@@ -1129,6 +1131,7 @@ $("#btnLogout")?.addEventListener('click', async ()=>{ await firebase.auth().sig
 </script>
 </body>
 </html>
+
 
 
 
