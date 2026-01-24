@@ -1063,7 +1063,46 @@ let STATE = null;
   document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible') refreshAndRenderOnce(); });
   setInterval(refreshAndRenderOnce, 60*60*1000);
 })();
+// ===== HSR 4.0 延期：把既有 localStorage 的 HSR 42天錨點整包平移 =====
+function applyHsrDelayIfNeeded(state) {
+  if (!state || !state.hsr) return false;
 
+  // 目標：4.0 版本更新錨點（本地時間 2026/02/13 05:00）
+  const TARGET_VER_BASE = +new Date(2026, 1, 13, 5, 0, 0, 0); // 注意：month 1 = 2月
+
+  // 防止重複套用（用 meta 做一次性標記）
+  state.meta = state.meta || {};
+  const MARK = "hsr_ver_base_20260213_0500_applied";
+  if (state.meta[MARK]) return false;
+
+  const h = state.hsr;
+
+  // 找舊錨點：用 ver.next 當基準（你頁面顯示「版本更新(42天)」那個）
+  const oldBase = h.ver && typeof h.ver.next === "number" ? h.ver.next : null;
+  if (!oldBase) return false;
+
+  // 只在「舊的比新的早」時才平移（避免你已手動改過還被再推一次）
+  const delta = TARGET_VER_BASE - oldBase;
+  if (!(delta > 0 && delta < 60 * 24 * 60 * 60 * 1000)) return false; // 只接受 0~60天內的合理延期
+
+  // 同步平移這幾個 42天項目
+  const keys = ["mem", "pure", "ape", "arbi", "ver"];
+  for (const k of keys) {
+    if (h[k] && typeof h[k].next === "number") {
+      h[k].next += delta;
+    }
+  }
+
+  state.meta[MARK] = Date.now();
+  return true;
+}
+
+// 你原本大概會是：
+// let state = loadLocal() || defaultState();
+// 在 render 前加這段：
+if (applyHsrDelayIfNeeded(state)) {
+  saveLocal(state);   // 你原本的 saveLocal
+}
 /* =========================
    登入 UI
    ========================= */
@@ -1090,6 +1129,7 @@ $("#btnLogout")?.addEventListener('click', async ()=>{ await firebase.auth().sig
 </script>
 </body>
 </html>
+
 
 
 
