@@ -315,7 +315,7 @@ h1{font-size:22px; margin:0;}
 
     <!-- 右欄 -->
     <section class="card">
-      <h2>其他</h2><div class="sub">絕區零、貓咪大戰爭、Pokémon GO、諾提里森、新世界狂歡</div>
+      <h2>其他</h2><div class="sub">絕區零、貓咪大戰爭、Pokémon GO、Pokémon Sleep、動物餐廳、諾提里森、新世界狂歡</div>
 
       <!-- 絕區零 -->
       <div class="game" id="zzz">
@@ -382,7 +382,39 @@ h1{font-size:22px; margin:0;}
           <div class="g-right"><label class="ck"><input type="checkbox" id="pogo_catch"></label></div>
         </div>
       </div>
+      <!-- Pokémon Sleep -->
+       <div class="game" id="psleep">
+        <div class="top">
+          <div class="title">
+           <img class="icon" src="6.png" onerror="this.src='6.png'">
+           <strong>Pokémon Sleep</strong>
+          </div>
+    <span class="badge">04:00／14:00／21:00</span>
+  </div>
+  <div class="g-row">
+    <div class="g-left">寶可夢吃飯時間</div>
+    <div class="g-right">
+      <label class="ck"><input type="checkbox" id="psleep_meal"></label>
+    </div>
+  </div>
+</div>
 
+<!-- 動物餐廳 -->
+<div class="game" id="animal">
+  <div class="top">
+    <div class="title">
+      <img class="icon" src="6.png" onerror="this.src='6.png'">
+      <strong>動物餐廳</strong>
+    </div>
+    <span class="badge">04:00／14:00／21:00</span>
+  </div>
+  <div class="g-row">
+    <div class="g-left">每日</div>
+    <div class="g-right">
+      <label class="ck"><input type="checkbox" id="animal_daily"></label>
+    </div>
+  </div>
+</div>
       <!-- 諾提里森 -->
       <div class="game" id="noti">
         <div class="top">
@@ -543,6 +575,8 @@ hsr:{
     zzz: { daily:{ last:null }, energy:240 },
     cats:{ daily:{ last:null }, weekend:{ last:null } },
     pogo:{ spin:{ last:null }, catch:{ last:null } },
+    psleep:{ meal:{ last:null } },
+    animal:{ daily:{ last:null } },
     noti:{ daily:{ last:null } },
     nsfw:{ daily:{ last:null }, ticket:0 },
     meta:{ lastReset: null }
@@ -806,6 +840,14 @@ function refreshCyclesOnOne(obj, kind){
   const todayK = dayKey();
 
   if (kind==='daily' || kind==='spin' || kind==='catch' || kind==='weekend'){
+    if (kind === 'triple'){
+  const tk = tripleMealKey();
+  const lk = normalizeLastToTripleKey(obj.last);
+  if (lk && lk !== tk){
+    obj.last = null;
+    changed = true;
+  }
+}
     const lk = normalizeLastToKey(obj.last);
     if (lk && lk !== todayK){ obj.last = null; changed = true; }
   }
@@ -879,18 +921,44 @@ function refreshAllCycles(STATE){
     if (STATE.pogo.spin)  changed = refreshCyclesOnOne(STATE.pogo.spin,'spin')  || changed;
     if (STATE.pogo.catch) changed = refreshCyclesOnOne(STATE.pogo.catch,'catch')|| changed;
   }
+  if (STATE.psleep?.meal) changed = refreshCyclesOnOne(STATE.psleep.meal,'triple') || changed;
+  if (STATE.animal?.daily) changed = refreshCyclesOnOne(STATE.animal.daily,'triple') || changed;
   if (STATE.noti?.daily) changed = refreshCyclesOnOne(STATE.noti.daily,'daily') || changed;
   if (STATE.nsfw?.daily) changed = refreshCyclesOnOne(STATE.nsfw.daily,'daily') || changed;
   return changed;
 }
+function tripleMealKey(now = new Date()){
+  const y = now.getFullYear();
+  const m = String(now.getMonth()+1).padStart(2,'0');
+  const d = String(now.getDate()).padStart(2,'0');
+  const hm = now.getHours()*60 + now.getMinutes();
 
+  let slot;
+  if (hm >= 21*60) slot = "21";
+  else if (hm >= 14*60) slot = "14";
+  else if (hm >= 4*60) slot = "04";
+  else {
+    const yesterday = addDays(now, -1);
+    return ymd(yesterday) + "_21";
+  }
+
+  return `${y}-${m}-${d}_${slot}`;
+}
+
+function normalizeLastToTripleKey(last){
+  if (!last) return null;
+  if (typeof last === 'string') return last;
+  if (typeof last === 'number') return tripleMealKey(new Date(last));
+  if (last instanceof Date) return tripleMealKey(last);
+  return null;
+}
 /* =========================
    Pending：單一定義（UI + Firestore 回報）
    ========================= */
 async function renderPending(){
   const arr = [
     STATE.gsTw.daily, STATE.gsAs.daily, STATE.hsr.daily, STATE.hoyo.daily, STATE.zzz.daily,
-    STATE.cats.daily, STATE.pogo.spin, STATE.pogo.catch, STATE.noti.daily, STATE.nsfw.daily
+    STATE.cats.daily, STATE.pogo.spin, STATE.pogo.catch, STATE.psleep.meal, STATE.animal.daily, STATE.noti.daily, STATE.nsfw.daily
   ];
   const cnt = arr.filter(x => !x?.last).length;
   $("#pendingCount").textContent = cnt;
@@ -988,6 +1056,23 @@ function bindCats(){
   if(ck){ ck.checked=!!STATE.cats.weekend.last; ck.onchange=async ()=>{ STATE.cats.weekend.last=ck.checked?Date.now():null; await persist(); }; }
 }
 function bindPoGoAll(){ bindPoGo("pogo_catch","pogo_spin"); }
+function bindTripleCheckbox(idPath, model){
+  const el=document.getElementById(idPath); if(!el) return;
+  el.checked = !!model.last;
+  el.onchange = async ()=>{
+    model.last = el.checked ? Date.now() : null;
+    await persist();
+    renderPending();
+  };
+}
+
+function bindPSleep(){
+  bindTripleCheckbox("psleep_meal", STATE.psleep.meal);
+}
+
+function bindAnimal(){
+  bindTripleCheckbox("animal_daily", STATE.animal.daily);
+}
 function bindNoti(){ bindDailyCheckbox("noti_daily", STATE.noti.daily); }
 function bindNSFW(){
   bindDailyCheckbox("nsfw_daily", STATE.nsfw.daily);
@@ -1015,7 +1100,7 @@ function render(){
   tickResinAuto();
   bindGenshinOne("gsTw", STATE.gsTw);
   bindGenshinOne("gsAs", STATE.gsAs);
-  bindHSR(); bindHoyo(); bindZZZ(); bindCats(); bindPoGoAll(); bindNoti(); bindNSFW();
+  bindHSR(); bindHoyo(); bindZZZ(); bindCats(); bindPoGoAll(); bindPSleep(); bindAnimal(); bindNoti(); bindNSFW();
   renderPending();
   colorizePlusMinus();
   setInterval(tickResinAuto, 60*1000);
@@ -1131,17 +1216,3 @@ $("#btnLogout")?.addEventListener('click', async ()=>{ await firebase.auth().sig
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
