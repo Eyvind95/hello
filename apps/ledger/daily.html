@@ -958,9 +958,18 @@ function normalizeLastToTripleKey(last){
 async function renderPending(){
   const arr = [
     STATE.gsTw.daily, STATE.gsAs.daily, STATE.hsr.daily, STATE.hoyo.daily, STATE.zzz.daily,
-    STATE.cats.daily, STATE.pogo.spin, STATE.pogo.catch, STATE.psleep.meal, STATE.animal.daily, STATE.noti.daily, STATE.nsfw.daily
+    STATE.cats.daily, STATE.pogo.spin, STATE.pogo.catch, STATE.noti.daily, STATE.nsfw.daily
   ];
   const cnt = arr.filter(x => !x?.last).length;
+  const tk = tripleMealKey();
+
+  if (normalizeLastToTripleKey(STATE.psleep.meal.last) !== tk){
+    cnt++;
+  }
+
+  if (normalizeLastToTripleKey(STATE.animal.daily.last) !== tk){
+    cnt++;
+  }
   $("#pendingCount").textContent = cnt;
 
   if (CURRENT_UID){
@@ -1057,10 +1066,16 @@ function bindCats(){
 }
 function bindPoGoAll(){ bindPoGo("pogo_catch","pogo_spin"); }
 function bindTripleCheckbox(idPath, model){
-  const el=document.getElementById(idPath); if(!el) return;
-  el.checked = !!model.last;
+  const el = document.getElementById(idPath);
+  if(!el) return;
+
+  const tk = tripleMealKey();
+  const lk = normalizeLastToTripleKey(model.last);
+
+  el.checked = lk === tk;
+
   el.onchange = async ()=>{
-    model.last = el.checked ? Date.now() : null;
+    model.last = el.checked ? tripleMealKey() : null;
     await persist();
     renderPending();
   };
