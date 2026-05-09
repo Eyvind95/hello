@@ -1,4 +1,11 @@
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', () => clients.claim());
-// 先純網路，不做快取
-self.addEventListener('fetch', () => {});
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener("fetch", (event) => {
+  event.respondWith(fetch(event.request));
+});
