@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>週計時器</title>
+
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#111827">
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(160deg, #111827, #020617);
+      color: #f9fafb;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 430px;
+    }
+
+    h1 {
+      font-size: 28px;
+      margin: 10px 0 6px;
+    }
+
+    .sub {
+      color: #9ca3af;
+      margin-bottom: 18px;
+      font-size: 14px;
+    }
+
+    .card {
+      background: rgba(31, 41, 55, 0.9);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 22px;
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+
+    .big {
+      font-size: 34px;
+      font-weight: 800;
+      margin: 6px 0;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 10px 0;
+      color: #e5e7eb;
+    }
+
+    .label {
+      color: #9ca3af;
+    }
+
+    .progress-wrap {
+      width: 100%;
+      height: 14px;
+      background: #374151;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+
+    .progress {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #22c55e);
+      border-radius: 999px;
+      transition: width 0.3s;
+    }
+
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 18px;
+      padding: 16px;
+      margin-top: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      color: white;
+      cursor: pointer;
+    }
+
+    .start { background: #16a34a; }
+    .stop { background: #dc2626; }
+    .reset { background: #4b5563; font-size: 15px; }
+
+    .running {
+      color: #86efac;
+      font-weight: 700;
+    }
+
+    .warn {
+      color: #facc15;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .small {
+      color: #9ca3af;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <h1>週計時器</h1>
+    <div class="sub">每週 5.5 小時，每天最多記 1.5 小時</div>
+
+    <div class="card">
+      <div class="label">目前狀態</div>
+      <div id="status" class="big">尚未開始</div>
+      <div id="liveTime" class="small">本次計時：0 分鐘</div>
+
+      <button id="startBtn" class="start">開始計時</button>
+      <button id="stopBtn" class="stop">停止計時</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <span class="label">本週目標</span>
+        <span id="weekGoal">0 分鐘</span>
+      </div>
+
+      <div class="row">
+        <span class="label">本週已完成</span>
+        <span id="weekDone">0 分鐘</span>
+      </div>
+
+      <div class="row">
+        <span class="label">本週剩餘</span>
+        <span id="weekLeft">0 分鐘</span>
+      </div>
+
+      <div class="progress-wrap">
+        <div id="progress" class="progress"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <span class="label">今日已記</span>
+        <span id="todayDone">0 / 90 分鐘</span>
+      </div>
+
+      <div class="row">
+        <span class="label">結轉欠時</span>
+        <span id="carryOver">0 分鐘</span>
+      </div>
+
+      <div id="message" class="warn"></div>
+    </div>
+
+    <div class="card">
+      <button id="resetBtn" class="reset">重置全部資料</button>
+      <div class="small">
+        第一週從 2026/5/18 開始。<br>
+        停止計時後才會正式記錄時間。<br>
+        每天最多只會算 90 分鐘。
+      </div>
+    </div>
+  </div>
+
+<script>
+const START_DATE = "2026-05-18";
+const BASE_WEEK_GOAL = 330; // 5.5 小時
+const DAILY_LIMIT = 90;     // 1.5 小時
+const STORAGE_KEY = "week_timer_data_v1";
+
+const $ = id => document.getElementById(id);
+
+function loadData() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    return {
+      currentWeek: getWeekKey(new Date()),
+      carryOver: 0,
+      daily: {},
+      running: false,
+      startTime: null,
+      settledWeeks: {}
+    };
+  }
+  return JSON.parse(raw);
+}
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function dateOnly(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function ymd(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getStartDate() {
+  return dateOnly(new Date(START_DATE + "T00:00:00"));
+}
+
+function getWeekKey(date) {
+  const start = getStartDate();
+  const now = dateOnly(date);
+
+  if (now < start) return "before-start";
+
+  const diffDays = Math.floor((now - start) / 86400000);
+  const weekIndex = Math.floor(diffDays / 7);
+
+  return `week-${weekIndex}`;
+}
+
+function getWeekRangeByKey(key) {
+  if (key === "before-start") return null;
+
+  const index = Number(key.replace("week-", ""));
+  const start = getStartDate();
+  const weekStart = new Date(start);
+  weekStart.setDate(start.getDate() + index * 7);
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+
+  return { start: weekStart, end: weekEnd };
+}
+
+function formatMin(min) {
+  min = Math.max(0, Math.floor(min));
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+
+  if (h > 0 && m > 0) return `${h} 小時 ${m} 分`;
+  if (h > 0) return `${h} 小時`;
+  return `${m} 分鐘`;
+}
+
+function getTodayKey() {
+  return ymd(new Date());
+}
+
+function getWeeklyDone(weekKey) {
+  const range = getWeekRangeByKey(weekKey);
+  if (!range) return 0;
+
+  let total = 0;
+
+  for (const day in data.daily) {
+    const d = dateOnly(new Date(day + "T00:00:00"));
+    if (d >= range.start && d <= range.end) {
+      total += Math.min(data.daily[day], DAILY_LIMIT);
+    }
+  }
+
+  return total;
+}
+
+function settleWeeksIfNeeded() {
+  const nowWeek = getWeekKey(new Date());
+
+  if (nowWeek === "before-start") {
+    data.currentWeek = nowWeek;
+    saveData();
+    return;
+  }
+
+  if (data.currentWeek === "before-start") {
+    data.currentWeek = nowWeek;
+    saveData();
+    return;
+  }
+
+  while (data.currentWeek !== nowWeek) {
+    const weekGoal = BASE_WEEK_GOAL + data.carryOver;
+    const done = getWeeklyDone(data.currentWeek);
+    const left = Math.max(0, weekGoal - done);
+
+    data.settledWeeks[data.currentWeek] = {
+      goal: weekGoal,
+      done,
+      left
+    };
+
+    data.carryOver = left;
+
+    const index = Number(data.currentWeek.replace("week-", ""));
+    data.currentWeek = `week-${index + 1}`;
+  }
+
+  saveData();
+}
+
+function startTimer() {
+  const today = new Date();
+
+  if (getWeekKey(today) === "before-start") {
+    alert("還沒到開始日，第一週從 2026/5/18 開始。");
+    return;
+  }
+
+  const todayKey = getTodayKey();
+  const todayDone = data.daily[todayKey] || 0;
+
+  if (todayDone >= DAILY_LIMIT) {
+    alert("今天已經記滿 90 分鐘了。");
+    return;
+  }
+
+  if (data.running) return;
+
+  data.running = true;
+  data.startTime = Date.now();
+  saveData();
+  render();
+}
+
+function stopTimer() {
+  if (!data.running || !data.startTime) return;
+
+  const todayKey = getTodayKey();
+  const now = Date.now();
+
+  const elapsedMin = Math.floor((now - data.startTime) / 60000);
+  const oldToday = data.daily[todayKey] || 0;
+  const canAdd = Math.max(0, DAILY_LIMIT - oldToday);
+  const realAdd = Math.min(elapsedMin, canAdd);
+
+  data.daily[todayKey] = oldToday + realAdd;
+  data.running = false;
+  data.startTime = null;
+
+  saveData();
+
+  if (elapsedMin <= 0) {
+    alert("這次不到 1 分鐘，所以沒有記入。");
+  } else if (realAdd < elapsedMin) {
+    alert("今天最多只能記 90 分鐘，超過的部分沒有算進去。");
+  }
+
+  render();
+}
+
+function resetAll() {
+  const ok = confirm("確定要重置全部資料嗎？");
+  if (!ok) return;
+
+  localStorage.removeItem(STORAGE_KEY);
+  data = loadData();
+  settleWeeksIfNeeded();
+  render();
+}
+
+function render() {
+  settleWeeksIfNeeded();
+
+  const now = new Date();
+  const weekKey = getWeekKey(now);
+  const todayKey = getTodayKey();
+
+  const todayDone = data.daily[todayKey] || 0;
+  const weekGoal = BASE_WEEK_GOAL + data.carryOver;
+  const weekDone = getWeeklyDone(weekKey);
+  const weekLeft = Math.max(0, weekGoal - weekDone);
+  const percent = weekGoal > 0 ? Math.min(100, (weekDone / weekGoal) * 100) : 0;
+
+  if (weekKey === "before-start") {
+    $("status").textContent = "尚未到開始日";
+    $("liveTime").textContent = "第一週從 2026/5/18 開始";
+  } else if (data.running) {
+    $("status").textContent = "計時中";
+    $("status").className = "big running";
+
+    const liveMin = Math.floor((Date.now() - data.startTime) / 60000);
+    $("liveTime").textContent = `本次計時：${formatMin(liveMin)}`;
+  } else {
+    $("status").textContent = "未計時";
+    $("status").className = "big";
+    $("liveTime").textContent = "本次計時：0 分鐘";
+  }
+
+  $("weekGoal").textContent = formatMin(weekGoal);
+  $("weekDone").textContent = formatMin(weekDone);
+  $("weekLeft").textContent = formatMin(weekLeft);
+  $("todayDone").textContent = `${formatMin(todayDone)} / ${formatMin(DAILY_LIMIT)}`;
+  $("carryOver").textContent = formatMin(data.carryOver);
+  $("progress").style.width = percent + "%";
+
+  let msg = "";
+
+  if (weekKey === "before-start") {
+    msg = "現在還不會開始算，等到 2026/5/18 才正式開始。";
+  } else if (todayDone >= DAILY_LIMIT) {
+    msg = "今天已經記滿 1.5 小時了，可以休息，超過也不會再算。";
+  } else if (weekLeft === 0) {
+    msg = "本週目標已完成。";
+  } else {
+    msg = `今天還能記 ${formatMin(DAILY_LIMIT - todayDone)}。`;
+  }
+
+  $("message").textContent = msg;
+}
+
+let data = loadData();
+
+$("startBtn").addEventListener("click", startTimer);
+$("stopBtn").addEventListener("click", stopTimer);
+$("resetBtn").addEventListener("click", resetAll);
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js");
+}
+
+settleWeeksIfNeeded();
+render();
+setInterval(render, 1000);
+</script>
+</body>
+</html>
