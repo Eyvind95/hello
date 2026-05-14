@@ -1,0 +1,29 @@
+{
+  "name": "週計時器",
+  "short_name": "週計時器",
+
+  "start_url": "https://eyvind95.github.io/hello/apps/weektimer/timer.html",
+
+  "scope": "https://eyvind95.github.io/hello/apps/weektimer/",
+
+  "display": "standalone",
+
+  "background_color": "#111827",
+
+  "theme_color": "#111827",
+
+  "icons": [
+    {
+      "src": "https://eyvind95.github.io/hello/apps/ledger/6.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://eyvind95.github.io/hello/apps/ledger/6.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
