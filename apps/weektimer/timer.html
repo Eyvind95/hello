@@ -1,174 +1,161 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>週計時器</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>週計時器</title>
+<link rel="manifest" href="./timer.webmanifest">
+<link rel="icon" href="/hello/apps/ledger/6.png">
+<meta name="theme-color" content="#111827">
 
-  <link rel="manifest" href="./timer.webmanifest">
-  <link rel="icon" href="/hello/apps/ledger/6.png">
-  <meta name="theme-color" content="#111827">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  color:#f9fafb;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:
+    linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.72)),
+    url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg");
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  background-attachment:fixed;
+  display:flex;
+  justify-content:center;
+  padding:20px;
+}
+@media(max-width:768px){body{background-attachment:scroll}}
 
-  <style>
-    *{box-sizing:border-box}
-    html,body{margin:0;min-height:100%}
-
-    body{
-      color:#f9fafb;
-      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      background:
-        linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.72)),
-        url("https://i.pinimg.com/736x/9e/79/c3/9e79c358e0914cd144e90a39f102e1cc.jpg");
-      background-size:cover;
-      background-position:center;
-      background-repeat:no-repeat;
-      background-attachment:fixed;
-      display:flex;
-      justify-content:center;
-      padding:20px;
-    }
-
-    @media (max-width:768px){
-      body{background-attachment:scroll}
-    }
-
-    .app{width:100%;max-width:430px}
-    h1{font-size:30px;margin:10px 0 6px}
-    .sub{color:#d1d5db;margin-bottom:18px;font-size:14px}
-
-    .card{
-      background:rgba(17,24,39,0.88);
-      border:1px solid rgba(255,255,255,0.08);
-      border-radius:22px;
-      padding:18px;
-      margin-bottom:14px;
-      box-shadow:0 10px 30px rgba(0,0,0,0.25);
-      backdrop-filter:blur(4px);
-    }
-
-    .big{font-size:34px;font-weight:800;margin:6px 0}
-    .row{display:flex;justify-content:space-between;gap:12px;margin:10px 0;color:#e5e7eb}
-    .label{color:#9ca3af}
-
-    .progress-wrap{
-      width:100%;
-      height:14px;
-      background:#374151;
-      border-radius:999px;
-      overflow:hidden;
-      margin-top:12px;
-    }
-
-    .progress{
-      height:100%;
-      width:0%;
-      background:linear-gradient(90deg,#38bdf8,#22c55e);
-      border-radius:999px;
-      transition:width .3s;
-    }
-
-    button{
-      width:100%;
-      border:0;
-      border-radius:18px;
-      padding:16px;
-      margin-top:10px;
-      font-size:18px;
-      font-weight:700;
-      color:white;
-      cursor:pointer;
-    }
-
-    .start{background:#16a34a}
-    .stop{background:#dc2626}
-    .reset{background:#4b5563;font-size:15px}
-    .skip{background:#9333ea;font-size:15px}
-    .running{color:#86efac;font-weight:700}
-    .warn{color:#fde68a;font-size:14px;line-height:1.6}
-    .small{color:#d1d5db;font-size:13px;line-height:1.6}
-  </style>
+.app{width:100%;max-width:430px}
+h1{font-size:30px;margin:10px 0 6px}
+.sub{color:#d1d5db;margin-bottom:18px;font-size:14px}
+.card{
+  background:rgba(17,24,39,.88);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:22px;
+  padding:18px;
+  margin-bottom:14px;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);
+  backdrop-filter:blur(4px);
+}
+.big{font-size:34px;font-weight:800;margin:6px 0}
+.row{display:flex;justify-content:space-between;gap:12px;margin:10px 0;color:#e5e7eb}
+.label{color:#9ca3af}
+.progress-wrap{width:100%;height:14px;background:#374151;border-radius:999px;overflow:hidden;margin-top:12px}
+.progress{height:100%;width:0%;background:linear-gradient(90deg,#38bdf8,#22c55e);border-radius:999px;transition:.3s}
+button{
+  width:100%;border:0;border-radius:18px;padding:16px;margin-top:10px;
+  font-size:18px;font-weight:700;color:white;cursor:pointer;
+}
+.start{background:#16a34a}
+.stop{background:#dc2626}
+.reset{background:#4b5563;font-size:15px}
+.skip{background:#9333ea;font-size:15px}
+.manual{background:#2563eb;font-size:15px}
+.running{color:#86efac;font-weight:700}
+.warn{color:#fde68a;font-size:14px;line-height:1.6}
+.small{color:#d1d5db;font-size:13px;line-height:1.6}
+input{
+  width:100%;
+  margin-top:8px;
+  padding:12px;
+  border-radius:12px;
+  border:1px solid #4b5563;
+  background:#111827;
+  color:white;
+  font-size:15px;
+}
+.dayrow{
+  display:flex;
+  justify-content:space-between;
+  padding:7px 0;
+  border-bottom:1px solid rgba(255,255,255,.08);
+  color:#e5e7eb;
+}
+.dayrow:last-child{border-bottom:0}
+.range{
+  margin-top:8px;
+  padding:8px;
+  border-radius:10px;
+  background:rgba(255,255,255,.06);
+  font-size:13px;
+}
+</style>
 </head>
 
 <body>
 <div class="app">
 
-  <h1>週計時器</h1>
-  <div class="sub">每週 5.5 小時，每天最多記錄 1.5 小時</div>
+<h1>週計時器</h1>
+<div class="sub">每週 5.5 小時，每天最多記錄 1.5 小時</div>
 
-  <div class="card">
-    <div class="label">目前狀態</div>
-    <div id="status" class="big">尚未開始</div>
-    <div id="liveTime" class="small">本次計時：0 分鐘</div>
+<div class="card">
+  <div class="label">目前狀態</div>
+  <div id="status" class="big">尚未開始</div>
+  <div id="liveTime" class="small">本次計時：0 分鐘</div>
+  <button id="startBtn" class="start">開始計時</button>
+  <button id="stopBtn" class="stop">停止計時</button>
+</div>
 
-    <button id="startBtn" class="start">開始計時</button>
-    <button id="stopBtn" class="stop">停止計時</button>
+<div class="card">
+  <div class="row"><span class="label">本週目標</span><span id="weekGoal">0 分鐘</span></div>
+  <div class="row"><span class="label">本週已完成</span><span id="weekDone">0 分鐘</span></div>
+  <div class="row"><span class="label">本週剩餘</span><span id="weekLeft">0 分鐘</span></div>
+  <div class="progress-wrap"><div id="progress" class="progress"></div></div>
+</div>
+
+<div class="card">
+  <div class="row"><span class="label">今日已記</span><span id="todayDone">0 / 90 分鐘</span></div>
+  <div class="row"><span class="label">結轉欠時</span><span id="carryOver">0 分鐘</span></div>
+  <div class="row"><span class="label">本週狀態</span><span id="weekInvalid">正常</span></div>
+  <div class="row"><span class="label">本月作廢次數</span><span id="skipCount">0 / 2</span></div>
+  <div id="message" class="warn"></div>
+</div>
+
+<div class="card">
+  <div class="label">手動補時間</div>
+  <input id="manualMin" type="number" min="1" max="90" placeholder="輸入要加幾分鐘，例如 20">
+  <button id="manualBtn" class="manual">手動加入今日時間</button>
+  <div class="small">一樣受每日 90 分鐘限制，超過不會算。</div>
+</div>
+
+<div class="card">
+  <div class="label">本週每日紀錄</div>
+  <div id="weekList"></div>
+</div>
+
+<div class="card">
+  <div class="label">寒暑假 / 無效日期區間</div>
+  <input id="rangeName" type="text" placeholder="名稱，例如：寒假">
+  <input id="rangeStart" type="date">
+  <input id="rangeEnd" type="date">
+  <button id="addRangeBtn" class="manual">新增無效日期</button>
+  <div id="rangeList"></div>
+  <div class="small">只要本週碰到無效日期區間，本週就不會結轉，不消耗每月 2 次作廢。</div>
+</div>
+
+<div class="card">
+  <button id="skipWeekBtn" class="skip">本週作廢，不結轉</button>
+  <button id="resetBtn" class="reset">重置全部資料</button>
+  <div class="small">
+    第一週從 2026/5/18 開始。<br>
+    手動作廢每月最多 2 次。<br>
+    寒暑假等無效日期不算進每月作廢次數。
   </div>
-
-  <div class="card">
-    <div class="row">
-      <span class="label">本週目標</span>
-      <span id="weekGoal">0 分鐘</span>
-    </div>
-
-    <div class="row">
-      <span class="label">本週已完成</span>
-      <span id="weekDone">0 分鐘</span>
-    </div>
-
-    <div class="row">
-      <span class="label">本週剩餘</span>
-      <span id="weekLeft">0 分鐘</span>
-    </div>
-
-    <div class="progress-wrap">
-      <div id="progress" class="progress"></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="row">
-      <span class="label">今日已記</span>
-      <span id="todayDone">0 / 90 分鐘</span>
-    </div>
-
-    <div class="row">
-      <span class="label">結轉欠時</span>
-      <span id="carryOver">0 分鐘</span>
-    </div>
-
-    <div class="row">
-      <span class="label">本週狀態</span>
-      <span id="weekInvalid">正常</span>
-    </div>
-
-    <div id="message" class="warn"></div>
-  </div>
-
-  <div class="card">
-    <button id="skipWeekBtn" class="skip">本週作廢，不結轉</button>
-    <button id="resetBtn" class="reset">重置全部資料</button>
-
-    <div class="small">
-      第一週從 2026/5/18 開始。<br>
-      停止計時後才會正式記錄時間。<br>
-      每天最多只會算 90 分鐘。<br>
-      如果本週有事，可以按「本週作廢」，剩餘時間就不會加到下週。
-    </div>
-  </div>
+</div>
 
 </div>
 
 <script>
-const START_DATE = "2026-05-18";
-const BASE_WEEK_GOAL = 330;
-const DAILY_LIMIT = 90;
-const STORAGE_KEY = "week_timer_data_v2";
-
-const $ = id => document.getElementById(id);
+const START_DATE="2026-05-18";
+const BASE_WEEK_GOAL=330;
+const DAILY_LIMIT=90;
+const STORAGE_KEY="week_timer_data_v2";
+const $=id=>document.getElementById(id);
 
 function loadData(){
-  const raw = localStorage.getItem(STORAGE_KEY);
-
+  const raw=localStorage.getItem(STORAGE_KEY);
   if(!raw){
     return {
       currentWeek:getWeekKey(new Date()),
@@ -177,302 +164,391 @@ function loadData(){
       running:false,
       startTime:null,
       settledWeeks:{},
-      invalidWeeks:{}
+      invalidWeeks:{},
+      invalidRanges:[]
     };
   }
-
-  const obj = JSON.parse(raw);
-
-  if(!obj.daily) obj.daily = {};
-  if(!obj.settledWeeks) obj.settledWeeks = {};
-  if(!obj.invalidWeeks) obj.invalidWeeks = {};
-  if(typeof obj.carryOver !== "number") obj.carryOver = 0;
-  if(typeof obj.running !== "boolean") obj.running = false;
-  if(!("startTime" in obj)) obj.startTime = null;
-  if(!obj.currentWeek) obj.currentWeek = getWeekKey(new Date());
-
+  const obj=JSON.parse(raw);
+  if(!obj.daily)obj.daily={};
+  if(!obj.settledWeeks)obj.settledWeeks={};
+  if(!obj.invalidWeeks)obj.invalidWeeks={};
+  if(!obj.invalidRanges)obj.invalidRanges=[];
+  if(typeof obj.carryOver!=="number")obj.carryOver=0;
+  if(typeof obj.running!=="boolean")obj.running=false;
+  if(!("startTime" in obj))obj.startTime=null;
+  if(!obj.currentWeek)obj.currentWeek=getWeekKey(new Date());
   return obj;
 }
 
-function saveData(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
-function dateOnly(date){
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
+function saveData(){localStorage.setItem(STORAGE_KEY,JSON.stringify(data))}
+function dateOnly(date){return new Date(date.getFullYear(),date.getMonth(),date.getDate())}
+function parseDate(s){return dateOnly(new Date(s+"T00:00:00"))}
 function ymd(date){
-  const y = date.getFullYear();
-  const m = String(date.getMonth()+1).padStart(2,"0");
-  const d = String(date.getDate()).padStart(2,"0");
-  return `${y}-${m}-${d}`;
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
 }
-
-function getStartDate(){
-  return dateOnly(new Date(START_DATE+"T00:00:00"));
-}
+function monthKey(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`}
+function getStartDate(){return parseDate(START_DATE)}
 
 function getWeekKey(date){
-  const start = getStartDate();
-  const now = dateOnly(date);
-
-  if(now < start) return "before-start";
-
-  const diffDays = Math.floor((now-start)/86400000);
-  const weekIndex = Math.floor(diffDays/7);
-
-  return `week-${weekIndex}`;
+  const start=getStartDate();
+  const now=dateOnly(date);
+  if(now<start)return "before-start";
+  const diffDays=Math.floor((now-start)/86400000);
+  return `week-${Math.floor(diffDays/7)}`;
 }
 
 function getWeekRangeByKey(key){
-  if(key === "before-start") return null;
-
-  const index = Number(key.replace("week-",""));
-  const start = getStartDate();
-
-  const weekStart = new Date(start);
-  weekStart.setDate(start.getDate() + index*7);
-
-  const weekEnd = new Date(weekStart);
+  if(key==="before-start")return null;
+  const index=Number(key.replace("week-",""));
+  const start=getStartDate();
+  const weekStart=new Date(start);
+  weekStart.setDate(start.getDate()+index*7);
+  const weekEnd=new Date(weekStart);
   weekEnd.setDate(weekStart.getDate()+6);
-
   return {start:weekStart,end:weekEnd};
 }
 
 function formatMin(min){
-  min = Math.max(0, Math.floor(min));
-
-  const h = Math.floor(min/60);
-  const m = min%60;
-
-  if(h>0 && m>0) return `${h} 小時 ${m} 分`;
-  if(h>0) return `${h} 小時`;
+  min=Math.max(0,Math.floor(min));
+  const h=Math.floor(min/60),m=min%60;
+  if(h>0&&m>0)return `${h} 小時 ${m} 分`;
+  if(h>0)return `${h} 小時`;
   return `${m} 分鐘`;
 }
 
-function getTodayKey(){
-  return ymd(new Date());
-}
+function getTodayKey(){return ymd(new Date())}
 
 function getWeeklyDone(weekKey){
-  const range = getWeekRangeByKey(weekKey);
-  if(!range) return 0;
-
-  let total = 0;
-
+  const range=getWeekRangeByKey(weekKey);
+  if(!range)return 0;
+  let total=0;
   for(const day in data.daily){
-    const d = dateOnly(new Date(day+"T00:00:00"));
-
-    if(d >= range.start && d <= range.end){
-      total += Math.min(data.daily[day], DAILY_LIMIT);
+    const d=parseDate(day);
+    if(d>=range.start&&d<=range.end){
+      total+=Math.min(data.daily[day],DAILY_LIMIT);
     }
   }
-
   return total;
 }
 
-function settleWeeksIfNeeded(){
-  const nowWeek = getWeekKey(new Date());
+function isWeekInInvalidRange(weekKey){
+  const range=getWeekRangeByKey(weekKey);
+  if(!range)return false;
+  return data.invalidRanges.some(r=>{
+    const s=parseDate(r.start);
+    const e=parseDate(r.end);
+    return range.start<=e && range.end>=s;
+  });
+}
 
-  if(nowWeek === "before-start"){
-    data.currentWeek = nowWeek;
-    saveData();
-    return;
-  }
+function isWeekInvalid(weekKey){
+  return !!data.invalidWeeks[weekKey] || isWeekInInvalidRange(weekKey);
+}
 
-  if(data.currentWeek === "before-start"){
-    data.currentWeek = nowWeek;
-    saveData();
-    return;
-  }
-
-  while(data.currentWeek !== nowWeek){
-    const weekGoal = BASE_WEEK_GOAL + data.carryOver;
-    const done = getWeeklyDone(data.currentWeek);
-
-    let left = Math.max(0, weekGoal - done);
-
-    if(data.invalidWeeks[data.currentWeek]){
-      left = 0;
+function countManualSkipsThisMonth(){
+  const nowMonth=monthKey(new Date());
+  let count=0;
+  for(const wk in data.invalidWeeks){
+    if(data.invalidWeeks[wk]){
+      const range=getWeekRangeByKey(wk);
+      if(range && monthKey(range.start)===nowMonth)count++;
     }
+  }
+  return count;
+}
 
-    data.settledWeeks[data.currentWeek] = {
+function settleWeeksIfNeeded(){
+  const nowWeek=getWeekKey(new Date());
+
+  if(nowWeek==="before-start"){
+    data.currentWeek=nowWeek;
+    saveData();
+    return;
+  }
+
+  if(data.currentWeek==="before-start"){
+    data.currentWeek=nowWeek;
+    saveData();
+    return;
+  }
+
+  while(data.currentWeek!==nowWeek){
+    const weekGoal=BASE_WEEK_GOAL+data.carryOver;
+    const done=getWeeklyDone(data.currentWeek);
+    let left=Math.max(0,weekGoal-done);
+
+    if(isWeekInvalid(data.currentWeek))left=0;
+
+    data.settledWeeks[data.currentWeek]={
       goal:weekGoal,
       done,
       left,
-      invalid:!!data.invalidWeeks[data.currentWeek]
+      invalid:isWeekInvalid(data.currentWeek)
     };
 
-    data.carryOver = left;
-
-    const index = Number(data.currentWeek.replace("week-",""));
-    data.currentWeek = `week-${index+1}`;
+    data.carryOver=left;
+    const index=Number(data.currentWeek.replace("week-",""));
+    data.currentWeek=`week-${index+1}`;
   }
 
   saveData();
 }
 
 function startTimer(){
-  const today = new Date();
-
-  if(getWeekKey(today) === "before-start"){
+  if(getWeekKey(new Date())==="before-start"){
     alert("還沒到開始日，第一週從 2026/5/18 開始。");
     return;
   }
 
-  const todayKey = getTodayKey();
-  const todayDone = data.daily[todayKey] || 0;
+  const todayKey=getTodayKey();
+  const todayDone=data.daily[todayKey]||0;
 
-  if(todayDone >= DAILY_LIMIT){
+  if(todayDone>=DAILY_LIMIT){
     alert("今天已經記滿 90 分鐘了。");
     return;
   }
 
-  if(data.running) return;
+  if(data.running)return;
 
-  data.running = true;
-  data.startTime = Date.now();
-
+  data.running=true;
+  data.startTime=Date.now();
   saveData();
   render();
 }
 
 function stopTimer(){
-  if(!data.running || !data.startTime) return;
+  if(!data.running||!data.startTime)return;
 
-  const todayKey = getTodayKey();
-  const now = Date.now();
+  const todayKey=getTodayKey();
+  const elapsedMin=Math.floor((Date.now()-data.startTime)/60000);
+  const oldToday=data.daily[todayKey]||0;
+  const canAdd=Math.max(0,DAILY_LIMIT-oldToday);
+  const realAdd=Math.min(elapsedMin,canAdd);
 
-  const elapsedMin = Math.floor((now-data.startTime)/60000);
-  const oldToday = data.daily[todayKey] || 0;
-  const canAdd = Math.max(0, DAILY_LIMIT-oldToday);
-  const realAdd = Math.min(elapsedMin, canAdd);
-
-  data.daily[todayKey] = oldToday + realAdd;
-  data.running = false;
-  data.startTime = null;
-
+  data.daily[todayKey]=oldToday+realAdd;
+  data.running=false;
+  data.startTime=null;
   saveData();
 
-  if(elapsedMin <= 0){
-    alert("這次不到 1 分鐘，所以沒有記入。");
-  }else if(realAdd < elapsedMin){
-    alert("今天最多只能記 90 分鐘，超過的部分沒有算進去。");
-  }
+  if(elapsedMin<=0)alert("這次不到 1 分鐘，所以沒有記入。");
+  else if(realAdd<elapsedMin)alert("今天最多只能記 90 分鐘，超過的部分沒有算進去。");
 
   render();
 }
 
-function skipThisWeek(){
-  const weekKey = getWeekKey(new Date());
+function manualAdd(){
+  if(getWeekKey(new Date())==="before-start"){
+    alert("還沒到開始日，第一週從 2026/5/18 開始。");
+    return;
+  }
 
-  if(weekKey === "before-start"){
+  const n=Math.floor(Number($("manualMin").value));
+  if(!n||n<=0){
+    alert("請輸入要加入的分鐘數。");
+    return;
+  }
+
+  const todayKey=getTodayKey();
+  const oldToday=data.daily[todayKey]||0;
+  const canAdd=Math.max(0,DAILY_LIMIT-oldToday);
+
+  if(canAdd<=0){
+    alert("今天已經記滿 90 分鐘了。");
+    return;
+  }
+
+  const realAdd=Math.min(n,canAdd);
+  data.daily[todayKey]=oldToday+realAdd;
+  $("manualMin").value="";
+  saveData();
+
+  if(realAdd<n)alert(`今天最多 90 分鐘，所以只加入 ${realAdd} 分鐘。`);
+  render();
+}
+
+function skipThisWeek(){
+  const weekKey=getWeekKey(new Date());
+
+  if(weekKey==="before-start"){
     alert("還沒開始，現在不用作廢。");
     return;
   }
 
-  const isInvalid = !!data.invalidWeeks[weekKey];
-
-  const ok = confirm(
-    isInvalid
-      ? "本週目前已經是作廢狀態。\n要取消作廢，恢復正常結轉嗎？"
-      : "確定要讓本週作廢嗎？\n本週剩下的時間不會加到下一週。"
-  );
-
-  if(!ok) return;
-
-  if(isInvalid){
-    delete data.invalidWeeks[weekKey];
-    alert("已取消作廢，本週會正常結轉。");
-  }else{
-    data.invalidWeeks[weekKey] = true;
-    alert("本週已作廢，結算時不會把剩餘時間加到下週。");
+  if(isWeekInInvalidRange(weekKey)){
+    alert("本週已經在無效日期區間內，不需要手動作廢。");
+    return;
   }
 
+  const isInvalid=!!data.invalidWeeks[weekKey];
+
+  if(!isInvalid && countManualSkipsThisMonth()>=2){
+    alert("這個月手動作廢已經 2 次了，不能再作廢。");
+    return;
+  }
+
+  const ok=confirm(
+    isInvalid
+      ?"本週目前已作廢。\n要取消作廢，恢復正常結轉嗎？"
+      :"確定要讓本週作廢嗎？\n本週剩下的時間不會加到下一週。"
+  );
+  if(!ok)return;
+
+  if(isInvalid)delete data.invalidWeeks[weekKey];
+  else data.invalidWeeks[weekKey]=true;
+
+  saveData();
+  render();
+}
+
+function addInvalidRange(){
+  const name=$("rangeName").value.trim()||"無效日期";
+  const start=$("rangeStart").value;
+  const end=$("rangeEnd").value;
+
+  if(!start||!end){
+    alert("請選開始日期和結束日期。");
+    return;
+  }
+
+  if(parseDate(end)<parseDate(start)){
+    alert("結束日期不能早於開始日期。");
+    return;
+  }
+
+  data.invalidRanges.push({
+    id:Date.now(),
+    name,
+    start,
+    end
+  });
+
+  $("rangeName").value="";
+  $("rangeStart").value="";
+  $("rangeEnd").value="";
+
+  saveData();
+  render();
+}
+
+function deleteRange(id){
+  const ok=confirm("確定要刪除這個無效日期區間嗎？");
+  if(!ok)return;
+  data.invalidRanges=data.invalidRanges.filter(r=>r.id!==id);
   saveData();
   render();
 }
 
 function resetAll(){
-  const ok = confirm("確定要重置全部資料嗎？");
-  if(!ok) return;
-
+  if(!confirm("確定要重置全部資料嗎？"))return;
   localStorage.removeItem(STORAGE_KEY);
-
-  data = loadData();
-
+  data=loadData();
   settleWeeksIfNeeded();
   render();
+}
+
+function renderWeekList(){
+  const weekKey=getWeekKey(new Date());
+  const range=getWeekRangeByKey(weekKey);
+  if(!range){
+    $("weekList").innerHTML='<div class="small">尚未開始。</div>';
+    return;
+  }
+
+  const names=["週日","週一","週二","週三","週四","週五","週六"];
+  let html="";
+
+  for(let i=0;i<7;i++){
+    const d=new Date(range.start);
+    d.setDate(range.start.getDate()+i);
+    const key=ymd(d);
+    const min=data.daily[key]||0;
+    html+=`
+      <div class="dayrow">
+        <span>${names[d.getDay()]} ${key}</span>
+        <span>${formatMin(min)}</span>
+      </div>
+    `;
+  }
+
+  $("weekList").innerHTML=html;
+}
+
+function renderRanges(){
+  if(data.invalidRanges.length===0){
+    $("rangeList").innerHTML='<div class="small">目前沒有無效日期。</div>';
+    return;
+  }
+
+  $("rangeList").innerHTML=data.invalidRanges.map(r=>`
+    <div class="range">
+      ${r.name}：${r.start} ～ ${r.end}
+      <button class="reset" style="padding:8px;font-size:13px;border-radius:10px"
+        onclick="deleteRange(${r.id})">刪除</button>
+    </div>
+  `).join("");
 }
 
 function render(){
   settleWeeksIfNeeded();
 
-  const now = new Date();
-  const weekKey = getWeekKey(now);
-  const todayKey = getTodayKey();
+  const weekKey=getWeekKey(new Date());
+  const todayKey=getTodayKey();
 
-  const todayDone = data.daily[todayKey] || 0;
-  const weekGoal = BASE_WEEK_GOAL + data.carryOver;
-  const weekDone = getWeeklyDone(weekKey);
-  const isInvalid = !!data.invalidWeeks[weekKey];
+  const todayDone=data.daily[todayKey]||0;
+  const weekGoal=BASE_WEEK_GOAL+data.carryOver;
+  const weekDone=getWeeklyDone(weekKey);
+  const invalid=isWeekInvalid(weekKey);
+  const rangeInvalid=isWeekInInvalidRange(weekKey);
+  const weekLeft=invalid?0:Math.max(0,weekGoal-weekDone);
+  const percent=weekGoal>0?Math.min(100,(weekDone/weekGoal)*100):0;
 
-  const weekLeft = isInvalid ? 0 : Math.max(0, weekGoal-weekDone);
-
-  const percent =
-    weekGoal > 0
-      ? Math.min(100,(weekDone/weekGoal)*100)
-      : 0;
-
-  if(weekKey === "before-start"){
-    $("status").textContent = "尚未到開始日";
-    $("status").className = "big";
-    $("liveTime").textContent = "第一週從 2026/5/18 開始";
+  if(weekKey==="before-start"){
+    $("status").textContent="尚未到開始日";
+    $("status").className="big";
+    $("liveTime").textContent="第一週從 2026/5/18 開始";
   }else if(data.running){
-    $("status").textContent = "計時中";
-    $("status").className = "big running";
-
-    const liveMin = Math.floor((Date.now()-data.startTime)/60000);
-    $("liveTime").textContent = `本次計時：${formatMin(liveMin)}`;
+    $("status").textContent="計時中";
+    $("status").className="big running";
+    const liveMin=Math.floor((Date.now()-data.startTime)/60000);
+    $("liveTime").textContent=`本次計時：${formatMin(liveMin)}`;
   }else{
-    $("status").textContent = "未計時";
-    $("status").className = "big";
-    $("liveTime").textContent = "本次計時：0 分鐘";
+    $("status").textContent="未計時";
+    $("status").className="big";
+    $("liveTime").textContent="本次計時：0 分鐘";
   }
 
-  $("weekGoal").textContent = formatMin(weekGoal);
-  $("weekDone").textContent = formatMin(weekDone);
-  $("weekLeft").textContent = formatMin(weekLeft);
-  $("todayDone").textContent = `${formatMin(todayDone)} / ${formatMin(DAILY_LIMIT)}`;
-  $("carryOver").textContent = formatMin(data.carryOver);
-  $("weekInvalid").textContent = isInvalid ? "已作廢" : "正常";
-  $("skipWeekBtn").textContent = isInvalid ? "取消本週作廢" : "本週作廢，不結轉";
-  $("progress").style.width = percent + "%";
+  $("weekGoal").textContent=formatMin(weekGoal);
+  $("weekDone").textContent=formatMin(weekDone);
+  $("weekLeft").textContent=formatMin(weekLeft);
+  $("todayDone").textContent=`${formatMin(todayDone)} / ${formatMin(DAILY_LIMIT)}`;
+  $("carryOver").textContent=formatMin(data.carryOver);
+  $("weekInvalid").textContent=invalid ? (rangeInvalid?"日期無效":"已作廢") : "正常";
+  $("skipCount").textContent=`${countManualSkipsThisMonth()} / 2`;
+  $("skipWeekBtn").textContent=data.invalidWeeks[weekKey]?"取消本週作廢":"本週作廢，不結轉";
+  $("progress").style.width=percent+"%";
 
-  let msg = "";
+  let msg="";
+  if(weekKey==="before-start")msg="現在還不會開始算，等到 2026/5/18 才正式開始。";
+  else if(rangeInvalid)msg="本週碰到無效日期區間，剩餘時間不會結轉。";
+  else if(invalid)msg="本週已作廢，剩餘時間不會結轉到下週。";
+  else if(todayDone>=DAILY_LIMIT)msg="今天已經記滿 1.5 小時了，可以休息，超過也不會再算。";
+  else if(weekLeft===0)msg="本週目標已完成。";
+  else msg=`今天還能記 ${formatMin(DAILY_LIMIT-todayDone)}。`;
 
-  if(weekKey === "before-start"){
-    msg = "現在還不會開始算，等到 2026/5/18 才正式開始。";
-  }else if(isInvalid){
-    msg = "本週已作廢，剩餘時間不會結轉到下週。";
-  }else if(todayDone >= DAILY_LIMIT){
-    msg = "今天已經記滿 1.5 小時了，可以休息，超過也不會再算。";
-  }else if(weekLeft === 0){
-    msg = "本週目標已完成。";
-  }else{
-    msg = `今天還能記 ${formatMin(DAILY_LIMIT-todayDone)}。`;
-  }
+  $("message").textContent=msg;
 
-  $("message").textContent = msg;
+  renderWeekList();
+  renderRanges();
 }
 
-let data = loadData();
+let data=loadData();
 
-$("startBtn").addEventListener("click", startTimer);
-$("stopBtn").addEventListener("click", stopTimer);
-$("skipWeekBtn").addEventListener("click", skipThisWeek);
-$("resetBtn").addEventListener("click", resetAll);
+$("startBtn").addEventListener("click",startTimer);
+$("stopBtn").addEventListener("click",stopTimer);
+$("manualBtn").addEventListener("click",manualAdd);
+$("skipWeekBtn").addEventListener("click",skipThisWeek);
+$("addRangeBtn").addEventListener("click",addInvalidRange);
+$("resetBtn").addEventListener("click",resetAll);
 
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("./sw.js");
@@ -480,9 +556,7 @@ if("serviceWorker" in navigator){
 
 settleWeeksIfNeeded();
 render();
-
 setInterval(render,1000);
 </script>
-
 </body>
 </html>
