@@ -506,18 +506,12 @@ function render(){
     $("status").textContent="尚未到開始日";
     $("status").className="big";
     $("liveTime").textContent="第一週從 2026/5/18 開始";
-}else if(data.running){
+  }else if(data.running){
+  $("status").textContent="計時中";
   $("status").className="big running";
-
-  const elapsedSec = Math.floor((Date.now() - data.startTime) / 1000);
-  const min = Math.floor(elapsedSec / 60);
-  const sec = elapsedSec % 60;
-
-  $("status").textContent =
-    `${min} 分 ${String(sec).padStart(2,"0")} 秒`;
-
-  $("liveTime").textContent = "計時中";
-}
+  const liveMin=Math.floor((Date.now()-data.startTime)/60000);
+  $("liveTime").textContent=`本次計時：${formatMin(liveMin)}`;
+  }
   }else{
     $("status").textContent="未計時";
     $("status").className="big";
