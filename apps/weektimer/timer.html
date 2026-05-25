@@ -502,21 +502,28 @@ function render(){
   const weekLeft=invalid?0:Math.max(0,weekGoal-weekDone);
   const percent=weekGoal>0?Math.min(100,(weekDone/weekGoal)*100):0;
 
-  if(weekKey==="before-start"){
-    $("status").textContent="尚未到開始日";
-    $("status").className="big";
-    $("liveTime").textContent="第一週從 2026/5/18 開始";
-  }else if(data.running){
-  $("status").textContent="計時中";
+if(weekKey==="before-start"){
+  $("status").textContent="尚未到開始日";
+  $("status").className="big";
+  $("liveTime").textContent="第一週從 2026/5/18 開始";
+
+}else if(data.running){
   $("status").className="big running";
-  const liveMin=Math.floor((Date.now()-data.startTime)/60000);
-  $("liveTime").textContent=`本次計時：${formatMin(liveMin)}`;
-  }
-  }else{
-    $("status").textContent="未計時";
-    $("status").className="big";
-    $("liveTime").textContent="本次計時：0 分鐘";
-  }
+
+  const elapsedSec = Math.floor((Date.now() - data.startTime) / 1000);
+  const min = Math.floor(elapsedSec / 60);
+  const sec = elapsedSec % 60;
+
+  $("status").textContent =
+    `${min} 分 ${String(sec).padStart(2,"0")} 秒`;
+
+  $("liveTime").textContent = "計時中";
+
+}else{
+  $("status").textContent="未計時";
+  $("status").className="big";
+  $("liveTime").textContent="本次計時：0 分鐘";
+}
 
   $("weekGoal").textContent=formatMin(weekGoal);
   $("weekDone").textContent=formatMin(weekDone);
