@@ -1072,8 +1072,14 @@ function render(){
   }else if(weekLeft===0){
     msg="本週目標已完成。";
   }else{
-    msg=`今天還能記 ${formatMin(DAILY_LIMIT-todayDone)}。`;
-  }
+  　const todayLimit = getDailyLimitForDate(new Date());
+
+  　if(todayLimit === Infinity){
+    　msg = "考試月份，今天沒有記錄上限。";
+  　}else{
+    　msg = `今天還能記 ${formatMin(todayLimit-todayDone)}。`;
+  　}
+}
 
   $("message").textContent=msg;
 
