@@ -4,9 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>讀書時數管理器</title>
+
 <link rel="manifest" href="./timer.webmanifest">
 <link rel="icon" href="/hello/apps/ledger/6.png">
 <meta name="theme-color" content="#111827">
+
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
 <style>
 *{box-sizing:border-box}
@@ -52,6 +57,8 @@ button{
 .reset{background:#4b5563;font-size:15px}
 .skip{background:#9333ea;font-size:15px}
 .manual{background:#2563eb;font-size:15px}
+.login{background:#0ea5e9;font-size:15px}
+.logout{background:#64748b;font-size:15px}
 .running{color:#86efac;font-weight:700}
 .warn{color:#fde68a;font-size:14px;line-height:1.6}
 .small{color:#d1d5db;font-size:13px;line-height:1.6}
@@ -89,6 +96,13 @@ input,select{
 
 <h1>讀書時數管理器</h1>
 <div class="sub">平常每週 5.5 小時，考試月每週 12 小時</div>
+
+<div class="card">
+  <div class="label">登入狀態</div>
+  <div id="loginStatus" class="small">尚未登入，資料只存在本機。</div>
+  <button id="loginBtn" class="login">Google 登入同步</button>
+  <button id="logoutBtn" class="logout">登出</button>
+</div>
 
 <div class="card">
   <div class="label">目前狀態</div>
@@ -178,7 +192,7 @@ input,select{
   <div class="small">
     第一週從 2026/5/18 開始。<br>
     每天最多只算 90 分鐘。<br>
-    作廢週不會把剩餘時間加到下週。
+    登入後會同步到 Firestore：studyTimer / UID。
   </div>
 </div>
 
@@ -191,27 +205,49 @@ const EXAM_WEEK_GOAL=720;
 const DAILY_LIMIT=90;
 const STORAGE_KEY="study_timer_data_v3";
 
+const firebaseConfig = {
+  apiKey: "AIzaSyAP4HKop0wN9jrAN6_xx0fGHwInAAa5cHI",
+  authDomain: "eyvind95-182f0.firebaseapp.com",
+  projectId: "eyvind95-182f0",
+  storageBucket: "eyvind95-182f0.firebasestorage.app",
+  messagingSenderId: "105770576221",
+  appId: "1:105770576221:web:dd3a57ce4e051bda91a0b4"
+};
+
+if(!firebase.apps.length){
+  firebase.initializeApp(firebaseConfig);
+}
+
+const auth=firebase.auth();
+const db=firebase.firestore();
+const provider=new firebase.auth.GoogleAuthProvider();
+provider.setCustomParameters({prompt:"select_account"});
+
+let CURRENT_UID=null;
+let cloudReady=false;
+let loadingCloud=false;
+let cloudTimer=null;
+
 const $=id=>document.getElementById(id);
 
-function loadData(){
-  const raw=localStorage.getItem(STORAGE_KEY);
-  if(!raw){
-    return {
-      currentWeek:getWeekKey(new Date()),
-      carryOver:0,
-      daily:{},
-      dailySubjects:{},
-      running:false,
-      startTime:null,
-      runningSubject:null,
-      settledWeeks:{},
-      invalidWeeks:{},
-      invalidRanges:[],
-      monthModes:{}
-    };
-  }
+function defaultData(){
+  return {
+    currentWeek:getWeekKey(new Date()),
+    carryOver:0,
+    daily:{},
+    dailySubjects:{},
+    running:false,
+    startTime:null,
+    runningSubject:null,
+    settledWeeks:{},
+    invalidWeeks:{},
+    invalidRanges:[],
+    monthModes:{}
+  };
+}
 
-  const obj=JSON.parse(raw);
+function normalizeData(obj){
+  if(!obj)obj=defaultData();
   if(!obj.daily)obj.daily={};
   if(!obj.dailySubjects)obj.dailySubjects={};
   if(!obj.settledWeeks)obj.settledWeeks={};
@@ -223,13 +259,136 @@ function loadData(){
   if(!("startTime" in obj))obj.startTime=null;
   if(!("runningSubject" in obj))obj.runningSubject=null;
   if(!obj.currentWeek)obj.currentWeek=getWeekKey(new Date());
-
   return obj;
 }
 
-function saveData(){
+function cleanForCloud(obj){
+  return JSON.parse(JSON.stringify({
+    currentWeek:obj.currentWeek,
+    carryOver:obj.carryOver,
+    daily:obj.daily,
+    dailySubjects:obj.dailySubjects,
+    running:false,
+    startTime:null,
+    runningSubject:null,
+    settledWeeks:obj.settledWeeks,
+    invalidWeeks:obj.invalidWeeks,
+    invalidRanges:obj.invalidRanges,
+    monthModes:obj.monthModes
+  }));
+}
+
+function loadData(){
+  const raw=localStorage.getItem(STORAGE_KEY);
+  if(!raw)return defaultData();
+
+  try{
+    return normalizeData(JSON.parse(raw));
+  }catch(e){
+    return defaultData();
+  }
+}
+
+function saveLocal(){
   localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
 }
+
+function saveData(){
+  saveLocal();
+  saveCloudDebounced();
+}
+
+function studyDoc(){
+  if(!CURRENT_UID)return null;
+  return db.collection("studyTimer").doc(CURRENT_UID);
+}
+
+function saveCloudDebounced(){
+  if(!CURRENT_UID || !cloudReady || loadingCloud)return;
+
+  clearTimeout(cloudTimer);
+
+  cloudTimer=setTimeout(async()=>{
+    try{
+      await studyDoc().set({
+        data:cleanForCloud(data),
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      },{merge:true});
+
+      updateLoginStatus("已登入，雲端已同步。");
+    }catch(e){
+      console.error(e);
+      updateLoginStatus("已登入，但雲端同步失敗。");
+    }
+  },500);
+}
+
+async function loadCloudData(){
+  if(!CURRENT_UID)return;
+
+  loadingCloud=true;
+
+  try{
+    updateLoginStatus("已登入，正在讀取雲端資料…");
+
+    const snap=await studyDoc().get();
+
+    if(snap.exists && snap.data().data){
+      data=normalizeData(snap.data().data);
+      saveLocal();
+      updateLoginStatus("已登入，已載入雲端資料。");
+    }else{
+      await studyDoc().set({
+        data:cleanForCloud(data),
+        createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      },{merge:true});
+
+      updateLoginStatus("已登入，已建立雲端存檔。");
+    }
+
+  }catch(e){
+    console.error(e);
+    updateLoginStatus("已登入，但讀取雲端資料失敗。");
+  }
+
+  loadingCloud=false;
+  cloudReady=true;
+
+  settleWeeksIfNeeded();
+  render();
+}
+
+function updateLoginStatus(text){
+  $("loginStatus").textContent=text;
+}
+
+function login(){
+  auth.signInWithPopup(provider).catch(e=>{
+    console.error(e);
+    alert("登入失敗：" + e.message);
+  });
+}
+
+function logout(){
+  auth.signOut();
+}
+
+auth.onAuthStateChanged(user=>{
+  if(user){
+    CURRENT_UID=user.uid;
+    cloudReady=false;
+    $("loginBtn").style.display="none";
+    $("logoutBtn").style.display="block";
+    loadCloudData();
+  }else{
+    CURRENT_UID=null;
+    cloudReady=false;
+    $("loginBtn").style.display="block";
+    $("logoutBtn").style.display="none";
+    updateLoginStatus("尚未登入，資料只存在本機。");
+  }
+});
 
 function dateOnly(date){
   return new Date(date.getFullYear(),date.getMonth(),date.getDate());
@@ -312,7 +471,6 @@ function isAutoVacationMonth(key){
 
   const jan=`${y}-01`;
   const feb=`${y}-02`;
-  const mar=`${y}-03`;
 
   const jun=`${y}-06`;
   const jul=`${y}-07`;
@@ -375,7 +533,15 @@ function getWeekGoal(weekKey){
 
   return NORMAL_WEEK_GOAL + data.carryOver;
 }
+function getDailyLimitForDate(date){
+  const mode = getMonthMode(monthKey(date));
 
+  if(mode === "midterm" || mode === "final"){
+    return Infinity;
+  }
+
+  return DAILY_LIMIT;
+}
 function getWeeklyDone(weekKey){
   const range=getWeekRangeByKey(weekKey);
   if(!range)return 0;
@@ -385,7 +551,8 @@ function getWeeklyDone(weekKey){
   for(const day in data.daily){
     const d=parseDate(day);
     if(d>=range.start&&d<=range.end){
-      total+=Math.min(data.daily[day],DAILY_LIMIT);
+      const limit = getDailyLimitForDate(d);
+      total += Math.min(data.daily[day], limit);
     }
   }
 
@@ -501,10 +668,12 @@ function startTimer(){
   const todayKey=getTodayKey();
   const todayDone=data.daily[todayKey]||0;
 
-  if(todayDone>=DAILY_LIMIT){
-    alert("今天已經記滿 90 分鐘了。");
-    return;
-  }
+const todayLimit = getDailyLimitForDate(new Date());
+
+if(todayDone >= todayLimit){
+  alert("今天已經記滿 90 分鐘了。");
+  return;
+}
 
   if(data.running)return;
 
@@ -522,7 +691,10 @@ function stopTimer(){
   const todayKey=getTodayKey();
   const elapsedMin=Math.floor((Date.now()-data.startTime)/60000);
   const oldToday=data.daily[todayKey]||0;
-  const canAdd=Math.max(0,DAILY_LIMIT-oldToday);
+  const todayLimit = getDailyLimitForDate(new Date());
+  const canAdd = todayLimit === Infinity
+    ? Infinity
+    : Math.max(0, todayLimit - oldToday);
   const realAdd=Math.min(elapsedMin,canAdd);
 
   const subject=data.runningSubject || $("subjectSelect").value || "其他";
@@ -563,7 +735,10 @@ function manualAdd(){
 
   const todayKey=getTodayKey();
   const oldToday=data.daily[todayKey]||0;
-  const canAdd=Math.max(0,DAILY_LIMIT-oldToday);
+  const todayLimit = getDailyLimitForDate(new Date());
+  const canAdd = todayLimit === Infinity
+    ? Infinity
+    : Math.max(0, todayLimit - oldToday);
 
   if(canAdd<=0){
     alert("今天已經記滿 90 分鐘了。");
@@ -580,7 +755,7 @@ function manualAdd(){
 
   saveData();
 
-  if(realAdd<n){
+  if(realAdd<n && todayLimit !== Infinity){
     alert(`今天最多 90 分鐘，所以只加入 ${realAdd} 分鐘。`);
   }
 
@@ -692,12 +867,12 @@ function deleteRange(id){
 }
 
 function resetAll(){
-  if(!confirm("確定要重置全部資料嗎？"))return;
+  if(!confirm("確定要重置全部資料嗎？\n登入狀態下也會同步清空雲端資料。"))return;
 
   localStorage.removeItem(STORAGE_KEY);
+  data=defaultData();
 
-  data=loadData();
-
+  saveData();
   settleWeeksIfNeeded();
   render();
 }
@@ -864,7 +1039,11 @@ function render(){
   $("weekGoal").textContent=formatMin(weekGoal);
   $("weekDone").textContent=formatMin(weekDone);
   $("weekLeft").textContent=formatMin(weekLeft);
-  $("todayDone").textContent=`${formatMin(todayDone)} / ${formatMin(DAILY_LIMIT)}`;
+  const todayLimit = getDailyLimitForDate(new Date());
+  $("todayDone").textContent =
+    todayLimit === Infinity
+    　? `${formatMin(todayDone)} / 無上限`
+    　: `${formatMin(todayDone)} / ${formatMin(todayLimit)}`;
   $("carryOver").textContent=formatMin(data.carryOver);
 
   $("weekInvalid").textContent=
@@ -906,6 +1085,8 @@ function render(){
 
 let data=loadData();
 
+$("loginBtn").addEventListener("click",login);
+$("logoutBtn").addEventListener("click",logout);
 $("startBtn").addEventListener("click",startTimer);
 $("stopBtn").addEventListener("click",stopTimer);
 $("manualBtn").addEventListener("click",manualAdd);
@@ -915,6 +1096,7 @@ $("addRangeBtn").addEventListener("click",addInvalidRange);
 $("resetBtn").addEventListener("click",resetAll);
 
 $("modeMonth").value=monthKey(new Date());
+$("logoutBtn").style.display="none";
 
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("./sw.js");
