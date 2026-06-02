@@ -587,19 +587,30 @@
   }
 
   /* ============== 統一存取：雲端優先，失敗退本機 ============== */
-  async function loadUnified(){
-    try{
-      if(CURRENT_UID){
-        const [list, ini] = await Promise.all([cloudLoad(), cloudLoadInitials()]);
-        saveLocal(list);
-        saveInitialsLocal(ini);
-        return { list, initials: ini };
+async function loadUnified(){
+  try{
+    const localList = loadLocal();
+    const localIni  = loadInitialsLocal();
+
+    if(CURRENT_UID){
+      const [list, ini] = await Promise.all([cloudLoad(), cloudLoadInitials()]);
+
+      // 防止空雲端覆蓋本機資料
+      if(list.length === 0 && localList.length > 0){
+        alert("雲端明細是空的，已保留本機資料，沒有覆蓋。");
+        return { list: localList, initials: Object.keys(localIni).length ? localIni : ini };
       }
-    }catch(e){
-      alert("雲端讀取失敗，改用本機資料");
+
+      saveLocal(list);
+      saveInitialsLocal(ini);
+      return { list, initials: ini };
     }
-    return { list: loadLocal(), initials: loadInitialsLocal() };
+  }catch(e){
+    alert("雲端讀取失敗，改用本機資料");
   }
+
+  return { list: loadLocal(), initials: loadInitialsLocal() };
+}
 
   async function saveUnified(){
     if(CURRENT_UID){
