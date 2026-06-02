@@ -556,20 +556,29 @@
     return obj;
   }
 
-  async function cloudSave(all){
-    if(!CURRENT_UID) return;
+async function cloudSave(all){
+  if(!CURRENT_UID) return;
 
-    const cur = await colEntries().get();
-    const del = db.batch();
-    cur.forEach(doc=> del.delete(doc.ref));
-    await del.commit();
+  const localCount = Array.isArray(all) ? all.length : 0;
+  const cloudSnap = await colEntries().get();
+  const cloudCount = cloudSnap.size;
 
-    const batch = db.batch();
-    for(const it of all){
-      batch.set(colEntries().doc(it.id), it);
-    }
-    await batch.commit();
+  // 防呆：本機空、雲端有資料時，不准把雲端洗空
+  if(localCount === 0 && cloudCount > 0){
+    alert("安全保護：本機明細是空的，但雲端有資料，已停止覆蓋。");
+    throw new Error("Blocked empty local data from overwriting cloud entries.");
   }
+
+  const batch = db.batch();
+
+  // 只新增/更新，不先刪光
+  for(const it of all){
+    if(!it || !it.id) continue;
+    batch.set(colEntries().doc(it.id), it, { merge:true });
+  }
+
+  await batch.commit();
+}
 
   async function cloudSaveInitials(obj){
     if(!CURRENT_UID) return;
