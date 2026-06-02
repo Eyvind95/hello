@@ -621,18 +621,22 @@ async function loadUnified(){
   return { list: loadLocal(), initials: loadInitialsLocal() };
 }
 
-  async function saveUnified(){
-    if(CURRENT_UID){
-      try{
-        await Promise.all([cloudSave(entries), cloudSaveInitials(initials)]);
-        return;
-      }catch(e){
-        alert("雲端儲存失敗，資料先留在本機");
-      }
-    }
-    saveLocal(entries);
-    saveInitialsLocal(initials);
+async function saveUnified(){
+
+  // 保留上一版
+  localStorage.setItem(
+    "ledgerEntries_prev",
+    localStorage.getItem("ledgerEntries_v1") || "[]"
+  );
+
+  saveLocal(entries);
+  saveInitialsLocal(initials);
+
+  if(CURRENT_UID){
+    await cloudSave(entries);
+    await cloudSaveInitials(initials);
   }
+}
 
   /* ============== 狀態與初始化 ============== */
   let entries = [];
