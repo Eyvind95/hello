@@ -1246,10 +1246,7 @@ function buildWeeksOfMonth(y, m){ // m:1~12
     const endOfToday = new Date(todayLocal);
     endOfToday.setHours(23,59,59,999);
 
-    const recentItems = monthItems.filter(it => {
-      const d = toDate(it.date);
-      return (d >= sevenDaysAgo && d <= endOfToday) || d > endOfToday;
-    });
+    const recentItems = monthItems;
 
     // 明細表（近 7 天 + 未來）
     const tbody = $("#tbody");
