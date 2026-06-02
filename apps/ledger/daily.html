@@ -1156,8 +1156,11 @@ await refreshAndRenderOnce();
     try{
       if (user){
         const cloud = await cloudLoad();
-        const merged = deepMergeDefaults(defaultState(), cloud || STATE || {});
-        STATE = merged;
+　　　if (cloud && Object.keys(cloud).length > 0){
+  　　　STATE = deepMergeDefaults(defaultState(), cloud);
+　　　}else{
+  　　　STATE = deepMergeDefaults(defaultState(), STATE || loadLocal() || {});
+}
         if (applyHsrDelayIfNeeded(STATE)) {
   saveLocal(STATE);
 }
