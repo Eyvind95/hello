@@ -559,19 +559,29 @@
 async function cloudSave(all){
   if(!CURRENT_UID) return;
 
-  const localCount = Array.isArray(all) ? all.length : 0;
+  if(!Array.isArray(all)) throw new Error("entries 資料格式錯誤");
+
   const cloudSnap = await colEntries().get();
   const cloudCount = cloudSnap.size;
+  const localCount = all.length;
 
-  // 防呆：本機空、雲端有資料時，不准把雲端洗空
+  // 防止空本機洗掉雲端
   if(localCount === 0 && cloudCount > 0){
     alert("安全保護：本機明細是空的，但雲端有資料，已停止覆蓋。");
     throw new Error("Blocked empty local data from overwriting cloud entries.");
   }
 
+  const localIds = new Set(all.map(it => it.id).filter(Boolean));
   const batch = db.batch();
 
-  // 只新增/更新，不先刪光
+  // 刪除：雲端有、本機沒有的資料
+  cloudSnap.forEach(doc => {
+    if(!localIds.has(doc.id)){
+      batch.delete(doc.ref);
+    }
+  });
+
+  // 新增 / 更新
   for(const it of all){
     if(!it || !it.id) continue;
     batch.set(colEntries().doc(it.id), it, { merge:true });
