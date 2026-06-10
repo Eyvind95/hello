@@ -141,7 +141,7 @@ input,select{
   <div class="label">手動補時間</div>
   <input id="manualMin" type="number" min="1" max="90" placeholder="輸入要加幾分鐘，例如 20">
   <button id="manualBtn" class="manual">手動加入今日時間</button>
-  <div class="small">會加到目前選擇的科目，一樣受每日 90 分鐘限制。</div>
+  <div class="small">平常月份受每日 90 分鐘限制；期中、期末考月沒有每日上限。</div>
 </div>
 
 <div class="card">
@@ -1059,26 +1059,43 @@ function render(){
 
   let msg="";
 
-  if(weekKey==="before-start"){
-    msg="現在還不會開始算，等到 2026/5/18 才正式開始。";
-  }else if(vacationInvalid){
-    msg="本週屬於寒暑假 / 無效月，剩餘時間不會結轉。";
-  }else if(rangeInvalid){
-    msg="本週碰到額外無效日期，剩餘時間不會結轉。";
-  }else if(data.invalidWeeks[weekKey]){
-    msg="本週已作廢，剩餘時間不會結轉到下週。";
-  }else if(todayDone>=DAILY_LIMIT){
-    msg="今天已經記滿 1.5 小時了，可以休息，超過也不會再算。";
-  }else if(weekLeft===0){
-    msg="本週目標已完成。";
-  }else{
-  　const todayLimit = getDailyLimitForDate(new Date());
+if(weekKey==="before-start"){
+  msg="現在還不會開始算，等到 2026/5/18 才正式開始。";
 
-  　if(todayLimit === Infinity){
-    　msg = "考試月份，今天沒有記錄上限。";
-  　}else{
-    　msg = `今天還能記 ${formatMin(todayLimit-todayDone)}。`;
-  　}
+}else if(vacationInvalid){
+  msg="本週屬於寒暑假 / 無效月，剩餘時間不會結轉。";
+
+}else if(rangeInvalid){
+  msg="本週碰到額外無效日期，剩餘時間不會結轉。";
+
+}else if(data.invalidWeeks[weekKey]){
+  msg="本週已作廢，剩餘時間不會結轉到下週。";
+
+}else{
+
+  const todayLimit = getDailyLimitForDate(new Date());
+
+  if(todayLimit === Infinity){
+
+    if(weekLeft === 0){
+      msg = "本週目標已完成。";
+    }else{
+      msg = "考試月份，今天沒有記錄上限。";
+    }
+
+  }else if(todayDone >= todayLimit){
+
+    msg = "今天已經記滿 1.5 小時了，可以休息，超過也不會再算。";
+
+  }else if(weekLeft === 0){
+
+    msg = "本週目標已完成。";
+
+  }else{
+
+    msg = `今天還能記 ${formatMin(todayLimit - todayDone)}。`;
+
+  }
 }
 
   $("message").textContent=msg;
