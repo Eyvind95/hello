@@ -48,6 +48,7 @@ h1{font-size:30px;margin:10px 0 6px}
 .label{color:#9ca3af}
 .progress-wrap{width:100%;height:14px;background:#374151;border-radius:999px;overflow:hidden;margin-top:12px}
 .progress{height:100%;width:0%;background:linear-gradient(90deg,#38bdf8,#22c55e);border-radius:999px;transition:.3s}
+.rewardbar{background:linear-gradient(90deg,#facc15,#fb923c)}
 button{
   width:100%;border:0;border-radius:18px;padding:16px;margin-top:10px;
   font-size:18px;font-weight:700;color:white;cursor:pointer;
@@ -138,10 +139,21 @@ input,select{
 </div>
 
 <div class="card">
+  <div class="label">獎勵條</div>
+  <div class="row"><span class="label">本週獎勵進度</span><span id="rewardNow">0 分鐘</span></div>
+  <div class="row"><span class="label">獎勵門檻</span><span id="rewardNeed">0 分鐘</span></div>
+  <div class="row"><span class="label">本月獎勵</span><span id="rewardMonth">未使用</span></div>
+  <div class="row"><span class="label">待套用獎勵</span><span id="pendingReward">無</span></div>
+  <div class="row"><span class="label">本週折抵</span><span id="rewardDiscount">0 分鐘</span></div>
+  <div class="progress-wrap"><div id="rewardProgress" class="progress rewardbar"></div></div>
+  <div id="rewardMessage" class="small"></div>
+</div>
+
+<div class="card">
   <div class="label">手動補時間</div>
-  <input id="manualMin" type="number" min="1" max="90" placeholder="輸入要加幾分鐘，例如 20">
+  <input id="manualMin" type="number" min="1" placeholder="輸入要加幾分鐘，例如 20">
   <button id="manualBtn" class="manual">手動加入今日時間</button>
-  <div class="small">平常月份受每日 90 分鐘限制；期中、期末考月沒有每日上限。</div>
+  <div class="small">平常月份正式紀錄每日最多 90 分鐘，超過會進獎勵條；期中、期末考月沒有每日上限。</div>
 </div>
 
 <div class="card">
@@ -191,7 +203,7 @@ input,select{
   <button id="resetBtn" class="reset">重置全部資料</button>
   <div class="small">
     第一週從 2026/5/18 開始。<br>
-    每天最多只算 90 分鐘。<br>
+    作廢週不會把剩餘時間加到下週。<br>
     登入後會同步到 Firestore：studyTimer / UID。
   </div>
 </div>
@@ -203,10 +215,14 @@ const START_DATE="2026-05-18";
 const NORMAL_WEEK_GOAL=330;
 const EXAM_WEEK_GOAL=720;
 const DAILY_LIMIT=90;
-const STORAGE_KEY="study_timer_data_v3";
+const NORMAL_REWARD_THRESHOLD=60;
+const NORMAL_REWARD_DISCOUNT=90;
+const EXAM_REWARD_THRESHOLD=120;
+const EXAM_REWARD_DISCOUNT=150;
+const STORAGE_KEY="study_timer_data_v4";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI",
+  apiKey: "請貼你 Firebase Console 正確的 apiKey",
   authDomain: "eyvind95-182f0.firebaseapp.com",
   projectId: "eyvind95-182f0",
   storageBucket: "eyvind95-182f0.firebasestorage.app",
@@ -242,7 +258,11 @@ function defaultData(){
     settledWeeks:{},
     invalidWeeks:{},
     invalidRanges:[],
-    monthModes:{}
+    monthModes:{},
+    usedRewardMonths:{},
+    pendingReward:null,
+    rewardDiscounts:{},
+    appliedRewards:{}
   };
 }
 
@@ -254,6 +274,10 @@ function normalizeData(obj){
   if(!obj.invalidWeeks)obj.invalidWeeks={};
   if(!obj.invalidRanges)obj.invalidRanges=[];
   if(!obj.monthModes)obj.monthModes={};
+  if(!obj.usedRewardMonths)obj.usedRewardMonths={};
+  if(!obj.rewardDiscounts)obj.rewardDiscounts={};
+  if(!obj.appliedRewards)obj.appliedRewards={};
+  if(!("pendingReward" in obj))obj.pendingReward=null;
   if(typeof obj.carryOver!=="number")obj.carryOver=0;
   if(typeof obj.running!=="boolean")obj.running=false;
   if(!("startTime" in obj))obj.startTime=null;
@@ -274,7 +298,11 @@ function cleanForCloud(obj){
     settledWeeks:obj.settledWeeks,
     invalidWeeks:obj.invalidWeeks,
     invalidRanges:obj.invalidRanges,
-    monthModes:obj.monthModes
+    monthModes:obj.monthModes,
+    usedRewardMonths:obj.usedRewardMonths,
+    pendingReward:obj.pendingReward,
+    rewardDiscounts:obj.rewardDiscounts,
+    appliedRewards:obj.appliedRewards
   }));
 }
 
@@ -523,25 +551,33 @@ function getWeekMonthKey(weekKey){
   return monthKey(range.start);
 }
 
-function getWeekGoal(weekKey){
+function getBaseGoalForWeek(weekKey){
   const mKey=getWeekMonthKey(weekKey);
   const mode=getMonthMode(mKey);
 
   if(mode==="midterm" || mode==="final"){
-    return EXAM_WEEK_GOAL + data.carryOver;
+    return EXAM_WEEK_GOAL;
   }
 
-  return NORMAL_WEEK_GOAL + data.carryOver;
+  return NORMAL_WEEK_GOAL;
 }
-function getDailyLimitForDate(date){
-  const mode = getMonthMode(monthKey(date));
 
-  if(mode === "midterm" || mode === "final"){
+function getWeekGoal(weekKey){
+  const base=getBaseGoalForWeek(weekKey);
+  const discount=data.rewardDiscounts[weekKey] || 0;
+  return Math.max(0,base + data.carryOver - discount);
+}
+
+function getDailyLimitForDate(date){
+  const mode=getMonthMode(monthKey(date));
+
+  if(mode==="midterm" || mode==="final"){
     return Infinity;
   }
 
   return DAILY_LIMIT;
 }
+
 function getWeeklyDone(weekKey){
   const range=getWeekRangeByKey(weekKey);
   if(!range)return 0;
@@ -551,8 +587,40 @@ function getWeeklyDone(weekKey){
   for(const day in data.daily){
     const d=parseDate(day);
     if(d>=range.start&&d<=range.end){
-      const limit = getDailyLimitForDate(d);
-      total += Math.min(data.daily[day], limit);
+      const limit=getDailyLimitForDate(d);
+      total+=Math.min(data.daily[day],limit);
+    }
+  }
+
+  return total;
+}
+
+function getActualWeeklyTotal(weekKey){
+  const range=getWeekRangeByKey(weekKey);
+  if(!range)return 0;
+
+  let total=0;
+
+  for(const day in data.daily){
+    const d=parseDate(day);
+    if(d>=range.start&&d<=range.end){
+      total+=data.daily[day] || 0;
+    }
+  }
+
+  return total;
+}
+
+function getNormalDailyExcess(weekKey){
+  const range=getWeekRangeByKey(weekKey);
+  if(!range)return 0;
+
+  let total=0;
+
+  for(const day in data.daily){
+    const d=parseDate(day);
+    if(d>=range.start&&d<=range.end){
+      total+=Math.max(0,(data.daily[day]||0)-DAILY_LIMIT);
     }
   }
 
@@ -605,6 +673,90 @@ function countManualSkipsThisMonth(){
   return count;
 }
 
+function getRewardInfoForWeek(weekKey){
+  const mKey=getWeekMonthKey(weekKey);
+  const mode=getMonthMode(mKey);
+  const actual=getActualWeeklyTotal(weekKey);
+  const official=getWeeklyDone(weekKey);
+  const invalid=isWeekInvalid(weekKey);
+
+  if(invalid){
+    return {
+      type:"invalid",
+      earned:0,
+      threshold:0,
+      discount:0,
+      month:mKey,
+      text:"本週無效，不累積獎勵。"
+    };
+  }
+
+  if(mode==="midterm" || mode==="final"){
+    return {
+      type:"exam",
+      earned:Math.max(0,actual-EXAM_WEEK_GOAL),
+      threshold:EXAM_REWARD_THRESHOLD,
+      discount:EXAM_REWARD_DISCOUNT,
+      month:mKey,
+      text:"考試月：本週超過 12 小時後，超過部分進獎勵條。"
+    };
+  }
+
+  const dailyExcess=getNormalDailyExcess(weekKey);
+  const weeklyExcess=Math.max(0,official-NORMAL_WEEK_GOAL);
+
+  return {
+    type:"normal",
+    earned:dailyExcess+weeklyExcess,
+    threshold:NORMAL_REWARD_THRESHOLD,
+    discount:NORMAL_REWARD_DISCOUNT,
+    month:mKey,
+    text:"平常月：每日超過 1.5 小時，或本週超過 5.5 小時，會進獎勵條。"
+  };
+}
+
+function applyPendingRewardIfPossible(){
+  if(!data.pendingReward)return false;
+
+  const weekKey=data.currentWeek;
+
+  if(weekKey==="before-start")return false;
+  if(isWeekInvalid(weekKey))return false;
+  if(data.rewardDiscounts[weekKey])return false;
+
+  data.rewardDiscounts[weekKey]=data.pendingReward.amount;
+  data.appliedRewards[weekKey]={
+    ...data.pendingReward,
+    appliedWeek:weekKey,
+    appliedAt:new Date().toISOString()
+  };
+
+  data.pendingReward=null;
+  return true;
+}
+
+function tryCreateRewardForSettledWeek(weekKey){
+  if(isWeekInvalid(weekKey))return;
+
+  const info=getRewardInfoForWeek(weekKey);
+
+  if(info.threshold<=0)return;
+  if(info.earned<info.threshold)return;
+  if(data.usedRewardMonths[info.month])return;
+  if(data.pendingReward)return;
+
+  data.usedRewardMonths[info.month]=true;
+  data.pendingReward={
+    amount:info.discount,
+    earned:info.earned,
+    threshold:info.threshold,
+    type:info.type,
+    sourceWeek:weekKey,
+    sourceMonth:info.month,
+    createdAt:new Date().toISOString()
+  };
+}
+
 function addSubjectMinutes(day,subject,min){
   if(!data.dailySubjects[day]){
     data.dailySubjects[day]={};
@@ -628,33 +780,42 @@ function settleWeeksIfNeeded(){
 
   if(data.currentWeek==="before-start"){
     data.currentWeek=nowWeek;
+    applyPendingRewardIfPossible();
     saveData();
     return;
   }
 
   while(data.currentWeek!==nowWeek){
-    const weekGoal=getWeekGoal(data.currentWeek);
-    const done=getWeeklyDone(data.currentWeek);
+    const oldWeek=data.currentWeek;
+    const weekGoal=getWeekGoal(oldWeek);
+    const done=getWeeklyDone(oldWeek);
 
     let left=Math.max(0,weekGoal-done);
 
-    if(isWeekInvalid(data.currentWeek)){
+    if(isWeekInvalid(oldWeek)){
       left=0;
     }
 
-    data.settledWeeks[data.currentWeek]={
+    tryCreateRewardForSettledWeek(oldWeek);
+
+    data.settledWeeks[oldWeek]={
       goal:weekGoal,
       done,
       left,
-      invalid:isWeekInvalid(data.currentWeek),
-      month:getWeekMonthKey(data.currentWeek)
+      invalid:isWeekInvalid(oldWeek),
+      month:getWeekMonthKey(oldWeek),
+      reward:getRewardInfoForWeek(oldWeek)
     };
 
     data.carryOver=left;
 
-    const index=Number(data.currentWeek.replace("week-",""));
+    const index=Number(oldWeek.replace("week-",""));
     data.currentWeek=`week-${index+1}`;
+
+    applyPendingRewardIfPossible();
   }
+
+  applyPendingRewardIfPossible();
 
   saveData();
 }
@@ -664,16 +825,6 @@ function startTimer(){
     alert("還沒到開始日，第一週從 2026/5/18 開始。");
     return;
   }
-
-  const todayKey=getTodayKey();
-  const todayDone=data.daily[todayKey]||0;
-
-const todayLimit = getDailyLimitForDate(new Date());
-
-if(todayDone >= todayLimit){
-  alert("今天已經記滿 90 分鐘了。");
-  return;
-}
 
   if(data.running)return;
 
@@ -691,11 +842,7 @@ function stopTimer(){
   const todayKey=getTodayKey();
   const elapsedMin=Math.floor((Date.now()-data.startTime)/60000);
   const oldToday=data.daily[todayKey]||0;
-  const todayLimit = getDailyLimitForDate(new Date());
-  const canAdd = todayLimit === Infinity
-    ? Infinity
-    : Math.max(0, todayLimit - oldToday);
-  const realAdd=Math.min(elapsedMin,canAdd);
+  const realAdd=Math.max(0,elapsedMin);
 
   const subject=data.runningSubject || $("subjectSelect").value || "其他";
 
@@ -713,8 +860,6 @@ function stopTimer(){
 
   if(elapsedMin<=0){
     alert("這次不到 1 分鐘，所以沒有記入。");
-  }else if(realAdd<elapsedMin){
-    alert("今天最多只能記 90 分鐘，超過的部分沒有算進去。");
   }
 
   render();
@@ -735,30 +880,14 @@ function manualAdd(){
 
   const todayKey=getTodayKey();
   const oldToday=data.daily[todayKey]||0;
-  const todayLimit = getDailyLimitForDate(new Date());
-  const canAdd = todayLimit === Infinity
-    ? Infinity
-    : Math.max(0, todayLimit - oldToday);
-
-  if(canAdd<=0){
-    alert("今天已經記滿 90 分鐘了。");
-    return;
-  }
-
-  const realAdd=Math.min(n,canAdd);
   const subject=$("subjectSelect").value || "其他";
 
-  data.daily[todayKey]=oldToday+realAdd;
-  addSubjectMinutes(todayKey,subject,realAdd);
+  data.daily[todayKey]=oldToday+n;
+  addSubjectMinutes(todayKey,subject,n);
 
   $("manualMin").value="";
 
   saveData();
-
-  if(realAdd<n && todayLimit !== Infinity){
-    alert(`今天最多 90 分鐘，所以只加入 ${realAdd} 分鐘。`);
-  }
-
   render();
 }
 
@@ -998,6 +1127,40 @@ function renderMonthModes(){
   $("modeList").innerHTML=html;
 }
 
+function renderReward(){
+  const weekKey=getWeekKey(new Date());
+  const info=getRewardInfoForWeek(weekKey);
+  const nowMonth=monthKey(new Date());
+  const used=!!data.usedRewardMonths[nowMonth];
+  const pending=data.pendingReward;
+  const discount=data.rewardDiscounts[weekKey] || 0;
+
+  const percent=info.threshold>0
+    ? Math.min(100,(info.earned/info.threshold)*100)
+    : 0;
+
+  $("rewardNow").textContent=info.threshold>0 ? formatMin(info.earned) : "無";
+  $("rewardNeed").textContent=info.threshold>0 ? formatMin(info.threshold) : "無";
+  $("rewardMonth").textContent=used ? "已使用" : "未使用";
+  $("pendingReward").textContent=pending ? `待折抵 ${formatMin(pending.amount)}` : "無";
+  $("rewardDiscount").textContent=formatMin(discount);
+  $("rewardProgress").style.width=percent+"%";
+
+  let msg=info.text;
+
+  if(used){
+    msg+=" 本月獎勵已使用，這個月不會再產生新獎勵。";
+  }else if(pending){
+    msg+=` 已有待套用獎勵：${formatMin(pending.amount)}，會自動套用到下一個有效週。`;
+  }else if(info.threshold>0 && info.earned>=info.threshold){
+    msg+=` 已達獎勵門檻，週結算後會產生下週折抵。`;
+  }else if(info.threshold>0){
+    msg+=` 還差 ${formatMin(info.threshold-info.earned)} 達成獎勵。`;
+  }
+
+  $("rewardMessage").textContent=msg;
+}
+
 function render(){
   settleWeeksIfNeeded();
 
@@ -1006,6 +1169,8 @@ function render(){
   const nowMonth=monthKey(new Date());
 
   const todayDone=data.daily[todayKey]||0;
+  const todayLimit=getDailyLimitForDate(new Date());
+
   const weekGoal=getWeekGoal(weekKey);
   const weekDone=getWeeklyDone(weekKey);
   const invalid=isWeekInvalid(weekKey);
@@ -1039,11 +1204,12 @@ function render(){
   $("weekGoal").textContent=formatMin(weekGoal);
   $("weekDone").textContent=formatMin(weekDone);
   $("weekLeft").textContent=formatMin(weekLeft);
-  const todayLimit = getDailyLimitForDate(new Date());
+
   $("todayDone").textContent =
-    todayLimit === Infinity
-    　? `${formatMin(todayDone)} / 無上限`
-    　: `${formatMin(todayDone)} / ${formatMin(todayLimit)}`;
+    todayLimit===Infinity
+      ? `${formatMin(todayDone)} / 無上限`
+      : `${formatMin(todayDone)} / ${formatMin(todayLimit)}`;
+
   $("carryOver").textContent=formatMin(data.carryOver);
 
   $("weekInvalid").textContent=
@@ -1059,47 +1225,46 @@ function render(){
 
   let msg="";
 
-if(weekKey==="before-start"){
-  msg="現在還不會開始算，等到 2026/5/18 才正式開始。";
+  if(weekKey==="before-start"){
+    msg="現在還不會開始算，等到 2026/5/18 才正式開始。";
 
-}else if(vacationInvalid){
-  msg="本週屬於寒暑假 / 無效月，剩餘時間不會結轉。";
+  }else if(vacationInvalid){
+    msg="本週屬於寒暑假 / 無效月，剩餘時間不會結轉。";
 
-}else if(rangeInvalid){
-  msg="本週碰到額外無效日期，剩餘時間不會結轉。";
+  }else if(rangeInvalid){
+    msg="本週碰到額外無效日期，剩餘時間不會結轉。";
 
-}else if(data.invalidWeeks[weekKey]){
-  msg="本週已作廢，剩餘時間不會結轉到下週。";
-
-}else{
-
-  const todayLimit = getDailyLimitForDate(new Date());
-
-  if(todayLimit === Infinity){
-
-    if(weekLeft === 0){
-      msg = "本週目標已完成。";
-    }else{
-      msg = "考試月份，今天沒有記錄上限。";
-    }
-
-  }else if(todayDone >= todayLimit){
-
-    msg = "今天已經記滿 1.5 小時了，可以休息，超過也不會再算。";
-
-  }else if(weekLeft === 0){
-
-    msg = "本週目標已完成。";
+  }else if(data.invalidWeeks[weekKey]){
+    msg="本週已作廢，剩餘時間不會結轉到下週。";
 
   }else{
 
-    msg = `今天還能記 ${formatMin(todayLimit - todayDone)}。`;
+    if(todayLimit===Infinity){
 
+      if(weekLeft===0){
+        msg="本週目標已完成。";
+      }else{
+        msg="考試月份，今天沒有記錄上限。";
+      }
+
+    }else if(weekLeft===0){
+
+      msg="本週目標已完成。";
+
+    }else if(todayDone>=todayLimit){
+
+      msg="今天正式紀錄已滿 1.5 小時，超過的時間會進獎勵條。";
+
+    }else{
+
+      msg=`今天正式紀錄還能記 ${formatMin(todayLimit-todayDone)}，超過後會進獎勵條。`;
+
+    }
   }
-}
 
   $("message").textContent=msg;
 
+  renderReward();
   renderWeekList();
   renderSubjectList();
   renderRanges();
