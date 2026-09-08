@@ -754,132 +754,201 @@ if(dateEl && monthPicker){
     }
   }
 
-  /* ============== 事件：新增/刪除/匯出/匯入/清空 ============== */
-  if($("#entryForm")){
-    $("#entryForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const date = $("#date")?.value;
-      const type = $("#type")?.value; // income | expense
-      const amountStr = $("#amount")?.value?.trim() || "";
-      const category = (type === "expense") ? ($("#category")?.value || "") : "";
+/* ============== 事件：新增/刪除/匯出/匯入/清空 ============== */
+if($("#entryForm")){
+  $("#entryForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-      let note = "";
-      const noteSelect = $("#noteSelect");
-      const noteInput = $("#noteInput");
-      if(noteSelect){
-        if(noteSelect.value === "custom") note = (noteInput?.value || "").trim();
-        else note = noteSelect.value || "";
+    const date = $("#date")?.value;
+    const type = $("#type")?.value; // income | expense
+    const amountStr = $("#amount")?.value?.trim() || "";
+    const category = (type === "expense") ? ($("#category")?.value || "") : "";
+
+    let note = "";
+    const noteSelect = $("#noteSelect");
+    const noteInput = $("#noteInput");
+
+    if(noteSelect){
+      if(noteSelect.value === "custom"){
+        note = (noteInput?.value || "").trim();
+      }else{
+        note = noteSelect.value || "";
       }
+    }
 
-      if(!date || !type || !amountStr) return;
+    if(!date || !type || !amountStr) return;
 
-      const amount = parseFloat(amountStr);
-      if(isNaN(amount) || amount <= 0){
-        alert("請輸入正確金額（> 0）");
-        return;
-      }
+    const amount = parseFloat(amountStr);
 
-      const entry = {
-        id: crypto.randomUUID(),
-        date,
-        type,
-        amount: round2(amount),
-        category,
-        note,
-        createdAt: Date.now()
-      };
+    if(isNaN(amount) || amount <= 0){
+      alert("請輸入正確金額（> 0）");
+      return;
+    }
 
-entries.push(entry);
+    const entry = {
+      id: crypto.randomUUID(),
+      date,
+      type,
+      amount: round2(amount),
+      category,
+      note,
+      createdAt: Date.now()
+    };
 
-// 先存本機，避免網路讓「加入」卡死
-saveLocal(entries);
-saveInitialsLocal(initials);
+    entries.push(entry);
 
-// 立即更新畫面
-if($("#amount")) $("#amount").value = "";
-if(noteInput) noteInput.value = "";
-if(noteSelect) noteSelect.value = "";
+    // 先存本機，避免網路讓「加入」卡住
+    saveLocal(entries);
+    saveInitialsLocal(initials);
 
-renderWithEnsure();
+    // 清空表單
+    if($("#amount")) $("#amount").value = "";
+    if(noteInput) noteInput.value = "";
+    if(noteSelect) noteSelect.value = "";
 
-// 雲端改成背景同步，不阻塞加入操作
-saveUnified().catch(err => {
-  console.error("雲端同步失敗：", err);
-});
-  }
-
-  async function removeEntry(id){
-    if(!confirm("確定刪除此筆？")) return;
-    entries = entries.filter(e => e.id !== id);
-    await saveUnified();
+    // 立即更新畫面
     renderWithEnsure();
-  }
 
-  if($("#exportBtn")){
-    $("#exportBtn").addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify({entries, initials}, null, 2)], {type:"application/json"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "ledger_backup.json";
-      a.click();
-      URL.revokeObjectURL(url);
+    // 背景同步雲端，不阻塞加入操作
+    saveUnified().catch(err => {
+      console.error("雲端同步失敗：", err);
     });
-  }
+  });
+}
 
-  if($("#importBtn") && $("#importFile")){
-    $("#importBtn").addEventListener("click", () => $("#importFile").click());
-    $("#importFile").addEventListener("change", async (e) => {
-      const file = e.target.files[0];
-      if(!file) return;
-      try{
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if(!data || !Array.isArray(data.entries) || typeof data.initials !== "object")
-          throw new Error("格式錯誤");
-        for(const it of data.entries){
-          if(!it.id || !it.date || !it.type || !it.amount)
-            throw new Error("明細缺少必要欄位");
+async function removeEntry(id){
+  if(!confirm("確定刪除此筆？")) return;
+
+  entries = entries.filter(e => e.id !== id);
+
+  // 先存本機
+  saveLocal(entries);
+  saveInitialsLocal(initials);
+
+  // 立即更新畫面
+  renderWithEnsure();
+
+  // 背景同步雲端
+  saveUnified().catch(err => {
+    console.error("雲端刪除同步失敗：", err);
+  });
+}
+
+if($("#exportBtn")){
+  $("#exportBtn").addEventListener("click", () => {
+    const blob = new Blob(
+      [JSON.stringify({ entries, initials }, null, 2)],
+      { type:"application/json" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = "ledger_backup.json";
+    a.click();
+
+    URL.revokeObjectURL(url);
+  });
+}
+
+if($("#importBtn") && $("#importFile")){
+  $("#importBtn").addEventListener("click", () => {
+    $("#importFile").click();
+  });
+
+  $("#importFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+
+    try{
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if(
+        !data ||
+        !Array.isArray(data.entries) ||
+        typeof data.initials !== "object"
+      ){
+        throw new Error("格式錯誤");
+      }
+
+      for(const it of data.entries){
+        if(!it.id || !it.date || !it.type || !it.amount){
+          throw new Error("明細缺少必要欄位");
         }
-        entries  = data.entries;
-        initials = data.initials;
+      }
+
+      entries = data.entries;
+      initials = data.initials;
+
+      // 先存本機
+      saveLocal(entries);
+      saveInitialsLocal(initials);
+
+      // 立即更新畫面
+      renderWithEnsure();
+
+      // 再同步雲端
+      await saveUnified();
+
+      alert("匯入完成！");
+
+    }catch(err){
+      alert("匯入失敗：" + err.message);
+    }finally{
+      e.target.value = "";
+    }
+  });
+}
+
+if($("#clearBtn")){
+  $("#clearBtn").addEventListener("click", async () => {
+    if(
+      confirm("這會刪除所有『明細＋期初』資料（不可復原）。確定？")
+    ){
+      entries = [];
+      initials = {};
+
+      // 先存本機
+      saveLocal(entries);
+      saveInitialsLocal(initials);
+
+      // 立即更新畫面
+      renderWithEnsure();
+
+      // 再同步雲端
+      try{
         await saveUnified();
-        alert("匯入完成！");
-        renderWithEnsure();
       }catch(err){
-        alert("匯入失敗：" + err.message);
-      }finally{
-        e.target.value = "";
+        console.error("清空資料同步失敗：", err);
       }
-    });
-  }
+    }
+  });
+}
 
-  if($("#clearBtn")){
-    $("#clearBtn").addEventListener("click", async () => {
-      if(confirm("這會刪除所有『明細＋期初』資料（不可復原）。確定？")){
-        entries = [];
-        initials = {};
-        await saveUnified();
-        renderWithEnsure();
-      }
-    });
-  }
+if($("#type") && $("#category")){
+  $("#type").addEventListener("change", () => {
+    $("#category").style.display =
+      ($("#type").value === "income") ? "none" : "block";
+  });
 
-  if($("#type") && $("#category")){
-    $("#type").addEventListener("change", () => {
-      $("#category").style.display = ($("#type").value === "income") ? "none" : "block";
-    });
-    $("#type").dispatchEvent(new Event("change"));
-  }
+  $("#type").dispatchEvent(new Event("change"));
+}
 
-  if($("#noteSelect") && $("#noteInput")){
-    $("#noteSelect").addEventListener("change", () => {
-      const sel = $("#noteSelect").value;
-      const input = $("#noteInput");
-      if(sel === "custom") input.style.display = "block";
-      else { input.style.display = "none"; input.value = ""; }
-    });
-  }
+if($("#noteSelect") && $("#noteInput")){
+  $("#noteSelect").addEventListener("change", () => {
+    const sel = $("#noteSelect").value;
+    const input = $("#noteInput");
+
+    if(sel === "custom"){
+      input.style.display = "block";
+    }else{
+      input.style.display = "none";
+      input.value = "";
+    }
+  });
+}
 
   /* ============== 期初邏輯：設定、承接、顯示 ============== */
   function ensureInitialForMonth(y, m){
