@@ -789,15 +789,23 @@ if(dateEl && monthPicker){
         createdAt: Date.now()
       };
 
-      entries.push(entry);
-      await saveUnified();
+entries.push(entry);
 
-      if($("#amount")) $("#amount").value = "";
-      if(noteInput) noteInput.value = "";
-      if(noteSelect) noteSelect.value = "";
+// 先存本機，避免網路讓「加入」卡死
+saveLocal(entries);
+saveInitialsLocal(initials);
 
-      renderWithEnsure();
-    });
+// 立即更新畫面
+if($("#amount")) $("#amount").value = "";
+if(noteInput) noteInput.value = "";
+if(noteSelect) noteSelect.value = "";
+
+renderWithEnsure();
+
+// 雲端改成背景同步，不阻塞加入操作
+saveUnified().catch(err => {
+  console.error("雲端同步失敗：", err);
+});
   }
 
   async function removeEntry(id){
