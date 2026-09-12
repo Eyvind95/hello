@@ -584,6 +584,12 @@ async function cloudSave(all){
   // 新增 / 更新
   for(const it of all){
     if(!it || !it.id) continue;
+
+    console.log(
+      "③ 準備寫入 Firestore =",
+      JSON.stringify(it)
+    );
+
     batch.set(colEntries().doc(it.id), it, { merge:true });
   }
 
@@ -796,6 +802,8 @@ if($("#entryForm")){
     };
 
     entries.push(entry);
+    console.log("① 新增當下 entry =", JSON.stringify(entry));
+    console.log("② push 後 entries 最後一筆 =", JSON.stringify(entries[entries.length - 1]));
 
     // 先存本機，避免網路讓「加入」卡住
     saveLocal(entries);
