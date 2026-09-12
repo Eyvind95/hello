@@ -609,32 +609,86 @@ async function cloudSave(all){
       batch.set(colInitials().doc(k), { amount: Number(v)||0 });
     }
     await batch.commit();
+    console.log("④ Firestore 寫入成功");
   }
 
   /* ============== 統一存取：雲端優先，失敗退本機 ============== */
+
 async function loadUnified(){
-  try{
-    const localList = loadLocal();
-    const localIni  = loadInitialsLocal();
+  const localList = loadLocal();
+  const localIni  = loadInitialsLocal();
 
-    if(CURRENT_UID){
-      const [list, ini] = await Promise.all([cloudLoad(), cloudLoadInitials()]);
+  if(CURRENT_UID){
+    try{
+      const [cloudList, cloudIni] =
+        await Promise.all([cloudLoad(), cloudLoadInitials()]);
 
-      // 防止空雲端覆蓋本機資料
-      if(list.length === 0 && localList.length > 0){
-        alert("雲端明細是空的，已保留本機資料，沒有覆蓋。");
-        return { list: localList, initials: Object.keys(localIni).length ? localIni : ini };
+      // 雲端 + 本機合併，避免雲端缺資料時把本機資料洗掉
+      const map = new Map();
+
+      // 先放雲端
+      for(const it of cloudList){
+        if(!it || !it.id) continue;
+        map.set(it.id, it);
       }
 
-      saveLocal(list);
-      saveInitialsLocal(ini);
-      return { list, initials: ini };
+      // 再補本機
+      for(const it of localList){
+        if(!it || !it.id) continue;
+
+        const cloudItem = map.get(it.id);
+
+        if(!cloudItem){
+          // 雲端沒有，本機有 → 保留本機
+          map.set(it.id, it);
+        }else{
+          // 同一筆資料時，優先保留 category 有值的版本
+          const localCat = (it.category || "").trim();
+          const cloudCat = (cloudItem.category || "").trim();
+
+          if(localCat && !cloudCat){
+            map.set(it.id, it);
+          }
+        }
+      }
+
+      const merged = Array.from(map.values());
+
+      merged.sort((a,b)=>
+        (a.date === b.date
+          ? (a.createdAt || 0) - (b.createdAt || 0)
+          : a.date.localeCompare(b.date))
+      );
+
+      // initials 也合併，本機優先
+      const mergedIni = {
+        ...cloudIni,
+        ...localIni
+      };
+
+      saveLocal(merged);
+      saveInitialsLocal(mergedIni);
+
+      return {
+        list: merged,
+        initials: mergedIni
+      };
+
+    }catch(e){
+      console.error("雲端讀取失敗：", e);
+
+      // 雲端出錯時，不碰本機
+      return {
+        list: localList,
+        initials: localIni
+      };
     }
-  }catch(e){
-    alert("雲端讀取失敗，改用本機資料");
   }
 
-  return { list: loadLocal(), initials: loadInitialsLocal() };
+  return {
+    list: localList,
+    initials: localIni
+  };
 }
 
 async function saveUnified(){
@@ -653,7 +707,6 @@ async function saveUnified(){
     await cloudSaveInitials(initials);
   }
 }
-
   /* ============== 狀態與初始化 ============== */
   let entries = [];
   let initials = {};
