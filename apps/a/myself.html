@@ -1443,14 +1443,6 @@ function buildWeeksOfMonth(y, m){ // m:1~12
     }
   })();
 
-  // 初次渲染（尚未登入也能看本機）
-  (async function boot(){
-    const loaded = await loadUnified();
-    entries = loaded.list;
-    initials = loaded.initials;
-    renderWithEnsure();
-  })();
-
 })();
 </script>
 
