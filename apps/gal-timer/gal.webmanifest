@@ -1,20 +1,20 @@
 {
   "name": "Gal 之心純度鑑定系統",
   "short_name": "Gal 計時器",
-  "start_url": "/hello/apps/gal-timer/gal.html",
-  "scope": "/hello/apps/gal-timer/",
+  "start_url": "https://eyvind95.github.io/hello/apps/gal-timer/gal.html",
+  "scope": "https://eyvind95.github.io/hello/apps/gal-timer/",
   "display": "standalone",
   "background_color": "#171025",
   "theme_color": "#171025",
   "icons": [
     {
-      "src": "/hello/apps/ledger/6.png",
+      "src": "https://eyvind95.github.io/hello/apps/ledger/6.png",
       "sizes": "192x192",
       "type": "image/png"
       "purpose": "any"
     },
     {
-      "src": "/hello/apps/ledger/6.png",
+      "src": "https://eyvind95.github.io/hello/apps/ledger/6.png",
       "sizes": "512x512",
       "type": "image/png"
       "purpose": "any"
