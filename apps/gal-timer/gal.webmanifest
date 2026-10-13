@@ -1,8 +1,9 @@
 {
+  "id": "/hello/apps/gal-timer/gal-heart-v2",
   "name": "Gal 之心純度鑑定系統",
   "short_name": "Gal 計時器",
-  "start_url": "https://eyvind95.github.io/hello/apps/gal-timer/gal.html",
-  "scope": "https://eyvind95.github.io/hello/apps/gal-timer/",
+  "start_url": "/hello/apps/gal-timer/gal.html?pwa=v2",
+  "scope": "/hello/apps/gal-timer/",
   "display": "standalone",
   "background_color": "#171025",
   "theme_color": "#171025",
