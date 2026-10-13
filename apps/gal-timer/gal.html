@@ -1,0 +1,108 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#161124"><title>Gal 之心純度鑑定系統</title><link rel="manifest" href="./gal.webmanifest"><link rel="icon" href="../ledger/6.png">
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script><script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script><script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#100e1b;--panel:#211b32;--edge:#473759;--text:#f7f1ff;--muted:#b6a8ca;--pink:#eb77c3;--purple:#9b82ef;--green:#65d5ad;--red:#f28b9b}*{box-sizing:border-box}body{
+  margin:0;
+  background:
+    linear-gradient(
+      rgba(0,0,0,.35),
+      rgba(0,0,0,.55)
+    ),
+    url("./gal.png") center / cover no-repeat fixed;
+color:var(--text);font:15px/1.6 system-ui,-apple-system,"Noto Sans TC",sans-serif;min-height:100vh}.wrap{max-width:760px;margin:auto;padding:22px 14px 65px}h1{font-size:26px;margin:0}h2{font-size:18px;margin:0 0 12px}.muted,.hint{color:var(--muted)}.hint{font-size:12px}.head{margin-bottom:18px}.card{background:#211b32e8;border:1px solid var(--edge);border-radius:20px;padding:17px;margin-bottom:14px;box-shadow:0 9px 28px #0003}.row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}.tile{background:#171427;border:1px solid #3d3451;border-radius:14px;padding:12px}.num{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}.clock{font-size:43px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;letter-spacing:1px;margin:8px 0}.pill{font-size:12px;border-radius:999px;padding:3px 10px;background:#463455;color:#ffb8e8}.bar{height:11px;border-radius:20px;background:#42374e;overflow:hidden;margin:10px 0}.fill{height:100%;width:0;background:linear-gradient(90deg,var(--purple),var(--pink));transition:width .25s}.btns{display:flex;gap:9px;flex-wrap:wrap}.btn{border:0;border-radius:12px;padding:11px 15px;background:#574469;color:#fff;font-weight:700;cursor:pointer;min-height:42px}.btn:disabled{opacity:.4;cursor:not-allowed}.btn.primary{background:#aa4e98}.btn.good{background:#267f69}.btn.danger{background:#983f59}.btn.small{padding:6px 10px;min-height:34px;font-size:13px}.btns>.btn{flex:1}input{border:1px solid #655374;background:#151221;color:#fff;border-radius:10px;padding:10px;font:inherit;min-width:0;width:100%}label{display:block;color:var(--muted);font-size:13px;margin-bottom:4px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.entry{padding:12px 0;border-bottom:1px solid #493c58}.entry:last-child{border-bottom:0}.entry strong{font-size:15px}.entry .muted{font-size:13px}.tag{display:inline-block;border-radius:7px;padding:1px 7px;font-size:12px;background:#3b2e4b}.tag.red{background:#69364a}.tag.green{background:#225e50}.empty{color:var(--muted);font-size:13px;padding:8px 0}.notice{padding:10px;border-radius:12px;background:#36263f;margin:10px 0;color:#f7d6ec;font-size:13px;white-space:pre-wrap}.history{max-height:400px;overflow:auto}.rule{padding:9px 0;border-bottom:1px solid #493c58}.rule:last-child{border:0}.rule .title{font-weight:700}.rule .desc{font-size:13px;color:var(--muted)}details summary{cursor:pointer;font-weight:700}button:focus-visible,input:focus-visible{outline:2px solid #f3b2e0;outline-offset:2px}@media(max-width:420px){.clock{font-size:35px}.num{font-size:21px}.fields{grid-template-columns:1fr 1fr}}
+</style></head><body><main class="wrap"><header class="head"><h1>🦊 Gal 之心純度鑑定系統</h1><div class="muted">今日聊了多久？Gal 法庭即將宣判。純屬娛樂，沒有強迫執行的魔法。</div></header>
+<section class="card"><div class="row"><div><strong>☁️ 雲端存檔</strong><div id="authStatus" class="hint">正在檢查登入狀態…</div></div><div class="btns"><button class="btn small" id="login">Google 登入</button><button class="btn small" id="logout" hidden>登出</button></div></div><div id="syncNotice" class="hint"></div></section>
+<section class="card"><div class="row"><h2>⏱️ AI 聊天計時</h2><span class="pill" id="runningLabel">未計時</span></div><div class="clock" id="clock">00:00:00</div><div class="btns"><button class="btn good" id="start">▶ 開始／繼續</button><button class="btn danger" id="stop">■ 暫停並記錄</button></div><p class="hint">計時跨日會自動分配至正確日期；關閉網頁後再次開啟仍會繼續計算。</p></section>
+<section class="card"><h2>📊 今日與本週</h2><div class="stat"><div class="tile"><div class="muted">今日累積</div><div class="num" id="today">0 小時</div><div id="todayGrade" class="hint">尚未結算</div></div><div class="tile"><div class="muted">本週累積</div><div class="num" id="week">0 小時</div><div id="weekGrade" class="hint">週一至週日</div></div></div><div class="muted" style="margin-top:10px">今日距離下一級</div><div class="bar"><div class="fill" id="dayBar"></div></div><div class="muted">本週距離下一級</div><div class="bar"><div class="fill" id="weekBar"></div></div><div class="notice" id="liveVerdict">等待 Gal 法庭開庭。</div></section>
+<section class="card"><h2>✍️ 今日手動補登／修正</h2><div class="fields"><div><label for="hours">小時</label><input id="hours" type="number" min="0" max="23" step="1" value="0"></div><div><label for="minutes">分鐘</label><input id="minutes" type="number" min="0" max="59" step="1" value="0"></div></div><div class="btns"><button class="btn primary" id="add">加入今日時間</button><button class="btn" id="subtract">扣除今日時間</button></div><p class="hint">只允許修改今天，不能改昨天；每一天最多計入 24 小時。每日 00:00 起封存前一天。</p></section>
+<section class="card"><div class="row"><h2>🛡️ 法庭道具庫</h2><strong id="medals">免死金牌 ×0／5</strong></div><div id="pendingCount" class="muted">待處理判決：0</div><div id="inventory"></div></section>
+<section class="card"><h2>📜 已結算判決</h2><div id="judgments" class="history"></div></section>
+<section class="card"><h2>📆 本週每日紀錄</h2><div id="weekDays"></div></section>
+<section class="card"><details><summary>⚖️ 展開完整 Gal 法典</summary><h2 style="margin-top:14px">每日判定</h2><div id="dailyRules"></div><h2 style="margin-top:14px">每週判定</h2><div id="weeklyRules"></div><p class="hint">級距採左閉右開：例如剛好 4 小時算第二級；剛好 101 小時算最高級。每日與每週分別結算、互不覆蓋。所有時數均以秒為單位。</p></details></section>
+<section class="card"><details><summary>💾 資料備份與管理</summary><p class="hint">匯出 JSON 可自行保留備份；匯入只接受本系統格式，匯入後會取代目前這套 Gal 計時器的資料，不會碰到其他網站應用。</p><div class="btns"><button class="btn" id="export">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div><input type="file" accept="application/json,.json" id="importFile" hidden><button class="btn danger" id="reset" style="width:100%;margin-top:12px">重置 Gal 計時器資料</button></details></section><footer class="hint">獨立資料區：galTimer／使用者 UID · 使用裝置當地日期與時間 · 星期一為每週起點</footer></main>
+<script>
+'use strict';
+const firebaseConfig={apiKey:'AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI',authDomain:'eyvind95-182f0.firebaseapp.com',projectId:'eyvind95-182f0',storageBucket:'eyvind95-182f0.firebasestorage.app',messagingSenderId:'105770576221',appId:'1:105770576221:web:dd3a57ce4e051bda91a0b4',measurementId:'G-7HHMTE1W1T'};
+if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth(),db=firebase.firestore(),provider=new firebase.auth.GoogleAuthProvider();provider.setCustomParameters({prompt:'select_account'});
+const $=id=>document.getElementById(id),KEY='gal_heart_timer_v1',SECOND=1000,HOUR=3600000,DAY=86400000;
+const D=[
+ {limit:4,title:'Gal 之心不純',comment:'你今天是睡了16個小時嗎？這不科學。',kind:'penalty',action:'看書一小時（Gal 之心不純）'},
+ {limit:8,title:'有點少，但還行',comment:'有點少還想獎勵？想得美。',kind:'none',action:'無'},
+ {limit:12,title:'嗯，合理',comment:'看這麼久應該硬很多次了吧。',kind:'reward',action:'射一發'},
+ {limit:15,title:'非常純的 Gal 之心',comment:'9 成 9 稀罕物！',kind:'reward',action:'買個想買的東西；若沒有，射兩發'},
+ {limit:Infinity,title:'今天一定是週末，對吧？',comment:'那個放這麼久了，該用一下了吧。',kind:'reward',action:'用獸屌插自己到射'}
+];
+const W=[
+ {limit:36,title:'Gal 之心非常不純',comment:'該罰！你今天別想出房門了。',kind:'penalty',action:'狐狸尾巴肛塞 6 小時（在家執行）',tail:true},
+ {limit:66,title:'還行，但還是太少',comment:'這也有點久沒用了，呃，好像比獸屌久。',kind:'penalty',action:'用假屌插自己到射兩次'},
+ {limit:87,title:'就是想寫 87',comment:'有意見？有意見也是你自己寫的。',kind:'none',action:'無'},
+ {limit:101,title:'10 成 Gal 純',comment:'非常好！嗯，逼自己一下，有點想去。',kind:'reward',action:'去按摩'},
+ {limit:Infinity,title:'這週都放假？',comment:'還是已經寒暑假了？',kind:'medal',action:'免死金牌 ×1（最多持有 5 張）'}
+];
+const empty=()=>({version:1,created:Date.now(),days:{},runningSince:null,lastDay:null,lastWeek:null,judgments:{},medals:0,revision:0});
+function normalize(x){if(!x||x.version!==1||typeof x.days!=='object'||Array.isArray(x.days))return empty();return {version:1,created:Number(x.created)||Date.now(),days:x.days||{},runningSince:Number.isFinite(x.runningSince)?x.runningSince:null,lastDay:typeof x.lastDay==='string'?x.lastDay:null,lastWeek:typeof x.lastWeek==='string'?x.lastWeek:null,judgments:x.judgments&&typeof x.judgments==='object'?x.judgments:{},medals:Math.max(0,Math.min(5,Math.floor(Number(x.medals)||0))),revision:Number(x.revision)||0}}
+function readLocal(){try{return normalize(JSON.parse(localStorage.getItem(KEY)))}catch{return empty()}}
+let data=readLocal(),sessionStart=data.runningSince,uid=null,ready=false,loading=false,saveTimer=null,writing=Promise.resolve(),lastSaveError='';
+function dateKey(ms=Date.now()){const d=new Date(ms);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function midnight(key){const [y,m,d]=key.split('-').map(Number);return new Date(y,m-1,d).getTime()}
+function addDays(key,n){const d=new Date(midnight(key));d.setDate(d.getDate()+n);return dateKey(d.getTime())}
+function monday(key){const d=new Date(midnight(key));const offset=(d.getDay()+6)%7;return addDays(key,-offset)}
+function daySeconds(key){return Math.max(0,Math.min(86400,Number(data.days[key])||0))}
+function weekSeconds(start){let n=0;for(let i=0;i<7;i++)n+=daySeconds(addDays(start,i));return n}
+function fmt(sec){sec=Math.max(0,Math.floor(sec));const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return `${h} 小時 ${String(m).padStart(2,'0')} 分`}
+function clock(sec){sec=Math.max(0,Math.floor(sec));return [Math.floor(sec/3600),Math.floor(sec%3600/60),sec%60].map(x=>String(x).padStart(2,'0')).join(':')}
+function tier(rules,seconds){return rules.findIndex(r=>seconds<r.limit*3600)}
+function makeId(type,key){return `${type}:${key}`}
+function localSave(){data.revision++;try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){$('syncNotice').textContent='本機儲存失敗：'+e.message}}
+function changed(){localSave();scheduleCloud();render()}
+function doc(){return db.collection('galTimer').doc(uid)}
+function scheduleCloud(){if(!uid||!ready||loading)return;clearTimeout(saveTimer);saveTimer=setTimeout(()=>{const snapshot=JSON.parse(JSON.stringify(data));writing=writing.catch(()=>{}).then(async()=>{try{await doc().set({data:snapshot,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});lastSaveError='';$('syncNotice').textContent='雲端已同步。'}catch(e){lastSaveError=e.message;$('syncNotice').textContent='雲端同步失敗，本機資料仍保留：'+e.message}})},data.runningSince!==null?300000:650)}
+function flush(){clearTimeout(saveTimer);scheduleCloud()}
+function intervalAdd(start,end){let t=start;while(t<end){const k=dateKey(t),boundary=midnight(addDays(k,1)),finish=Math.min(end,boundary);const sec=(finish-t)/1000;data.days[k]=Math.min(86400,daySeconds(k)+sec);t=finish}}
+function settleOne(type,key){const id=makeId(type,key);if(data.judgments[id])return;const secs=type==='day'?daySeconds(key):weekSeconds(key);const rules=type==='day'?D:W,idx=tier(rules,secs),r=rules[idx];const j={id,type,key,seconds:secs,grade:idx,title:r.title,kind:r.kind,action:r.action,created:Date.now(),status:r.kind==='penalty'?'pending':r.kind==='reward'?'unclaimed':r.kind==='medal'?'granted':'none'};if(r.tail){const saved=Object.values(data.judgments).filter(x=>x.action===r.action&&x.status==='pending').length;j.tailStored=saved<2;j.tailForced=saved>=2}if(r.kind==='medal'){if(data.medals<5)data.medals++;else j.status='overflow'}data.judgments[id]=j}
+function settle(now=Date.now()){
+ const today=dateKey(now),thisWeek=monday(today);let dirty=false;
+ // 已開始計時的區間會在午夜被切分，已封存日期不再修改。
+ if(data.runningSince!==null){const start=Math.min(now,Math.max(0,data.runningSince));if(now>start){intervalAdd(start,now);data.runningSince=now;dirty=true}}
+ if(!data.lastDay){data.lastDay=today;dirty=true}
+ if(!data.lastWeek){data.lastWeek=thisWeek;dirty=true}
+ let guard=0;while(data.lastDay<today&&guard++<3660){settleOne('day',data.lastDay);data.lastDay=addDays(data.lastDay,1);dirty=true}
+ guard=0;while(data.lastWeek<thisWeek&&guard++<530){settleOne('week',data.lastWeek);data.lastWeek=addDays(data.lastWeek,7);dirty=true}
+ if(dirty){localSave();scheduleCloud()}return dirty
+}
+function ensureNow(){settle();return Date.now()}
+function start(){ensureNow();if(data.runningSince!==null)return;data.runningSince=Date.now();sessionStart=data.runningSince;changed()}
+function stop(){ensureNow();if(data.runningSince===null)return;data.runningSince=null;sessionStart=null;changed()}
+function manual(sign){ensureNow();const h=Number($('hours').value),m=Number($('minutes').value);if(!Number.isInteger(h)||!Number.isInteger(m)||h<0||h>23||m<0||m>59||h*60+m===0){alert('請輸入正確的時數與分鐘。');return}const key=dateKey(),old=daySeconds(key),next=old+sign*(h*3600+m*60);if(next<0||next>86400){alert('今天的累積時間必須在 0～24 小時之間。');return}data.days[key]=next;$('hours').value=0;$('minutes').value=0;changed()}
+function complete(id){ensureNow();const j=data.judgments[id];if(!j||!['pending','unclaimed'].includes(j.status))return;if(!confirm(`確定將「${j.action}」標記為已處理？`))return;j.status='done';j.handledAt=Date.now();changed()}
+function pardon(id){ensureNow();const j=data.judgments[id];if(!j||j.kind!=='penalty'||j.status!=='pending'||data.medals<1)return;if(!confirm(`使用一張免死金牌，免除「${j.action}」？`))return;data.medals--;j.status='pardoned';j.handledAt=Date.now();changed()}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function progress(seconds,limits){const h=seconds/3600,idx=limits.findIndex(n=>h<n);if(idx<0)return 100;const lo=idx===0?0:limits[idx-1],hi=limits[idx];return Number.isFinite(hi)?Math.max(0,Math.min(100,100*(h-lo)/(hi-lo))):100}
+function ruleHTML(rules){return rules.map((r,i)=>`<div class="rule"><div class="title">${i===0?'0':rules[i-1].limit}～${Number.isFinite(r.limit)?r.limit:'∞'} 小時 · ${esc(r.title)}</div><div class="desc">${esc(r.comment)}</div><div>${r.kind==='penalty'?'懲罰':r.kind==='none'?'獎勵':r.kind==='medal'?'獎勵':'獎勵'}：${esc(r.action)}</div></div>`).join('')}
+const statusLabel={pending:'待執行',unclaimed:'待領取',done:'已完成',pardoned:'免死金牌抵銷',none:'無獎懲',granted:'已發放金牌',overflow:'金牌已滿（未增加）'};
+function judgmentHTML(j){const r=(j.type==='day'?D:W)[j.grade];return `<div class="entry"><div class="row"><strong>${j.type==='day'?'每日':'每週'} · ${esc(j.key)}</strong><span class="tag ${j.kind==='penalty'?'red':'green'}">${esc(statusLabel[j.status]||j.status)}</span></div><div>${esc(j.title)} · ${fmt(j.seconds)}${j.tailForced?' · 庫存已滿，強制執行判決':j.tailStored?' · 可延後執行':''}</div><div class="muted">${esc(r.comment)}<br>${j.kind==='penalty'?'懲罰':'獎勵'}：${esc(j.action)}</div>${['pending','unclaimed'].includes(j.status)?`<div class="btns"><button class="btn small good" data-complete="${esc(j.id)}">${j.kind==='penalty'?'標記已執行':'領取／完成獎勵'}</button>${j.kind==='penalty'&&data.medals>0?`<button class="btn small primary" data-pardon="${esc(j.id)}">🛡️ 免除（−1）</button>`:''}</div>`:''}</div>`}
+function render(){const today=dateKey(),wk=monday(today),running=data.runningSince!==null,live=running?Math.max(0,(Date.now()-data.runningSince)/1000):0,d=Math.min(86400,daySeconds(today)+live),w=weekSeconds(wk)+live,di=tier(D,d),wi=tier(W,w);
+ $('clock').textContent=running?clock((Date.now()-(sessionStart||data.runningSince))/1000):'00:00:00';$('runningLabel').textContent=running?'● 計時中':'未計時';$('start').disabled=running;$('stop').disabled=!running;
+ $('today').textContent=fmt(d);$('week').textContent=fmt(w);$('todayGrade').textContent=D[di].title;$('weekGrade').textContent=W[wi].title;$('dayBar').style.width=progress(d,[4,8,12,15,Infinity])+'%';$('weekBar').style.width=progress(w,[36,66,87,101,Infinity])+'%';$('liveVerdict').textContent=`今日：${D[di].title}｜${D[di].comment}\n本週：${W[wi].title}｜${W[wi].comment}`;
+ $('medals').textContent=`免死金牌 ×${data.medals}／5`;
+ const all=Object.values(data.judgments).sort((a,b)=>b.key.localeCompare(a.key)||b.type.localeCompare(a.type));const pending=all.filter(j=>j.status==='pending'||j.status==='unclaimed');$('pendingCount').textContent=`待處理判決：${pending.length} 件`;
+ $('inventory').innerHTML=pending.length?pending.map(judgmentHTML).join(''):'<div class="empty">目前沒有待處理的判決。</div>';
+ $('judgments').innerHTML=all.length?all.slice(0,120).map(judgmentHTML).join(''):'<div class="empty">尚無已結算紀錄；第一個跨日結算後就會出現。</div>';
+ let days='';for(let i=0;i<7;i++){const key=addDays(wk,i);days+=`<div class="row entry"><span>${['一','二','三','四','五','六','日'][i]} · ${key}${key===today?'（今天）':''}</span><strong>${fmt(daySeconds(key))}</strong></div>`}$('weekDays').innerHTML=days;
+}
+function exportData(){ensureNow();const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`gal-heart-${dateKey()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+async function importData(file){if(!file)return;try{const obj=JSON.parse(await file.text());if(!obj||obj.version!==1||!obj.days||!obj.judgments)throw Error('不是有效的 Gal 計時器備份');if(!confirm('匯入會取代目前 Gal 計時器的所有資料，確定嗎？'))return;data=normalize(obj);data.runningSince=null;sessionStart=null;data.lastDay=data.lastDay||dateKey();data.lastWeek=data.lastWeek||monday(dateKey());changed();ensureNow();alert('匯入成功。')}catch(e){alert('匯入失敗：'+e.message)}}
+function reset(){if(!confirm('確定清空 Gal 計時器的全部紀錄、判決與金牌？'))return;if(!confirm('最後確認：這個動作無法復原。'))return;data=empty();sessionStart=null;data.lastDay=dateKey();data.lastWeek=monday(dateKey());changed()}
+async function loadCloud(user){loading=true;ready=false;clearTimeout(saveTimer);try{const snap=await doc().get();if(uid!==user.uid)return;if(snap.exists&&snap.data().data){const local=JSON.stringify(data),remote=normalize(snap.data().data);if(local!==JSON.stringify(remote)){// 永遠先保留本機副本，不自動把未上傳紀錄覆蓋掉。
+ localStorage.setItem(KEY+'_pre_cloud_'+Date.now(),local)}data=remote;sessionStart=data.runningSince;localStorage.setItem(KEY,JSON.stringify(data));$('syncNotice').textContent='已讀取雲端存檔（切換前的本機資料已保留備份）。'}else{await doc().set({data,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});$('syncNotice').textContent='已建立專屬 Gal 計時器雲端存檔。'}ready=true;loading=false;ensureNow();render()}catch(e){loading=false;ready=false;$('syncNotice').textContent='雲端讀取失敗，暫時使用本機資料：'+e.message;render()}}
+auth.onAuthStateChanged(user=>{uid=user?user.uid:null;ready=false;$('login').hidden=!!user;$('logout').hidden=!user;$('authStatus').textContent=user?`已登入：${user.email||'Google 帳號'}`:'未登入：僅使用本機存檔';if(user)loadCloud(user);else{$('syncNotice').textContent='';render()}});
+$('login').onclick=async()=>{try{await auth.signInWithPopup(provider)}catch(e){if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment'){try{await auth.signInWithRedirect(provider)}catch(err){alert(err.message)}}else alert('登入失敗：'+e.message)}};
+$('logout').onclick=()=>auth.signOut();$('start').onclick=start;$('stop').onclick=stop;$('add').onclick=()=>manual(1);$('subtract').onclick=()=>manual(-1);$('export').onclick=exportData;$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=e=>importData(e.target.files[0]);$('reset').onclick=reset;
+document.addEventListener('click',e=>{const a=e.target.closest('[data-complete]'),b=e.target.closest('[data-pardon]');if(a)complete(a.dataset.complete);if(b)pardon(b.dataset.pardon)});
+$('dailyRules').innerHTML=ruleHTML(D);$('weeklyRules').innerHTML=ruleHTML(W);
+// 首次安裝從當天起算；只結算實際開始使用後的日／週。
+if(!data.lastDay)data.lastDay=dateKey();if(!data.lastWeek)data.lastWeek=monday(dateKey());settle();render();
+setInterval(render,1000);setInterval(()=>{settle();render()},10000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){settle();render()}});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script></body></html>
