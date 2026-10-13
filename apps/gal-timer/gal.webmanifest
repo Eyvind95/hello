@@ -1,0 +1,1 @@
+{"name":"Gal 之心純度鑑定系統","short_name":"Gal 計時器","description":"每日與每週 AI 使用時間、Gal 法庭獎懲及免死金牌","start_url":"./gal.html","scope":"./","display":"standalone","background_color":"#100e1b","theme_color":"#161124","icons":[{"src":"../ledger/6.png","sizes":"any","type":"image/png","purpose":"any"}]}
