@@ -10,13 +10,13 @@
     {
       "src": "https://eyvind95.github.io/hello/apps/ledger/6.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
       "purpose": "any"
     },
     {
       "src": "https://eyvind95.github.io/hello/apps/ledger/6.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
       "purpose": "any"
     }
   ]
