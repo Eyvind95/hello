@@ -1,1 +1,28 @@
-{"name":"Gal 之心純度鑑定系統","short_name":"Gal 計時器","description":"每日與每週 AI 使用時間、Gal 法庭獎懲及免死金牌","start_url":"./gal.html","scope":"./","display":"standalone","background_color":"#100e1b","theme_color":"#161124","icons":[{"src":"../ledger/6.png","sizes":"any","type":"image/png","purpose":"any"}]}
+
+{
+  "id": "/hello/apps/gal-timer/gal.html",
+  "name": "Gal 之心純度鑑定系統",
+  "short_name": "Gal 計時器",
+  "description": "Gal 之心純度鑑定系統，每日與每週 AI 聊天計時、純度審判及獎懲紀錄。",
+  "lang": "zh-TW",
+  "start_url": "/hello/apps/gal-timer/gal.html",
+  "scope": "/hello/apps/gal-timer/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#171025",
+  "theme_color": "#171025",
+  "icons": [
+    {
+      "src": "/hello/apps/ledger/6.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/hello/apps/ledger/8.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
