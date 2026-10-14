@@ -11,6 +11,7 @@ body{isolation:isolate}.wrap{position:relative;z-index:1}
 #activationGate[hidden],#appContent[hidden]{display:none!important}
 </style></head><body><main class="wrap"><header class="head"><h1>🦊 Gal 之心純度鑑定系統</h1><div class="muted">今日聊了多久？Gal 法庭即將宣判。純屬娛樂，沒有強迫執行的魔法。</div></header>
 <section class="card"><div class="row"><div><strong>☁️ 雲端存檔</strong><div id="authStatus" class="hint">正在檢查登入狀態…</div></div><div class="btns"><button class="btn small" id="login">Google 登入</button><button class="btn small" id="logout" hidden>登出</button></div></div><div id="syncNotice" class="hint"></div></section>
+<section class="card"><div class="row"><div><strong>🔄 網頁版本更新</strong><div class="hint">背景圖片或程式沒有更新時使用；不會清除計時紀錄。</div></div><button class="btn small" id="forceUpdateBtn" type="button">🔄 強制更新</button></div></section>
 <section class="card" id="activationGate" hidden><h2>🦊 正式啟用 Gal 計時器</h2><p>按下後才開始計算每日與每週判決；啟用之前不補算任何懲罰。啟用不等於開始計時。</p><button class="btn primary" id="activate" style="width:100%">⚖️ 正式啟用 Gal 之心純度鑑定系統</button><div id="activationHint" class="hint" style="margin-top:8px"></div></section><div id="appContent" hidden>
 <section class="card"><div class="row"><h2>⏱️ AI 聊天計時</h2><span class="pill" id="runningLabel">未計時</span></div><div class="clock" id="clock">00:00:00</div><div class="btns"><button class="btn good" id="start">▶ 開始／繼續</button><button class="btn danger" id="stop">■ 暫停並記錄</button></div><p class="hint">計時跨日會自動分配至正確日期；關閉網頁後再次開啟仍會繼續計算。</p></section>
 <section class="card"><h2>📊 今日與本週</h2><div class="stat"><div class="tile"><div class="muted">今日累積</div><div class="num" id="today">0 小時</div><div id="todayGrade" class="hint">尚未結算</div></div><div class="tile"><div class="muted">本週累積</div><div class="num" id="week">0 小時</div><div id="weekGrade" class="hint">週一至週日</div></div></div><div class="muted" style="margin-top:10px">今日距離下一級</div><div class="bar"><div class="fill" id="dayBar"></div></div><div class="muted">本週距離下一級</div><div class="bar"><div class="fill" id="weekBar"></div></div><div class="notice" id="liveVerdict">等待 Gal 法庭開庭。</div></section>
@@ -106,5 +107,34 @@ $('dailyRules').innerHTML=ruleHTML(D);$('weeklyRules').innerHTML=ruleHTML(W);
 // 首次安裝從當天起算；只結算實際開始使用後的日／週。
 if(data.activatedAt){if(!data.lastDay)data.lastDay=dateKey(data.activatedAt);if(!data.lastWeek)data.lastWeek=monday(dateKey(data.activatedAt));}settle();render();
 setInterval(render,1000);setInterval(()=>{settle();render()},10000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){settle();render()}});
+// 只更新 Gal 計時器的快取與頁面；不碰本機資料、Firebase 或其他應用。
+async function forceUpdateGal(){
+  const btn=document.getElementById('forceUpdateBtn');
+  if(btn){btn.disabled=true;btn.textContent='🔄 更新中…';}
+  try{
+    const scopeUrl=new URL('./',location.href);
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const reg of regs){
+        if(new URL(reg.scope).href===scopeUrl.href)await reg.unregister();
+      }
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      for(const key of keys){
+        if(key.startsWith('gal-heart-'))await caches.delete(key);
+      }
+    }
+    // 不清除 localStorage / IndexedDB，避免損失計時與未同步紀錄。
+    const url=new URL(location.href);
+    url.searchParams.set('v',String(Date.now()));
+    location.replace(url.href);
+  }catch(error){
+    console.error('Gal 強制更新失敗：',error);
+    alert('強制更新失敗，請稍後再試。');
+    if(btn){btn.disabled=false;btn.textContent='🔄 強制更新';}
+  }
+}
+document.getElementById('forceUpdateBtn').addEventListener('click',forceUpdateGal);
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script></body></html>
