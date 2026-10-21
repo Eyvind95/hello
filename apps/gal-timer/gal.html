@@ -22,7 +22,7 @@ body{isolation:isolate}.wrap{position:relative;z-index:1}
 <section class="card"><h2>✍️ 今日手動補登／修正</h2><div class="fields"><div><label for="hours">小時</label><input id="hours" type="number" min="0" max="23" step="1" value="0"></div><div><label for="minutes">分鐘</label><input id="minutes" type="number" min="0" max="59" step="1" value="0"></div></div><div class="btns"><button class="btn primary" id="add">加入今日時間</button><button class="btn" id="subtract">扣除今日時間</button></div><p class="hint">只允許修改今天，不能改昨天；每一天最多計入 24 小時。每日 00:00 起封存前一天。</p></section>
 <section class="card"><div class="row"><h2>🛡️ 法庭道具庫</h2><strong id="medals">免死金牌 ×0／5</strong></div><div id="pendingCount" class="muted">待處理判決：0</div><div id="inventory"></div></section>
 <section class="card"><h2>📜 已結算判決</h2><div id="judgments" class="history"></div></section>
-<section class="card"><h2>📆 本週每日紀錄</h2><div id="weekDays"></div></section>
+<section class="card"><h2>📆 每週紀錄查詢</h2><div class="btns" style="margin:10px 0"><button class="btn small" id="prevWeek" type="button">◀ 上一週</button><button class="btn small" id="currentWeek" type="button">回到本週</button><button class="btn small" id="nextWeek" type="button">下一週 ▶</button></div><div id="weekRange" class="muted" style="margin-bottom:8px"></div><div id="weekDays"></div><div id="weekSummary" class="notice"></div></section>
 <section class="card"><details><summary>⚖️ 展開完整 Gal 法典</summary><h2 style="margin-top:14px">每日判定</h2><div id="dailyRules"></div><h2 style="margin-top:14px">每週判定</h2><div id="weeklyRules"></div><p class="hint">級距採左閉右開：例如剛好 4 小時算第二級；剛好 101 小時算最高級。每日與每週分別結算、互不覆蓋。所有時數均以秒為單位。</p></details></section>
 <section class="card"><details><summary>💾 資料備份與管理</summary><p class="hint">匯出 JSON 可自行保留備份；匯入只接受本系統格式，匯入後會取代目前這套 Gal 計時器的資料，不會碰到其他網站應用。</p><div class="btns"><button class="btn" id="export">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div><input type="file" accept="application/json,.json" id="importFile" hidden><button class="btn danger" id="reset" style="width:100%;margin-top:12px">重置 Gal 計時器資料</button></details></section><footer class="hint">獨立資料區：galTimer／使用者 UID · 使用裝置當地日期與時間 · 星期一為每週起點</footer></div></main>
 <script>
@@ -88,6 +88,7 @@ function progress(seconds,limits){const h=seconds/3600,idx=limits.findIndex(n=>h
 function ruleHTML(rules){return rules.map((r,i)=>`<div class="rule"><div class="title">${i===0?'0':rules[i-1].limit}～${Number.isFinite(r.limit)?r.limit:'∞'} 小時 · ${esc(r.title)}</div><div class="desc">${esc(r.comment)}</div><div>${r.kind==='penalty'?'懲罰':r.kind==='none'?'獎勵':r.kind==='medal'?'獎勵':'獎勵'}：${esc(r.action)}</div></div>`).join('')}
 const statusLabel={pending:'待執行',unclaimed:'待領取',done:'已完成',pardoned:'免死金牌抵銷',none:'無獎懲',granted:'已發放金牌',overflow:'金牌已滿（未增加）'};
 function judgmentHTML(j){const r=(j.type==='day'?D:W)[j.grade];return `<div class="entry"><div class="row"><strong>${j.type==='day'?'每日':'每週'} · ${esc(j.key)}</strong><span class="tag ${j.kind==='penalty'?'red':'green'}">${esc(statusLabel[j.status]||j.status)}</span></div><div>${esc(j.title)} · ${fmt(j.seconds)}${j.tailForced?' · 庫存已滿，強制執行判決':j.tailStored?' · 可延後執行':''}</div><div class="muted">${esc(r.comment)}<br>${j.kind==='penalty'?'懲罰':'獎勵'}：${esc(j.action)}</div>${['pending','unclaimed'].includes(j.status)?`<div class="btns"><button class="btn small good" data-complete="${esc(j.id)}">${j.kind==='penalty'?'標記已執行':'領取／完成獎勵'}</button>${j.kind==='penalty'&&data.medals>0?`<button class="btn small primary" data-pardon="${esc(j.id)}">🛡️ 免除（−1）</button>`:''}</div>`:''}</div>`}
+let selectedWeek=null;
 function render(){const active=!!data.activatedAt;$('activationGate').hidden=active;$('appContent').hidden=!active;if(!active){$('activationHint').textContent=uid&&!ready?'正在確認雲端存檔，請稍候…':'正式啟用後才開始結算。';$('activate').disabled=!!uid&&loading;return;}const today=dateKey(),wk=monday(today),running=data.runningSince!==null,live=running?Math.max(0,(Date.now()-data.runningSince)/1000):0,d=Math.min(86400,daySeconds(today)+live),w=weekSeconds(wk)+live,di=tier(D,d),wi=tier(W,w);
  $('clock').textContent=running?clock((Date.now()-(sessionStart||data.runningSince))/1000):'00:00:00';$('runningLabel').textContent=running?'● 計時中':'未計時';$('start').disabled=running;$('stop').disabled=!running;
  $('today').textContent=fmt(d);$('week').textContent=fmt(w);$('todayGrade').textContent=D[di].title;$('weekGrade').textContent=W[wi].title;$('dayBar').style.width=progress(d,[4,8,12,15,Infinity])+'%';$('weekBar').style.width=progress(w,[36,66,87,101,Infinity])+'%';$('liveVerdict').textContent=`今日：${D[di].title}｜${D[di].comment}\n本週：${W[wi].title}｜${W[wi].comment}`;
@@ -95,7 +96,19 @@ function render(){const active=!!data.activatedAt;$('activationGate').hidden=act
  const all=Object.values(data.judgments).sort((a,b)=>b.key.localeCompare(a.key)||b.type.localeCompare(a.type));const pending=all.filter(j=>j.status==='pending'||j.status==='unclaimed');$('pendingCount').textContent=`待處理判決：${pending.length} 件`;
  $('inventory').innerHTML=pending.length?pending.map(judgmentHTML).join(''):'<div class="empty">目前沒有待處理的判決。</div>';
  $('judgments').innerHTML=all.length?all.slice(0,120).map(judgmentHTML).join(''):'<div class="empty">尚無已結算紀錄；第一個跨日結算後就會出現。</div>';
- let days='';for(let i=0;i<7;i++){const key=addDays(wk,i);days+=`<div class="row entry"><span>${['一','二','三','四','五','六','日'][i]} · ${key}${key===today?'（今天）':''}</span><strong>${fmt(daySeconds(key))}</strong></div>`}$('weekDays').innerHTML=days;
+ const firstWeek=monday(dateKey(data.activatedAt||data.created));
+  if(!selectedWeek)selectedWeek=wk;
+  if(selectedWeek> wk)selectedWeek=wk;
+  if(selectedWeek<firstWeek)selectedWeek=firstWeek;
+  const viewWeek=selectedWeek;
+  $('prevWeek').disabled=viewWeek<=firstWeek;
+  $('nextWeek').disabled=viewWeek>=wk;
+  $('currentWeek').disabled=viewWeek===wk;
+  $('weekRange').textContent=`${viewWeek} ～ ${addDays(viewWeek,6)}${viewWeek===wk?'（本週）':''}`;
+  let days='';for(let i=0;i<7;i++){const key=addDays(viewWeek,i);days+=`<div class="row entry"><span>${['一','二','三','四','五','六','日'][i]} · ${key}${key===today?'（今天）':''}</span><strong>${fmt(daySeconds(key))}</strong></div>`}$('weekDays').innerHTML=days;
+  const weeklyJudgment=data.judgments[makeId('week',viewWeek)];
+  const total=weekSeconds(viewWeek)+(viewWeek===wk?live:0);
+  $('weekSummary').textContent=`本週總計：${fmt(total)}\n${weeklyJudgment?'已結算判決：'+weeklyJudgment.title+'（'+(statusLabel[weeklyJudgment.status]||weeklyJudgment.status)+'）':viewWeek===wk?'本週尚未結算。':'此週尚無結算紀錄。'}`;
 }
 function exportData(){ensureNow();const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`gal-heart-${dateKey()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 async function importData(file){if(!file)return;try{const obj=JSON.parse(await file.text());if(!obj||obj.version!==1||!obj.days||!obj.judgments)throw Error('不是有效的 Gal 計時器備份');if(!confirm('匯入會取代目前 Gal 計時器的所有資料，確定嗎？'))return;data=normalize(obj);data.runningSince=null;sessionStart=null;data.lastDay=data.lastDay||dateKey();data.lastWeek=data.lastWeek||monday(dateKey());changed();ensureNow();alert('匯入成功。')}catch(e){alert('匯入失敗：'+e.message)}}
@@ -107,6 +120,9 @@ $('activate').onclick=()=>{if(data.activatedAt||loading)return;if(!confirm('確�
 $('login').onclick=async()=>{try{await auth.signInWithPopup(provider)}catch(e){if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment'){try{await auth.signInWithRedirect(provider)}catch(err){alert(err.message)}}else alert('登入失敗：'+e.message)}};
 $('logout').onclick=()=>auth.signOut();$('start').onclick=start;$('stop').onclick=stop;$('add').onclick=()=>manual(1);$('subtract').onclick=()=>manual(-1);$('export').onclick=exportData;$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=e=>importData(e.target.files[0]);$('reset').onclick=reset;
 document.addEventListener('click',e=>{const a=e.target.closest('[data-complete]'),b=e.target.closest('[data-pardon]');if(a)complete(a.dataset.complete);if(b)pardon(b.dataset.pardon)});
+$('prevWeek').onclick=()=>{selectedWeek=addDays(selectedWeek||monday(dateKey()),-7);render()};
+$('nextWeek').onclick=()=>{selectedWeek=addDays(selectedWeek||monday(dateKey()),7);render()};
+$('currentWeek').onclick=()=>{selectedWeek=monday(dateKey());render()};
 $('dailyRules').innerHTML=ruleHTML(D);$('weeklyRules').innerHTML=ruleHTML(W);
 // 首次安裝從當天起算；只結算實際開始使用後的日／週。
 if(data.activatedAt){if(!data.lastDay)data.lastDay=dateKey(data.activatedAt);if(!data.lastWeek)data.lastWeek=monday(dateKey(data.activatedAt));}settle();render();
