@@ -153,7 +153,7 @@ input,select{
   <div class="label">手動補時間</div>
   <input id="manualMin" type="number" min="1" placeholder="輸入要加幾分鐘，例如 20">
   <button id="manualBtn" class="manual">手動加入今日時間</button>
-  <div class="small">所有月份都沒有每日時間上限；平時月本週超過 5.5 小時後，超過部分才會進獎勵條；期中、期末考月則是超過 12 小時後開始累積。</div>
+  <div class="small">所有月份都沒有每日時間上限；完成本週目前目標後，之後增加的時間才會進獎勵條。獎勵折抵後的較低目標也照算，可連續觸發下一週獎勵。</div>
 </div>
 
 <div class="card">
@@ -653,6 +653,7 @@ function getRewardInfoForWeek(weekKey){
   const mKey=getWeekMonthKey(weekKey);
   const mode=getMonthMode(mKey);
   const actual=getActualWeeklyTotal(weekKey);
+  const effectiveGoal=getWeekGoal(weekKey);
   const invalid=isWeekInvalid(weekKey);
 
   if(invalid){
@@ -666,26 +667,26 @@ function getRewardInfoForWeek(weekKey){
     };
   }
 
+  const earned=Math.max(0,actual-effectiveGoal);
+
   if(mode==="midterm" || mode==="final"){
     return {
       type:"exam",
-      earned:Math.max(0,actual-EXAM_WEEK_GOAL),
+      earned,
       threshold:EXAM_REWARD_THRESHOLD,
       discount:EXAM_REWARD_DISCOUNT,
       month:mKey,
-      text:"考試月：本週超過 12 小時後，超過部分進獎勵條。"
+      text:`考試月：完成本週目前目標 ${formatMin(effectiveGoal)} 後，超過部分進獎勵條。`
     };
   }
 
-  const weeklyExcess=Math.max(0,actual-NORMAL_WEEK_GOAL);
-
   return {
     type:"normal",
-    earned:weeklyExcess,
+    earned,
     threshold:NORMAL_REWARD_THRESHOLD,
     discount:NORMAL_REWARD_DISCOUNT,
     month:mKey,
-    text:"平常月：本週超過 5.5 小時後，超過部分才會進獎勵條。"
+    text:`平常月：完成本週目前目標 ${formatMin(effectiveGoal)} 後，超過部分進獎勵條。`
   };
 }
 
@@ -1214,24 +1215,13 @@ function render(){
   }else{
 
     const mode=getMonthMode(nowMonth);
-    const actualWeek=getActualWeeklyTotal(weekKey);
 
-    if(mode==="midterm" || mode==="final"){
-      if(actualWeek>=EXAM_WEEK_GOAL){
-        msg="本週已達 12 小時基準；接下來增加的時間會進獎勵條。";
-      }else if(weekLeft===0){
-        msg="本週折抵後目標已完成；但獎勵條仍要等實際總時數超過 12 小時後才開始累積。";
-      }else{
-        msg="考試月份，今天沒有記錄上限；本週超過 12 小時後，超過部分會進獎勵條。";
-      }
+    if(weekLeft===0){
+      msg=`本週目前目標 ${formatMin(weekGoal)} 已完成；接下來增加的時間會進獎勵條。`;
+    }else if(mode==="midterm" || mode==="final"){
+      msg=`考試月份，今天沒有記錄上限；完成本週目前目標 ${formatMin(weekGoal)} 後，超過部分會進獎勵條。`;
     }else{
-      if(actualWeek>=NORMAL_WEEK_GOAL){
-        msg="本週已達 5.5 小時基準；接下來增加的時間會進獎勵條。";
-      }else if(weekLeft===0){
-        msg="本週折抵後目標已完成；但獎勵條仍要等實際總時數超過 5.5 小時後才開始累積。";
-      }else{
-        msg="平時月份，今天沒有記錄上限；本週超過 5.5 小時後，超過部分會進獎勵條。";
-      }
+      msg=`平時月份，今天沒有記錄上限；完成本週目前目標 ${formatMin(weekGoal)} 後，超過部分會進獎勵條。`;
     }
   }
 
