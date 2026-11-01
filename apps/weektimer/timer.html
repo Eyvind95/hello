@@ -153,7 +153,7 @@ input,select{
   <div class="label">手動補時間</div>
   <input id="manualMin" type="number" min="1" placeholder="輸入要加幾分鐘，例如 20">
   <button id="manualBtn" class="manual">手動加入今日時間</button>
-  <div class="small">平常月份正式紀錄每日最多 90 分鐘，超過會進獎勵條；期中、期末考月沒有每日上限。</div>
+  <div class="small">所有月份都沒有每日時間上限；平時月本週超過 5.5 小時後，超過部分才會進獎勵條；期中、期末考月則是超過 12 小時後開始累積。</div>
 </div>
 
 <div class="card">
@@ -569,13 +569,7 @@ function getWeekGoal(weekKey){
 }
 
 function getDailyLimitForDate(date){
-  const mode=getMonthMode(monthKey(date));
-
-  if(mode==="midterm" || mode==="final"){
-    return Infinity;
-  }
-
-  return DAILY_LIMIT;
+  return Infinity;
 }
 
 function getWeeklyDone(weekKey){
@@ -587,8 +581,7 @@ function getWeeklyDone(weekKey){
   for(const day in data.daily){
     const d=parseDate(day);
     if(d>=range.start&&d<=range.end){
-      const limit=getDailyLimitForDate(d);
-      total+=Math.min(data.daily[day],limit);
+      total+=data.daily[day] || 0;
     }
   }
 
@@ -605,22 +598,6 @@ function getActualWeeklyTotal(weekKey){
     const d=parseDate(day);
     if(d>=range.start&&d<=range.end){
       total+=data.daily[day] || 0;
-    }
-  }
-
-  return total;
-}
-
-function getNormalDailyExcess(weekKey){
-  const range=getWeekRangeByKey(weekKey);
-  if(!range)return 0;
-
-  let total=0;
-
-  for(const day in data.daily){
-    const d=parseDate(day);
-    if(d>=range.start&&d<=range.end){
-      total+=Math.max(0,(data.daily[day]||0)-DAILY_LIMIT);
     }
   }
 
@@ -677,7 +654,6 @@ function getRewardInfoForWeek(weekKey){
   const mKey=getWeekMonthKey(weekKey);
   const mode=getMonthMode(mKey);
   const actual=getActualWeeklyTotal(weekKey);
-  const official=getWeeklyDone(weekKey);
   const invalid=isWeekInvalid(weekKey);
 
   if(invalid){
@@ -702,16 +678,15 @@ function getRewardInfoForWeek(weekKey){
     };
   }
 
-  const dailyExcess=getNormalDailyExcess(weekKey);
-  const weeklyExcess=Math.max(0,official-NORMAL_WEEK_GOAL);
+  const weeklyExcess=Math.max(0,actual-NORMAL_WEEK_GOAL);
 
   return {
     type:"normal",
-    earned:dailyExcess+weeklyExcess,
+    earned:weeklyExcess,
     threshold:NORMAL_REWARD_THRESHOLD,
     discount:NORMAL_REWARD_DISCOUNT,
     month:mKey,
-    text:"平常月：每日超過 1.5 小時，或本週超過 5.5 小時，會進獎勵條。"
+    text:"平常月：本週超過 5.5 小時後，超過部分才會進獎勵條。"
   };
 }
 
@@ -1239,26 +1214,18 @@ function render(){
 
   }else{
 
-    if(todayLimit===Infinity){
+    const mode=getMonthMode(nowMonth);
 
-      if(weekLeft===0){
-        msg="本週目標已完成。";
+    if(weekLeft===0){
+      if(mode==="midterm" || mode==="final"){
+        msg="本週 12 小時目標已完成；接下來的時間會進獎勵條。";
       }else{
-        msg="考試月份，今天沒有記錄上限。";
+        msg="本週 5.5 小時目標已完成；接下來的時間會進獎勵條。";
       }
-
-    }else if(weekLeft===0){
-
-      msg="本週目標已完成。";
-
-    }else if(todayDone>=todayLimit){
-
-      msg="今天正式紀錄已滿 1.5 小時，超過的時間會進獎勵條。";
-
+    }else if(mode==="midterm" || mode==="final"){
+      msg="考試月份，今天沒有記錄上限；本週超過 12 小時後，超過部分會進獎勵條。";
     }else{
-
-      msg=`今天正式紀錄還能記 ${formatMin(todayLimit-todayDone)}，超過後會進獎勵條。`;
-
+      msg="平時月份，今天沒有記錄上限；本週超過 5.5 小時後，超過部分會進獎勵條。";
     }
   }
 
