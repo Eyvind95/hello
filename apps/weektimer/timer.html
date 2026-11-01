@@ -204,6 +204,7 @@ input,select{
   <div class="small">
     第一週從 2026/5/18 開始。<br>
     作廢週不會把剩餘時間加到下週。<br>
+    平時月剩餘最多結轉 11 小時；考試月最多結轉 24 小時。<br>
     登入後會同步到 Firestore：studyTimer / UID。
   </div>
 </div>
@@ -214,6 +215,8 @@ input,select{
 const START_DATE="2026-05-18";
 const NORMAL_WEEK_GOAL=330;
 const EXAM_WEEK_GOAL=720;
+const NORMAL_REMAINING_CAP=660;
+const EXAM_REMAINING_CAP=1440;
 const NORMAL_REWARD_THRESHOLD=60;
 const NORMAL_REWARD_DISCOUNT=90;
 const EXAM_REWARD_THRESHOLD=120;
@@ -561,10 +564,24 @@ function getBaseGoalForWeek(weekKey){
   return NORMAL_WEEK_GOAL;
 }
 
+function getRemainingCapForWeek(weekKey){
+  const mKey=getWeekMonthKey(weekKey);
+  const mode=getMonthMode(mKey);
+
+  if(mode==="midterm" || mode==="final"){
+    return EXAM_REMAINING_CAP;
+  }
+
+  return NORMAL_REMAINING_CAP;
+}
+
 function getWeekGoal(weekKey){
   const base=getBaseGoalForWeek(weekKey);
   const discount=data.rewardDiscounts[weekKey] || 0;
-  return Math.max(0,base + data.carryOver - discount);
+  const carryCap=getRemainingCapForWeek(weekKey);
+  const safeCarry=Math.min(Math.max(0,data.carryOver||0),carryCap);
+
+  return Math.max(0,base + safeCarry - discount);
 }
 
 function getDailyLimitForDate(date){
@@ -765,7 +782,11 @@ function settleWeeksIfNeeded(){
     const weekGoal=getWeekGoal(oldWeek);
     const done=getWeeklyDone(oldWeek);
 
-    let left=Math.max(0,weekGoal-done);
+    const remainingCap=getRemainingCapForWeek(oldWeek);
+    let left=Math.min(
+      remainingCap,
+      Math.max(0,weekGoal-done)
+    );
 
     if(isWeekInvalid(oldWeek)){
       left=0;
@@ -1151,7 +1172,10 @@ function render(){
   const invalid=isWeekInvalid(weekKey);
   const vacationInvalid=isWeekInVacationMonth(weekKey);
   const rangeInvalid=isWeekInInvalidRange(weekKey);
-  const weekLeft=invalid?0:Math.max(0,weekGoal-weekDone);
+  const remainingCap=getRemainingCapForWeek(weekKey);
+  const weekLeft=invalid
+    ? 0
+    : Math.min(remainingCap,Math.max(0,weekGoal-weekDone));
   const percent=weekGoal>0?Math.min(100,(weekDone/weekGoal)*100):0;
 
   const skipLimit=getSkipLimitForMonth(nowMonth);
