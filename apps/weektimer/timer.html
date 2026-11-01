@@ -130,7 +130,7 @@ input,select{
 </div>
 
 <div class="card">
-  <div class="row"><span class="label">今日已記</span><span id="todayDone">0 / 90 分鐘</span></div>
+  <div class="row"><span class="label">今日已記</span><span id="todayDone">0 分鐘 / 無上限</span></div>
   <div class="row"><span class="label">結轉欠時</span><span id="carryOver">0 分鐘</span></div>
   <div class="row"><span class="label">本週狀態</span><span id="weekInvalid">正常</span></div>
   <div class="row"><span class="label">本月作廢次數</span><span id="skipCount">0 / 2</span></div>
@@ -214,7 +214,6 @@ input,select{
 const START_DATE="2026-05-18";
 const NORMAL_WEEK_GOAL=330;
 const EXAM_WEEK_GOAL=720;
-const DAILY_LIMIT=90;
 const NORMAL_REWARD_THRESHOLD=60;
 const NORMAL_REWARD_DISCOUNT=90;
 const EXAM_REWARD_THRESHOLD=120;
@@ -1215,17 +1214,24 @@ function render(){
   }else{
 
     const mode=getMonthMode(nowMonth);
+    const actualWeek=getActualWeeklyTotal(weekKey);
 
-    if(weekLeft===0){
-      if(mode==="midterm" || mode==="final"){
-        msg="本週 12 小時目標已完成；接下來的時間會進獎勵條。";
+    if(mode==="midterm" || mode==="final"){
+      if(actualWeek>=EXAM_WEEK_GOAL){
+        msg="本週已達 12 小時基準；接下來增加的時間會進獎勵條。";
+      }else if(weekLeft===0){
+        msg="本週折抵後目標已完成；但獎勵條仍要等實際總時數超過 12 小時後才開始累積。";
       }else{
-        msg="本週 5.5 小時目標已完成；接下來的時間會進獎勵條。";
+        msg="考試月份，今天沒有記錄上限；本週超過 12 小時後，超過部分會進獎勵條。";
       }
-    }else if(mode==="midterm" || mode==="final"){
-      msg="考試月份，今天沒有記錄上限；本週超過 12 小時後，超過部分會進獎勵條。";
     }else{
-      msg="平時月份，今天沒有記錄上限；本週超過 5.5 小時後，超過部分會進獎勵條。";
+      if(actualWeek>=NORMAL_WEEK_GOAL){
+        msg="本週已達 5.5 小時基準；接下來增加的時間會進獎勵條。";
+      }else if(weekLeft===0){
+        msg="本週折抵後目標已完成；但獎勵條仍要等實際總時數超過 5.5 小時後才開始累積。";
+      }else{
+        msg="平時月份，今天沒有記錄上限；本週超過 5.5 小時後，超過部分會進獎勵條。";
+      }
     }
   }
 
