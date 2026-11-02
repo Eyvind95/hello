@@ -578,10 +578,10 @@ function getRemainingCapForWeek(weekKey){
 function getWeekGoal(weekKey){
   const base=getBaseGoalForWeek(weekKey);
   const discount=data.rewardDiscounts[weekKey] || 0;
-  const carryCap=getRemainingCapForWeek(weekKey);
-  const safeCarry=Math.min(Math.max(0,data.carryOver||0),carryCap);
+  const goalCap=getRemainingCapForWeek(weekKey);
+  const rawGoal=Math.max(0,base + Math.max(0,data.carryOver||0) - discount);
 
-  return Math.max(0,base + safeCarry - discount);
+  return Math.min(goalCap,rawGoal);
 }
 
 function getDailyLimitForDate(date){
