@@ -22,7 +22,7 @@ body{isolation:isolate}.wrap{position:relative;z-index:1}
 <section class="card"><h2>✍️ 今日手動補登／修正</h2><div class="fields"><div><label for="hours">小時</label><input id="hours" type="number" min="0" max="23" step="1" value="0"></div><div><label for="minutes">分鐘</label><input id="minutes" type="number" min="0" max="59" step="1" value="0"></div></div><div class="btns"><button class="btn primary" id="add">加入今日時間</button><button class="btn" id="subtract">扣除今日時間</button></div><p class="hint">只允許修改今天，不能改昨天；每一天最多計入 24 小時。每日 00:00 起封存前一天。</p></section>
 <section class="card"><div class="row"><h2>🛡️ 法庭道具庫</h2><strong id="medals">免死金牌 ×0／5</strong></div><div id="pendingCount" class="muted">待處理判決：0</div><div id="inventory"></div></section>
 <section class="card"><h2>📜 已結算判決</h2><div id="judgments" class="history"></div></section>
-<section class="card"><h2>📆 每週紀錄查詢</h2><div class="btns" style="margin:10px 0"><button class="btn small" id="prevWeek" type="button">◀ 上一週</button><button class="btn small" id="currentWeek" type="button">回到本週</button><button class="btn small" id="nextWeek" type="button">下一週 ▶</button></div><div id="weekRange" class="muted" style="margin-bottom:8px"></div><div id="weekDays"></div><div id="weekSummary" class="notice"></div></section>
+<section class="card"><h2>📆 每週紀錄查詢</h2><div class="btns" style="margin:10px 0"><button class="btn small" id="prevWeek" type="button">◀ 上一週</button><button class="btn small" id="currentWeek" type="button">回到本週</button><button class="btn small" id="nextWeek" type="button">下一週 ▶</button></div><div id="weekRange" class="muted" style="margin-bottom:8px"></div><div id="weekDays"></div><div id="weekSummary" class="notice"></div><div class="row" style="margin-top:12px"><div><strong>📚 段考週免罰</strong><div class="hint" id="examQuota">正在檢查可用次數…</div></div><button class="btn small primary" id="examWaive" type="button">免除本週懲罰</button></div><div class="hint" id="examStatus" style="margin-top:6px">每個學期區間最多 4 週；只免除懲罰，獎勵保留。</div></section>
 <section class="card"><details><summary>⚖️ 展開完整 Gal 法典</summary><h2 style="margin-top:14px">每日判定</h2><div id="dailyRules"></div><h2 style="margin-top:14px">每週判定</h2><div id="weeklyRules"></div><p class="hint">級距採左閉右開：例如剛好 4 小時算第二級；剛好 101 小時算最高級。每日與每週分別結算、互不覆蓋。所有時數均以秒為單位。</p></details></section>
 <section class="card"><details><summary>💾 資料備份與管理</summary><p class="hint">匯出 JSON 可自行保留備份；匯入只接受本系統格式，匯入後會取代目前這套 Gal 計時器的資料，不會碰到其他網站應用。</p><div class="btns"><button class="btn" id="export">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div><input type="file" accept="application/json,.json" id="importFile" hidden><button class="btn danger" id="reset" style="width:100%;margin-top:12px">重置 Gal 計時器資料</button></details></section><footer class="hint">獨立資料區：galTimer／使用者 UID · 使用裝置當地日期與時間 · 星期一為每週起點</footer></div></main>
 <script>
@@ -45,14 +45,52 @@ const W=[
  {limit:101,title:'10 成 Gal 純',comment:'非常好！嗯，逼自己一下，有點想去。',kind:'reward',action:'去按摩'},
  {limit:Infinity,title:'這週都放假？',comment:'還是已經寒暑假了？',kind:'medal',action:'免死金牌 ×1（最多持有 5 張）'}
 ];
-const empty=()=>({version:1,created:Date.now(),days:{},runningSince:null,lastDay:null,lastWeek:null,activatedAt:null,judgments:{},medals:0,revision:0});
-function normalize(x){if(!x||x.version!==1||typeof x.days!=='object'||Array.isArray(x.days))return empty();return {version:1,created:Number(x.created)||Date.now(),days:x.days||{},runningSince:Number.isFinite(x.runningSince)?x.runningSince:null,lastDay:typeof x.lastDay==='string'?x.lastDay:null,lastWeek:typeof x.lastWeek==='string'?x.lastWeek:null,activatedAt:Number.isFinite(x.activatedAt)?x.activatedAt:(Object.values(x.days||{}).some(v=>Number(v)>0)||Object.keys(x.judgments||{}).length||x.runningSince!==null?Number(x.created)||Date.now():null),judgments:x.judgments&&typeof x.judgments==='object'?x.judgments:{},medals:Math.max(0,Math.min(5,Math.floor(Number(x.medals)||0))),revision:Number(x.revision)||0}}
+const empty=()=>({version:1,created:Date.now(),days:{},runningSince:null,lastDay:null,lastWeek:null,activatedAt:null,judgments:{},medals:0,examWaivedWeeks:{},revision:0});
+function normalize(x){if(!x||x.version!==1||typeof x.days!=='object'||Array.isArray(x.days))return empty();return {version:1,created:Number(x.created)||Date.now(),days:x.days||{},runningSince:Number.isFinite(x.runningSince)?x.runningSince:null,lastDay:typeof x.lastDay==='string'?x.lastDay:null,lastWeek:typeof x.lastWeek==='string'?x.lastWeek:null,activatedAt:Number.isFinite(x.activatedAt)?x.activatedAt:(Object.values(x.days||{}).some(v=>Number(v)>0)||Object.keys(x.judgments||{}).length||x.runningSince!==null?Number(x.created)||Date.now():null),judgments:x.judgments&&typeof x.judgments==='object'?x.judgments:{},medals:Math.max(0,Math.min(5,Math.floor(Number(x.medals)||0))),examWaivedWeeks:x.examWaivedWeeks&&typeof x.examWaivedWeeks==='object'&&!Array.isArray(x.examWaivedWeeks)?x.examWaivedWeeks:{},revision:Number(x.revision)||0}}
 function readLocal(){try{return normalize(JSON.parse(localStorage.getItem(KEY)))}catch{return empty()}}
 let data=readLocal(),sessionStart=data.runningSince,uid=null,ready=false,loading=false,saveTimer=null,writing=Promise.resolve(),lastSaveError='';
 function dateKey(ms=Date.now()){const d=new Date(ms);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function midnight(key){const [y,m,d]=key.split('-').map(Number);return new Date(y,m-1,d).getTime()}
 function addDays(key,n){const d=new Date(midnight(key));d.setDate(d.getDate()+n);return dateKey(d.getTime())}
 function monday(key){const d=new Date(midnight(key));const offset=(d.getDay()+6)%7;return addDays(key,-offset)}
+
+// 學期免罰區間：2/1～7/1、8/31～隔年1/31（兩端皆包含）。
+// 週次以週一為索引；跨期間邊界時，按該週與哪個區間有交集決定歸屬。
+function examPeriodForWeek(week){
+ const weekEnd=addDays(week,6),y=Number(week.slice(0,4));
+ for(let year=y-1;year<=y+1;year++){
+  const periods=[
+   {id:'spring-'+year,start:year+'-02-01',end:year+'-07-01',label:year+' 春季（2/1～7/1）'},
+   {id:'fall-'+year,start:year+'-08-31',end:(year+1)+'-01-31',label:year+' 秋季（8/31～隔年1/31）'}
+  ];
+  for(const p of periods)if(week<=p.end&&weekEnd>=p.start)return p;
+ }
+ return null;
+}
+function examUsage(period){return Object.values(data.examWaivedWeeks||{}).filter(p=>p===period.id).length}
+function isExamWaivedWeek(week){return !!data.examWaivedWeeks?.[week]}
+function penaltyWeek(j){return j.type==='week'?j.key:monday(j.key)}
+function applyExamWaiver(week){
+ for(const j of Object.values(data.judgments)){
+  if(j.kind==='penalty'&&penaltyWeek(j)===week&&j.status==='pending'){
+   j.status='exam-waived';j.examWaivedAt=Date.now();
+  }
+ }
+}
+function waiveExamWeek(){
+ if(!data.activatedAt||loading||(uid&&!ready)){alert('請先等待雲端資料完成同步。');return}
+ const week=selectedWeek||monday(dateKey()),current=monday(dateKey());
+ if(week>current){alert('不能提前免除未來的週次。');return}
+ const period=examPeriodForWeek(week);
+ if(!period){alert('這週不在可使用段考免罰的期間。');return}
+ if(isExamWaivedWeek(week)){alert('這週已經使用過段考免罰，不會重複扣次數。');return}
+ const used=examUsage(period);
+ if(used>=4){alert('這個期間的 4 次免罰額度已用完。');return}
+ if(!confirm('確定將 '+week+' ～ '+addDays(week,6)+' 設為免罰週？\n本週尚未處理及未來產生的懲罰將失效，獎勵不受影響。\n此操作會使用 '+period.label+' 的第 '+(used+1)+'／4 次額度。'))return;
+ data.examWaivedWeeks[week]=period.id;
+ applyExamWaiver(week);
+ changed();
+}
 function daySeconds(key){return Math.max(0,Math.min(86400,Number(data.days[key])||0))}
 function weekSeconds(start){let n=0;for(let i=0;i<7;i++)n+=daySeconds(addDays(start,i));return n}
 function fmt(sec){sec=Math.max(0,Math.floor(sec));const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return `${h} 小時 ${String(m).padStart(2,'0')} 分`}
@@ -65,7 +103,7 @@ function doc(){return db.collection('galTimer').doc(uid)}
 function scheduleCloud(){if(!uid||!ready||loading)return;clearTimeout(saveTimer);saveTimer=setTimeout(()=>{const snapshot=JSON.parse(JSON.stringify(data));writing=writing.catch(()=>{}).then(async()=>{try{await doc().set({data:snapshot,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});lastSaveError='';$('syncNotice').textContent='雲端已同步。'}catch(e){lastSaveError=e.message;$('syncNotice').textContent='雲端同步失敗，本機資料仍保留：'+e.message}})},data.runningSince!==null?300000:650)}
 function flush(){clearTimeout(saveTimer);scheduleCloud()}
 function intervalAdd(start,end){let t=start;while(t<end){const k=dateKey(t),boundary=midnight(addDays(k,1)),finish=Math.min(end,boundary);const sec=(finish-t)/1000;data.days[k]=Math.min(86400,daySeconds(k)+sec);t=finish}}
-function settleOne(type,key){const id=makeId(type,key);if(data.judgments[id])return;const secs=type==='day'?daySeconds(key):weekSeconds(key);const rules=type==='day'?D:W,idx=tier(rules,secs),r=rules[idx];const j={id,type,key,seconds:secs,grade:idx,title:r.title,kind:r.kind,action:r.action,created:Date.now(),status:r.kind==='penalty'?'pending':r.kind==='reward'?'unclaimed':r.kind==='medal'?'granted':'none'};if(r.tail){const saved=Object.values(data.judgments).filter(x=>x.action===r.action&&x.status==='pending').length;j.tailStored=saved<2;j.tailForced=saved>=2}if(r.kind==='medal'){if(data.medals<5)data.medals++;else j.status='overflow'}data.judgments[id]=j}
+function settleOne(type,key){const id=makeId(type,key);if(data.judgments[id])return;const secs=type==='day'?daySeconds(key):weekSeconds(key);const rules=type==='day'?D:W,idx=tier(rules,secs),r=rules[idx];const j={id,type,key,seconds:secs,grade:idx,title:r.title,kind:r.kind,action:r.action,created:Date.now(),status:r.kind==='penalty'?'pending':r.kind==='reward'?'unclaimed':r.kind==='medal'?'granted':'none'};if(r.kind==='penalty'&&isExamWaivedWeek(type==='day'?monday(key):key)){j.status='exam-waived';j.examWaivedAt=Date.now()}if(r.tail&&j.status==='pending'){const saved=Object.values(data.judgments).filter(x=>x.action===r.action&&x.status==='pending').length;j.tailStored=saved<2;j.tailForced=saved>=2}if(r.kind==='medal'){if(data.medals<5)data.medals++;else j.status='overflow'}data.judgments[id]=j}
 function settle(now=Date.now()){
   if(!data.activatedAt)return false;
  const today=dateKey(now),thisWeek=monday(today);let dirty=false;
@@ -86,7 +124,7 @@ function pardon(id){ensureNow();const j=data.judgments[id];if(!j||j.kind!=='pena
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function progress(seconds,limits){const h=seconds/3600,idx=limits.findIndex(n=>h<n);if(idx<0)return 100;const lo=idx===0?0:limits[idx-1],hi=limits[idx];return Number.isFinite(hi)?Math.max(0,Math.min(100,100*(h-lo)/(hi-lo))):100}
 function ruleHTML(rules){return rules.map((r,i)=>`<div class="rule"><div class="title">${i===0?'0':rules[i-1].limit}～${Number.isFinite(r.limit)?r.limit:'∞'} 小時 · ${esc(r.title)}</div><div class="desc">${esc(r.comment)}</div><div>${r.kind==='penalty'?'懲罰':r.kind==='none'?'獎勵':r.kind==='medal'?'獎勵':'獎勵'}：${esc(r.action)}</div></div>`).join('')}
-const statusLabel={pending:'待執行',unclaimed:'待領取',done:'已完成',pardoned:'免死金牌抵銷',none:'無獎懲',granted:'已發放金牌',overflow:'金牌已滿（未增加）'};
+const statusLabel={pending:'待執行',unclaimed:'待領取','exam-waived':'段考週免罰',done:'已完成',pardoned:'免死金牌抵銷',none:'無獎懲',granted:'已發放金牌',overflow:'金牌已滿（未增加）'};
 function judgmentHTML(j){const r=(j.type==='day'?D:W)[j.grade];return `<div class="entry"><div class="row"><strong>${j.type==='day'?'每日':'每週'} · ${esc(j.key)}</strong><span class="tag ${j.kind==='penalty'?'red':'green'}">${esc(statusLabel[j.status]||j.status)}</span></div><div>${esc(j.title)} · ${fmt(j.seconds)}${j.tailForced?' · 庫存已滿，強制執行判決':j.tailStored?' · 可延後執行':''}</div><div class="muted">${esc(r.comment)}<br>${j.kind==='penalty'?'懲罰':'獎勵'}：${esc(j.action)}</div>${['pending','unclaimed'].includes(j.status)?`<div class="btns"><button class="btn small good" data-complete="${esc(j.id)}">${j.kind==='penalty'?'標記已執行':'領取／完成獎勵'}</button>${j.kind==='penalty'&&data.medals>0?`<button class="btn small primary" data-pardon="${esc(j.id)}">🛡️ 免除（−1）</button>`:''}</div>`:''}</div>`}
 let selectedWeek=null;
 function render(){const active=!!data.activatedAt;$('activationGate').hidden=active;$('appContent').hidden=!active;if(!active){$('activationHint').textContent=uid&&!ready?'正在確認雲端存檔，請稍候…':'正式啟用後才開始結算。';$('activate').disabled=!!uid&&loading;return;}const today=dateKey(),wk=monday(today),running=data.runningSince!==null,live=running?Math.max(0,(Date.now()-data.runningSince)/1000):0,d=Math.min(86400,daySeconds(today)+live),w=weekSeconds(wk)+live,di=tier(D,d),wi=tier(W,w);
@@ -108,6 +146,12 @@ function render(){const active=!!data.activatedAt;$('activationGate').hidden=act
   let days='';for(let i=0;i<7;i++){const key=addDays(viewWeek,i);days+=`<div class="row entry"><span>${['一','二','三','四','五','六','日'][i]} · ${key}${key===today?'（今天）':''}</span><strong>${fmt(daySeconds(key))}</strong></div>`}$('weekDays').innerHTML=days;
   const weeklyJudgment=data.judgments[makeId('week',viewWeek)];
   const total=weekSeconds(viewWeek)+(viewWeek===wk?live:0);
+  const examPeriod=examPeriodForWeek(viewWeek),waived=isExamWaivedWeek(viewWeek);
+  const examButton=$('examWaive');
+  examButton.disabled=!examPeriod||waived||examUsage(examPeriod)>=4||loading||(!!uid&&!ready);
+  examButton.textContent=waived?'✅ 本週已免罰':'🛡️ 本週免罰（−1 次）';
+  $('examQuota').textContent=examPeriod?examPeriod.label+' · 已用 '+examUsage(examPeriod)+'/4 次 · 剩餘 '+(4-examUsage(examPeriod))+' 次':'本週不在可使用區間（7/2～8/30）';
+  $('examStatus').textContent=waived?'這週已設為免罰週：所有未處理及後續懲罰失效，獎勵保留。':'免除所選週的待處理及後續懲罰，已完成的紀錄不回溯取消。';
   $('weekSummary').textContent=`本週總計：${fmt(total)}\n${weeklyJudgment?'已結算判決：'+weeklyJudgment.title+'（'+(statusLabel[weeklyJudgment.status]||weeklyJudgment.status)+'）':viewWeek===wk?'本週尚未結算。':'此週尚無結算紀錄。'}`;
 }
 function exportData(){ensureNow();const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`gal-heart-${dateKey()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
@@ -123,6 +167,7 @@ document.addEventListener('click',e=>{const a=e.target.closest('[data-complete]'
 $('prevWeek').onclick=()=>{selectedWeek=addDays(selectedWeek||monday(dateKey()),-7);render()};
 $('nextWeek').onclick=()=>{selectedWeek=addDays(selectedWeek||monday(dateKey()),7);render()};
 $('currentWeek').onclick=()=>{selectedWeek=monday(dateKey());render()};
+$('examWaive').onclick=waiveExamWeek;
 $('dailyRules').innerHTML=ruleHTML(D);$('weeklyRules').innerHTML=ruleHTML(W);
 // 首次安裝從當天起算；只結算實際開始使用後的日／週。
 if(data.activatedAt){if(!data.lastDay)data.lastDay=dateKey(data.activatedAt);if(!data.lastWeek)data.lastWeek=monday(dateKey(data.activatedAt));}settle();render();
