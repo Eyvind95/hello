@@ -492,10 +492,15 @@ async function uploadOneCycle(r){
   const user=await cloudSignedIn();
   const ref=cloudDb.collection('galArchive').doc(user.uid).collection('cycles').doc(r.id);
   const parts=cloudParts(JSON.stringify(r));
+  const oldParts=await ref.collection('parts').get();
   let batch=cloudDb.batch(),ops=0;
+  const flushBatch=async()=>{if(ops===350){await batch.commit();batch=cloudDb.batch();ops=0}};
   for(let i=0;i<parts.length;i++){
     batch.set(ref.collection('parts').doc(String(i).padStart(6,'0')),{index:i,data:parts[i]});
-    if(++ops===350){await batch.commit();batch=cloudDb.batch();ops=0}
+    ops++;await flushBatch();
+  }
+  for(const stale of oldParts.docs){
+    if(Number(stale.id)>=parts.length){batch.delete(stale.ref);ops++;await flushBatch()}
   }
   if(ops)await batch.commit();
   await ref.set({id:r.id,world:r.world,title:r.title||'',manager:cycleManagerLabel(r),managerNames:cycleManagerNames(r),
@@ -943,10 +948,15 @@ async function pushCloud(){
   for(const r of records){
     const ref=root.collection('cycles').doc(r.id);
     const parts=cloudParts(JSON.stringify(r));
+    const oldParts=await ref.collection('parts').get();
     let batch=cloudDb.batch(),ops=0;
+    const flushBatch=async()=>{if(ops===350){await batch.commit();batch=cloudDb.batch();ops=0}};
     for(let i=0;i<parts.length;i++){
       batch.set(ref.collection('parts').doc(String(i).padStart(6,'0')),{index:i,data:parts[i]});
-      if(++ops===350){await batch.commit();batch=cloudDb.batch();ops=0}
+      ops++;await flushBatch();
+    }
+    for(const stale of oldParts.docs){
+      if(Number(stale.id)>=parts.length){batch.delete(stale.ref);ops++;await flushBatch()}
     }
     if(ops)await batch.commit();
     // 在片段寫入成功後，才更新輪迴索引（降低資料寫入一半的風險）。
