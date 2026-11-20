@@ -65,3 +65,20 @@ firebase deploy --only functions:gal-archive:archiveIngest --project eyvind95-18
 ```
 
 然後網站更新至 V4.3，在編輯輪迴填入「暗夢前輩、暗夢後輩」，登入 Google 後按「上傳本機資料」。這樣兩位才會都被接收端允許。
+
+
+## V4.4：區分 Gal AI 正史與副駕駛 GPT 聊天
+
+- 「完整對話」只用來保存 Gal AI 劇情原文。**自動**接收皮卡的貼文時，只有**行首**有「我：」或「他：」標記的部分才會拆入此區；前置無標記文字留在「副駕駛聊天」。
+- 皮卡與 GPT 的一般討論（未含上述行首標記），以及 GPT **自己的所有回覆**，都進入新分頁「副駕駛聊天」。GPT 並非 Gal AI，不可代替「他：」。
+- 自動收取按 Firestore 的 `receivedAt` 排序；V0.4 擴充功能還會附上相同對話的 `messageOrder`，避免非同步上傳造成顛倒。
+- **已經在 V4.3 誤收入「完整對話」的訊息**：先按「匯出備份」保存 JSON，再到「☁ 雲端同步」點「🛠 修復先前的自動收取紀錄」。此動作只辨認附有 `sourceEventId` 的自動紀錄，保留手動寫入的 Gal AI 正史；處理過的紀錄不會重複修復。
+- V0.4 Chrome 擴充功能新按鈕「回補目前頁面已顯示的歷史訊息」需要**使用者手動確認**。啟用監看預設不倒灌舊訊息，按下回補才會逐筆送出，目前單次限 200 則已載入訊息，不保證完整歷史或附件。
+- 需重新部署本版本的 `functions/index.js` 才會保存 `chatKey` 和 `messageOrder`，保留原來的寫入金鑰及 API 位址，不需要建立新的金鑰：
+
+```sh
+firebase deploy --only functions:gal-archive:archiveIngest --project eyvind95-182f0
+```
+
+- 須先將 GitHub 更新後的 `apps/gal-archive/functions/index.js` 複製到電腦既有的 `apps/gal-archive/functions/index.js`，並在本機 `apps/gal-archive/` 執行上面指令。只有部署成功後，才會記錄新的順序欄位。
+- 重要限制：超過 25,000 字元的單則訊息、未載入網頁的歷史、圖片及複雜格式暫不會被完整自動記錄；仍須手動補登，不能當作唯一正史備份。
