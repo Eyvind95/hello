@@ -82,3 +82,18 @@ firebase deploy --only functions:gal-archive:archiveIngest --project eyvind95-18
 
 - 須先將 GitHub 更新後的 `apps/gal-archive/functions/index.js` 複製到電腦既有的 `apps/gal-archive/functions/index.js`，並在本機 `apps/gal-archive/` 執行上面指令。只有部署成功後，才會記錄新的順序欄位。
 - 重要限制：超過 25,000 字元的單則訊息、未載入網頁的歷史、圖片及複雜格式暫不會被完整自動記錄；仍須手動補登，不能當作唯一正史備份。
+
+
+## V4.5：修復「歷史回補後副駕駛聊天順序錯亂」
+
+V4.4 雖然已從 Firestore incoming 排序，但儲存到正式 `pilotMessages` 時未保存 `chatKey` 和 `messageOrder`。後續先收到新訊息、再回補舊訊息時，已經收取的聊天不會重新排列。
+
+修復方式：
+
+1. 在網站先按「匯出備份」，保存本機 JSON。
+2. 更新到 V4.5 並登入 Google，點選「☁ 雲端同步」。
+3. 點「↕ 校正副駕駛聊天順序」：程式會用 `sourceEventId` 回查 Firestore `incoming`，讀取原始 `chatKey` 與 `messageOrder`，先展示可排序／缺失數量。
+4. 確定後，只移動能辨識順序的自動副駕駛訊息；不刪除訊息、不改內容、不改「完整對話」Gal AI 劇情，手動輸入的副駕駛訊息保留原位置。
+5. 若早期訊息沒有原始回合順序資訊，無法從接收時間可靠還原，程式會顯示未校正數量；請用聊天卡片的 ↑／↓ 手動調整。
+
+未來新收取的訊息也會保存順序欄位並在同個輪迴內重新排序。只要 Cloud Function 已支援 `chatKey`／`messageOrder`，這次**不需要再次部署 Firebase 函式**。
