@@ -178,7 +178,7 @@ if(b.dataset.speaker){speaker=b.dataset.speaker;renderChat(r);return}if(b.id==='
   }finally{b.disabled=false;b.textContent='確認加入'}
   return
 }if(b.dataset.smartsplit!==undefined||b.dataset.smartmerge!==undefined||b.dataset.smartdelete!==undefined||b.dataset.smartup!==undefined||b.dataset.smartdown!==undefined){syncSmartDraft();const action=b.dataset.smartsplit!==undefined?'split':b.dataset.smartmerge!==undefined?'merge':b.dataset.smartdelete!==undefined?'delete':b.dataset.smartup!==undefined?'up':'down';const i=Number(b.dataset.smartsplit??b.dataset.smartmerge??b.dataset.smartdelete??b.dataset.smartup??b.dataset.smartdown);if(!smartDraft[i])return;if(action==='split'){const textarea=$('bulkItems').querySelector(`textarea[data-smarttext="${i}"]`);let pos=textarea?.selectionStart??0;if(pos<=0||pos>=smartDraft[i].text.length){notify('請先在這則文字裡點選要拆開的位置，再按拆分');return}const before=smartDraft[i].text.slice(0,pos).trim(),after=smartDraft[i].text.slice(pos).trim();if(!before||!after)return notify('拆分位置兩側都需要內容');smartDraft[i].text=before;smartDraft.splice(i+1,0,{id:uid(),role:smartDraft[i].role==='me'?'ai':'me',text:after,confidence:'low',why:'人工拆分，請檢查左右身份'})}else if(action==='merge'&&i>0){smartDraft[i-1].text+='\n'+smartDraft[i].text;smartDraft.splice(i,1)}else if(action==='delete')smartDraft.splice(i,1);else if(action==='up'&&i>0)[smartDraft[i-1],smartDraft[i]]=[smartDraft[i],smartDraft[i-1]];else if(action==='down'&&i<smartDraft.length-1)[smartDraft[i+1],smartDraft[i]]=[smartDraft[i],smartDraft[i+1]];showSmartDraft();return}let i=Number(b.dataset.edit??b.dataset.remove??b.dataset.move);if(!Number.isInteger(i)||i<0||i>=r.messages.length)return;if(b.dataset.edit!==undefined){let edited=prompt('編輯對話文字：',r.messages[i].text);if(edited===null)return;r.messages[i].text=edited;await put(r);return}if(b.dataset.remove!==undefined){if(!confirm('確定刪除這一則對話？'))return;r.messages.splice(i,1);await put(r);return}if(b.dataset.move!==undefined){let j=i+Number(b.dataset.dir);if(j<0||j>=r.messages.length)return;[r.messages[i],r.messages[j]]=[r.messages[j],r.messages[i]];await put(r);return}});
-$('content').addEventListener('change',e=>{if((e.target.id==='includeMessages'||e.target.id==='chunkSize')&&current())renderCopilotChunks(current())});$('exportBtn').onclick=()=>{let pack={format:'gal-ai-archive',version:3,exportedAt:new Date().toISOString(),worlds:Object.values(worldDocs),cycles:records};let blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='輪迴檔案館備份_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify(`已匯出 ${records.length} 輪`) };// Import should never silently skip valid older backups or leave the UI on an empty world.
+$('content').addEventListener('change',e=>{if((e.target.id==='includeMessages'||e.target.id==='chunkSize')&&current())renderCopilotChunks(current())});$('exportBtn').onclick=()=>{let pack={format:'gal-ai-archive',version:4,exportedAt:new Date().toISOString(),worlds:Object.values(worldDocs),cycles:records};let blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='輪迴檔案館備份_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify(`已匯出 ${records.length} 輪`) };// Import should never silently skip valid older backups or leave the UI on an empty world.
 function normalizeBackupCycle(source){
   if(!source||typeof source!=='object'||Array.isArray(source))return {error:'輪迴不是物件'};
   const item={...source};
@@ -509,12 +509,12 @@ async function receiveAutomaticEntries(){
 async function repairAutoImportedChats(){
   const user=await cloudSignedIn();
   await refresh();
-  const targets=records.filter(r=>(r.messages||[]).some(m=>m.sourceEventId));
+  const targets=records.filter(r=>(r.messages||[]).some(m=>m.sourceEventId&&m.sourcePartIndex===undefined));
   if(!targets.length){cloudStatus('沒有發現需要修正的舊版自動收取訊息。');return}
-  const total=targets.reduce((n,r)=>n+(r.messages||[]).filter(m=>m.sourceEventId).length,0);
+  const total=targets.reduce((n,r)=>n+(r.messages||[]).filter(m=>m.sourceEventId&&m.sourcePartIndex===undefined).length,0);
   if(!confirm('找到 '+total+' 則舊版自動收取訊息。\n只處理附有 sourceEventId 的紀錄，手動輸入的正史不會改動。\n建議先匯出 JSON 備份。確定修正分類及順序？'))return;
   const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
-  const ids=[...new Set(targets.flatMap(r=>(r.messages||[]).filter(m=>m.sourceEventId).map(m=>m.sourceEventId)))];
+  const ids=[...new Set(targets.flatMap(r=>(r.messages||[]).filter(m=>m.sourceEventId&&m.sourcePartIndex===undefined).map(m=>m.sourceEventId)))];
   const source=new Map();
   for(const id of ids){
     const doc=await inbox.doc(id).get();
@@ -523,7 +523,7 @@ async function repairAutoImportedChats(){
   let pilotAdded=0,storyAdded=0,cyclesFixed=0;
   for(const original of targets){
     const r=structuredClone(original),existing=r.messages||[];
-    const old=existing.map((m,i)=>({...m,legacyPosition:i})).filter(m=>m.sourceEventId)
+    const old=existing.map((m,i)=>({...m,legacyPosition:i})).filter(m=>m.sourceEventId&&m.sourcePartIndex===undefined)
       .sort((a,b)=>{
         const x=source.get(a.sourceEventId)||{},y=source.get(b.sourceEventId)||{};
         if(x.chatKey&&x.chatKey===y.chatKey&&Number.isInteger(x.messageOrder)&&Number.isInteger(y.messageOrder)
@@ -531,7 +531,7 @@ async function repairAutoImportedChats(){
         return archiveReceivedMillis(x.receivedAt)-archiveReceivedMillis(y.receivedAt)
           ||a.legacyPosition-b.legacyPosition;
       });
-    r.messages=existing.filter(m=>!m.sourceEventId);
+    r.messages=existing.filter(m=>!(m.sourceEventId&&m.sourcePartIndex===undefined));
     r.pilotMessages??=[];
     for(const m of old){
       const meta=source.get(m.sourceEventId)||{};
