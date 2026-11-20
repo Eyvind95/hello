@@ -231,7 +231,7 @@ function renderPilotChat(r){
 // A failed local write leaves the editable text intact and does not mutate memory.
 function beginArchiveInlineEdit(button,section,record){
   const arr=record[section]||[];
-  const index=Number(button.dataset.edit??button.dataset.pilotedit??button.dataset.logedit);
+  const index=Number(button.dataset.edit??button.dataset.time??button.dataset.pilotedit??button.dataset.pilottime??button.dataset.logedit);
   if(!Number.isInteger(index)||index<0||index>=arr.length)return;
   const m=arr[index],bubble=button.closest('.bubble'),message=bubble?.closest('.message');
   if(!bubble||!message)return;
@@ -278,7 +278,11 @@ function beginArchiveInlineEdit(button,section,record){
       if(!next)throw Error('找不到這則訊息，請重新整理後再試');
       next.text=textArea.value;
       if(managerInput)next.manager=managerInput.value.trim();
-      if(sourceTimeInput)Object.assign(next,archiveManualTimeProps(sourceTimeInput.value));
+      if(sourceTimeInput){
+        const original=archiveLocalTimeValue(m.sourceCreatedAt);
+        // Preserve precise imported timestamps and their provenance unless the user changed this field.
+        if(sourceTimeInput.value!==original)Object.assign(next,archiveManualTimeProps(sourceTimeInput.value));
+      }
       await put(updated);notify('已儲存修改，位置保持不變');
     }catch(e){
       error.textContent='儲存失敗：'+(e?.message||String(e));
