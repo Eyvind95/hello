@@ -50,7 +50,7 @@ exports.archiveIngest = onRequest(
       // Each event is attributed to precisely one allowed manager, not the combined roster.
       const parseManagers = values => {
         const list = Array.isArray(values) ? values : [values || ""];
-        return [...new Set(list.flatMap(v => String(v || "").split(/[、，,;；\\r\\n]+/))
+        return [...new Set(list.flatMap(v => String(v || "").split(/[、，,;；\r\n]+/))
           .map(v => v.trim()).filter(Boolean))];
       };
       const configured = cycle.get("managerNames");
