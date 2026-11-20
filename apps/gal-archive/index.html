@@ -484,7 +484,10 @@ function sortArchivedPilotMessages(items){
 
 function orderIncomingSnapshot(a,b){
   const aa=a.data(),bb=b.data();
-  // Verified original authored times take priority over later backfill arrival.\n  const ta=archiveReceivedMillis(aa.sourceCreatedAt),tb=archiveReceivedMillis(bb.sourceCreatedAt);\n  if(ta&&tb&&ta!==tb)return ta-tb;\n  // Fallback: browser conversation order; do not conflate upload time with authorship.
+  // Verified original authored times take priority over later backfill arrival.
+  const ta=archiveReceivedMillis(aa.sourceCreatedAt),tb=archiveReceivedMillis(bb.sourceCreatedAt);
+  if(ta&&tb&&ta!==tb)return ta-tb;
+  // Fallback: browser conversation order; do not conflate upload time with authorship.
   if(aa.chatKey&&aa.chatKey===bb.chatKey&&Number.isInteger(aa.messageOrder)&&Number.isInteger(bb.messageOrder)
      &&aa.messageOrder!==bb.messageOrder)return aa.messageOrder-bb.messageOrder;
   return archiveReceivedMillis(aa.receivedAt)-archiveReceivedMillis(bb.receivedAt)
