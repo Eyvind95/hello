@@ -8,11 +8,11 @@
 2. 在「Authentication > Sign-in method」啟用 **Google**。
 3. 在「Authentication > Settings > Authorized domains」加入 **eyvind95.github.io**。
 4. 在「Firestore Database」建立資料庫。前往 Rules，**將本資料夾 `firestore.rules` 裡的三個 match 和 archiveOwner 函式合併進原本規則**，不要整份覆蓋其他應用已使用的規則。
-5. 在「Project settings > Your apps」建立 Web App（如已存在也可以使用原本設定），複製 Firebase 設定物件。`apiKey`、`authDomain`、`projectId`、`appId` 必填。
-6. 開啟輪迴檔案館的「☁ 雲端同步」→ 貼上設定 JSON →「儲存設定並使用 Google 登入」→ 先匯出 JSON 備份 →「↑ 上傳本機資料」。
+5. 網站已內建與記帳本、每日任務、計時器相同的 Firebase 專案設定，不用再複製或貼上設定 JSON。
+6. 開啟輪迴檔案館的「☁ 雲端同步」→「使用 Google 登入」→ 先匯出 JSON 備份 →「↑ 上傳本機資料」。
 7. 換裝置時，使用**相同 Google 帳號**登入，按「↓ 從雲端合併下載」。
 
-範例設定格式（不是可用憑證）：
+Firebase 專案：`eyvind95-182f0`。下方原有設定範例不再需要手動輸入：
 
 ```json
 {
