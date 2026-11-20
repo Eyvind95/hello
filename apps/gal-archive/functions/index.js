@@ -46,8 +46,19 @@ exports.archiveIngest = onRequest(
         !safeEq(setting.get("tokenHash"),hash(rawToken)))return send(res,403,{error:"token_not_authorized"});
       const cycle=await root.collection("cycles").doc(cycleId).get();
       if(!cycle.exists)return send(res,404,{error:"cycle_not_found_upload_cycle_first"});
-      const assigned=String(cycle.get("manager")||"").trim();
-      if(assigned&&assigned!==manager.trim())return send(res,403,{error:"manager_does_not_match_cycle",expectedManager:assigned});
+      // Supports V4.3 managerNames[] and older comma/ideographic-comma separated manager text.
+      // Each event is attributed to precisely one allowed manager, not the combined roster.
+      const parseManagers = values => {
+        const list = Array.isArray(values) ? values : [values || ""];
+        return [...new Set(list.flatMap(v => String(v || "").split(/[、，,;；\\r\\n]+/))
+          .map(v => v.trim()).filter(Boolean))];
+      };
+      const configured = cycle.get("managerNames");
+      const assigned = parseManagers(Array.isArray(configured) && configured.length
+        ? configured : cycle.get("manager"));
+      if (assigned.length && !assigned.includes(manager.trim())) {
+        return send(res,403,{error:"manager_does_not_match_cycle",allowedManagers:assigned});
+      }
       const result=[];
       for(let i=0;i<payload.length;i++){
         const e=payload[i],eventId=hash(uid+"|"+cycleId+"|"+sourceId+"|"+i);
