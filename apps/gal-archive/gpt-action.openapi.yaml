@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 輪迴檔案館副駕駛自動歸檔
-  version: 1.0.0
+  version: 1.1.0
   description: 僅新增待收取訊息，不能覆蓋既有正史。部署後請替換 servers.url。
 servers:
   - url: https://REPLACE-WITH-YOUR-DEPLOYED-FUNCTION-HOST
@@ -25,7 +25,7 @@ paths:
                 uid: {type: string, description: Firebase 登入 UID，從網站雲端同步頁取得}
                 cycleId: {type: string, description: 指定輪迴 UUID，不能用輪迴名稱替代}
                 sourceId: {type: string, description: 此次對話來源的唯一且重試保持不變識別碼}
-                manager: {type: string, description: 實際負責的副駕駛名稱，需與輪迴管理人相符}
+                manager: {type: string, description: 此次紀錄實際負責的單一副駕駛名稱，必須為輪迴允許的任一管理者；例如暗夢前輩、暗夢後輩只能擇一}
                 entries:
                   type: array
                   minItems: 1
