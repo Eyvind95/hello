@@ -441,7 +441,11 @@ function hasArchivedSource(record,eventId,index){
     (record[key]||[]).some(x=>x.sourceEventId===eventId&&(x.sourcePartIndex??0)===index));
 }
 function orderIncomingSnapshot(a,b){
-  return archiveReceivedMillis(a.data().receivedAt)-archiveReceivedMillis(b.data().receivedAt)
+  const aa=a.data(),bb=b.data();
+  // When both events came from the same browser conversation, DOM order wins.
+  if(aa.chatKey&&aa.chatKey===bb.chatKey&&Number.isInteger(aa.messageOrder)&&Number.isInteger(bb.messageOrder)
+     &&aa.messageOrder!==bb.messageOrder)return aa.messageOrder-bb.messageOrder;
+  return archiveReceivedMillis(aa.receivedAt)-archiveReceivedMillis(bb.receivedAt)
     ||a.id.localeCompare(b.id);
 }
 
@@ -520,10 +524,13 @@ async function repairAutoImportedChats(){
   for(const original of targets){
     const r=structuredClone(original),existing=r.messages||[];
     const old=existing.map((m,i)=>({...m,legacyPosition:i})).filter(m=>m.sourceEventId)
-      .sort((a,b)=>
-        archiveReceivedMillis(source.get(a.sourceEventId)?.receivedAt)
-        -archiveReceivedMillis(source.get(b.sourceEventId)?.receivedAt)
-        ||a.legacyPosition-b.legacyPosition);
+      .sort((a,b)=>{
+        const x=source.get(a.sourceEventId)||{},y=source.get(b.sourceEventId)||{};
+        if(x.chatKey&&x.chatKey===y.chatKey&&Number.isInteger(x.messageOrder)&&Number.isInteger(y.messageOrder)
+          &&x.messageOrder!==y.messageOrder)return x.messageOrder-y.messageOrder;
+        return archiveReceivedMillis(x.receivedAt)-archiveReceivedMillis(y.receivedAt)
+          ||a.legacyPosition-b.legacyPosition;
+      });
     r.messages=existing.filter(m=>!m.sourceEventId);
     r.pilotMessages??=[];
     for(const m of old){
