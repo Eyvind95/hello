@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V4.0｜Gal AI</title>
+<title>輪迴檔案館 V4.1｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,12 +20,12 @@
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V4.0</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V4.1</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><span class="pill">檔案庫</span></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：第十六周目・杜林"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。為保護正史，上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button></div><p id="cloudStatus" class="note" role="status" aria-live="polite">未開始同步。請先匯出 JSON 備份；Google 登入後仍需按「上傳本機資料」，Firestore 才會建立 galArchive 集合。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button></div><p id="cloudStatus" class="note" role="status" aria-live="polite">登入後會自動建立 galArchive 雲端入口；完整世界觀與輪迴仍需按「↑ 上傳本機資料」，上傳前請先匯出 JSON 備份。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
 <div class="toast hidden" id="toast" role="status"></div>
 <script>
 'use strict';
@@ -208,13 +208,42 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V4.0_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V4.1_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
 const firebaseConfig={apiKey:'AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI',authDomain:'eyvind95-182f0.firebaseapp.com',projectId:'eyvind95-182f0',storageBucket:'eyvind95-182f0.firebasestorage.app',messagingSenderId:'105770576221',appId:'1:105770576221:web:dd3a57ce4e051bda91a0b4',measurementId:'G-7HHMTE1W1T'};
 let cloudApp=null,cloudAuth=null,cloudDb=null,cloudAuthUnsubscribe=null,cloudReadyPromise=null;
+let cloudRootEnsurePromise=null,cloudRootEnsureUID=null;
 function cloudStatus(t,err=false){$('cloudStatus').textContent=t;$('cloudStatus').style.color=err?'#ffadad':'#c4e4ff'}
+// 登入後只建立必要的空間入口，不自動覆蓋任何正史資料。
+async function ensureArchiveRoot(user,forceCheck=false){
+  if(!user||!cloudDb)throw Error('請先使用 Google 登入');
+  if(!forceCheck&&cloudRootEnsureUID===user.uid&&cloudRootEnsurePromise)return cloudRootEnsurePromise;
+  const pending=(async()=>{
+    const root=cloudDb.collection('galArchive').doc(user.uid);
+    const before=await root.get({source:'server'});
+    if(!before.exists){
+      await root.set({
+        app:'gal-ai-archive',
+        schemaVersion:4,
+        createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+        initialized:true
+      },{merge:true});
+    }
+    const after=await root.get({source:'server'});
+    if(!after.exists)throw Error('Firestore 沒有找到剛寫入的雲端根文件');
+    return {created:!before.exists,path:'galArchive / '+user.uid};
+  })();
+  cloudRootEnsurePromise=pending;cloudRootEnsureUID=user.uid;
+  try{return await pending}catch(err){
+    if(cloudRootEnsurePromise===pending){cloudRootEnsurePromise=null;cloudRootEnsureUID=null}
+    throw err;
+  }
+}
+function rootReadyMessage(result){
+  return (result.created?'已建立':'已確認')+' Firestore 集合 galArchive（你的 Google UID）。完整輪迴尚需手動上傳。';
+}
 async function cloudInit(){
   if(cloudReadyPromise)return cloudReadyPromise;
   cloudReadyPromise=(async()=>{
@@ -227,6 +256,13 @@ async function cloudInit(){
       $('cloudIdentity').textContent=u?'已登入：'+(u.email||u.uid):'尚未登入';
       $('cloudConnect').style.display=u?'none':'';
       $('cloudLogout').style.display=u?'':'none';
+      if(!u){cloudRootEnsurePromise=null;cloudRootEnsureUID=null;return}
+      cloudStatus('Google 已登入，正在檢查 galArchive 雲端入口…');
+      ensureArchiveRoot(u).then(result=>{
+        if(cloudAuth.currentUser?.uid===u.uid)cloudStatus(rootReadyMessage(result));
+      }).catch(e=>{
+        if(cloudAuth.currentUser?.uid===u.uid)cloudStatus('建立 galArchive 失敗：'+e.message+'。請檢查 Firestore 規則已發布，並確認網路正常。',true);
+      });
     },err=>cloudStatus('驗證狀態讀取失敗：'+err.message,true));
     await new Promise((resolve,reject)=>{
       const un=cloudAuth.onAuthStateChanged(()=>{un();resolve()},err=>{un();reject(err)});
@@ -253,16 +289,28 @@ $('cloudConnect').onclick=async()=>{
         throw e;
       }
     }
-    cloudStatus('Google 登入成功；請手動選擇上傳或合併下載。');
+    const verified=await ensureArchiveRoot(auth.currentUser);
+    cloudStatus(rootReadyMessage(verified));
   }catch(e){cloudStatus('登入失敗：'+e.message,true)}
   finally{b.disabled=false}
 };
 $('cloudLogout').onclick=async()=>{try{await cloudInit();await cloudAuth.signOut();cloudStatus('已登出')}catch(e){cloudStatus('登出失敗：'+e.message,true)}};
 cloudInit().catch(e=>console.warn('檔案館登入尚未初始化：',e));
+$('cloudVerify').onclick=async()=>{
+  const b=$('cloudVerify');b.disabled=true;
+  try{
+    cloudStatus('正在向 Firestore 確認 galArchive 集合…');
+    const user=await cloudSignedIn();
+    const result=await ensureArchiveRoot(user,true);
+    cloudStatus(rootReadyMessage(result));
+  }catch(e){cloudStatus('檢查／建立失敗：'+e.message+'。請檢查 Firebase 安全規則已發布。',true)}
+  finally{b.disabled=false}
+};
 const cloudParts=text=>{let a=[];for(let i=0;i<text.length;i+=110000)a.push(text.slice(i,i+110000));return a};
 // V4.0: 獨立根集合 galArchive/{uid}；保留讀取 V3.9 users/{uid} 的能力。
 async function pushCloud(){
   const u=await cloudSignedIn();
+  await ensureArchiveRoot(u);
   await refresh();
   const root=cloudDb.collection('galArchive').doc(u.uid);
   const now=new Date().toISOString();
