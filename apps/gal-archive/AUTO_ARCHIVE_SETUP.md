@@ -1,122 +1,56 @@
-# 輪迴檔案館 V4.3 — 副駕駛自動歸檔
+# 輪迴檔案館 V5.0｜正式多世界觀、多輪迴自動歸檔
 
-這份說明對應 GitHub 的 `apps/gal-archive/functions` 與 `gpt-action.openapi.yaml`。
+## 核心原則
 
-## 已完成的部分
+- **世界觀可新增、重新命名，且沒有固定三個世界觀或第16周目的限制。** 一個世界觀下可以建立任意數目的輪迴。
+- **每個 ChatGPT 對話只能在 Chrome 擴充功能中明確綁定一個目標輪迴**；每個對話可使用不同的輪迴文件 ID、負責副駕駛與世界觀標籤。切換聊天不會繼承上一個輪迴的 ID。
+- Firebase `archiveIngest` 依傳入的 `cycleId` 導向已上傳的輪迴，並驗證當輪所允許的管理人。它沒有「只接受第16周目」的規則。
+- 完整對話僅保存有明確「我：／他：」的 Gal AI 劇情；其餘玩家與副駕駛 GPT 討論進入「副駕駛聊天」。
+- 時間排序：原始發言時間 → 首次擷取時間 → 回覆推定時間 → 雲端接收時間；同分鐘內優先採原始 ChatGPT 回合順序。
+- `incoming` 內的 `status: accepted` 表示已經收取，不代表收到了你想要的輪迴；網站現在會顯示已收取來源的輪迴位置。
 
-- 輪迴建立／編輯可指定多位「負責管理的副駕駛／前輩／後輩」（例如「暗夢前輩、暗夢後輩」），依接手順序儲存為 managerNames；在列表、備份及閱讀模式中顯示。每則自動紀錄標記實際負責者。
-- 網站的「☁ 雲端同步」有「建立／重設寫入金鑰」「撤銷寫入金鑰」「收取副駕駛自動紀錄」。
-- Firebase HTTPS 接收函式 `archiveIngest` 的原始碼已存放在 GitHub。函式接收 Bearer 金鑰，驗證 SHA-256 摘要與輪迴 ID，只會將資料 **create** 到 `galArchive/{uid}/incoming/{eventId}`，不會改寫正史。
-- 收取時將待收取對話加入所屬輪迴，再寫回雲端。訊息帶有 `sourceEventId`，重試不會重複加入。
+## 日常使用步驟
 
-**尚未完成：Cloud Function 尚未部署到你的 Firebase 專案；也尚未連接任何歷代 ChatGPT。只有修改網站與 GitHub 程式不會讓其他聊天自行上傳。**
+1. 開啟 `https://eyvind95.github.io/hello/apps/gal-archive/index.html`，按「強制更新」，確認 V5.0。
+2. 在左側新增／選擇世界觀，新增或編輯輪迴，填寫負責副駕駛（可多位，頓號隔開）。
+3. 登入「☁ 雲端同步」，**先備份**，再按「↑ 上傳本機資料」。新輪迴必須先上傳，Firebase 才能接收；否則會得到 `cycle_not_found_upload_cycle_first`。
+4. 選擇輪迴按「複製輪迴 ID」。注意它是 UUID，不是「第16周目」文字。
+5. 在需要歸檔的 ChatGPT 對話開啟 Chrome 擴充功能 V0.5.0，填 UID、正確輪迴 ID、負責副駕駛和**原有寫入金鑰**；世界觀／輪迴名稱供辨識，不送雲端。
+6. 點「將此對話綁定到上面輪迴」，確認綁定名稱，再按「開始監看此對話」。每次換 ChatGPT 聊天，須重新選取目的輪迴、明確綁定；可從已儲存輪迴清單選擇。
+7. 收到新訊息後，在網站按「📥 分類收取自動紀錄」，**看清楚確認視窗列出的目的輪迴**再接受。
+8. 需要修排序時，先匯出 JSON 備份，再使用「↕ 依時間校正自動歸檔順序」。
 
-## 你需要操作的步驟
+## 清理舊測試資料與誤收輪迴
 
-1. 確保 Firebase 專案 `eyvind95-182f0` 可部署 Cloud Functions（Firebase 文件要求 Blaze 計費方案）。確認費用及預算警示。
-2. 電腦安裝 Node.js 22，以及 Firebase CLI：`npm install -g firebase-tools`。
-3. 在電腦終端開啟 GitHub 專案的 `apps/gal-archive/` 資料夾，依序執行：
-   ```sh
-   firebase login
-   npm install --prefix functions
-   firebase deploy --only functions:archiveIngest --project eyvind95-182f0
-   ```
-   若 Firebase CLI 尚未指定此資料夾的設定，請確認它讀取到同資料夾的 `firebase.json`，且沒有修改你其他應用的部署。
-4. 部署後，從 CLI 輸出取得 **實際 HTTPS 函式網址**。不要猜測網址。
-5. 打開檔案館，登入 Google，先為輪迴填入一位或多位「負責管理人」（用頓號隔開）；按「↑ 上傳本機資料」更新雲端輪迴索引。
-6. 在「☁ 雲端同步」按「建立／重設寫入金鑰」。只將出現的金鑰複製到 **自訂 GPT 編輯器的動作 API Key（Bearer）欄位**，不要貼到對話、GitHub 或公開網頁。金鑰只會顯示一次，必要時重設或撤銷。
-7. 同頁「目前登入 UID」可用於 Action JSON。`cycleId` 是輪迴資料在 Firestore `cycles` 下的文件 ID（UUID），不是「第16周目」文字。
-8. 在可編輯的自訂 GPT 裡新增 **Action（動作）**，貼入 `gpt-action.openapi.yaml`。其中的 `servers.url` 要換成實際部署的 HTTPS host；若網址路徑已包含 `/archiveIngest`，請保證 schema 的 host / path 組合不重複。身份驗證選 API Key / Bearer。
-9. 測試只寫入一至兩則短訊息，確認 Firestore `galArchive/{uid}/incoming` 新增了 `status=pending` 紀錄。
-10. 回檔案館按「📥 收取副駕駛自動紀錄」，應看到這些訊息被加入所屬輪迴並上傳回雲端。
+- **清測試**：先選左側要處理的輪迴 → 「☁ 雲端同步」→「🧹 選取並清除測試訊息」。手動確認每一則、備份後才可移除。功能不會批次清空全部輪迴，也不會刪除手動寫入的正史。
+- **搬錯輪迴**：先選收錯資料的「來源輪迴」→「↗ 轉移誤收的來源對話」→選原始 ChatGPT 對話與正確輪迴 → 備份後確認。只移具來源 chatKey 的自動歸檔，保留當時文字、時間與來源 ID。目標輪迴必須先允許對應的副駕駛。
+- **原始收件匣**：以上清理／搬移不會刪除 Firestore `galArchive/{uid}/incoming` 的稽核來源（包含 `accepted`）。這是為了避免事後無法追回遺失的正史。
+- **版本遷移**：舊版同一個監看對話的連線設定在安全條件下才會遷移；如果以前同時監看多個聊天，請逐一確認、重新綁定，不會默默使用第16周目的全域設定。
 
-## 提供給可使用 Action 的副駕駛的指示（可直接複製）
+## 更新 Chrome 擴充功能，避免金鑰遺失
 
-```text
-你是 Gal AI 副駕駛。使用者貼來的內容中，「我：」是皮卡；「他：」是 Gal AI。你不能自行補寫或推測正史。
-每當取得本輪新增的原始對話，才呼叫 appendArchiveMessages；每次呼叫提供事先指定的 Firebase UID、cycleId、負責管理人 manager、能去重的 sourceId，和原樣訊息 entries。
-section=chat 是完整對話；quiz=10題；changes=與皮卡修改記錄。
-role=me 顯示右側，role=ai 顯示左側。不得把你自己的評論冒充成 Gal AI 對話。
-如果資訊缺少、輪迴 ID 不明或管理人不相符，就不要呼叫；不可盲猜 ID。
-同一來源重試時必須使用同樣的 sourceId。回應使用者時可簡要告知歸檔是否完成。
+Chrome MV3 解壓縮擴充功能通常必須維持原本資料夾才能保留同一個擴充功能 ID 與其 local storage。
+
+1. 停止監看所有對話；先不要移除舊擴充功能。
+2. 將 V0.5.0 ZIP 解壓縮，複製其中六個檔案到**原本已安裝的擴充功能資料夾**，選擇覆蓋。
+3. 進入 `chrome://extensions`，按原擴充功能的「重新載入」，確認版本 0.5.0。
+4. 回 ChatGPT 對話，逐一確認每個對話綁定的輪迴及管理人。
+5. **不要直接刪除舊擴充再重新安裝**：這樣可能失去 Chrome 儲存的私有寫入金鑰；若無法保留舊資料，須到網站重新建立寫入金鑰。
+
+## Firebase 部署
+
+本次 V5.0 **沒有變更 Cloud Functions 的伺服器程式**，之前部署成功的 `archiveIngest` 可以沿用。
+
+若日後更新 `functions/index.js`，先覆蓋電腦本機檔案，再於 `apps/gal-archive` 資料夾執行：
+
+```bat
+firebase deploy --only functions:gal-archive --project eyvind95-182f0
 ```
 
-## 為什麼不能直接接管所有舊聊天？
+如遇 `fetch failed` 可先看 `firebase-debug.log`，不要盲目多次重部署。
 
-一般 ChatGPT 聊天沒有自動監聽每次回覆並任意呼叫外部 API 的能力。必須在**有啟用相關 Action／工具的 GPT 或支援的工作流程中**使用。舊聊天與歷代 GPT 不會因這些 GitHub 檔案就自動獲得寫入能力；如果原本前輩聊天不能加 Action，就需要切換至配置好的 GPT，或由使用者批次匯入。
+## 安全
 
-## 安全與限制
-
-- GitHub **沒有**存放任何私人 API 金鑰，瀏覽器只會把金鑰的 SHA-256 摘要送往 Firestore；函式驗證 Bearer 金鑰。
-- 接收函式使用 Firebase Admin SDK，只能創建 pending 接收匣文件，不提供編輯、刪除正史的端點。
-- 所有接收資料都會進入待收取區。網站收取時才合併入正式輪迴，防止 GPT 直接覆蓋內容。
-- 預設單次最多 10 則訊息、總共最多 40,000 字元；大批內容請分段。
-- Cloud Functions、Firestore 等用量可能產生費用。建議啟用計費預算提醒。
-- 若輪迴負責人更改，需要先從網站重新上傳該輪迴，接收端才會用新的 managerNames 進行驗證。每次傳入的 manager 必須是其中一個單一名稱，不能傳合併名單。
-- 如意外洩露寫入金鑰，立刻在網站按「撤銷寫入金鑰」，並於自訂 GPT 的動作認證中更新金鑰。
-
-
-## V4.3 多管理者更新與重新部署
-
-已經部署 V4.2 的使用者，必須把 **GitHub 最新的 `functions/index.js`** 覆蓋到電腦上相同位置，再在 `apps/gal-archive/` 執行：
-
-```sh
-firebase deploy --only functions:gal-archive:archiveIngest --project eyvind95-182f0
-```
-
-然後網站更新至 V4.3，在編輯輪迴填入「暗夢前輩、暗夢後輩」，登入 Google 後按「上傳本機資料」。這樣兩位才會都被接收端允許。
-
-
-## V4.4：區分 Gal AI 正史與副駕駛 GPT 聊天
-
-- 「完整對話」只用來保存 Gal AI 劇情原文。**自動**接收皮卡的貼文時，只有**行首**有「我：」或「他：」標記的部分才會拆入此區；前置無標記文字留在「副駕駛聊天」。
-- 皮卡與 GPT 的一般討論（未含上述行首標記），以及 GPT **自己的所有回覆**，都進入新分頁「副駕駛聊天」。GPT 並非 Gal AI，不可代替「他：」。
-- 自動收取按 Firestore 的 `receivedAt` 排序；V0.4 擴充功能還會附上相同對話的 `messageOrder`，避免非同步上傳造成顛倒。
-- **已經在 V4.3 誤收入「完整對話」的訊息**：先按「匯出備份」保存 JSON，再到「☁ 雲端同步」點「🛠 修復先前的自動收取紀錄」。此動作只辨認附有 `sourceEventId` 的自動紀錄，保留手動寫入的 Gal AI 正史；處理過的紀錄不會重複修復。
-- V0.4 Chrome 擴充功能新按鈕「回補目前頁面已顯示的歷史訊息」需要**使用者手動確認**。啟用監看預設不倒灌舊訊息，按下回補才會逐筆送出，目前單次限 200 則已載入訊息，不保證完整歷史或附件。
-- 需重新部署本版本的 `functions/index.js` 才會保存 `chatKey` 和 `messageOrder`，保留原來的寫入金鑰及 API 位址，不需要建立新的金鑰：
-
-```sh
-firebase deploy --only functions:gal-archive:archiveIngest --project eyvind95-182f0
-```
-
-- 須先將 GitHub 更新後的 `apps/gal-archive/functions/index.js` 複製到電腦既有的 `apps/gal-archive/functions/index.js`，並在本機 `apps/gal-archive/` 執行上面指令。只有部署成功後，才會記錄新的順序欄位。
-- 重要限制：超過 25,000 字元的單則訊息、未載入網頁的歷史、圖片及複雜格式暫不會被完整自動記錄；仍須手動補登，不能當作唯一正史備份。
-
-
-## V4.5：修復「歷史回補後副駕駛聊天順序錯亂」
-
-V4.4 雖然已從 Firestore incoming 排序，但儲存到正式 `pilotMessages` 時未保存 `chatKey` 和 `messageOrder`。後續先收到新訊息、再回補舊訊息時，已經收取的聊天不會重新排列。
-
-修復方式：
-
-1. 在網站先按「匯出備份」，保存本機 JSON。
-2. 更新到 V4.5 並登入 Google，點選「☁ 雲端同步」。
-3. 點「↕ 校正副駕駛聊天順序」：程式會用 `sourceEventId` 回查 Firestore `incoming`，讀取原始 `chatKey` 與 `messageOrder`，先展示可排序／缺失數量。
-4. 確定後，只移動能辨識順序的自動副駕駛訊息；不刪除訊息、不改內容、不改「完整對話」Gal AI 劇情，手動輸入的副駕駛訊息保留原位置。
-5. 若早期訊息沒有原始回合順序資訊，無法從接收時間可靠還原，程式會顯示未校正數量；請用聊天卡片的 ↑／↓ 手動調整。
-
-未來新收取的訊息也會保存順序欄位並在同個輪迴內重新排序。只要 Cloud Function 已支援 `chatKey`／`messageOrder`，這次**不需要再次部署 Firebase 函式**。
-
-## V4.6 + 擴充 V0.4.2：附上發言時間索引
-
-本版儲存三種**不同意義**的時間：
-- `sourceCreatedAt`：ChatGPT DOM 有明確機器可讀時間時才儲存原始發言時間。選單彈出的「今天 上午4:42」不保證能從 DOM 直接讀到；**讀不到不會猜測**。
-- `capturedAt`：擴充功能本次首次觀察到該訊息的時間。歷史回補時通常是**回補觀察時間**，不是歷史發言時間。
-- `receivedAt`：Firebase 雲端實際收到該筆記錄的伺服器時間。
-
-網站「完整對話」及「副駕駛聊天」都會顯示有據可查的時間；缺失原始時間會明寫「未知」。如果有兩筆可驗證原始時間，排序可優先參考；沒有時仍使用舊順序資料，不保證每一筆歷史皆可全自動正確排序。
-
-對已有的副駕駛聊天，新增各卡片「時間」按鈕，可由皮卡依 ChatGPT 訊息選單中顯示的日期時間**手動標註台灣時間** `YYYY-MM-DD HH:mm`；資料會標記為「手動標註時間」，不冒充程式自動抓到。
-
-更新流程：
-1. 先匯出輪迴檔案館 JSON 備份。
-2. GitHub Pages 會更新到 V4.6，按網頁「強制更新」。
-3. 解壓 archive-extension-v0.4.2.zip，**覆蓋舊擴充功能的相同資料夾**，在 `chrome://extensions` 按重新載入，原本監看與金鑰設定保持不變。
-4. 必須將 GitHub 最新 `apps/gal-archive/functions/index.js` 更新到電腦同一路徑，在 `apps/gal-archive/` 目錄執行：
-
-```sh
-firebase deploy --only functions:gal-archive:archiveIngest --project eyvind95-182f0
-```
-
-雲端函式成功部署後才會保存時間欄位；**不需要重新建立寫入金鑰**。未部署時傳送即使成功，時間欄位也可能被舊函式忽略。Chrome 擴充程式並無能力取得 ChatGPT 伺服器的完整原始歷史時間；不能將首次擷取或接收時間當成原始發言時間。
+- Chrome 寫入金鑰只供自己的私有 Firebase 端點使用。**不要**發到 Discord、GitHub、公開頁面或截圖裡。
+- 新訊息自動歸檔只抓取得到的 ChatGPT 頁面可見文字，並不會自動下載 ChatGPT 全部舊歷史。
+- 不同世界觀和輪迴間的轉移都是使用者明確批准後才生效，不以名稱猜測對應。
