@@ -1,10 +1,10 @@
-# 輪迴檔案館 V4.2 — 副駕駛自動歸檔
+# 輪迴檔案館 V4.3 — 副駕駛自動歸檔
 
 這份說明對應 GitHub 的 `apps/gal-archive/functions` 與 `gpt-action.openapi.yaml`。
 
 ## 已完成的部分
 
-- 輪迴建立／編輯可指定「負責管理的副駕駛／前輩／後輩」，在列表、備份和副駕駛閱讀中顯示。
+- 輪迴建立／編輯可指定多位「負責管理的副駕駛／前輩／後輩」（例如「暗夢前輩、暗夢後輩」），依接手順序儲存為 managerNames；在列表、備份及閱讀模式中顯示。每則自動紀錄標記實際負責者。
 - 網站的「☁ 雲端同步」有「建立／重設寫入金鑰」「撤銷寫入金鑰」「收取副駕駛自動紀錄」。
 - Firebase HTTPS 接收函式 `archiveIngest` 的原始碼已存放在 GitHub。函式接收 Bearer 金鑰，驗證 SHA-256 摘要與輪迴 ID，只會將資料 **create** 到 `galArchive/{uid}/incoming/{eventId}`，不會改寫正史。
 - 收取時將待收取對話加入所屬輪迴，再寫回雲端。訊息帶有 `sourceEventId`，重試不會重複加入。
@@ -23,7 +23,7 @@
    ```
    若 Firebase CLI 尚未指定此資料夾的設定，請確認它讀取到同資料夾的 `firebase.json`，且沒有修改你其他應用的部署。
 4. 部署後，從 CLI 輸出取得 **實際 HTTPS 函式網址**。不要猜測網址。
-5. 打開檔案館，登入 Google，先為輪迴填入「負責管理人」；按「↑ 上傳本機資料」更新雲端輪迴索引。
+5. 打開檔案館，登入 Google，先為輪迴填入一位或多位「負責管理人」（用頓號隔開）；按「↑ 上傳本機資料」更新雲端輪迴索引。
 6. 在「☁ 雲端同步」按「建立／重設寫入金鑰」。只將出現的金鑰複製到 **自訂 GPT 編輯器的動作 API Key（Bearer）欄位**，不要貼到對話、GitHub 或公開網頁。金鑰只會顯示一次，必要時重設或撤銷。
 7. 同頁「目前登入 UID」可用於 Action JSON。`cycleId` 是輪迴資料在 Firestore `cycles` 下的文件 ID（UUID），不是「第16周目」文字。
 8. 在可編輯的自訂 GPT 裡新增 **Action（動作）**，貼入 `gpt-action.openapi.yaml`。其中的 `servers.url` 要換成實際部署的 HTTPS host；若網址路徑已包含 `/archiveIngest`，請保證 schema 的 host / path 組合不重複。身份驗證選 API Key / Bearer。
@@ -52,5 +52,16 @@ role=me 顯示右側，role=ai 顯示左側。不得把你自己的評論冒充�
 - 所有接收資料都會進入待收取區。網站收取時才合併入正式輪迴，防止 GPT 直接覆蓋內容。
 - 預設單次最多 10 則訊息、總共最多 40,000 字元；大批內容請分段。
 - Cloud Functions、Firestore 等用量可能產生費用。建議啟用計費預算提醒。
-- 若輪迴負責人更改，需要先從網站重新上傳該輪迴，接收端才會用新的 manager 進行驗證。
+- 若輪迴負責人更改，需要先從網站重新上傳該輪迴，接收端才會用新的 managerNames 進行驗證。每次傳入的 manager 必須是其中一個單一名稱，不能傳合併名單。
 - 如意外洩露寫入金鑰，立刻在網站按「撤銷寫入金鑰」，並於自訂 GPT 的動作認證中更新金鑰。
+
+
+## V4.3 多管理者更新與重新部署
+
+已經部署 V4.2 的使用者，必須把 **GitHub 最新的 `functions/index.js`** 覆蓋到電腦上相同位置，再在 `apps/gal-archive/` 執行：
+
+```sh
+firebase deploy --only functions:gal-archive:archiveIngest --project eyvind95-182f0
+```
+
+然後網站更新至 V4.3，在編輯輪迴填入「暗夢前輩、暗夢後輩」，登入 Google 後按「上傳本機資料」。這樣兩位才會都被接收端允許。
