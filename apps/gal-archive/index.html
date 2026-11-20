@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V3.8｜Gal AI</title>
+<title>輪迴檔案館 V3.9｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,7 +20,7 @@
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V3.8</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V3.9</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><span class="pill">檔案庫</span></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：第十六周目・杜林"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -279,6 +279,32 @@ $('cloudPull').onclick=async()=>{const b=$('cloudPull');b.disabled=true;try{if(!
     if(pending){const e=pending;pending=null;try{await e.prompt();await e.userChoice}catch(err){alert('安裝啟動失敗：'+err.message)}return}
     if(window.matchMedia('(display-mode: standalone)').matches){alert('目前已經以應用程式模式開啟。');return}
     alert('請在手機 Chrome 開啟正式網址，點右上角「⋮」→「安裝應用程式」或「加到主畫面」。iPhone 請用 Safari 的「分享」→「加入主畫面」。如果瀏覽器尚未提供安裝選項，請先重新整理頁面。');
+  });
+  // Only archive-specific PWA resources are refreshed; IndexedDB/localStorage are preserved.
+  const updateButton=document.getElementById('forceUpdateBtn');
+  updateButton.addEventListener('click',async()=>{
+    updateButton.disabled=true;updateButton.textContent='🔄 更新中…';
+    try{
+      const scopeUrl=new URL('./',location.href).href;
+      if('serviceWorker' in navigator){
+        const regs=await navigator.serviceWorker.getRegistrations();
+        for(const reg of regs){
+          if(reg.scope===scopeUrl){try{await reg.update()}catch(e){console.warn('更新 SW 失敗，將嘗試清除快取：',e)}await reg.unregister();}
+        }
+      }
+      if('caches' in window){
+        const keys=await caches.keys();
+        for(const key of keys){if(key.startsWith('gal-archive-pwa-'))await caches.delete(key)}
+      }
+      // New URL + no-cache retrieval to avoid reusing the stale document.
+      const url=new URL('./index.html',location.href);
+      url.searchParams.set('force',String(Date.now()));
+      location.replace(url.href);
+    }catch(err){
+      console.error('輪迴檔案館強制更新失敗：',err);
+      alert('更新時發生問題：'+(err.message||err)+'。請使用帶版本參數的網站網址重新開啟。');
+      updateButton.disabled=false;updateButton.textContent='🔄 強制更新';
+    }
   });
   if('serviceWorker' in navigator&&location.protocol==='https:'){
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
