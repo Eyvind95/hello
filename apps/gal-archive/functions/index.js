@@ -25,7 +25,7 @@ exports.archiveIngest = onRequest(
     if (!rawToken) return send(res,401,{error:"missing_or_invalid_bearer_token"});
     const body=req.body;
     if (!body || typeof body!=="object" || Array.isArray(body))return send(res,400,{error:"invalid_json_body"});
-    const {uid,cycleId,sourceId,manager,entries,chatKey,messageOrder,sourceCreatedAt,capturedAt}=body;
+    const {uid,cycleId,sourceId,manager,entries,chatKey,messageOrder,sourceCreatedAt,sourceTimeOrigin,sourceTimePrecision,capturedAt}=body;
     if(!valid(uid,5,128)||!/^[A-Za-z0-9_-]+$/.test(uid)||
        !valid(cycleId,5,160)||!/^[A-Za-z0-9_-]+$/.test(cycleId)||
        !valid(sourceId,5,180)||!Array.isArray(entries)||entries.length<1||entries.length>10||
@@ -34,6 +34,8 @@ exports.archiveIngest = onRequest(
        (messageOrder!==undefined&&(!Number.isInteger(messageOrder)||messageOrder<0||messageOrder>1000000)))return send(res,400,{error:"invalid_metadata"});
     const optionalTime=t=>t===null||t===undefined||(typeof t==='string'&&t.length<=40&&/^\d{4}-\d{2}-\d{2}T/.test(t)&&Number.isFinite(Date.parse(t)));
     if(!optionalTime(sourceCreatedAt)||!optionalTime(capturedAt))return send(res,400,{error:'invalid_timestamp'});
+    if(sourceTimeOrigin!=null&&!['dom','menu','reply-inferred','manual'].includes(sourceTimeOrigin))return send(res,400,{error:'invalid_time_origin'});
+    if(sourceTimePrecision!=null&&!['source','minute','minute-estimated'].includes(sourceTimePrecision))return send(res,400,{error:'invalid_time_precision'});
     let total=0;
     const payload=[];
     for(const [i,e] of entries.entries()){
@@ -72,7 +74,7 @@ exports.archiveIngest = onRequest(
             cycleId,manager:manager.trim(),sourceId,section:e.section,
             role:e.role,text:e.text,status:"pending",
             ...(chatKey?{chatKey}:{}),...(Number.isInteger(messageOrder)?{messageOrder}:{}),
-            ...(sourceCreatedAt?{sourceCreatedAt}:{}),...(capturedAt?{capturedAt}:{}),
+            ...(sourceCreatedAt?{sourceCreatedAt}:{}),...(sourceCreatedAt&&sourceTimeOrigin?{sourceTimeOrigin}:{}),...(sourceCreatedAt&&sourceTimePrecision?{sourceTimePrecision}:{}),...(capturedAt?{capturedAt}:{}),
             receivedAt:FieldValue.serverTimestamp(),schemaVersion:1
           });
           result.push({index:i,status:"created",id:eventId});
