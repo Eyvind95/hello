@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V3.9｜Gal AI</title>
+<title>輪迴檔案館 V4.0｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,12 +20,12 @@
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V3.9</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V4.0</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><span class="pill">檔案庫</span></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：第十六周目・杜林"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。為保護正史，上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button></div><p id="cloudStatus" class="note" role="status" aria-live="polite">未開始同步。請先匯出 JSON 作為備份。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。為保護正史，上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button></div><p id="cloudStatus" class="note" role="status" aria-live="polite">未開始同步。請先匯出 JSON 備份；Google 登入後仍需按「上傳本機資料」，Firestore 才會建立 galArchive 集合。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
 <div class="toast hidden" id="toast" role="status"></div>
 <script>
 'use strict';
@@ -208,7 +208,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V3.8_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V4.0_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -260,13 +260,72 @@ $('cloudConnect').onclick=async()=>{
 $('cloudLogout').onclick=async()=>{try{await cloudInit();await cloudAuth.signOut();cloudStatus('已登出')}catch(e){cloudStatus('登出失敗：'+e.message,true)}};
 cloudInit().catch(e=>console.warn('檔案館登入尚未初始化：',e));
 const cloudParts=text=>{let a=[];for(let i=0;i<text.length;i+=110000)a.push(text.slice(i,i+110000));return a};
-async function pushCloud(){const u=await cloudSignedIn();await refresh();const root=cloudDb.collection('users').doc(u.uid),now=new Date().toISOString();let count=0;
-for(const w of Object.values(worldDocs)){await root.collection('worlds').doc(w.id).set(w);count++}
-for(const r of records){const ref=root.collection('cycles').doc(r.id),parts=cloudParts(JSON.stringify(r));await ref.set({id:r.id,world:r.world,title:r.title||'',updatedAt:r.updatedAt||now,partCount:parts.length,cloudSavedAt:now});let batch=cloudDb.batch(),ops=0;for(let i=0;i<parts.length;i++){batch.set(ref.collection('parts').doc(String(i).padStart(6,'0')),{index:i,data:parts[i]});if(++ops===350){await batch.commit();batch=cloudDb.batch();ops=0}}if(ops)await batch.commit();count++;cloudStatus(`已上傳 ${count} 個項目，正在繼續…`)}
-cloudStatus(`上傳完成：${Object.keys(worldDocs).length} 個世界觀、${records.length} 個輪迴。請保留 JSON 離線備份。`)}
-async function pullCloud(){const u=await cloudSignedIn();const root=cloudDb.collection('users').doc(u.uid);const ws=await root.collection('worlds').get(),cs=await root.collection('cycles').get();let worldsAdded=0,cyclesAdded=0;
-for(const d of ws.docs){const w=d.data(),local=worldDocs[w.id];if(!local||String(w.updatedAt||'')>String(local.updatedAt||'')){await operation('readwrite',{type:'put',item:w},WORLDSTORE);worldsAdded++}}
-for(const d of cs.docs){const meta=d.data(),existing=records.find(x=>x.id===d.id);if(existing&&String(existing.updatedAt||'')>=String(meta.updatedAt||''))continue;const snap=await d.ref.collection('parts').orderBy('index').get();if(snap.size!==meta.partCount)throw Error('輪迴 '+d.id+' 的雲端片段數量不一致，已停止合併');let item=JSON.parse(snap.docs.map(x=>x.data().data).join(''));if(item.id!==d.id)throw Error('輪迴 ID 不符，已停止');await operation('readwrite',{type:'put',item});cyclesAdded++;cloudStatus(`已下載 ${cyclesAdded} 個輪迴，繼續讀取…`)}await refresh();cloudStatus(`合併下載完成：更新 ${worldsAdded} 個世界觀、${cyclesAdded} 個輪迴。`)}
+// V4.0: 獨立根集合 galArchive/{uid}；保留讀取 V3.9 users/{uid} 的能力。
+async function pushCloud(){
+  const u=await cloudSignedIn();
+  await refresh();
+  const root=cloudDb.collection('galArchive').doc(u.uid);
+  const now=new Date().toISOString();
+  const worlds=Object.values(worldDocs),totalCycles=records.length;
+  let count=0;
+  for(const w of worlds){await root.collection('worlds').doc(w.id).set(w);count++}
+  for(const r of records){
+    const ref=root.collection('cycles').doc(r.id);
+    const parts=cloudParts(JSON.stringify(r));
+    let batch=cloudDb.batch(),ops=0;
+    for(let i=0;i<parts.length;i++){
+      batch.set(ref.collection('parts').doc(String(i).padStart(6,'0')),{index:i,data:parts[i]});
+      if(++ops===350){await batch.commit();batch=cloudDb.batch();ops=0}
+    }
+    if(ops)await batch.commit();
+    // 在片段寫入成功後，才更新輪迴索引（降低資料寫入一半的風險）。
+    await ref.set({id:r.id,world:r.world,title:r.title||'',updatedAt:r.updatedAt||now,partCount:parts.length,cloudSavedAt:now});
+    count++;
+    cloudStatus('已上傳 '+count+' 個項目，正在繼續…');
+  }
+  // 頂層文件必須確實存在，Firestore 主控台才能清楚看到獨立 galArchive 集合。
+  await root.set({app:'gal-ai-archive',schemaVersion:4,worldCount:worlds.length,cycleCount:totalCycles,cloudSavedAt:now},{merge:true});
+  const check=await root.get();
+  if(!check.exists)throw Error('雲端根文件驗證失敗；請保留 JSON 備份');
+  cloudStatus('上傳完成：'+worlds.length+' 個世界觀、'+totalCycles+' 個輪迴。Firestore：galArchive / 你的 UID。請保留 JSON 備份。');
+}
+async function pullCloud(){
+  const u=await cloudSignedIn();
+  const roots=[
+    {ref:cloudDb.collection('galArchive').doc(u.uid),label:'新版 galArchive'},
+    {ref:cloudDb.collection('users').doc(u.uid),label:'舊版 users'}
+  ];
+  let worldsAdded=0,cyclesAdded=0,checked=0;
+  const cycleMap=new Map(records.map(x=>[x.id,x]));
+  for(const root of roots){
+    const ws=await root.ref.collection('worlds').get();
+    const cs=await root.ref.collection('cycles').get();
+    checked+=ws.size+cs.size;
+    for(const d of ws.docs){
+      const w=d.data(),local=worldDocs[w.id];
+      if(!w.id)continue;
+      if(!local||String(w.updatedAt||'')>String(local.updatedAt||'')){
+        await operation('readwrite',{type:'put',item:w},WORLDSTORE);
+        worldDocs[w.id]=w;
+        worldsAdded++;
+      }
+    }
+    for(const d of cs.docs){
+      const meta=d.data(),existing=cycleMap.get(d.id);
+      if(existing&&String(existing.updatedAt||'')>=String(meta.updatedAt||''))continue;
+      const snap=await d.ref.collection('parts').orderBy('index').get();
+      if(snap.size!==meta.partCount)throw Error(root.label+'：輪迴 '+d.id+' 的雲端片段數量不一致，已停止合併');
+      const item=JSON.parse(snap.docs.map(x=>x.data().data).join(''));
+      if(item.id!==d.id)throw Error(root.label+'：輪迴 ID 不符，已停止');
+      await operation('readwrite',{type:'put',item});
+      cycleMap.set(item.id,item);
+      cyclesAdded++;
+      cloudStatus('已下載 '+cyclesAdded+' 個輪迴，繼續讀取…');
+    }
+  }
+  await refresh();
+  cloudStatus('合併完成：檢查 '+checked+' 個雲端項目、更新 '+worldsAdded+' 個世界觀、'+cyclesAdded+' 個輪迴（含舊版 users 路徑相容）。');
+}
 $('cloudPush').onclick=async()=>{const b=$('cloudPush');b.disabled=true;try{if(!confirm('確定將這個瀏覽器的世界觀與輪迴上傳至你的私人 Firestore？請先保留 JSON 備份。'))return;cloudStatus('正在上傳…');await pushCloud()}catch(e){cloudStatus('上傳失敗：'+e.message,true)}finally{b.disabled=false}};
 $('cloudPull').onclick=async()=>{const b=$('cloudPull');b.disabled=true;try{if(!confirm('確定下載雲端資料並與本機合併？相同 ID 中更新日期較新的版本會覆蓋舊版。'))return;cloudStatus('正在下載…');await pullCloud()}catch(e){cloudStatus('下載失敗：'+e.message,true)}finally{b.disabled=false}};
 </script><script>
