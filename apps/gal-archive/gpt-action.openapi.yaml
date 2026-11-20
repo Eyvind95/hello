@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: 輪迴檔案館副駕駛自動歸檔
+  version: 1.0.0
+  description: 僅新增待收取訊息，不能覆蓋既有正史。部署後請替換 servers.url。
+servers:
+  - url: https://REPLACE-WITH-YOUR-DEPLOYED-FUNCTION-HOST
+paths:
+  /archiveIngest:
+    post:
+      operationId: appendArchiveMessages
+      summary: 將確認的玩家與 Gal AI 對話新增至輪迴檔案館接收匣
+      description: 僅在收到當輪完整對話後送出。一次包含一至十則訊息，按原始順序；不要提交副駕駛自行推測的劇情。sourceId 同一次回應重試時必須相同，以避免重複。
+      security:
+        - archiveToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [uid, cycleId, sourceId, manager, entries]
+              properties:
+                uid: {type: string, description: Firebase 登入 UID，從網站雲端同步頁取得}
+                cycleId: {type: string, description: 指定輪迴 UUID，不能用輪迴名稱替代}
+                sourceId: {type: string, description: 此次對話來源的唯一且重試保持不變識別碼}
+                manager: {type: string, description: 實際負責的副駕駛名稱，需與輪迴管理人相符}
+                entries:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [section, role, text]
+                    properties:
+                      section:
+                        type: string
+                        enum: [chat, quiz, changes]
+                        description: chat=完整對話；quiz=10題；changes=與皮卡修改紀錄
+                      role:
+                        type: string
+                        enum: [me, ai]
+                        description: me=皮卡（右）；ai=Gal AI 或負責 GPT（左）
+                      text:
+                        type: string
+                        description: 原樣保存的完整原文，不加猜測、不補寫不存在的內容
+      responses:
+        '200':
+          description: 新增或去重成功，資料仍在待收取區域
+        '400': {description: 輸入格式有誤}
+        '401': {description: Bearer 金鑰缺失}
+        '403': {description: 金鑰無效、撤銷或負責人不符}
+        '404': {description: 指定輪迴尚未上傳至 Firestore}
+components:
+  securitySchemes:
+    archiveToken:
+      type: http
+      scheme: bearer
+      description: 網站產生的 64 位十六進位寫入金鑰，設定在 GPT 動作 Authentication > API Key > Bearer。勿放在提示詞內。
