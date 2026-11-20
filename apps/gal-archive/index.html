@@ -407,38 +407,152 @@ async function uploadOneCycle(r){
     updatedAt:r.updatedAt||new Date().toISOString(),partCount:parts.length,
     cloudSavedAt:new Date().toISOString()});
 }
+
+// V4.4: deputy GPT speech is not the Gal AI engine's story. Only player-pasted
+// blocks explicitly headed by 我： or 他： are routed into canonical story.
+function archiveReceivedMillis(v){
+  if(v&&typeof v.toMillis==='function')return v.toMillis();
+  if(v&&typeof v.seconds==='number')return v.seconds*1000+(v.nanoseconds||0)/1e6;
+  if(typeof v==='number')return v;
+  const t=Date.parse(v||'');return Number.isFinite(t)?t:0;
+}
+function classifyArchiveChat(item,eventId){
+  const common={sourceEventId:eventId,manager:item.manager||'',receivedAt:archiveReceivedMillis(item.receivedAt)};
+  const pilot=(role,text,i=0)=>({target:'pilotMessages',role,text,sourcePartIndex:i,...common});
+  if(item.role!=='me')return [pilot('ai',item.text)];
+  const lines=item.text.replace(/\r\n?/g,'\n').split('\n');
+  let current=null,inFence=false;const parts=[];
+  const finish=()=>{if(current&&current.text.trim())parts.push({...current,text:current.text.trim()});current=null};
+  for(const line of lines){
+    const m=!inFence&&line.match(/^\s*(我|他)\s*[：:]\s*(.*)$/);
+    if(m){finish();current={kind:'story',role:m[1]==='我'?'me':'ai',text:m[2]};continue}
+    if(!current)current={kind:'pilot',role:'me',text:line};
+    else current.text+='\n'+line;
+    if(/^\s*\x60{3,}/.test(line))inFence=!inFence;
+  }
+  finish();
+  if(!parts.some(p=>p.kind==='story'))return [pilot('me',item.text)];
+  return parts.map((p,i)=>p.kind==='story'
+    ?{target:'messages',role:p.role,text:p.text,sourcePartIndex:i,...common}
+    :pilot('me',p.text,i));
+}
+function hasArchivedSource(record,eventId,index){
+  return ['messages','pilotMessages','quizLogs','changeLogs'].some(key=>
+    (record[key]||[]).some(x=>x.sourceEventId===eventId&&(x.sourcePartIndex??0)===index));
+}
+function orderIncomingSnapshot(a,b){
+  return archiveReceivedMillis(a.data().receivedAt)-archiveReceivedMillis(b.data().receivedAt)
+    ||a.id.localeCompare(b.id);
+}
+
 async function receiveAutomaticEntries(){
   const user=await cloudSignedIn();
   await refresh();
   const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
-  const snap=await inbox.where('status','==','pending').limit(100).get();
+  // No hashed document ID ordering; read pending and sort by server receipt time.
+  const snap=await inbox.where('status','==','pending').get();
   if(snap.empty){cloudStatus('沒有等待收取的副駕駛紀錄。');return}
-  const groups=new Map();let invalid=0;
-  for(const doc of snap.docs){
+  const docs=[...snap.docs].sort(orderIncomingSnapshot).slice(0,100);
+  const groups=new Map();let invalid=0,storyCount=0,pilotCount=0;
+  for(const doc of docs){
     const item=doc.data();
     const r=groups.get(item.cycleId)?.record||records.find(x=>x.id===item.cycleId);
-    if(!r||!['chat','quiz','changes'].includes(item.section)||!['me','ai'].includes(item.role)||typeof item.text!=='string'){invalid++;continue}
-    if(!groups.has(r.id))groups.set(r.id,{record:structuredClone(r),docs:[],added:0});
-    const group=groups.get(r.id),record=group.record;
-    const field=item.section==='chat'?'messages':item.section==='quiz'?'quizLogs':'changeLogs';
-    if(!Array.isArray(record[field]))record[field]=[];
-    const exists=record[field].some(x=>x.sourceEventId===doc.id);
-    if(!exists){
-      record[field].push({id:uid(),role:item.role,manager:item.manager||'',text:item.text,sourceEventId:doc.id});
-      group.added++;
+    if(!r||!['chat','quiz','changes'].includes(item.section)||!['me','ai'].includes(item.role)||typeof item.text!=='string'){
+      invalid++;continue;
     }
-    group.docs.push(doc.ref);
+    if(!groups.has(r.id))groups.set(r.id,{record:structuredClone(r),refs:[],added:0});
+    const group=groups.get(r.id),record=group.record;
+    const entries=item.section==='chat'
+      ?classifyArchiveChat(item,doc.id)
+      :[{target:item.section==='quiz'?'quizLogs':'changeLogs',role:item.role,text:item.text,
+        manager:item.manager||'',sourceEventId:doc.id,sourcePartIndex:0,
+        receivedAt:archiveReceivedMillis(item.receivedAt)}];
+    for(const entry of entries){
+      if(hasArchivedSource(record,entry.sourceEventId,entry.sourcePartIndex))continue;
+      (record[entry.target]??=[]).push({
+        id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
+        sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,
+        receivedAt:entry.receivedAt
+      });
+      group.added++;
+      if(entry.target==='messages')storyCount++;
+      if(entry.target==='pilotMessages')pilotCount++;
+    }
+    group.refs.push(doc.ref);
   }
+  const valid=docs.length-invalid;
+  if(!confirm('準備收取 '+valid+' 筆雲端來源。\nGal AI 劇情新增 '+storyCount+' 則，副駕駛聊天新增 '+pilotCount+' 則。\n原始紀錄會保留，請確認已備份重要正史。確定開始？'))return;
   let accepted=0;
-  for(const {record,docs,added} of groups.values()){
-    if(added){record.updatedAt=new Date().toISOString();await operation('readwrite',{type:'put',item:record})}
-    // Persist to cloud before marking inbox entries accepted.
+  for(const {record,refs,added} of groups.values()){
+    if(added){
+      record.updatedAt=new Date().toISOString();
+      await operation('readwrite',{type:'put',item:record});
+    }
+    // Write the complete revised cycle before acknowledging any inbox document.
     await uploadOneCycle(record);
-    for(const ref of docs){await ref.update({status:'accepted',acceptedAt:firebase.firestore.FieldValue.serverTimestamp()});accepted++}
+    for(const ref of refs){
+      await ref.update({status:'accepted',acceptedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      accepted++;
+    }
   }
   await refresh();
-  cloudStatus('已將 '+accepted+' 則待收取紀錄納入輪迴並寫回雲端。'+(invalid?'另有 '+invalid+' 則未能匹配輪迴，仍保留待收取。':''));
+  cloudStatus('收取完成：'+accepted+' 筆來源；新增劇情 '+storyCount+' 則、副駕駛聊天 '+pilotCount+' 則。'
+    +(invalid?'另有 '+invalid+' 筆不符合輪迴或格式，仍在待收取區。':'')
+    +(snap.size>docs.length?'還有 '+(snap.size-docs.length)+' 筆待收取，可再按一次。':''));
 }
+// Manual repair of old V4.3 imports: only entries tagged sourceEventId are moved.
+// The existing hand-curated story and all other sections remain unchanged.
+async function repairAutoImportedChats(){
+  const user=await cloudSignedIn();
+  await refresh();
+  const targets=records.filter(r=>(r.messages||[]).some(m=>m.sourceEventId));
+  if(!targets.length){cloudStatus('沒有發現需要修正的舊版自動收取訊息。');return}
+  const total=targets.reduce((n,r)=>n+(r.messages||[]).filter(m=>m.sourceEventId).length,0);
+  if(!confirm('找到 '+total+' 則舊版自動收取訊息。\n只處理附有 sourceEventId 的紀錄，手動輸入的正史不會改動。\n建議先匯出 JSON 備份。確定修正分類及順序？'))return;
+  const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
+  const ids=[...new Set(targets.flatMap(r=>(r.messages||[]).filter(m=>m.sourceEventId).map(m=>m.sourceEventId)))];
+  const source=new Map();
+  for(const id of ids){
+    const doc=await inbox.doc(id).get();
+    if(doc.exists)source.set(id,doc.data());
+  }
+  let pilotAdded=0,storyAdded=0,cyclesFixed=0;
+  for(const original of targets){
+    const r=structuredClone(original),existing=r.messages||[];
+    const old=existing.map((m,i)=>({...m,legacyPosition:i})).filter(m=>m.sourceEventId)
+      .sort((a,b)=>
+        archiveReceivedMillis(source.get(a.sourceEventId)?.receivedAt)
+        -archiveReceivedMillis(source.get(b.sourceEventId)?.receivedAt)
+        ||a.legacyPosition-b.legacyPosition);
+    r.messages=existing.filter(m=>!m.sourceEventId);
+    r.pilotMessages??=[];
+    for(const m of old){
+      const meta=source.get(m.sourceEventId)||{};
+      const parts=classifyArchiveChat({
+        text:m.text,role:meta.role||m.role,manager:meta.manager||m.manager||'',
+        receivedAt:meta.receivedAt||m.receivedAt
+      },m.sourceEventId);
+      for(const entry of parts){
+        if(hasArchivedSource(r,entry.sourceEventId,entry.sourcePartIndex))continue;
+        r[entry.target].push({id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
+          sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,receivedAt:entry.receivedAt});
+        if(entry.target==='messages')storyAdded++;else pilotAdded++;
+      }
+    }
+    r.updatedAt=new Date().toISOString();
+    await operation('readwrite',{type:'put',item:r});
+    await uploadOneCycle(r);
+    cyclesFixed++;
+  }
+  await refresh();
+  cloudStatus('修復完成：'+cyclesFixed+' 輪；副駕駛聊天 '+pilotAdded+' 則，劇情 '+storyAdded+' 則；手動正史未更動。');
+}
+$('repairAutoChat').onclick=async()=>{
+  const b=$('repairAutoChat');b.disabled=true;
+  try{cloudStatus('正在比對舊版自動收取來源…');await repairAutoImportedChats()}
+  catch(e){cloudStatus('修復失敗：'+e.message+'。請先保留備份；已處理輪迴再次執行不會重複匯入。',true)}
+  finally{b.disabled=false}
+};
 $('cloudInbox').onclick=async()=>{
   const b=$('cloudInbox');b.disabled=true;
   try{cloudStatus('正在收取副駕駛紀錄…');await receiveAutomaticEntries()}
