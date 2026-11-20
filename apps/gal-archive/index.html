@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V4.5｜Gal AI</title>
+<title>輪迴檔案館 V4.6｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,7 +20,7 @@
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V4.5</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V4.6</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><span class="pill">檔案庫</span></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：第十六周目・杜林"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="例如：暗夢前輩、暗夢後輩"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -73,18 +73,36 @@ function renderLog(r,kind){const isQuiz=kind==='quiz',key=logKey(kind),items=r[k
 let logSpeaker='me';
 function parseLogBulk(input,manager){let out=[],cur=null;for(const line of input.replace(/\r\n/g,'\n').split('\n')){let match=line.match(/^\s*([^：:\n]{1,50})[：:]\s*(.*)$/);if(match){const who=match[1].trim();const role=/^(我|皮卡|玩家)$/.test(who)?'me':'ai';if(cur)out.push(cur);cur={id:uid(),role,manager:role==='ai'?(/^(他|AI|Gal\s*AI|負責人)$/i.test(who)?manager:who):'',text:match[2]}}else if(cur)cur.text+='\n'+line;else if(line.trim())cur={id:uid(),role:'me',manager:'',text:line}}if(cur)out.push(cur);return out.map(m=>({...m,text:m.text.trim()})).filter(m=>m.text)}
 
+
+function archiveIsoTime(value){
+  if(!value)return null;
+  const ms=archiveReceivedMillis(value);
+  return ms>0?new Date(ms).toISOString():null;
+}
+function archiveTimeDisplay(m){
+  const source=archiveIsoTime(m.sourceCreatedAt),captured=archiveIsoTime(m.capturedAt),received=archiveIsoTime(m.receivedAt);
+  const render=iso=>new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',
+    year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const lines=[];
+  if(source)lines.push((m.sourceTimeOrigin==='manual'?'手動標註時間：':'原始發言：')+render(source));
+  else lines.push('原始發言時間：未知');
+  if(captured)lines.push('首次擷取：'+render(captured));
+  if(received)lines.push('雲端接收：'+render(received));
+  return '<div class="note" style="font-size:11px;opacity:.85;margin:5px 0 7px">'+lines.map(safe).join(' · ')+'</div>';
+}
+
 function renderPilotChat(r){
   const items=r.pilotMessages||[],suggested=pilotManagerName||cycleManagerNames(r).at(-1)||'副駕駛 GPT';
   $('tabBody').innerHTML=`<div class="sectionhead"><h3>副駕駛聊天 <span class="stat">（${items.length} 則）</span></h3><span class="note">左：副駕駛 GPT ／ 右：皮卡（與 Gal AI 劇情分開）</span></div>
   <p class="note">沒有明確「我：／他：」標記的玩家訊息，以及 GPT 的回覆，會收在這裡。這裡可以手動編輯、刪除及調整訊息順序。</p>
-  <div class="chat" id="pilotChatList">${items.length?items.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'皮卡':m.manager||'副駕駛 GPT')} · #${i+1}</div><div class="body">${safe(m.text)}</div><div class="msgtools"><button data-pilotmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-pilotmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-pilotedit="${i}">編輯</button><button data-pilotremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">尚無副駕駛聊天紀錄。</div>'}</div>
+  <div class="chat" id="pilotChatList">${items.length?items.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'皮卡':m.manager||'副駕駛 GPT')} · #${i+1}</div>${archiveTimeDisplay(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-pilotmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-pilotmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-pilotedit="${i}">編輯</button><button data-pilottime="${i}">時間</button><button data-pilotremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">尚無副駕駛聊天紀錄。</div>'}</div>
   <div class="composer"><h3>新增副駕駛聊天</h3><div class="speaker"><button class="btn ${pilotSpeaker==='ai'?'selected':''}" data-pilotspeaker="ai">副駕駛 GPT（左）</button><button class="btn ${pilotSpeaker==='me'?'selected':''}" data-pilotspeaker="me">皮卡（右）</button></div>
   <label>副駕駛名稱</label><input id="pilotManager" value="${safe(suggested)}" placeholder="例如：暗夢後輩">
   <label>聊天內容</label><textarea id="pilotInput" placeholder="輸入與副駕駛 GPT 的對話內容…"></textarea>
   <div class="actions topsp"><button class="btn primary" id="addPilotMessage">加入副駕駛聊天</button></div></div>`;
 }
 
-function renderChat(r){let messages=r.messages||[];$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="chat" id="chat">${messages.length?messages.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${m.role==='me'?'我（皮卡）':'Gal AI'} · #${i+1}${m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):''}</div><div class="body">${safe(m.text)}</div><div class="msgtools"><button data-move="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-move="${i}" data-dir="1" ${i===messages.length-1?'disabled':''}>↓</button><button data-edit="${i}">編輯</button><button data-remove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea><div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`}
+function renderChat(r){let messages=r.messages||[];$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="chat" id="chat">${messages.length?messages.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${m.role==='me'?'我（皮卡）':'Gal AI'} · #${i+1}${m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):''}</div>${archiveTimeDisplay(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-move="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-move="${i}" data-dir="1" ${i===messages.length-1?'disabled':''}>↓</button><button data-edit="${i}">編輯</button><button data-remove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea><div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
@@ -136,10 +154,21 @@ if(b.id==='addPilotMessage'){
   (r.pilotMessages??=[]).push({id:uid(),role:pilotSpeaker,manager:pilotSpeaker==='ai'?manager:'',text:value});
   await put(r);notify('已加入副駕駛聊天');return;
 }
-if(b.dataset.pilotedit!==undefined||b.dataset.pilotremove!==undefined||b.dataset.pilotmove!==undefined){
-  const arr=r.pilotMessages||[],i=Number(b.dataset.pilotedit??b.dataset.pilotremove??b.dataset.pilotmove);
+if(b.dataset.pilotedit!==undefined||b.dataset.pilottime!==undefined||b.dataset.pilotremove!==undefined||b.dataset.pilotmove!==undefined){
+  const arr=r.pilotMessages||[],i=Number(b.dataset.pilotedit??b.dataset.pilottime??b.dataset.pilotremove??b.dataset.pilotmove);
   if(!Number.isInteger(i)||i<0||i>=arr.length)return;
-  if(b.dataset.pilotedit!==undefined){
+  if(b.dataset.pilottime!==undefined){
+    const current=archiveIsoTime(arr[i].sourceCreatedAt);
+    const input=prompt('手動標註發言時間（台灣時間 YYYY-MM-DD HH:mm；留空可清除）：',current?new Date(current).toLocaleString('sv-SE',{timeZone:'Asia/Taipei'}).slice(0,16):'');
+    if(input===null)return;
+    if(!input.trim()){arr[i].sourceCreatedAt=null;arr[i].sourceTimeOrigin=null}
+    else{
+      if(!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(input.trim()))return notify('格式必須是 YYYY-MM-DD HH:mm');
+      const iso=new Date(input.trim().replace(' ','T')+'+08:00');
+      if(!Number.isFinite(iso.getTime()))return notify('無效日期');
+      arr[i].sourceCreatedAt=iso.toISOString();arr[i].sourceTimeOrigin='manual';
+    }
+  }else if(b.dataset.pilotedit!==undefined){
     const value=prompt('編輯副駕駛聊天：',arr[i].text);if(value===null)return;
     arr[i].text=value;
     if(arr[i].role==='ai'){const name=prompt('副駕駛名稱：',arr[i].manager||'副駕駛 GPT');if(name!==null&&name.trim())arr[i].manager=name.trim()}
@@ -262,7 +291,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V4.5_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V4.6_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -417,7 +446,7 @@ function archiveReceivedMillis(v){
   const t=Date.parse(v||'');return Number.isFinite(t)?t:0;
 }
 function classifyArchiveChat(item,eventId){
-  const common={sourceEventId:eventId,manager:item.manager||'',receivedAt:archiveReceivedMillis(item.receivedAt),chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null};
+  const common={sourceEventId:eventId,manager:item.manager||'',receivedAt:archiveReceivedMillis(item.receivedAt),sourceCreatedAt:item.sourceCreatedAt||null,capturedAt:item.capturedAt||null,chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null};
   const pilot=(role,text,i=0)=>({target:'pilotMessages',role,text,sourcePartIndex:i,...common});
   if(item.role!=='me')return [pilot('ai',item.text)];
   const lines=item.text.replace(/\r\n?/g,'\n').split('\n');
@@ -456,8 +485,8 @@ function sortArchivedPilotMessages(items){
   }
   // Deterministic, transitive ordering: group first, turn position second.
   const flattened=[...groups.values()].flatMap(group=>
-    group.sort((a,b)=>a.x.messageOrder-b.x.messageOrder
-      ||(a.x.sourcePartIndex??0)-(b.x.sourcePartIndex??0)||a.i-b.i).map(entry=>entry.x));
+    group.sort((a,b)=>{const ta=archiveReceivedMillis(a.x.sourceCreatedAt),tb=archiveReceivedMillis(b.x.sourceCreatedAt);return (ta&&tb&&ta!==tb?ta-tb:0)||a.x.messageOrder-b.x.messageOrder
+      ||(a.x.sourcePartIndex??0)-(b.x.sourcePartIndex??0)||a.i-b.i}).map(entry=>entry.x));
   const result=items.slice();
   indices.forEach((i,j)=>result[i]=flattened[j]);
   let changed=indices.filter((i,j)=>items[i]!==result[i]).length;
@@ -466,7 +495,10 @@ function sortArchivedPilotMessages(items){
 
 function orderIncomingSnapshot(a,b){
   const aa=a.data(),bb=b.data();
-  // When both events came from the same browser conversation, DOM order wins.
+  // Verified original authored times take priority over later backfill arrival.
+  const ta=archiveReceivedMillis(aa.sourceCreatedAt),tb=archiveReceivedMillis(bb.sourceCreatedAt);
+  if(ta&&tb&&ta!==tb)return ta-tb;
+  // Fallback: browser conversation order; do not conflate upload time with authorship.
   if(aa.chatKey&&aa.chatKey===bb.chatKey&&Number.isInteger(aa.messageOrder)&&Number.isInteger(bb.messageOrder)
      &&aa.messageOrder!==bb.messageOrder)return aa.messageOrder-bb.messageOrder;
   return archiveReceivedMillis(aa.receivedAt)-archiveReceivedMillis(bb.receivedAt)
@@ -494,13 +526,13 @@ async function receiveAutomaticEntries(){
       ?classifyArchiveChat(item,doc.id)
       :[{target:item.section==='quiz'?'quizLogs':'changeLogs',role:item.role,text:item.text,
         manager:item.manager||'',sourceEventId:doc.id,sourcePartIndex:0,
-        receivedAt:archiveReceivedMillis(item.receivedAt),chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null}];
+        receivedAt:archiveReceivedMillis(item.receivedAt),sourceCreatedAt:item.sourceCreatedAt||null,capturedAt:item.capturedAt||null,chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null}];
     for(const entry of entries){
       if(hasArchivedSource(record,entry.sourceEventId,entry.sourcePartIndex))continue;
       (record[entry.target]??=[]).push({
         id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
         sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,
-        receivedAt:entry.receivedAt,chatKey:entry.chatKey||'',messageOrder:entry.messageOrder
+        receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,capturedAt:entry.capturedAt||null,chatKey:entry.chatKey||'',messageOrder:entry.messageOrder
       });
       group.added++;
       if(entry.target==='messages')storyCount++;
@@ -565,13 +597,13 @@ async function repairAutoImportedChats(){
       const meta=source.get(m.sourceEventId)||{};
       const parts=classifyArchiveChat({
         text:m.text,role:meta.role||m.role,manager:meta.manager||m.manager||'',
-        receivedAt:meta.receivedAt||m.receivedAt,
+        receivedAt:meta.receivedAt||m.receivedAt,sourceCreatedAt:meta.sourceCreatedAt||m.sourceCreatedAt||null,capturedAt:meta.capturedAt||m.capturedAt||null,
         chatKey:meta.chatKey||m.chatKey||'',messageOrder:Number.isInteger(meta.messageOrder)?meta.messageOrder:m.messageOrder
       },m.sourceEventId);
       for(const entry of parts){
         if(hasArchivedSource(r,entry.sourceEventId,entry.sourcePartIndex))continue;
         r[entry.target].push({id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
-          sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,receivedAt:entry.receivedAt,
+          sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,capturedAt:entry.capturedAt||null,
           chatKey:entry.chatKey||'',messageOrder:entry.messageOrder});
         if(entry.target==='messages')storyAdded++;else pilotAdded++;
       }
@@ -607,7 +639,7 @@ async function reorderPilotMessagesFromCloud(){
       const key=source?.chatKey||m.chatKey||'';
       const order=Number.isInteger(source?.messageOrder)?source.messageOrder:m.messageOrder;
       if(!(key&&Number.isInteger(order)))unresolved++;
-      return {...m,chatKey:key,messageOrder:Number.isInteger(order)?order:null};
+      return {...m,chatKey:key,messageOrder:Number.isInteger(order)?order:null,sourceCreatedAt:source?.sourceCreatedAt||m.sourceCreatedAt||null,capturedAt:source?.capturedAt||m.capturedAt||null,receivedAt:archiveReceivedMillis(source?.receivedAt)||m.receivedAt};
     });
     const sorted=sortArchivedPilotMessages(enriched);
     r.pilotMessages=sorted.items;
