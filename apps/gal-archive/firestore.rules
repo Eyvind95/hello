@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 將下列三個 match 放入既有規則的 documents 區塊中；
+    // 若 Firebase 專案還有其他網站，切勿直接覆蓋它們原本的規則。
+    function archiveOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    match /users/{uid}/worlds/{worldId} {
+      allow read, write: if archiveOwner(uid);
+    }
+    match /users/{uid}/cycles/{cycleId} {
+      allow read, write: if archiveOwner(uid);
+      match /parts/{partId} {
+        allow read, write: if archiveOwner(uid);
+      }
+    }
+  }
+}
