@@ -84,7 +84,7 @@ function archiveTimeDisplay(m){
   const render=iso=>new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',
     year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
   const lines=[];
-  if(source)lines.push((m.sourceTimeOrigin==='manual'?'手動標註時間：':'原始發言：')+render(source));
+  if(source)lines.push((m.sourceTimeOrigin==='manual'?'手動標註時間：':m.sourceTimeOrigin==='reply-inferred'?'依 GPT 回覆推定（分鐘）：':m.sourceTimePrecision==='minute'?'選單發言時間（分鐘）：':'原始發言：')+render(source));
   else lines.push('原始發言時間：未知');
   if(captured)lines.push('首次擷取：'+render(captured));
   if(received)lines.push('雲端接收：'+render(received));
@@ -446,7 +446,7 @@ function archiveReceivedMillis(v){
   const t=Date.parse(v||'');return Number.isFinite(t)?t:0;
 }
 function classifyArchiveChat(item,eventId){
-  const common={sourceEventId:eventId,manager:item.manager||'',receivedAt:archiveReceivedMillis(item.receivedAt),sourceCreatedAt:item.sourceCreatedAt||null,capturedAt:item.capturedAt||null,chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null};
+  const common={sourceEventId:eventId,manager:item.manager||'',receivedAt:archiveReceivedMillis(item.receivedAt),sourceCreatedAt:item.sourceCreatedAt||null,sourceTimeOrigin:item.sourceTimeOrigin||null,sourceTimePrecision:item.sourceTimePrecision||null,capturedAt:item.capturedAt||null,chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null};
   const pilot=(role,text,i=0)=>({target:'pilotMessages',role,text,sourcePartIndex:i,...common});
   if(item.role!=='me')return [pilot('ai',item.text)];
   const lines=item.text.replace(/\r\n?/g,'\n').split('\n');
@@ -526,13 +526,13 @@ async function receiveAutomaticEntries(){
       ?classifyArchiveChat(item,doc.id)
       :[{target:item.section==='quiz'?'quizLogs':'changeLogs',role:item.role,text:item.text,
         manager:item.manager||'',sourceEventId:doc.id,sourcePartIndex:0,
-        receivedAt:archiveReceivedMillis(item.receivedAt),sourceCreatedAt:item.sourceCreatedAt||null,capturedAt:item.capturedAt||null,chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null}];
+        receivedAt:archiveReceivedMillis(item.receivedAt),sourceCreatedAt:item.sourceCreatedAt||null,sourceTimeOrigin:item.sourceTimeOrigin||null,sourceTimePrecision:item.sourceTimePrecision||null,capturedAt:item.capturedAt||null,chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null}];
     for(const entry of entries){
       if(hasArchivedSource(record,entry.sourceEventId,entry.sourcePartIndex))continue;
       (record[entry.target]??=[]).push({
         id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
         sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,
-        receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,capturedAt:entry.capturedAt||null,chatKey:entry.chatKey||'',messageOrder:entry.messageOrder
+        receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,sourceTimeOrigin:entry.sourceTimeOrigin||null,sourceTimePrecision:entry.sourceTimePrecision||null,capturedAt:entry.capturedAt||null,chatKey:entry.chatKey||'',messageOrder:entry.messageOrder
       });
       group.added++;
       if(entry.target==='messages')storyCount++;
@@ -597,13 +597,13 @@ async function repairAutoImportedChats(){
       const meta=source.get(m.sourceEventId)||{};
       const parts=classifyArchiveChat({
         text:m.text,role:meta.role||m.role,manager:meta.manager||m.manager||'',
-        receivedAt:meta.receivedAt||m.receivedAt,sourceCreatedAt:meta.sourceCreatedAt||m.sourceCreatedAt||null,capturedAt:meta.capturedAt||m.capturedAt||null,
+        receivedAt:meta.receivedAt||m.receivedAt,sourceCreatedAt:meta.sourceCreatedAt||m.sourceCreatedAt||null,sourceTimeOrigin:meta.sourceTimeOrigin||m.sourceTimeOrigin||null,sourceTimePrecision:meta.sourceTimePrecision||m.sourceTimePrecision||null,capturedAt:meta.capturedAt||m.capturedAt||null,
         chatKey:meta.chatKey||m.chatKey||'',messageOrder:Number.isInteger(meta.messageOrder)?meta.messageOrder:m.messageOrder
       },m.sourceEventId);
       for(const entry of parts){
         if(hasArchivedSource(r,entry.sourceEventId,entry.sourcePartIndex))continue;
         r[entry.target].push({id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
-          sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,capturedAt:entry.capturedAt||null,
+          sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,sourceTimeOrigin:entry.sourceTimeOrigin||null,sourceTimePrecision:entry.sourceTimePrecision||null,capturedAt:entry.capturedAt||null,
           chatKey:entry.chatKey||'',messageOrder:entry.messageOrder});
         if(entry.target==='messages')storyAdded++;else pilotAdded++;
       }
@@ -639,7 +639,7 @@ async function reorderPilotMessagesFromCloud(){
       const key=source?.chatKey||m.chatKey||'';
       const order=Number.isInteger(source?.messageOrder)?source.messageOrder:m.messageOrder;
       if(!(key&&Number.isInteger(order)))unresolved++;
-      return {...m,chatKey:key,messageOrder:Number.isInteger(order)?order:null,sourceCreatedAt:source?.sourceCreatedAt||m.sourceCreatedAt||null,capturedAt:source?.capturedAt||m.capturedAt||null,receivedAt:archiveReceivedMillis(source?.receivedAt)||m.receivedAt};
+      return {...m,chatKey:key,messageOrder:Number.isInteger(order)?order:null,sourceCreatedAt:source?.sourceCreatedAt||m.sourceCreatedAt||null,sourceTimeOrigin:source?.sourceTimeOrigin||m.sourceTimeOrigin||null,sourceTimePrecision:source?.sourceTimePrecision||m.sourceTimePrecision||null,capturedAt:source?.capturedAt||m.capturedAt||null,receivedAt:archiveReceivedMillis(source?.receivedAt)||m.receivedAt};
     });
     const sorted=sortArchivedPilotMessages(enriched);
     r.pilotMessages=sorted.items;
