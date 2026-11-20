@@ -1,40 +1,41 @@
-# 輪迴檔案館 V3.6：Firebase 設定
+# 輪迴檔案館 V4.0：Firebase 設定
 
-網站：`/hello/apps/gal-archive/index.html`。網站程式公開，但輪迴內容預設只儲存在本機瀏覽器的 IndexedDB，不會自動上傳 GitHub。
+網站：`https://eyvind95.github.io/hello/apps/gal-archive/index.html`
 
-## 需要做的設定
+## 已使用共用專案
 
-1. 開啟 [Firebase 主控台](https://console.firebase.google.com/)，選擇你原本使用的專案，或新建一個專案。
-2. 在「Authentication > Sign-in method」啟用 **Google**。
-3. 在「Authentication > Settings > Authorized domains」加入 **eyvind95.github.io**。
-4. 在「Firestore Database」建立資料庫。前往 Rules，**將本資料夾 `firestore.rules` 裡的三個 match 和 archiveOwner 函式合併進原本規則**，不要整份覆蓋其他應用已使用的規則。
-5. 網站已內建與記帳本、每日任務、計時器相同的 Firebase 專案設定，不用再複製或貼上設定 JSON。
-6. 開啟輪迴檔案館的「☁ 雲端同步」→「使用 Google 登入」→ 先匯出 JSON 備份 →「↑ 上傳本機資料」。
-7. 換裝置時，使用**相同 Google 帳號**登入，按「↓ 從雲端合併下載」。
+檔案館和記帳本、每日任務、計時器使用相同 Firebase 專案：`eyvind95-182f0`，且直接使用 Google 登入；**不需要再貼 Firebase 設定 JSON**。
 
-Firebase 專案：`eyvind95-182f0`。下方原有設定範例不再需要手動輸入：
+## 必要設定
 
-```json
-{
-  "apiKey": "你的 Firebase apiKey",
-  "authDomain": "你的專案.firebaseapp.com",
-  "projectId": "你的專案 ID",
-  "appId": "你的 appId"
-}
+1. 到 [Firebase 主控台](https://console.firebase.google.com/) 開啟上述專案的 **Cloud Firestore > 規則**。
+2. 確保 Authentication 已啟用 Google 並授權 `eyvind95.github.io`。
+3. **將 `firestore.rules` 中的 `match /galArchive/{uid}/{path=**}` 區塊合併到目前安全規則的 `match /databases/{database}/documents` 內。** 不要覆蓋其他網站的規則。
+4. 按「發布」後，開啟輪迴檔案館 V4.0 →「☁ 雲端同步」→ Google 登入。
+5. **先匯出 JSON 備份，再按「↑ 上傳本機資料」。** 登入本身不會建立集合／上傳資料。
+6. 完成時會顯示「上傳完成」及世界觀、輪迴數量；Firestore 根目錄應可看見 `galArchive` 集合。可打開 `galArchive / 你的登入 UID` 查看 `worlds` 與 `cycles` 子集合。
+7. 手機上使用相同 Google 帳號登入，按「↓ 從雲端合併下載」。
+
+## V4.0 儲存結構
+
+```text
+galArchive (根集合)
+└── {登入 UID} (含 app、schemaVersion、worldCount、cycleCount 等欄位的文件)
+    ├── worlds
+    │   └── {worldId}：共用世界觀
+    └── cycles
+        └── {cycleId}：輪迴索引
+            └── parts
+                └── 000000 ...：對話／設定的分段內容
 ```
 
-## 資料結構
-
-- `users/{Google登入UID}/worlds/{worldId}`：共用世界觀
-- `users/{Google登入UID}/cycles/{cycleId}`：輪迴索引／片段數
-- `users/{Google登入UID}/cycles/{cycleId}/parts/{000000...}`：分段輪迴資料（含對話）
-
-長篇輪迴將拆成小於 Firestore 單筆文件上限的分段。上傳與合併下載需要網路；尚未啟用 Google 登入時只能本機儲存。
+舊版本使用 `users/{uid}/worlds` 與 `users/{uid}/cycles`，V4.0 的「雲端合併下載」仍會讀取這些資料以避免舊資料遺失；它**不會刪除舊路徑**。若要把舊資料遷移至新集合，請先合併下載後再手動上傳一次，並確認新集合內容正確，才考慮清理舊資料。
 
 ## 注意
 
-- Firebase 網頁設定物件不是管理員金鑰；保密依靠安全規則與 Google 身份驗證。
-- 現在是**手動同步**，不是每次修改自動上傳，避免空檔案覆蓋正史。
-- 同 ID 合併依 updatedAt 比較，不同步刪除紀錄；若多台裝置同時編輯相同輪迴，較新的版本可能覆蓋另一台的變更。請定期匯出 JSON。
-- Firestore 讀寫可能涉及計費與用量配額，尤其大規模對話。
-- 要讓 ChatGPT 自動寫入，需要額外建立授權 API／GPT Action 或透過支援連接器的工作流程；普通 ChatGPT 對話無法被網站自動監聽。
+- 登入≠上傳；Firestore 不會只因網站部署 GitHub 或 Google 登入成功就自動建立集合。
+- 根文件現在會在「上傳本機資料」成功後建立，因此能在 Firestore 主控台直接找到 `galArchive`。
+- 讀取舊路徑的權限由你先前已發布的 `/users/{uid}/{document=**}` 規則負責。
+- 網站程式是公開的，**不會將故事 JSON 寫到 GitHub**。資料保護靠 Firebase Authentication 與 Firestore 安全規則。
+- 同 ID 的雲端合併仍按 updatedAt 比較，請定期匯出 JSON 備份。
+- 雲端同步是手動的，避免在空資料狀態覆蓋正史。
