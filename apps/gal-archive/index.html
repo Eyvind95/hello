@@ -102,7 +102,7 @@ function renderCopilotChunks(r){let d=buildCopilot(r);$('copilotChunks').innerHT
 function downloadText(filename,content){let blob=new Blob([content],{type:'text/plain;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename.replace(/[\\/:*?"<>|]/g,'_');a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
 function logKey(kind){return kind==='quiz'?'quizLogs':'changeLogs'}
 function formatLogText(items){if(!items.length)return '（尚未填寫）';return items.map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（皮卡）':m.manager||'未指定負責人'}】\n${m.text}`).join('\n\n')}
-function renderLog(r,kind){const isQuiz=kind==='quiz',key=logKey(kind),items=r[key]||[],manager=r.managers?.[kind]||'';$('tabBody').innerHTML=`<div class="sectionhead"><h3>${isQuiz?'10題':'與皮卡修改記錄'} <span class="stat">（${items.length} 則）</span></h3><span class="note">左：負責的前輩／後輩 ／ 右：皮卡</span></div><p class="note loghelp">${isQuiz?'記錄每輪迴的十題考核、回答、批改與後續討論；依原本對話順序保存，不限制訊息數量。':'記錄皮卡提出的修改、前輩／後輩的回覆與確認的修正內容。'}</p><div class="chat" id="logChat">${items.length?items.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'我（皮卡）':m.manager||'未指定負責人')} · #${i+1}</div><div class="body">${safe(m.text)}</div><div class="msgtools"><button data-logmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-logmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-logedit="${i}">編輯</button><button data-logremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">這個區域目前沒有紀錄，可以從下方新增。</div>'}</div><div class="composer"><h3>新增${isQuiz?'10題紀錄':'修改紀錄'}</h3><div class="speaker"><button class="btn ${logSpeaker==='ai'?'selected':''}" data-logspeaker="ai">負責人（左）</button><button class="btn ${logSpeaker==='me'?'selected':''}" data-logspeaker="me">皮卡（右）</button></div><label>左側負責人名稱（可自行填寫，每則訊息會保留當時的名稱）</label><input id="logManager" class="managerfield" placeholder="例如：耀斑前輩、赤紅前輩、暗夢後輩" value="${safe(manager)}"><label>內容（保留換行）</label><textarea id="logInput" placeholder="請輸入這一則內容…"></textarea><div class="actions topsp"><button class="btn primary" id="addLog">加入紀錄</button><button class="btn" id="toggleLogBulk">批次貼上</button></div><div id="logBulkBox" class="hidden"><div class="divider"></div><p class="note">每段以「我：」「皮卡：」「他：」或「負責人名稱：」開頭。左側訊息使用上方負責人名稱；若開頭直接寫「耀斑前輩：」等名稱，會各自保留。請先預覽再加入。</p><textarea id="logBulkInput" class="tall" placeholder="皮卡：\n這裡需要修改。\n耀斑前輩：\n收到，我確認一下。"></textarea><div class="actions topsp"><button class="btn" id="previewLogBulk">預覽辨識</button><button class="btn primary" id="appendLogBulk">確認加入</button></div><p id="logBulkPreview" class="note"></p></div></div>`}
+function renderLog(r,kind){const isQuiz=kind==='quiz',key=logKey(kind),items=r[key]||[],manager=r.managers?.[kind]||'';$('tabBody').innerHTML=`<div class="sectionhead"><h3>${isQuiz?'10題':'與皮卡修改記錄'} <span class="stat">（${items.length} 則）</span></h3><span class="note">左：負責的前輩／後輩 ／ 右：皮卡</span></div><p class="note loghelp">${isQuiz?'記錄每輪迴的十題考核、回答、批改與後續討論；依原本對話順序保存，不限制訊息數量。':'記錄皮卡提出的修改、前輩／後輩的回覆與確認的修正內容。'}</p><div class="chat" id="logChat">${items.length?items.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'我（皮卡）':m.manager||'未指定負責人')} · #${i+1}</div><div class="body">${safe(m.text)}</div><div class="msgtools"><button data-logmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-logmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-logedit="${i}">編輯</button><button data-logremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">這個區域目前沒有紀錄，可以從下方新增。</div>'}</div><div class="composer"><h3>新增${isQuiz?'10題紀錄':'修改紀錄'}</h3><div class="speaker"><button class="btn ${logSpeaker==='ai'?'selected':''}" data-logspeaker="ai">負責人（左）</button><button class="btn ${logSpeaker==='me'?'selected':''}" data-logspeaker="me">皮卡（右）</button></div><label>左側負責人名稱（可自行填寫，每則訊息會保留當時的名稱）</label><input id="logManager" class="managerfield" placeholder="例如：負責的副駕駛名稱" value="${safe(manager)}"><label>內容（保留換行）</label><textarea id="logInput" placeholder="請輸入這一則內容…"></textarea><div class="actions topsp"><button class="btn primary" id="addLog">加入紀錄</button><button class="btn" id="toggleLogBulk">批次貼上</button></div><div id="logBulkBox" class="hidden"><div class="divider"></div><p class="note">每段以「我：」「皮卡：」「他：」或「負責人名稱：」開頭。左側訊息使用上方負責人名稱；若開頭直接寫「耀斑前輩：」等名稱，會各自保留。請先預覽再加入。</p><textarea id="logBulkInput" class="tall" placeholder="皮卡：\n這裡需要修改。\n耀斑前輩：\n收到，我確認一下。"></textarea><div class="actions topsp"><button class="btn" id="previewLogBulk">預覽辨識</button><button class="btn primary" id="appendLogBulk">確認加入</button></div><p id="logBulkPreview" class="note"></p></div></div>`}
 let logSpeaker='me';
 function parseLogBulk(input,manager){let out=[],cur=null;for(const line of input.replace(/\r\n/g,'\n').split('\n')){let match=line.match(/^\s*([^：:\n]{1,50})[：:]\s*(.*)$/);if(match){const who=match[1].trim();const role=/^(我|皮卡|玩家)$/.test(who)?'me':'ai';if(cur)out.push(cur);cur={id:uid(),role,manager:role==='ai'?(/^(他|AI|Gal\s*AI|負責人)$/i.test(who)?manager:who):'',text:match[2]}}else if(cur)cur.text+='\n'+line;else if(line.trim())cur={id:uid(),role:'me',manager:'',text:line}}if(cur)out.push(cur);return out.map(m=>({...m,text:m.text.trim()})).filter(m=>m.text)}
 
@@ -135,7 +135,7 @@ function renderPilotChat(r){
   <p class="note">沒有明確「我：／他：」標記的玩家訊息，以及 GPT 的回覆，會收在這裡。這裡可以手動編輯、刪除及調整訊息順序。</p>
   <div class="chat" id="pilotChatList">${items.length?items.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'皮卡':m.manager||'副駕駛 GPT')} · #${i+1}</div>${archiveTimeDisplay(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-pilotmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-pilotmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-pilotedit="${i}">編輯</button><button data-pilottime="${i}">時間</button><button data-pilotremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">尚無副駕駛聊天紀錄。</div>'}</div>
   <div class="composer"><h3>新增副駕駛聊天</h3><div class="speaker"><button class="btn ${pilotSpeaker==='ai'?'selected':''}" data-pilotspeaker="ai">副駕駛 GPT（左）</button><button class="btn ${pilotSpeaker==='me'?'selected':''}" data-pilotspeaker="me">皮卡（右）</button></div>
-  <label>副駕駛名稱</label><input id="pilotManager" value="${safe(suggested)}" placeholder="例如：暗夢後輩">
+  <label>副駕駛名稱</label><input id="pilotManager" value="${safe(suggested)}" placeholder="請填入此輪迴的副駕駛名稱">
   <label>聊天內容</label><textarea id="pilotInput" placeholder="輸入與副駕駛 GPT 的對話內容…"></textarea>
   <div class="actions topsp"><button class="btn primary" id="addPilotMessage">加入副駕駛聊天</button></div></div>`;
 }
@@ -578,7 +578,24 @@ async function receiveAutomaticEntries(){
   const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
   // Sort pending entries by original time, then first-capture time.
   const snap=await inbox.where('status','==','pending').get();
-  if(snap.empty){cloudStatus('沒有等待收取的副駕駛紀錄。');return}
+  if(snap.empty){
+    // A received message may have already been accepted into another cycle.
+    // Do not tell the user "nothing exists" when the inbox contains accepted sources.
+    const accepted=await inbox.where('status','==','accepted').limit(100).get();
+    if(!accepted.empty){
+      const groups=new Map();
+      for(const d of accepted.docs){
+        const item=d.data();
+        const r=records.find(x=>x.id===item.cycleId);
+        const target=r?((WORLDS.find(w=>w.id===r.world)?.name||r.world)+'／'+r.title):'其他輪迴（'+item.cycleId+'）';
+        groups.set(target,(groups.get(target)||0)+1);
+      }
+      cloudStatus('沒有待收取來源，但已找到 '+accepted.size+' 筆已收取來源（最多顯示 100 筆）。'
+        +'\\n它們已歸入：\\n'+[...groups].map(([name,n])=>'・'+name+'：'+n+' 筆').join('\\n')
+        +'\\n若收錯輪迴，請選擇來源輪迴並使用「轉移誤收的來源對話」。');
+    }else cloudStatus('沒有待收取來源；如果另一個對話沒上傳，請先檢查 Chrome 擴充功能對該對話的獨立輪迴綁定。');
+    return;
+  }
   const docs=[...snap.docs].sort(orderIncomingSnapshot).slice(0,100);
   const groups=new Map();let invalid=0,storyCount=0,pilotCount=0;
   for(const doc of docs){
