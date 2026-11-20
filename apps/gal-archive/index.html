@@ -25,7 +25,7 @@
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
 <p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
@@ -33,6 +33,22 @@
 <textarea id="writerToken" readonly placeholder="新金鑰只會在建立當次顯示；請複製至 GPT 動作的 API Key 設定，不要公開。" style="min-height:90px"></textarea>
 <p id="writerStatus" class="note" role="status">此功能尚未啟用。</p><p id="cloudStatus" class="note" role="status" aria-live="polite">登入後會自動建立 galArchive 雲端入口；完整世界觀與輪迴仍需按「↑ 上傳本機資料」，上傳前請先匯出 JSON 備份。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
 <div class="toast hidden" id="toast" role="status"></div>
+<div class="modalback hidden" id="cleanupModal" role="dialog" aria-modal="true" aria-labelledby="cleanupTitle">
+  <div class="modal"><div class="sectionhead"><h2 id="cleanupTitle">整理測試／誤收紀錄</h2><button class="btn small" id="cleanupClose">關閉</button></div>
+  <p class="note" id="cleanupIntro">這裡只列出目前輪迴的自動收取紀錄，請勾選確認要清除的內容；不會碰其他輪迴或手動正史。</p>
+  <div class="actions topsp"><button id="cleanupSelectSuggested" class="btn small">建議選取明顯測試文字</button><button id="cleanupSelectNone" class="btn small">全部取消</button></div>
+  <div id="cleanupEntries" style="max-height:52vh;overflow:auto;margin:12px 0"></div>
+  <div class="actions topsp"><button class="btn danger" id="cleanupApply">備份後清除勾選訊息</button></div>
+  <p class="note" id="cleanupNotice" role="status">不會自動刪除 Firebase incoming 來源；只從正式輪迴與雲端輪迴內容移除所勾選的歸檔。</p>
+</div></div>
+<div class="modalback hidden" id="transferModal" role="dialog" aria-modal="true" aria-labelledby="transferTitle">
+  <div class="modal"><div class="sectionhead"><h2 id="transferTitle">轉移誤收的 ChatGPT 來源對話</h2><button class="btn small" id="transferClose">關閉</button></div>
+  <p class="note">僅轉移已收取、具來源對話識別碼的自動記錄；選擇來源聊天與目標輪迴。原始訊息、時間、來源 ID 不變。請先匯出 JSON 備份。</p>
+  <label>來源聊天</label><select id="transferSource" style="width:100%"></select>
+  <label>目標輪迴</label><select id="transferDestination" style="width:100%"></select>
+  <p id="transferPreview" class="note">請檢查來源及目標</p>
+  <div class="actions topsp"><button class="btn primary" id="transferApply">備份後轉移</button></div>
+</div></div>
 <script>
 'use strict';
 const BASE_WORLDS=[
@@ -596,7 +612,14 @@ async function receiveAutomaticEntries(){
     group.record.messages=sortArchivedPilotMessages(group.record.messages||[]).items;
   }
   const valid=docs.length-invalid;
-  if(!confirm('準備收取 '+valid+' 筆雲端來源。\nGal AI 劇情新增 '+storyCount+' 則，副駕駛聊天新增 '+pilotCount+' 則。\n原始紀錄會保留，請確認已備份重要正史。確定開始？'))return;
+  const targetSummary=[...groups.values()].map(g=>{
+    const w=WORLDS.find(x=>x.id===g.record.world)?.name||g.record.world;
+    return w+'／'+g.record.title+'：'+g.refs.length+' 筆';
+  }).join('\\n');
+  if(!confirm('準備收取 '+valid+' 筆雲端來源。\\n\\n實際目的輪迴：\\n'+targetSummary
+    +'\\n\\nGal AI 劇情新增 '+storyCount+' 則，副駕駛聊天新增 '+pilotCount+' 則。'
+    +(invalid?'\\n另有 '+invalid+' 筆找不到相符輪迴或格式，不會收取。':'')
+    +'\\n\\n請先確認目標輪迴正確，並備份重要正史。確定開始？'))return;
   let accepted=0;
   for(const {record,refs,added} of groups.values()){
     if(added){
@@ -733,6 +756,142 @@ $('cloudInbox').onclick=async()=>{
   catch(e){cloudStatus('收取失敗：'+e.message+'。原始待收取紀錄會保留。',true)}
   finally{b.disabled=false}
 };
+const archiveSections=['messages','pilotMessages','quizLogs','changeLogs'];
+let cleanupCandidateIds=new Set();
+function archiveImportedEntries(r){
+  return archiveSections.flatMap(section=>(r[section]||[])
+    .filter(m=>m.sourceEventId).map(m=>({section,message:m})));
+}
+function isObviousArchiveTest(text){
+  const value=String(text||'').trim();
+  // Conservative suggestions only. User must review and confirm each choice.
+  return /^(?:7[~～]|aul[~～]|測試4[.]1|測試4|時間測試|自動歸檔測試|暗夢後輩\s*V0[.]3\s*正式歸檔測試)/i.test(value)
+    || /歸檔格式測試|自動歸檔測試|輪迴檔案館時間紀錄測試/.test(value);
+}
+function selectedArchiveData(){
+  return [...document.querySelectorAll('#cleanupEntries input[data-source-row]:checked')]
+    .map(el=>Number(el.dataset.sourceRow));
+}
+function openArchiveCleanup(){
+  const r=current();
+  if(!r){cloudStatus('請先選擇有自動紀錄的輪迴',true);return}
+  const all=archiveImportedEntries(r);
+  cleanupCandidateIds=new Set();
+  $('cleanupIntro').textContent='目前輪迴：'+r.title+'（'+(WORLDS.find(w=>w.id===r.world)?.name||r.world)+'）。'
+    +'找到 '+all.length+' 則自動匯入紀錄。手動正史不會列入，也不會處理其他輪迴。';
+  $('cleanupEntries').innerHTML=all.map(({section,message:m},i)=>{
+    const part=section==='pilotMessages'?'副駕駛聊天':section==='messages'?'Gal AI 劇情':section;
+    return `<label style="display:flex;gap:8px;align-items:flex-start;margin:7px 0;padding:9px;border:1px solid #435274;border-radius:8px;cursor:pointer">
+      <input type="checkbox" data-source-row="${i}" style="width:auto;margin-top:4px">
+      <span>${safe(part)}／${safe(m.role==='me'?'玩家':m.manager||'GPT')} · ${safe((m.text||'').slice(0,140))}${m.text?.length>140?'…':''}</span>
+    </label>`;
+  }).join('')||'<p class="note">沒有可清除的自動來源訊息。</p>';
+  $('cleanupNotice').textContent='預設不勾選任何內容。按「建議選取」只會勾出明顯含測試字樣的紀錄，仍須人工確認。';
+  $('cleanupModal').classList.remove('hidden');
+}
+$('cleanupImported').onclick=()=>{try{openArchiveCleanup()}catch(e){cloudStatus('無法開啟清理介面：'+e.message,true)}};
+$('cleanupClose').onclick=()=>$('cleanupModal').classList.add('hidden');
+$('cleanupSelectNone').onclick=()=>document.querySelectorAll('#cleanupEntries input[data-source-row]').forEach(el=>{el.checked=false});
+$('cleanupSelectSuggested').onclick=()=>{
+  const all=archiveImportedEntries(current()||{});
+  document.querySelectorAll('#cleanupEntries input[data-source-row]').forEach(el=>{
+    el.checked=isObviousArchiveTest(all[Number(el.dataset.sourceRow)]?.message.text||'');
+  });
+  $('cleanupNotice').textContent='建議勾選 '+selectedArchiveData().length+' 則；可自行增減，請確認內容再清除。';
+};
+$('cleanupApply').onclick=async()=>{
+  const r=current(),chosen=selectedArchiveData();
+  if(!r||!chosen.length){$('cleanupNotice').textContent='請先選擇要移除的測試紀錄';return}
+  const all=archiveImportedEntries(r);
+  const ids=new Set(chosen.map(i=>all[i]?.message.id).filter(Boolean));
+  if(!ids.size)return;
+  if(!confirm('即將從「'+r.title+'」的正式歸檔清除 '+ids.size+' 則所選自動記錄。\\n其他輪迴、手動正史與 Firebase incoming 原始來源會保留。\\n將先匯出完整 JSON 備份。確定繼續？'))return;
+  const button=$('cleanupApply');button.disabled=true;
+  try{
+    const user=await cloudSignedIn();
+    $('exportBtn').click();
+    const updated=structuredClone(r);
+    for(const section of archiveSections)updated[section]=(updated[section]||[]).filter(m=>!ids.has(m.id));
+    updated.updatedAt=new Date().toISOString();
+    await uploadOneCycle(updated);
+    await operation('readwrite',{type:'put',item:updated});
+    await refresh();$('cleanupModal').classList.add('hidden');
+    cloudStatus('已自「'+updated.title+'」移除 '+ids.size+' 則所選紀錄，並同步雲端輪迴。'
+      +'Firebase incoming 原始收件匣保留供稽核，不會再自動收取已標記 accepted 的內容。');
+  }catch(e){$('cleanupNotice').textContent='清理中止：'+e.message+'。請保留備份，並檢查雲端同步狀態。'}
+  finally{button.disabled=false}
+};
+function archiveChatGroups(r){
+  const groups=new Map();
+  for(const item of archiveImportedEntries(r)){
+    const key=item.message.chatKey;
+    if(!key)continue;
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(item);
+  }
+  return groups;
+}
+function openArchiveTransfer(){
+  const r=current();
+  if(!r){cloudStatus('先選擇收到錯誤訊息的輪迴',true);return}
+  const groups=archiveChatGroups(r);
+  const targets=records.filter(x=>x.id!==r.id);
+  if(!groups.size||!targets.length){cloudStatus('找不到可轉移的來源對話，或還沒建立另一個輪迴。',true);return}
+  $('transferSource').innerHTML=[...groups].map(([key,items])=>
+    `<option value="${safe(key)}">${safe(items[0].message.text.slice(0,38))}… · ${items.length} 則 · ${safe(key.slice(0,8))}</option>`).join('');
+  $('transferDestination').innerHTML=targets.map(x=>
+    `<option value="${safe(x.id)}">${safe(WORLDS.find(w=>w.id===x.world)?.name||x.world)}／${safe(x.title)}</option>`).join('');
+  $('transferPreview').textContent='目前來源輪迴：'+r.title+'。轉移時保留對話原順序與時間，不會把整個輪迴內容一起搬走。';
+  $('transferModal').classList.remove('hidden');
+}
+$('moveConversation').onclick=()=>{try{openArchiveTransfer()}catch(e){cloudStatus('開啟轉移介面失敗：'+e.message,true)}};
+$('transferClose').onclick=()=>$('transferModal').classList.add('hidden');
+$('transferApply').onclick=async()=>{
+  const from=current();
+  const to=records.find(r=>r.id===$('transferDestination').value);
+  const key=$('transferSource').value;
+  if(!from||!to||from.id===to.id||!key)return;
+  const items=archiveChatGroups(from).get(key)||[];
+  if(!items.length)return;
+  const affected=items.length;
+  const managerNames=[...new Set(items.filter(x=>x.message.role==='ai').map(x=>x.message.manager).filter(Boolean))];
+  const allowed=cycleManagerNames(to);
+  if(allowed.length&&managerNames.some(n=>!allowed.includes(n))){
+    alert('目標輪迴還沒授權來源副駕駛：'+managerNames.filter(n=>!allowed.includes(n)).join('、')
+      +'。請先在目標輪迴編輯管理人名單，再重新轉移。');return;
+  }
+  if(!confirm('將「'+from.title+'」的 '+affected+' 則來源聊天紀錄，移往「'+to.title+'」？\\n'
+    +'此操作會改動兩個輪迴，但不會刪除 Firebase incoming 原始來源。\\n將先匯出 JSON 備份。確定嗎？'))return;
+  const button=$('transferApply');button.disabled=true;
+  try{
+    await cloudSignedIn();$('exportBtn').click();
+    const src=structuredClone(from),dst=structuredClone(to);
+    const moved=[];
+    for(const section of archiveSections){
+      const keep=[];
+      for(const m of (src[section]||[])){
+        if(m.sourceEventId&&m.chatKey===key)moved.push({section,message:m});
+        else keep.push(m);
+      }
+      src[section]=keep;
+    }
+    for(const {section,message:m} of moved){
+      if(!hasArchivedSource(dst,m.sourceEventId,m.sourcePartIndex)) (dst[section]??=[]).push(m);
+    }
+    src.updatedAt=new Date().toISOString();dst.updatedAt=new Date().toISOString();
+    dst.messages=sortArchivedPilotMessages(dst.messages||[]).items;
+    dst.pilotMessages=sortArchivedPilotMessages(dst.pilotMessages||[]).items;
+    await uploadOneCycle(dst);
+    await uploadOneCycle(src);
+    await operation('readwrite',{type:'put',item:dst});
+    await operation('readwrite',{type:'put',item:src});
+    await refresh();$('transferModal').classList.add('hidden');
+    cloudStatus('已將 '+moved.length+' 則來源對話由「'+src.title+'」轉移至「'+dst.title+'」。'
+      +'Firebase incoming 的舊 cycleId 仍保留作來源歷史；日後請在 Chrome 擴充功能重新綁定正確輪迴。');
+  }catch(e){$('transferPreview').textContent='轉移未完整完成：'+e.message+'。請保留備份、從雲端合併後檢查兩個輪迴，避免重複操作。'}
+  finally{button.disabled=false}
+};
+
 const cloudParts=text=>{let a=[];for(let i=0;i<text.length;i+=110000)a.push(text.slice(i,i+110000));return a};
 // V4.0: 獨立根集合 galArchive/{uid}；保留讀取 V3.9 users/{uid} 的能力。
 async function pushCloud(){
