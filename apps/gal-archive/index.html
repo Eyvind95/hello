@@ -38,6 +38,7 @@
   <p class="note" id="cleanupIntro">這裡只列出目前輪迴的自動收取紀錄，請勾選確認要清除的內容；不會碰其他輪迴或手動正史。</p>
   <div class="actions topsp"><button id="cleanupSelectSuggested" class="btn small">建議選取明顯測試文字</button><button id="cleanupSelectNone" class="btn small">全部取消</button></div>
   <div id="cleanupEntries" style="max-height:52vh;overflow:auto;margin:12px 0"></div>
+  <label class="note" style="display:flex;gap:8px;align-items:flex-start;margin:10px 0"><input type="checkbox" id="cleanupRaw" style="width:auto;margin-top:4px">也刪除所選訊息的 Firebase incoming 已收取原始來源（不可復原；預設不勾選；仍被其他紀錄引用者不刪）</label>
   <div class="actions topsp"><button class="btn danger" id="cleanupApply">備份後清除勾選訊息</button></div>
   <p class="note" id="cleanupNotice" role="status">不會自動刪除 Firebase incoming 來源；只從正式輪迴與雲端輪迴內容移除所勾選的歸檔。</p>
 </div></div>
@@ -803,7 +804,8 @@ function openArchiveCleanup(){
       <span>${safe(part)}／${safe(m.role==='me'?'玩家':m.manager||'GPT')} · ${safe((m.text||'').slice(0,140))}${m.text?.length>140?'…':''}</span>
     </label>`;
   }).join('')||'<p class="note">沒有可清除的自動來源訊息。</p>';
-  $('cleanupNotice').textContent='預設不勾選任何內容。按「建議選取」只會勾出明顯含測試字樣的紀錄，仍須人工確認。';
+  $('cleanupRaw').checked=false;
+  $('cleanupNotice').textContent='預設不勾選任何內容，也不刪雲端收件匣。可選擇連 raw 來源一起刪除，但無法復原。';
   $('cleanupModal').classList.remove('hidden');
 }
 $('cleanupImported').onclick=()=>{try{openArchiveCleanup()}catch(e){cloudStatus('無法開啟清理介面：'+e.message,true)}};
@@ -822,7 +824,11 @@ $('cleanupApply').onclick=async()=>{
   const all=archiveImportedEntries(r);
   const ids=new Set(chosen.map(i=>all[i]?.message.id).filter(Boolean));
   if(!ids.size)return;
-  if(!confirm('即將從「'+r.title+'」的正式歸檔清除 '+ids.size+' 則所選自動記錄。\\n其他輪迴、手動正史與 Firebase incoming 原始來源會保留。\\n將先匯出完整 JSON 備份。確定繼續？'))return;
+  const deleteRaw=$('cleanupRaw').checked;
+  if(!confirm('即將從「'+r.title+'」的正式歸檔清除 '+ids.size+' 則所選自動記錄。\\n其他輪迴、手動正史不動。'
+    +(deleteRaw?'\\n並刪除已不再被引用的原始雲端來源（不可復原）。':'\\nFirebase incoming 原始來源將保留。')
+    +'\\n將先匯出 JSON 備份。確定繼續？'))return;
+  if(deleteRaw&&prompt('如要一併刪除原始來源，請輸入「刪除來源」確認：')!=='刪除來源')return;
   const button=$('cleanupApply');button.disabled=true;
   try{
     const user=await cloudSignedIn();
@@ -832,9 +838,23 @@ $('cleanupApply').onclick=async()=>{
     updated.updatedAt=new Date().toISOString();
     await uploadOneCycle(updated);
     await operation('readwrite',{type:'put',item:updated});
-    await refresh();$('cleanupModal').classList.add('hidden');
-    cloudStatus('已自「'+updated.title+'」移除 '+ids.size+' 則所選紀錄，並同步雲端輪迴。'
-      +'Firebase incoming 原始收件匣保留供稽核，不會再自動收取已標記 accepted 的內容。');
+    await refresh();
+    let rawDeleted=0,rawFailed=0;
+    if(deleteRaw){
+      const sourceIds=[...new Set(all.filter(x=>ids.has(x.message.id)).map(x=>x.message.sourceEventId).filter(Boolean))];
+      const stillUsed=new Set(records.flatMap(x=>archiveImportedEntries(x).map(m=>m.message.sourceEventId)));
+      const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
+      for(const sourceId of sourceIds){
+        if(stillUsed.has(sourceId))continue;
+        try{
+          const ref=inbox.doc(sourceId),doc=await ref.get();
+          if(doc.exists&&doc.data().status==='accepted'&&doc.data().cycleId===r.id){await ref.delete();rawDeleted++}
+        }catch(e){rawFailed++;console.error('原始來源刪除失敗',e)}
+      }
+    }
+    $('cleanupModal').classList.add('hidden');
+    cloudStatus('已自「'+updated.title+'」移除 '+ids.size+' 則自動歸檔，已更新雲端輪迴。'
+      +(deleteRaw?'雲端原始來源刪除 '+rawDeleted+' 筆，失敗 '+rawFailed+' 筆。':'原始收件匣保留。'));
   }catch(e){$('cleanupNotice').textContent='清理中止：'+e.message+'。請保留備份，並檢查雲端同步狀態。'}
   finally{button.disabled=false}
 };
