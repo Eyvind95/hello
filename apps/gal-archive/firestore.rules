@@ -1,19 +1,15 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 將下列三個 match 放入既有規則的 documents 區塊中；
-    // 若 Firebase 專案還有其他網站，切勿直接覆蓋它們原本的規則。
-    function archiveOwner(uid) {
-      return request.auth != null && request.auth.uid == uid;
+    // V4.0: 把這段 match 複製到 Firebase 既有的 documents 區塊。
+    // 不要將整份檔案覆蓋其他網站原有的 daily/users/galTimer/studyTimer 規則。
+    // 規則版本 2 的 {path=**} 同時涵蓋根文件及所有子集合。
+    match /galArchive/{uid}/{path=**} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == uid;
     }
-    match /users/{uid}/worlds/{worldId} {
-      allow read, write: if archiveOwner(uid);
-    }
-    match /users/{uid}/cycles/{cycleId} {
-      allow read, write: if archiveOwner(uid);
-      match /parts/{partId} {
-        allow read, write: if archiveOwner(uid);
-      }
-    }
+
+    // 舊版 V3.9 的 users/{uid}/worlds 或 cycles 仍可由原本
+    // 「Myself /users/{uid}/{document=**}」規則授權讀取，毋須刪除。
   }
 }
