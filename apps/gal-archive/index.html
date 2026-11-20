@@ -25,7 +25,13 @@
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：第十六周目・杜林"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩</label><input id="fieldManager" maxlength="100" placeholder="例如：耀斑前輩、赤紅前輩、風撒後輩"><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button></div><p id="cloudStatus" class="note" role="status" aria-live="polite">登入後會自動建立 galArchive 雲端入口；完整世界觀與輪迴仍需按「↑ 上傳本機資料」，上傳前請先匯出 JSON 備份。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 收取副駕駛自動紀錄</button></div>
+<div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
+<p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
+<p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
+<div class="actions"><button class="btn" id="writerGenerate">建立／重設寫入金鑰</button><button class="btn danger" id="writerRevoke">撤銷寫入金鑰</button></div>
+<textarea id="writerToken" readonly placeholder="新金鑰只會在建立當次顯示；請複製至 GPT 動作的 API Key 設定，不要公開。" style="min-height:90px"></textarea>
+<p id="writerStatus" class="note" role="status">此功能尚未啟用。</p><p id="cloudStatus" class="note" role="status" aria-live="polite">登入後會自動建立 galArchive 雲端入口；完整世界觀與輪迴仍需按「↑ 上傳本機資料」，上傳前請先匯出 JSON 備份。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
 <div class="toast hidden" id="toast" role="status"></div>
 <script>
 'use strict';
@@ -208,7 +214,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V4.1_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V4.2_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -254,6 +260,8 @@ async function cloudInit(){
     try{await cloudAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)}catch(e){console.warn('登入保持設定：',e)}
     if(!cloudAuthUnsubscribe)cloudAuthUnsubscribe=cloudAuth.onAuthStateChanged(u=>{
       $('cloudIdentity').textContent=u?'已登入：'+(u.email||u.uid):'尚未登入';
+      $('writerUid').textContent=u?u.uid:'尚未登入';
+      if(!u)$('writerToken').value='';
       $('cloudConnect').style.display=u?'none':'';
       $('cloudLogout').style.display=u?'':'none';
       if(!u){cloudRootEnsurePromise=null;cloudRootEnsureUID=null;return}
@@ -306,6 +314,89 @@ $('cloudVerify').onclick=async()=>{
   }catch(e){cloudStatus('檢查／建立失敗：'+e.message+'。請檢查 Firebase 安全規則已發布。',true)}
   finally{b.disabled=false}
 };
+// User-owned token: only a SHA-256 digest is stored in Firestore, never the secret.
+async function sha256Hex(text){
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('');
+}
+function writerStatus(message,bad=false){$('writerStatus').textContent=message;$('writerStatus').style.color=bad?'#ffadad':'#a4efcd'}
+$('writerGenerate').onclick=async()=>{
+  const button=$('writerGenerate');button.disabled=true;
+  try{
+    const user=await cloudSignedIn();
+    if(!confirm('建立新金鑰會使先前的金鑰失效。請只在私人 GPT 動作的 API 金鑰設定中使用，確定繼續？'))return;
+    const bytes=crypto.getRandomValues(new Uint8Array(32));
+    const secret=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+    await cloudDb.collection('galArchive').doc(user.uid).collection('integration').doc('autoWriter').set({
+      tokenHash:await sha256Hex(secret),enabled:true,createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    $('writerToken').value=secret;
+    writerStatus('金鑰已建立。請立即複製保存；關閉或重新整理後無法再次顯示原金鑰。');
+  }catch(e){writerStatus('建立金鑰失敗：'+e.message,true)}
+  finally{button.disabled=false}
+};
+$('writerRevoke').onclick=async()=>{
+  try{
+    const user=await cloudSignedIn();
+    if(!confirm('確定立即撤銷自動歸檔寫入金鑰？之前的 GPT 動作將無法再寫入。'))return;
+    await cloudDb.collection('galArchive').doc(user.uid).collection('integration').doc('autoWriter').set({enabled:false},{merge:true});
+    $('writerToken').value='';
+    writerStatus('已撤銷寫入金鑰。');
+  }catch(e){writerStatus('撤銷失敗：'+e.message,true)}
+};
+// Existing cycle content remains intact. Inbox entries are merged with idempotent sourceEventId.
+async function uploadOneCycle(r){
+  const user=await cloudSignedIn();
+  const ref=cloudDb.collection('galArchive').doc(user.uid).collection('cycles').doc(r.id);
+  const parts=cloudParts(JSON.stringify(r));
+  let batch=cloudDb.batch(),ops=0;
+  for(let i=0;i<parts.length;i++){
+    batch.set(ref.collection('parts').doc(String(i).padStart(6,'0')),{index:i,data:parts[i]});
+    if(++ops===350){await batch.commit();batch=cloudDb.batch();ops=0}
+  }
+  if(ops)await batch.commit();
+  await ref.set({id:r.id,world:r.world,title:r.title||'',manager:r.manager||'',
+    updatedAt:r.updatedAt||new Date().toISOString(),partCount:parts.length,
+    cloudSavedAt:new Date().toISOString()});
+}
+async function receiveAutomaticEntries(){
+  const user=await cloudSignedIn();
+  await refresh();
+  const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
+  const snap=await inbox.where('status','==','pending').limit(100).get();
+  if(snap.empty){cloudStatus('沒有等待收取的副駕駛紀錄。');return}
+  const groups=new Map();let invalid=0;
+  for(const doc of snap.docs){
+    const item=doc.data();
+    const r=groups.get(item.cycleId)?.record||records.find(x=>x.id===item.cycleId);
+    if(!r||!['chat','quiz','changes'].includes(item.section)||!['me','ai'].includes(item.role)||typeof item.text!=='string'){invalid++;continue}
+    if(!groups.has(r.id))groups.set(r.id,{record:structuredClone(r),docs:[],added:0});
+    const group=groups.get(r.id),record=group.record;
+    const field=item.section==='chat'?'messages':item.section==='quiz'?'quizLogs':'changeLogs';
+    if(!Array.isArray(record[field]))record[field]=[];
+    const exists=record[field].some(x=>x.sourceEventId===doc.id);
+    if(!exists){
+      record[field].push({id:uid(),role:item.role,manager:item.manager||'',text:item.text,sourceEventId:doc.id});
+      group.added++;
+    }
+    group.docs.push(doc.ref);
+  }
+  let accepted=0;
+  for(const {record,docs,added} of groups.values()){
+    if(added){record.updatedAt=new Date().toISOString();await operation('readwrite',{type:'put',item:record})}
+    // Persist to cloud before marking inbox entries accepted.
+    await uploadOneCycle(record);
+    for(const ref of docs){await ref.update({status:'accepted',acceptedAt:firebase.firestore.FieldValue.serverTimestamp()});accepted++}
+  }
+  await refresh();
+  cloudStatus('已將 '+accepted+' 則待收取紀錄納入輪迴並寫回雲端。'+(invalid?'另有 '+invalid+' 則未能匹配輪迴，仍保留待收取。':''));
+}
+$('cloudInbox').onclick=async()=>{
+  const b=$('cloudInbox');b.disabled=true;
+  try{cloudStatus('正在收取副駕駛紀錄…');await receiveAutomaticEntries()}
+  catch(e){cloudStatus('收取失敗：'+e.message+'。原始待收取紀錄會保留。',true)}
+  finally{b.disabled=false}
+};
 const cloudParts=text=>{let a=[];for(let i=0;i<text.length;i+=110000)a.push(text.slice(i,i+110000));return a};
 // V4.0: 獨立根集合 galArchive/{uid}；保留讀取 V3.9 users/{uid} 的能力。
 async function pushCloud(){
@@ -327,7 +418,7 @@ async function pushCloud(){
     }
     if(ops)await batch.commit();
     // 在片段寫入成功後，才更新輪迴索引（降低資料寫入一半的風險）。
-    await ref.set({id:r.id,world:r.world,title:r.title||'',updatedAt:r.updatedAt||now,partCount:parts.length,cloudSavedAt:now});
+    await ref.set({id:r.id,world:r.world,title:r.title||'',manager:r.manager||'',updatedAt:r.updatedAt||now,partCount:parts.length,cloudSavedAt:now});
     count++;
     cloudStatus('已上傳 '+count+' 個項目，正在繼續…');
   }
