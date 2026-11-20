@@ -84,7 +84,7 @@ function archiveTimeDisplay(m){
   const render=iso=>new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',
     year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
   const lines=[];
-  if(source)lines.push('原始發言：'+render(source));
+  if(source)lines.push((m.sourceTimeOrigin==='manual'?'手動標註時間：':'原始發言：')+render(source));
   else lines.push('原始發言時間：未知');
   if(captured)lines.push('首次擷取：'+render(captured));
   if(received)lines.push('雲端接收：'+render(received));
@@ -95,7 +95,7 @@ function renderPilotChat(r){
   const items=r.pilotMessages||[],suggested=pilotManagerName||cycleManagerNames(r).at(-1)||'副駕駛 GPT';
   $('tabBody').innerHTML=`<div class="sectionhead"><h3>副駕駛聊天 <span class="stat">（${items.length} 則）</span></h3><span class="note">左：副駕駛 GPT ／ 右：皮卡（與 Gal AI 劇情分開）</span></div>
   <p class="note">沒有明確「我：／他：」標記的玩家訊息，以及 GPT 的回覆，會收在這裡。這裡可以手動編輯、刪除及調整訊息順序。</p>
-  <div class="chat" id="pilotChatList">${items.length?items.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'皮卡':m.manager||'副駕駛 GPT')} · #${i+1}</div>${archiveTimeDisplay(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-pilotmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-pilotmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-pilotedit="${i}">編輯</button><button data-pilotremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">尚無副駕駛聊天紀錄。</div>'}</div>
+  <div class="chat" id="pilotChatList">${items.length?items.map((m,i)=>`<div class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'皮卡':m.manager||'副駕駛 GPT')} · #${i+1}</div>${archiveTimeDisplay(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-pilotmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-pilotmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-pilotedit="${i}">編輯</button><button data-pilottime="${i}">時間</button><button data-pilotremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">尚無副駕駛聊天紀錄。</div>'}</div>
   <div class="composer"><h3>新增副駕駛聊天</h3><div class="speaker"><button class="btn ${pilotSpeaker==='ai'?'selected':''}" data-pilotspeaker="ai">副駕駛 GPT（左）</button><button class="btn ${pilotSpeaker==='me'?'selected':''}" data-pilotspeaker="me">皮卡（右）</button></div>
   <label>副駕駛名稱</label><input id="pilotManager" value="${safe(suggested)}" placeholder="例如：暗夢後輩">
   <label>聊天內容</label><textarea id="pilotInput" placeholder="輸入與副駕駛 GPT 的對話內容…"></textarea>
@@ -154,10 +154,21 @@ if(b.id==='addPilotMessage'){
   (r.pilotMessages??=[]).push({id:uid(),role:pilotSpeaker,manager:pilotSpeaker==='ai'?manager:'',text:value});
   await put(r);notify('已加入副駕駛聊天');return;
 }
-if(b.dataset.pilotedit!==undefined||b.dataset.pilotremove!==undefined||b.dataset.pilotmove!==undefined){
-  const arr=r.pilotMessages||[],i=Number(b.dataset.pilotedit??b.dataset.pilotremove??b.dataset.pilotmove);
+if(b.dataset.pilotedit!==undefined||b.dataset.pilottime!==undefined||b.dataset.pilotremove!==undefined||b.dataset.pilotmove!==undefined){
+  const arr=r.pilotMessages||[],i=Number(b.dataset.pilotedit??b.dataset.pilottime??b.dataset.pilotremove??b.dataset.pilotmove);
   if(!Number.isInteger(i)||i<0||i>=arr.length)return;
-  if(b.dataset.pilotedit!==undefined){
+  if(b.dataset.pilottime!==undefined){
+    const current=archiveIsoTime(arr[i].sourceCreatedAt);
+    const input=prompt('手動標註發言時間（台灣時間 YYYY-MM-DD HH:mm；留空可清除）：',current?new Date(current).toLocaleString('sv-SE',{timeZone:'Asia/Taipei'}).slice(0,16):'');
+    if(input===null)return;
+    if(!input.trim()){arr[i].sourceCreatedAt=null;arr[i].sourceTimeOrigin=null}
+    else{
+      if(!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(input.trim()))return notify('格式必須是 YYYY-MM-DD HH:mm');
+      const iso=new Date(input.trim().replace(' ','T')+'+08:00');
+      if(!Number.isFinite(iso.getTime()))return notify('無效日期');
+      arr[i].sourceCreatedAt=iso.toISOString();arr[i].sourceTimeOrigin='manual';
+    }
+  }else if(b.dataset.pilotedit!==undefined){
     const value=prompt('編輯副駕駛聊天：',arr[i].text);if(value===null)return;
     arr[i].text=value;
     if(arr[i].role==='ai'){const name=prompt('副駕駛名稱：',arr[i].manager||'副駕駛 GPT');if(name!==null&&name.trim())arr[i].manager=name.trim()}
