@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.10｜Gal AI</title>
+<title>輪迴檔案館 V5.11｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -30,12 +30,12 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.10</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.11</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
 <p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
@@ -244,7 +244,7 @@ function archiveTimeDisplay(m){
   const basis=archiveChronologyTime(m).basis;
   if(basis==='captured')lines.push('排序依據：首次擷取');
   else if(basis==='source')lines.push('排序依據：原始發言');
-  else if(basis==='inferred')lines.push('排序依據：回覆推定（無擷取時間）');
+  else if(basis==='inferred')lines.push('排序依據：GPT 回覆推定的同回合分鐘');
   else if(basis==='received')lines.push('排序依據：雲端接收（備援）');
   return '<div class="note" style="font-size:11px;opacity:.85;margin:5px 0 7px">'+lines.map(safe).join(' · ')+'</div>';
 }
@@ -683,7 +683,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.9_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.11_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -846,9 +846,10 @@ function archiveChronologyTime(m){
   const source=archiveReceivedMillis(m?.sourceCreatedAt);
   const captured=archiveReceivedMillis(m?.capturedAt);
   const received=archiveReceivedMillis(m?.receivedAt);
-  if(source&&m?.sourceTimeOrigin!=='reply-inferred')return {ms:source,basis:'source'};
+  // The GPT menu minute is shared with the preceding player message on purpose.
+  // reply-inferred is a valid *estimated source minute*, not a capture-time fallback.
+  if(source)return {ms:source,basis:m?.sourceTimeOrigin==='reply-inferred'?'inferred':'source'};
   if(captured)return {ms:captured,basis:'captured'};
-  if(source)return {ms:source,basis:'inferred'};
   if(received)return {ms:received,basis:'received'};
   return {ms:0,basis:'unknown'};
 }
@@ -904,6 +905,35 @@ function hasArchivedSource(record,eventId,index){
     (record[key]||[]).some(x=>x.sourceEventId===eventId&&(x.sourcePartIndex??0)===index));
 }
 
+// Rebuild missing player-side inferred minutes ONLY from a verified, adjacent
+// GPT menu/DOM timestamp within the same source conversation. Never guess
+// timestamps, never use a player menu, and never overwrite manual labels.
+function archiveRestorePairedMinutes(items){
+  const result=items.map(m=>({...m})),orderMap=new Map();
+  for(const m of result){
+    if(!m.sourceEventId||!m.chatKey||!Number.isInteger(m.messageOrder))continue;
+    const key=m.chatKey+'|'+m.messageOrder;
+    if(orderMap.has(key))orderMap.set(key,null); // conflicting scan order: ambiguous, skip
+    else orderMap.set(key,m);
+  }
+  let filled=0,pairs=0;
+  for(const me of result){
+    if(me.role!=='me'||!me.sourceEventId||!me.chatKey||!Number.isInteger(me.messageOrder))continue;
+    if(orderMap.get(me.chatKey+'|'+me.messageOrder)!==me)continue;
+    const ai=orderMap.get(me.chatKey+'|'+(me.messageOrder+1));
+    if(!ai||ai.role!=='ai')continue;
+    pairs++;
+    const aiTime=archiveIsoTime(ai.sourceCreatedAt);
+    if(!aiTime||!['menu','dom'].includes(ai.sourceTimeOrigin))continue;
+    if(me.sourceTimeOrigin==='manual'||(me.sourceCreatedAt&&me.sourceTimeOrigin!=='reply-inferred'))continue;
+    if(me.sourceCreatedAt===aiTime&&me.sourceTimeOrigin==='reply-inferred')continue;
+    me.sourceCreatedAt=aiTime;
+    me.sourceTimeOrigin='reply-inferred';
+    me.sourceTimePrecision='minute-estimated';
+    filled++;
+  }
+  return {items:result,filled,pairs};
+}
 function sortArchivedPilotMessages(items){
   // 絕不動手寫訊息的槽位；只對具有來源 ID 的自動匯入紀錄排序。
   const slots=items.map((m,i)=>m.sourceEventId?i:-1).filter(i=>i>=0);
@@ -1400,19 +1430,22 @@ async function repairAutoImportedChats(){
   cloudStatus('修復完成：'+cyclesFixed+' 輪；副駕駛聊天 '+pilotAdded+' 則，劇情 '+storyAdded+' 則；手動正史未更動。');
 }
 
-async function reorderPilotMessagesFromCloud(){
+async function reorderPilotMessagesFromCloud(onlyCurrent=false){
   const user=await cloudSignedIn();
   await refresh();
   const sections=['pilotMessages','messages'];
-  const targets=records.filter(r=>sections.some(k=>(r[k]||[]).some(m=>m.sourceEventId)));
-  if(!targets.length){cloudStatus('沒有已收取的自動歸檔紀錄可校正。');return}
+  const cycleId=onlyCurrent?current()?.id:null;
+  if(onlyCurrent&&!cycleId)throw Error('請先選擇要校正的輪迴');
+  const targets=records.filter(r=>(!onlyCurrent||r.id===cycleId)
+    &&sections.some(k=>(r[k]||[]).some(m=>m.sourceEventId)));
+  if(!targets.length){cloudStatus(onlyCurrent?'目前輪迴沒有已收取的自動歸檔紀錄。':'沒有已收取的自動歸檔紀錄可校正。');return}
   const root=cloudDb.collection('galArchive').doc(user.uid);
   const cycleBySource=new Map(targets.flatMap(r=>sections.flatMap(k=>(r[k]||[])
     .filter(m=>m.sourceEventId).map(m=>[m.sourceEventId,r.id]))));
   const sourceIds=[...cycleBySource.keys()];
   const sources=new Map();
   for(const id of sourceIds){const snap=await archiveGetSource(root,cycleBySource.get(id),id);if(snap?.exists)sources.set(id,snap.data())}
-  const plans=[];let reorderable=0,changed=0,actual=0,captured=0,fallback=0;
+  const plans=[];let reorderable=0,changed=0,actual=0,inferred=0,captured=0,fallback=0,pairedFilled=0,pairedSeen=0,manualPinned=0;
   for(const original of targets){
     const r=structuredClone(original);
     for(const section of sections){
@@ -1428,26 +1461,47 @@ async function reorderPilotMessagesFromCloud(){
           capturedAt:meta?.capturedAt||m.capturedAt||null,
           receivedAt:archiveReceivedMillis(meta?.receivedAt)||m.receivedAt};
       });
-      for(const m of enriched.filter(x=>x.sourceEventId)){
+      const normalized=archiveRestorePairedMinutes(enriched);
+      pairedFilled+=normalized.filled;pairedSeen+=normalized.pairs;
+      manualPinned+=normalized.items.filter(m=>!m.sourceEventId).length;
+      for(const m of normalized.items.filter(x=>x.sourceEventId)){
         const basis=archiveChronologyTime(m).basis;
-        if(basis==='source')actual++;else if(basis==='captured')captured++;else fallback++;
+        if(basis==='source')actual++;
+        else if(basis==='inferred')inferred++;
+        else if(basis==='captured')captured++;
+        else fallback++;
       }
-      const sorted=sortArchivedPilotMessages(enriched);
+      const sorted=sortArchivedPilotMessages(normalized.items);
       r[section]=sorted.items;
       reorderable+=sorted.orderable;changed+=sorted.changed;
     }
     plans.push(r);
   }
-  if(!confirm('已比對 '+sourceIds.length+' 筆雲端來源。\n原始時間：'+actual+' 則；首次擷取：'+captured+' 則；備援：'+fallback+' 則。\n自動匯入紀錄 '+reorderable+' 則，預計移動 '+changed+' 個位置。\n只重排自動來源（含劇情與副駕駛）；不修改文字、不刪除訊息、不移動手動正史。\n請先匯出 JSON 備份。確定套用？'))return;
+  const targetName=onlyCurrent?(targets[0]?.title||'目前輪迴'):'全部有自動歸檔的輪迴';
+  if(!confirm('校正範圍：'+targetName+'。\n已比對 '+sourceIds.length+' 筆雲端來源。\n'
+    +'選單原始時間：'+actual+' 則；GPT 同回合推定：'+inferred+' 則；首次擷取：'+captured+' 則；接收備援：'+fallback+' 則。\n'
+    +'找到可核對的皮卡＋GPT 相鄰來源 '+pairedSeen+' 組，補回缺失的皮卡推定時間 '+pairedFilled+' 則。\n'
+    +'自動匯入 '+reorderable+' 則，預計移動 '+changed+' 個位置。'
+    +(manualPinned?'\n另有 '+manualPinned+' 則手動紀錄會固定在原槽位，可能限制跨槽位排序。':'')
+    +'\n不改文字、不刪訊息，也不移動手動正史。將先下載這次校正範圍的 JSON 備份。確定套用？'))return;
+  downloadText('輪迴檔案館_校正前備份_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',
+    JSON.stringify({format:'gal-archive-order-backup',exportedAt:new Date().toISOString(),
+      scope:targetName,cycles:targets},null,2));
   for(const r of plans){
     r.updatedAt=new Date().toISOString();
     await operation('readwrite',{type:'put',item:r});
     await uploadOneCycle(r);
   }
   await refresh();
-  cloudStatus('時間校正完成：'+reorderable+' 則、移動 '+changed+' 個位置。依原始發言 '+actual+'／首次擷取 '+captured+'／備援 '+fallback+' 則。');
+  cloudStatus('時間校正完成（'+targetName+'）：'+reorderable+' 則、移動 '+changed+' 個位置。選單原始 '+actual+'／GPT 推定 '+inferred+'／首次擷取 '+captured+'／接收備援 '+fallback+' 則；補齊推定 '+pairedFilled+' 則。');
 }
 
+$('reorderCurrentPilot').onclick=async()=>{
+  const b=$('reorderCurrentPilot');b.disabled=true;
+  try{cloudStatus('正在校正目前輪迴，保留 GPT 回覆與皮卡同回合分鐘…');await reorderPilotMessagesFromCloud(true)}
+  catch(e){cloudStatus('校正失敗：'+e.message+'。請保留校正前備份。',true)}
+  finally{b.disabled=false}
+};
 $('reorderPilot').onclick=async()=>{
   const b=$('reorderPilot');b.disabled=true;
   try{cloudStatus('正在依原始發言／首次擷取時間校正自動紀錄…');await reorderPilotMessagesFromCloud()}
