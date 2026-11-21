@@ -1,4 +1,4 @@
-const CACHE='gal-archive-pwa-v32';
+const CACHE='gal-archive-pwa-v33';
 const HOME='/hello/apps/gal-archive/index.html';
 const PRECACHE=[HOME,'/hello/apps/gal-archive/manifest.webmanifest','/hello/apps/ledger/6.png','/hello/apps/ledger/8.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(c=>c.addAll(PRECACHE)).then(()=>self.skipWaiting()))});
