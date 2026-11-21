@@ -68,14 +68,21 @@ exports.archiveIngest = onRequest(
       const result=[];
       for(let i=0;i<payload.length;i++){
         const e=payload[i],eventId=hash(uid+"|"+cycleId+"|"+sourceId+"|"+i);
-        const ref=root.collection("incoming").doc(eventId);
+        // V2 per-cycle inbox. An incoming item belongs to exactly one cycle.
+        // Old flat inbox is read only for idempotency, never written again.
+        const ref=root.collection("cycles").doc(cycleId).collection("incoming").doc(eventId);
+        const oldRef=root.collection("incoming").doc(eventId);
         try{
+          if((await oldRef.get()).exists||(await ref.get()).exists){
+            result.push({index:i,status:"duplicate",id:eventId});
+            continue;
+          }
           await ref.create({
             cycleId,manager:manager.trim(),sourceId,section:e.section,
             role:e.role,text:e.text,status:"pending",
             ...(chatKey?{chatKey}:{}),...(Number.isInteger(messageOrder)?{messageOrder}:{}),
             ...(sourceCreatedAt?{sourceCreatedAt}:{}),...(sourceCreatedAt&&sourceTimeOrigin?{sourceTimeOrigin}:{}),...(sourceCreatedAt&&sourceTimePrecision?{sourceTimePrecision}:{}),...(capturedAt?{capturedAt}:{}),
-            receivedAt:FieldValue.serverTimestamp(),schemaVersion:1
+            receivedAt:FieldValue.serverTimestamp(),schemaVersion:2,storageLayout:"cycle-scoped"
           });
           result.push({index:i,status:"created",id:eventId});
         }catch(err){
