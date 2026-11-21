@@ -120,7 +120,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
     <div class="sectionhead"><h3>逐組核對原始來源（唯讀）</h3><span class="note" id="missingAuditReviewSummary"></span></div>
     <p class="note">逐組顯示來源片段、目前最相近的正式紀錄及是否可能已經存在。<strong>相同文字不等於必然是同一回合；疑似修改也不代表資料遺失。</strong>本工具不提供一鍵補回，避免覆蓋手動修訂與時間排序。匯出的診斷 JSON 包含待核對來源全文，請自行保管。</p>
     <div class="formrow">
-      <div><label for="missingAuditReviewFilter">核對結果</label><select id="missingAuditReviewFilter"><option value="all">全部待核對來源</option><option value="no-match">尚無可比對內容</option><option value="similar">疑似修改或截斷</option><option value="cross-section">相同文字在其他分頁</option><option value="same-source">相同文字但片段編號不同</option><option value="exact-other">相同文字已在其他紀錄</option><option value="ambiguous-short">只有相同短句</option></select></div>
+      <div><label for="missingAuditReviewFilter">核對結果</label><select id="missingAuditReviewFilter"><option value="all">全部待核對來源</option><option value="no-match">尚無可比對內容</option><option value="similar">疑似修改或截斷</option><option value="cross-section">相同文字在其他分頁</option><option value="same-source">相同文字但片段編號不同</option><option value="exact-other">相同文字已在其他紀錄</option><option value="ambiguous-short">只有相同短句</option><option value="linked-edited">來源已連結但正式文字不同</option></select></div>
       <div><label for="missingAuditReviewSearch">來源 ID／訊息內容搜尋</label><input id="missingAuditReviewSearch" placeholder="貼來源 ID，或搜尋一小段對話"></div>
     </div>
     <div id="missingAuditReviewRows" style="max-height:48vh;overflow:auto;margin-top:12px"></div>
@@ -2465,7 +2465,8 @@ const missingAuditReviewLabels={
   'no-match':'未找到可靠相似內容','similar':'疑似修改／截斷（需人工核對）',
   'cross-section':'相同文字在其他分頁','same-source':'相同文字，原來源片段編號不同',
   'exact-other':'相同文字已在其他紀錄（來源待核對）',
-  'ambiguous-short':'相同短句，無法判定是否同一回合'
+  'ambiguous-short':'相同短句，無法判定是否同一回合',
+  'linked-edited':'來源已連結，正式文字與來源不同（可能人工修訂）'
 };
 function missingAuditRenderReview(){
   const panel=$('missingAuditReview'),cloud=missingAuditResult?.cloud;
@@ -2475,12 +2476,12 @@ function missingAuditRenderReview(){
   panel.classList.remove('hidden');
   const filter=$('missingAuditReviewFilter').value;
   const query=$('missingAuditReviewSearch').value.trim().toLowerCase();
-  const all=cloud.missingOfficial;
+  const all=[...cloud.missingOfficial,...(cloud.linkedDifferent||[])];
   const groups=new Map();
   for(const row of all){
     const sourceId=row.id||'未知來源';
     if(filter!=='all'&&row.kind!==filter)continue;
-    if(query&&!(sourceId+' '+row.preview+' '+(row.fullText||'')).toLowerCase().includes(query))continue;
+    if(query&&!(sourceId+' '+row.preview+' '+(row.fullText||'')+' '+(row.officialFullText||'')).toLowerCase().includes(query))continue;
     if(!groups.has(sourceId))groups.set(sourceId,[]);
     groups.get(sourceId).push(row);
   }
@@ -2499,6 +2500,7 @@ function missingAuditRenderReview(){
         +' · '+safe(missingAuditReviewLabels[entry.kind]||entry.kind)+'</summary>'
         +'<div class="audit-evidence">來源預覽：'+safe(entry.preview||'')+'</div>'
         +'<details><summary>查看來源完整文字</summary><div class="audit-full-text">'+safe(entry.fullText||entry.preview||'')+'</div></details>'
+        +(entry.officialFullText!==undefined?'<details><summary>查看現有正式紀錄文字（不會修改）</summary><div class="audit-full-text">'+safe(entry.officialFullText||'')+'</div></details>':'')
         +(matches||'<p class="audit-small">暫無可信候選；可能尚未收錄，也可能曾經大幅改寫。</p>')
         +'</details>';
     }).join('');
@@ -2635,7 +2637,9 @@ async function missingAuditCloud(r,local){
         if(missingAuditNormalized(found.message.text)!==missingAuditNormalized(entry.text))
           linkedDifferent.push({id:doc.id,sourcePartIndex:entry.sourcePartIndex??0,
             target:entry.target,actualSection:found.section,role:entry.role,
-            preview:missingAuditExcerpt(entry),officialPreview:missingAuditExcerpt(found.message)});
+            preview:missingAuditExcerpt(entry),officialPreview:missingAuditExcerpt(found.message),
+            fullText:entry.text,officialFullText:found.message.text,
+            kind:'linked-edited',matches:[missingAuditCandidateSummary({section:found.section,message:found.message,role:found.message.role})]});
       }
     }
   }
