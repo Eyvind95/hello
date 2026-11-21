@@ -680,7 +680,7 @@ async function uploadOneCycle(r){
 }
 
 // V4.4: deputy GPT speech is not the Gal AI engine's story. Only player-pasted
-// blocks explicitly headed by 我： or 他： are routed into canonical story.
+// blocks headed by 我/他 followed by ： : ； or ” are routed into canonical story.
 function archiveReceivedMillis(v){
   if(v&&typeof v.toMillis==='function')return v.toMillis();
   if(v&&typeof v.seconds==='number')return v.seconds*1000+(v.nanoseconds||0)/1e6;
@@ -732,7 +732,7 @@ function classifyArchiveChat(item,eventId){
   let current=null,inFence=false;const parts=[];
   const finish=()=>{if(current&&current.text.trim())parts.push({...current,text:current.text.trim()});current=null};
   for(const line of lines){
-    const m=!inFence&&line.match(/^\s*(我|他)\s*[：:]\s*(.*)$/);
+    const m=!inFence&&line.match(/^\s*(我|他)\s*[：:；”]\s*(.*)$/);
     if(m){finish();current={kind:'story',role:m[1]==='我'?'me':'ai',text:m[2]};continue}
     if(!current)current={kind:'pilot',role:'me',text:line};
     else current.text+='\n'+line;
