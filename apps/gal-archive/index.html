@@ -75,7 +75,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </div>
 <div class="modalback hidden" id="transferModal" role="dialog" aria-modal="true" aria-labelledby="transferTitle">
   <div class="modal"><div class="sectionhead"><h2 id="transferTitle">轉移誤收的 ChatGPT 來源對話</h2><button class="btn small" id="transferClose">關閉</button></div>
-  <p class="note">僅轉移已收取、具來源對話識別碼的自動記錄；選擇來源聊天與目標輪迴。原始訊息、時間、來源 ID 不變。請先匯出 JSON 備份。</p>
+  <p class="note">僅轉移已收取、具來源對話識別碼的自動記錄；選擇來源聊天與目標輪迴。原始訊息、時間、來源 ID 不變；會同步轉移 Firebase 原始來源。請先匯出 JSON 備份並停止舊輪迴監看。</p>
   <label>來源聊天</label><select id="transferSource" style="width:100%"></select>
   <label>目標輪迴</label><select id="transferDestination" style="width:100%"></select>
   <p id="transferPreview" class="note">請檢查來源及目標</p>
@@ -1451,7 +1451,7 @@ $('transferApply').onclick=async()=>{
       +'。請先在目標輪迴編輯管理人名單，再重新轉移。');return;
   }
   if(!confirm('將「'+from.title+'」的 '+affected+' 則來源聊天紀錄，移往「'+to.title+'」？\\n'
-    +'此操作會改動兩個輪迴，但不會刪除 Firebase incoming 原始來源。\\n將先匯出 JSON 備份。確定嗎？'))return;
+    +'此操作會同時調整兩個輪迴，並將原始 Firebase 來源搬到目標輪迴自己的 incoming，成功驗證後移除舊來源。\\n將先匯出 JSON 備份。確定嗎？'))return;
   const button=$('transferApply');button.disabled=true;
   try{
     await cloudSignedIn();$('exportBtn').click();
@@ -1468,6 +1468,37 @@ $('transferApply').onclick=async()=>{
     for(const {section,message:m} of moved){
       if(!hasArchivedSource(dst,m.sourceEventId,m.sourcePartIndex)) (dst[section]??=[]).push(m);
     }
+    // Stage raw sources in the destination before updating either canon.
+    const cloudRoot=cloudDb.collection('galArchive').doc((await cloudSignedIn()).uid);
+    const movedIds=[...new Set(moved.map(x=>x.message.sourceEventId).filter(Boolean))];
+    const rawDocs=[],relocate=[];
+    for(const id of movedIds){
+      const refs=[cloudRoot.collection('incoming').doc(id),cycleIncoming(cloudRoot,from.id).doc(id)];
+      const present=(await Promise.all(refs.map(ref=>ref.get({source:'server'}))))
+        .filter(x=>x.exists&&x.data().cycleId===from.id);
+      rawDocs.push(...present);
+      if(!present.length)continue;
+      const data=present[present.length-1].data();
+      if(present.some(x=>x.data().sourceId!==data.sourceId||x.data().text!==data.text))
+        throw Error('來源 '+id+' 的新舊副本內容不同，已停止；請人工檢查。');
+      relocate.push({id,data});
+    }
+    downloadText('輪迴檔案館_來源轉移備份_'+from.id+'_to_'+to.id+'.json',
+      JSON.stringify({exportedAt:new Date().toISOString(),fromCycleId:from.id,
+        toCycleId:to.id,rawSources:rawDocs.map(d=>({path:d.ref.path,data:d.data()})),
+        missingRawIds:movedIds.filter(id=>!relocate.some(x=>x.id===id))},null,2));
+    for(const {id,data} of relocate){
+      const target=cycleIncoming(cloudRoot,to.id).doc(id),existing=await target.get({source:'server'});
+      if(existing.exists){
+        const old=existing.data();
+        if(old.sourceId!==data.sourceId||old.text!==data.text)
+          throw Error('目標輪迴已有同 ID 不同內容的來源 '+id+'，拒絕覆寫。');
+      }else await target.set({...data,cycleId:to.id,storageLayout:'cycle-scoped',
+          transferredFromCycleId:from.id,transferredAt:firebase.firestore.FieldValue.serverTimestamp()});
+      const check=await target.get({source:'server'});
+      if(!check.exists||check.data().cycleId!==to.id||check.data().text!==data.text)
+        throw Error('來源 '+id+' 寫入目標後核對失敗，保留原始來源。');
+    }
     src.updatedAt=new Date().toISOString();dst.updatedAt=new Date().toISOString();
     dst.messages=sortArchivedPilotMessages(dst.messages||[]).items;
     dst.pilotMessages=sortArchivedPilotMessages(dst.pilotMessages||[]).items;
@@ -1475,9 +1506,18 @@ $('transferApply').onclick=async()=>{
     await uploadOneCycle(src);
     await operation('readwrite',{type:'put',item:dst});
     await operation('readwrite',{type:'put',item:src});
-    await refresh();$('transferModal').classList.add('hidden');
-    cloudStatus('已將 '+moved.length+' 則來源對話由「'+src.title+'」轉移至「'+dst.title+'」。'
-      +'Firebase incoming 的舊 cycleId 仍保留作來源歷史；日後請在 Chrome 擴充功能重新綁定正確輪迴。');
+    await refresh();
+    let removedRaw=0,protectedRaw=0;
+    for(const raw of rawDocs){
+      const shared=records.some(rec=>rec.id!==to.id&&archiveImportedEntries(rec)
+        .some(x=>x.message.sourceEventId===raw.id));
+      if(shared){protectedRaw++;continue}
+      await raw.ref.delete();removedRaw++;
+    }
+    $('transferModal').classList.add('hidden');
+    cloudStatus('來源對話已轉移 '+moved.length+' 則：「'+src.title+'」→「'+dst.title+'」。'
+      +'已轉入目標輪迴原始來源 '+relocate.length+' 筆，刪除舊副本 '+removedRaw+' 筆，共用來源保留 '+protectedRaw+' 筆。'
+      +'請到 Chrome 擴充功能重新綁定正確輪迴。');
   }catch(e){$('transferPreview').textContent='轉移未完整完成：'+e.message+'。請保留備份、從雲端合併後檢查兩個輪迴，避免重複操作。'}
   finally{button.disabled=false}
 };
