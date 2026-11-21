@@ -719,7 +719,7 @@ function archiveStoryBubble(row,i,record){
 }
 
 
-let archiveAuditOpen=false,archiveAuditCountEvents=true,archiveAuditWindowSync=null;
+let archiveAuditOpen=false,archiveAuditCountEvents=true,archiveAuditAbort=null;
 function archiveCheckDialoguePairs(timeline,includeEvents=archiveAuditCountEvents){
   const turns=timeline.map((row,index)=>({index,role:row.entry?.role==='me'?'me':'ai',type:row.type}))
     .filter(x=>includeEvents||x.type!=='event');
@@ -752,7 +752,9 @@ function archiveAuditJump(index){
 function archiveAuditRail(a){
   const chat=$('chat'),rail=$('archiveAuditTrack');
   if(!chat||!rail)return;
-  if(archiveAuditWindowSync){window.removeEventListener('resize',archiveAuditWindowSync);archiveAuditWindowSync=null}
+  if(archiveAuditAbort)archiveAuditAbort.abort();
+  archiveAuditAbort=new AbortController();
+  const signal=archiveAuditAbort.signal;
   const rows=[...chat.querySelectorAll('[data-dialogue-index]')],bad=new Set(a.issues.map(x=>x.index));
   rows.forEach(row=>row.classList.toggle('archive-audit-fault',bad.has(+row.dataset.dialogueIndex)));
   rail.innerHTML='<div class="archive-audit-viewport" aria-hidden="true"></div>';
@@ -777,15 +779,20 @@ function archiveAuditRail(a){
     }
     sync();
   };
-  chat.addEventListener('scroll',sync,{passive:true});
-  chat.addEventListener('load',e=>{if(e.target?.tagName==='IMG')requestAnimationFrame(place)},true);
+  chat.addEventListener('scroll',sync,{passive:true,signal});
+  chat.addEventListener('load',e=>{if(e.target?.tagName==='IMG')requestAnimationFrame(place)},{capture:true,signal});
   rail.addEventListener('click',e=>{
     if(e.target.closest('[data-audit-jump]'))return;
     const rect=rail.getBoundingClientRect();
     const fraction=rect.height?Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height)):0;
     chat.scrollTo({top:fraction*Math.max(0,chat.scrollHeight-chat.clientHeight),behavior:'smooth'});
-  });
-  archiveAuditWindowSync=()=>requestAnimationFrame(place);window.addEventListener('resize',archiveAuditWindowSync);
+  },{signal});
+  if(typeof ResizeObserver==='function'){
+    const observer=new ResizeObserver(()=>requestAnimationFrame(place));
+    observer.observe(chat);observer.observe(rail);
+    signal.addEventListener('abort',()=>observer.disconnect(),{once:true});
+  }
+  window.addEventListener('resize',()=>requestAnimationFrame(place),{signal});
   requestAnimationFrame(place);
 }
 function archiveAuditRefresh(r){
