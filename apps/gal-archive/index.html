@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.14｜Gal AI</title>
+<title>輪迴檔案館 V5.15｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -292,8 +292,8 @@ function renderReadOnlyWorld(r){
   $('tabBody').innerHTML=`<div class="sectionhead"><h3>作品共用世界觀 <span class="pill">唯讀</span></h3><span class="note">所有輪迴自動同步顯示同一份世界觀</span></div><p class="note">此處直接讀取左側「編輯目前世界觀」所儲存的內容，不會為輪迴建立另一份副本；需要修改時請回到作品總覽編輯。</p><div class="world-readonly" id="commonWorldText">${common?safe(common):'<span class="note">目前尚未填寫作品共用世界觀，請從左側「編輯目前世界觀」新增。</span>'}</div><div class="actions topsp"><button class="btn" id="copySharedWorld" ${common?'':'disabled'}>複製世界觀</button></div>${legacy?`<details class="topsp"><summary>查看舊版本輪迴專屬設定（保留資料，唯讀）</summary><p class="note">這是舊版填在輪迴內的資料，為防止遺失而保留；不會覆蓋作品共用世界觀。</p><div class="world-readonly">${safe(legacy)}</div></details>`:''}`;
 }
 function renderWorldEditor(){const w=WORLDS.find(w=>w.id===world),entry=worldDocs[world]||{};$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">共用資料／獨立於每一個輪迴</div><h2>${safe(w.name)}・世界觀總設定</h2></div><button class="btn small" id="backFromWorld">返回輪迴</button></div><p class="note">這裡是唯一可以編輯此作品世界觀的地方。儲存後，所有屬於此作品的輪迴都會自動顯示最新內容；輪迴內的世界觀分頁只供閱讀，無法修改。</p><label>世界觀總設定（可貼上長篇原文）</label><textarea class="tall worldtextarea" id="worldEditor" placeholder="例如：世界運作規則、職業和能力、地點、關鍵設定、禁止違反的世界硬規則…">${safe(entry.text||'')}</textarea><div class="actions topsp"><button class="btn primary" id="saveWorld">儲存共用世界觀</button><button class="btn" id="copyWorld">複製世界觀</button><button class="btn" id="renameWorld">重新命名世界觀</button></div>`}
-function buildCopilot(r){const noteText=formatNoteSections(r);const w=WORLDS.find(w=>w.id===r.world);const common=worldDocs[r.world]?.text||'';const incl=$('includeMessages')?.checked!==false,limit=+$('chunkSize')?.value||12000;let header=`【Gal AI 輪迴檔案館・副駕駛閱讀資料】\n作品：${w.name}\n輪迴：${r.title}\n主角：${r.hero||'未填'}\n重要角色：${r.partner||'未填'}\n負責副駕駛：${cycleManagerLabel(r)||'未填'}\n\n【作品共用世界觀】\n${common||'（尚未填寫）'}\n\n【此輪迴開場】\n${r.opening||'（尚未填寫）'}\n\n${r.lore?`【舊版輪迴專屬設定（僅保留歷史資料）】\n${r.lore}\n\n`:``}【補充筆記（分區）】\n${noteText}\n\n【人格設定】\n${r.personality||'（尚未填寫）'}\n\n【這輪彩蛋】\n${r.easterEggs||'（尚未填寫）'}\n\n【10題】\n${formatLogText(r.quizLogs||[])}\n\n【與皮卡修改記錄】\n${formatLogText(r.changeLogs||[])}\n\n【副駕駛聊天（獨立於 Gal AI 劇情）】\n${(r.pilotMessages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'皮卡':m.manager||'副駕駛 GPT'}】\n${m.text||''}${archiveImageLabels(m)}`).join('\n\n')||'（尚未填寫）'}\n\n【完整對話】\n`;let msgs=incl?(r.messages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n`).join('\n'):'（未包含對話）';let full=header+msgs;let chunks=[];if(full.length<=limit)chunks=[full];else{let segments=[header,...(incl?(r.messages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n\n`):[])];let cur='';for(let seg of segments){while(seg.length>limit){if(cur){chunks.push(cur);cur=''}chunks.push(seg.slice(0,limit));seg=seg.slice(limit)}if(cur.length+seg.length>limit&&cur){chunks.push(cur);cur=''}cur+=seg}if(cur)chunks.push(cur)}return {full,chunks}}
-function renderCopilot(r){$('tabBody').innerHTML=`<h3>副駕駛閱讀模式</h3><p class="note">自動整理作品共用世界觀、輪迴開場、歷史設定（如有）、分區補充筆記、人格設定、這輪彩蛋、10題、皮卡修改記錄與依序排列的對話。可以直接複製給下一位 ChatGPT，也能下載全文；長篇紀錄可分段複製。匯出內容僅包含你已經實際填寫的資料。</p><div class="formrow"><label class="checklabel"><input type="checkbox" id="includeMessages" checked>包含完整對話</label><div><label>每段約多少字元</label><select id="chunkSize"><option value="6000">6,000</option><option value="12000" selected>12,000</option><option value="24000">24,000</option><option value="48000">48,000</option></select></div></div><div class="actions topsp"><button class="btn primary" id="copyCopilot">複製全文</button><button class="btn" id="downloadCopilot">下載 TXT</button></div><div id="copilotChunks" class="topsp"></div>`;renderCopilotChunks(r)}
+function buildCopilot(r){const eventText=(r.events||[]).map((ev,i)=>'【事件 '+(i+1)+'｜'+archiveEventStatusText(ev.status)+'｜'+(ev.title||'事件到達')+'】\n'+'原始發言時間：'+(ev.sourceCreatedAt||'未知')+'\n'+(ev.text||'')+archiveImageLabels(ev)).join('\n\n')||'（尚未填寫）';const noteText=formatNoteSections(r);const w=WORLDS.find(w=>w.id===r.world);const common=worldDocs[r.world]?.text||'';const incl=$('includeMessages')?.checked!==false,limit=+$('chunkSize')?.value||12000;let header=`【Gal AI 輪迴檔案館・副駕駛閱讀資料】\n作品：${w.name}\n輪迴：${r.title}\n主角：${r.hero||'未填'}\n重要角色：${r.partner||'未填'}\n負責副駕駛：${cycleManagerLabel(r)||'未填'}\n\n【作品共用世界觀】\n${common||'（尚未填寫）'}\n\n【此輪迴開場】\n${r.opening||'（尚未填寫）'}\n\n${r.lore?`【舊版輪迴專屬設定（僅保留歷史資料）】\n${r.lore}\n\n`:``}【補充筆記（分區）】\n${noteText}\n\n【人格設定】\n${r.personality||'（尚未填寫）'}\n\n【這輪彩蛋】\n${r.easterEggs||'（尚未填寫）'}\n\n【事件簿（含是否接取）】\n${eventText}\n\n【10題】\n${formatLogText(r.quizLogs||[])}\n\n【與皮卡修改記錄】\n${formatLogText(r.changeLogs||[])}\n\n【副駕駛聊天（獨立於 Gal AI 劇情）】\n${(r.pilotMessages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'皮卡':m.manager||'副駕駛 GPT'}】\n${m.text||''}${archiveImageLabels(m)}`).join('\n\n')||'（尚未填寫）'}\n\n【完整對話】\n`;let msgs=incl?archiveStoryTimeline(r).map(({entry:m,type},i)=>`【第 ${i+1} 則｜${type==='event'?'已接事件（皮卡）':m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n`).join('\n'):'（未包含對話）';let full=header+msgs;let chunks=[];if(full.length<=limit)chunks=[full];else{let segments=[header,...(incl?archiveStoryTimeline(r).map(({entry:m,type},i)=>`【第 ${i+1} 則｜${type==='event'?'已接事件（皮卡）':m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n\n`):[])];let cur='';for(let seg of segments){while(seg.length>limit){if(cur){chunks.push(cur);cur=''}chunks.push(seg.slice(0,limit));seg=seg.slice(limit)}if(cur.length+seg.length>limit&&cur){chunks.push(cur);cur=''}cur+=seg}if(cur)chunks.push(cur)}return {full,chunks}}
+function renderCopilot(r){$('tabBody').innerHTML=`<h3>副駕駛閱讀模式</h3><p class="note">自動整理作品共用世界觀、輪迴開場、歷史設定（如有）、分區補充筆記、人格設定、這輪彩蛋、事件簿及接取狀態、10題、皮卡修改記錄與依序排列的對話。可以直接複製給下一位 ChatGPT，也能下載全文；長篇紀錄可分段複製。匯出內容僅包含你已經實際填寫的資料。</p><div class="formrow"><label class="checklabel"><input type="checkbox" id="includeMessages" checked>包含完整對話</label><div><label>每段約多少字元</label><select id="chunkSize"><option value="6000">6,000</option><option value="12000" selected>12,000</option><option value="24000">24,000</option><option value="48000">48,000</option></select></div></div><div class="actions topsp"><button class="btn primary" id="copyCopilot">複製全文</button><button class="btn" id="downloadCopilot">下載 TXT</button></div><div id="copilotChunks" class="topsp"></div>`;renderCopilotChunks(r)}
 function renderCopilotChunks(r){let d=buildCopilot(r);$('copilotChunks').innerHTML=`<p class="note">全文 ${d.full.length.toLocaleString()} 字元，共 ${d.chunks.length} 段。</p><div class="actions">${d.chunks.map((_,i)=>`<button class="btn small" data-chunk="${i}">複製第 ${i+1}/${d.chunks.length} 段</button>`).join('')}</div><details class="topsp"><summary>預覽匯出內容</summary><pre class="archivepreview">${safe(d.full.slice(0,12000))}${d.full.length>12000?'\n……預覽僅顯示前 12,000 字元，下載檔案包含全部內容':''}</pre></details>`}
 function downloadText(filename,content){let blob=new Blob([content],{type:'text/plain;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename.replace(/[\\/:*?"<>|]/g,'_');a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
 function logKey(kind){return kind==='quiz'?'quizLogs':'changeLogs'}
@@ -1159,7 +1159,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.14_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.15_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -1449,6 +1449,18 @@ function archiveRestorePairedMinutes(items){
   }
   return {items:result,filled,pairs};
 }
+
+function archiveRestoreCyclePairedEventTimes(record){
+  const keys=['messages','pilotMessages','events'];
+  const all=keys.flatMap(key=>record[key]||[]);
+  if(!all.length)return {filled:0,pairs:0};
+  const fixed=archiveRestorePairedMinutes(all);
+  const byId=new Map(fixed.items.filter(m=>m.id).map(m=>[m.id,m]));
+  for(const key of keys)if(Array.isArray(record[key]))
+    record[key]=record[key].map(m=>byId.get(m.id)||m);
+  return {filled:fixed.filled,pairs:fixed.pairs};
+}
+
 function sortArchivedPilotMessages(items){
   // 絕不動手寫訊息的槽位；只對具有來源 ID 的自動匯入紀錄排序。
   const slots=items.map((m,i)=>m.sourceEventId?i:-1).filter(i=>i>=0);
@@ -1838,6 +1850,7 @@ async function receiveAutomaticEntries(){
     group.refs.push(doc.ref);
   }
   for(const group of groups.values()){
+    archiveRestoreCyclePairedEventTimes(group.record);
     group.record.pilotMessages=sortArchivedPilotMessages(group.record.pilotMessages||[]).items;
     group.record.messages=sortArchivedPilotMessages(group.record.messages||[]).items;
     group.record.events=sortArchivedPilotMessages(group.record.events||[]).items;
@@ -1993,6 +2006,8 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
       r[section]=sorted.items;
       reorderable+=sorted.orderable;changed+=sorted.changed;
     }
+    archiveRestoreCyclePairedEventTimes(r);
+    r.events=sortArchivedPilotMessages(r.events||[]).items;
     plans.push(r);
   }
   const targetName=onlyCurrent?(targets[0]?.title||'目前輪迴'):'全部有自動歸檔的輪迴';
