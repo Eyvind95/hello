@@ -398,8 +398,8 @@ async function deleteArchiveCycleWithSources(record){
   if(meta.exists)await ref.delete();
   const late=await archiveIncomingForCycle(root,record.id);
   const allRemovable=[...new Map([...removable,...late.docs.filter(d=>!shared.has(d.id))]
-    .map(d=>[d.id,d])).values()];
-  const unexpected=allRemovable.filter(d=>!removable.some(old=>old.id===d.id));
+    .map(d=>[d.ref.path,d])).values()];
+  const unexpected=allRemovable.filter(d=>!removable.some(old=>old.ref.path===d.ref.path));
   if(unexpected.length)downloadText('輪迴檔案館_刪除期間新增來源補充備份_'+record.id+'.json',
     JSON.stringify({cycleId:record.id,exportedAt:new Date().toISOString(),
       incoming:unexpected.map(d=>({id:d.id,data:d.data()}))},null,2));
@@ -464,8 +464,8 @@ $('purgeDeletedCycleSources').onclick=async()=>{
     if(meta.exists)await ref.delete();
     const last=await archiveIncomingForCycle(root,id);
     const all=[...new Map([...removable,...last.docs.filter(d=>!shared.has(d.id))]
-      .map(d=>[d.id,d])).values()];
-    const late=all.filter(d=>!removable.some(old=>old.id===d.id));
+      .map(d=>[d.ref.path,d])).values()];
+    const late=all.filter(d=>!removable.some(old=>old.ref.path===d.ref.path));
     if(late.length)downloadText('輪迴檔案館_舊輪迴刪除期間補充備份_'+id+'.json',
       JSON.stringify({cycleId:id,items:late.map(d=>({id:d.id,data:d.data()}))},null,2));
     const refs=[...all.map(d=>d.ref),...parts.docs.map(d=>d.ref)];
@@ -1410,8 +1410,13 @@ $('cleanupApply').onclick=async()=>{
       for(const sourceId of sourceIds){
         if(stillUsed.has(sourceId))continue;
         try{
-          const doc=await archiveGetSource(root,r.id,sourceId);
-          if(doc?.exists&&doc.data().status==='accepted'&&doc.data().cycleId===r.id){await doc.ref.delete();rawDeleted++}
+          const paths=[root.collection('incoming').doc(sourceId),cycleIncoming(root,r.id).doc(sourceId)];
+          const docs=await Promise.all(paths.map(ref=>ref.get({source:'server'})));
+          for(const doc of docs){
+            if(doc.exists&&doc.data().status==='accepted'&&doc.data().cycleId===r.id){
+              await doc.ref.delete();rawDeleted++;
+            }
+          }
         }catch(e){rawFailed++;console.error('原始來源刪除失敗',e)}
       }
     }
