@@ -120,7 +120,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
     <div class="sectionhead"><h3>逐組核對原始來源（唯讀）</h3><span class="note" id="missingAuditReviewSummary"></span></div>
     <p class="note">逐組顯示來源片段、目前最相近的正式紀錄及是否可能已經存在。<strong>相同文字不等於必然是同一回合；疑似修改也不代表資料遺失。</strong>本工具不提供一鍵補回，避免覆蓋手動修訂與時間排序。匯出的診斷 JSON 包含待核對來源全文，請自行保管。</p>
     <div class="formrow">
-      <div><label for="missingAuditReviewFilter">核對結果</label><select id="missingAuditReviewFilter"><option value="all">全部待核對來源</option><option value="no-match">尚無可比對內容</option><option value="similar">疑似修改或截斷</option><option value="cross-section">相同文字在其他分頁</option><option value="same-source">相同文字但片段編號不同</option><option value="exact-other">相同文字已在其他紀錄</option></select></div>
+      <div><label for="missingAuditReviewFilter">核對結果</label><select id="missingAuditReviewFilter"><option value="all">全部待核對來源</option><option value="no-match">尚無可比對內容</option><option value="similar">疑似修改或截斷</option><option value="cross-section">相同文字在其他分頁</option><option value="same-source">相同文字但片段編號不同</option><option value="exact-other">相同文字已在其他紀錄</option><option value="ambiguous-short">只有相同短句</option></select></div>
       <div><label for="missingAuditReviewSearch">來源 ID／訊息內容搜尋</label><input id="missingAuditReviewSearch" placeholder="貼來源 ID，或搜尋一小段對話"></div>
     </div>
     <div id="missingAuditReviewRows" style="max-height:48vh;overflow:auto;margin-top:12px"></div>
@@ -2434,6 +2434,9 @@ function missingAuditCandidateSummary(row,hitCount=0){
 function missingAuditFindText(entry,index){
   const normalized=missingAuditNormalized(entry.text),role=entry.role||'me';
   const exact=(index.exact.get(role+'\u0000'+normalized)||[]).filter(row=>normalized.length>0);
+  if(exact.length&&normalized.length<24){
+    return {kind:'ambiguous-short',matches:exact.slice(0,3).map(row=>missingAuditCandidateSummary(row))};
+  }
   if(exact.length){
     const sorted=exact.sort((a,b)=>
       Number(b.section===entry.target)-Number(a.section===entry.target)||
@@ -2461,7 +2464,8 @@ function missingAuditFindText(entry,index){
 const missingAuditReviewLabels={
   'no-match':'未找到可靠相似內容','similar':'疑似修改／截斷（需人工核對）',
   'cross-section':'相同文字在其他分頁','same-source':'相同文字，原來源片段編號不同',
-  'exact-other':'相同文字已在其他紀錄（來源待核對）'
+  'exact-other':'相同文字已在其他紀錄（來源待核對）',
+  'ambiguous-short':'相同短句，無法判定是否同一回合'
 };
 function missingAuditRenderReview(){
   const panel=$('missingAuditReview'),cloud=missingAuditResult?.cloud;
@@ -2552,9 +2556,10 @@ function missingAuditDisplay(report){
   else if(c.error)out+='\n\n雲端核對未完成：'+c.error;
   else{
     if(c.reviewCounts)out+='\n\n【原始文字交叉比對】\n'
-      +'來源 ID／片段編號未連結，但文字已存在：'+(c.reviewCounts['same-source']||0)+(c.reviewCounts['exact-other']||0)+(c.reviewCounts['cross-section']||0)+' 則'
+      +'來源 ID／片段編號未連結，但文字已存在：'+((c.reviewCounts['same-source']||0)+(c.reviewCounts['exact-other']||0)+(c.reviewCounts['cross-section']||0))+' 則'
       +'\n疑似修改／截斷：'+(c.reviewCounts.similar||0)+' 則'
       +'\n仍找不到可靠相似內容：'+(c.reviewCounts['no-match']||0)+' 則'
+      +'\n相同短句但無法識別回合：'+(c.reviewCounts['ambiguous-short']||0)+' 則'
       +'\n已連結但原文與正式版本不同（可能手動修改）：'+(c.linkedDifferent||[]).length+' 則'
       +'\n請展開下方逐組核對，切勿直接將上面數量視為確定遺失。';
     out+='\n\n【Firebase 唯讀核對】\n正式雲端完整對話（含已接事件）：'+(c.cycleStoryCount===null?'無法確認':c.cycleStoryCount+' 則')
