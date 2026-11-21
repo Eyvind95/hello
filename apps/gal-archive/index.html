@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.26｜Gal AI</title>
+<title>輪迴檔案館 V5.27｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -73,6 +73,9 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .archive-audit-mark.archive-audit-time-mark{left:50%;right:0;width:50%;background:#ffad3d;box-shadow:0 0 6px #ffad3d}
 .archive-audit-mark.archive-audit-time-mark:hover,.archive-audit-mark.archive-audit-time-mark:focus-visible{background:#ffe2a7}
 .archive-audit-track.archive-audit-only-time .archive-audit-mark.archive-audit-time-mark{left:0;right:0;width:100%}
+.archive-audit-mark.archive-audit-event-mark{left:50%;right:auto;width:13px;height:13px;transform:translate(-50%,-50%);border-radius:50%;background:#ffe45f;border:2px solid #6e5300;box-shadow:0 0 0 2px #0e1830,0 0 10px #ffd34d;z-index:4}
+.archive-audit-mark.archive-audit-event-mark:hover,.archive-audit-mark.archive-audit-event-mark:focus-visible{height:16px;width:16px;background:#fff5a0;outline:2px solid #fff4ac;outline-offset:2px}
+.archive-event-flash .bubble{outline:3px solid #ffe45f;outline-offset:2px}
 .archive-audit-fault .bubble{border-color:#e97e91}
 .archive-time-fault .bubble{box-shadow:inset 3px 0 #ffb347;border-color:#ca8a40}
 .archive-audit-flash .bubble{outline:3px solid #ff506a;outline-offset:2px}
@@ -85,7 +88,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.26</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.27</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -269,7 +272,8 @@ async function refresh(){
 }
 async function put(record){record.updatedAt=new Date().toISOString();await operation('readwrite',{type:'put',item:record});await refresh()}
 function current(){return records.find(r=>r.id===selected)}
-function renderSide(){$('worlds').innerHTML=WORLDS.map(w=>`<button class="world ${w.id===world?'active':''}" data-world="${safe(w.id)}"><span>${safe(w.name)}</span><span class="number">${records.filter(r=>r.world===w.id).length} 輪</span></button>`).join('');$('newCycle').disabled=false;$('editWorld').disabled=false;let q=$('cycleSearch').value.trim().toLowerCase();let rows=records.filter(r=>r.world===world&&[r.title,r.hero,r.partner,cycleManagerLabel(r),r.number].join(' ').toLowerCase().includes(q)).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));$('cycles').innerHTML=rows.length?rows.map(r=>`<button class="cycle ${selected===r.id?'active':''}" data-cycle="${safe(r.id)}">${safe(r.title)}<span>${safe([r.hero,cycleManagerLabel(r)&&"管理："+cycleManagerLabel(r)].filter(Boolean).join(" · "))}　${(r.messages||[]).length} 則劇情 · ${(r.pilotMessages||[]).length} 則副駕駛聊天</span></button>`).join(''):'<p class="note">這裡還沒有符合條件的輪迴。</p>'}
+function archiveCompleteMessageCount(r){return (r.messages||[]).length+(r.events||[]).filter(e=>e.status==='accepted').length}
+function renderSide(){$('worlds').innerHTML=WORLDS.map(w=>`<button class="world ${w.id===world?'active':''}" data-world="${safe(w.id)}"><span>${safe(w.name)}</span><span class="number">${records.filter(r=>r.world===w.id).length} 輪</span></button>`).join('');$('newCycle').disabled=false;$('editWorld').disabled=false;let q=$('cycleSearch').value.trim().toLowerCase();let rows=records.filter(r=>r.world===world&&[r.title,r.hero,r.partner,cycleManagerLabel(r),r.number].join(' ').toLowerCase().includes(q)).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));$('cycles').innerHTML=rows.length?rows.map(r=>`<button class="cycle ${selected===r.id?'active':''}" data-cycle="${safe(r.id)}">${safe(r.title)}<span>${safe([r.hero,cycleManagerLabel(r)&&"管理："+cycleManagerLabel(r)].filter(Boolean).join(" · "))}　${archiveCompleteMessageCount(r)} 則完整對話（含已接事件） · ${(r.pilotMessages||[]).length} 則副駕駛聊天</span></button>`).join(''):'<p class="note">這裡還沒有符合條件的輪迴。</p>'}
 function renderContent(){const r=current();if(!r){$('content').innerHTML=`<div class="empty"><strong>${safe(WORLDS.find(w=>w.id===world)?.name||'')}</strong>先點左側「編輯目前世界觀」填入作品共用設定，或新增輪迴。</div>`;return}let tabs=[['chat','完整對話'],['events','事件簿'],['pilotChat','副駕駛聊天'],['opening','輪迴開場'],['lore','世界觀（唯讀）'],['notes','補充筆記'],['quiz','10題'],['changes','與皮卡修改記錄'],['personality','人格設定'],['easterEggs','這輪彩蛋'],['copilot','副駕駛閱讀']];$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">${safe(WORLDS.find(w=>w.id===r.world).name)}</div><h2>${safe(r.title)}</h2><div class="stat">${safe([r.hero&&'主角：'+r.hero,r.partner&&'重要角色：'+r.partner,cycleManagerLabel(r)&&'負責副駕駛：'+cycleManagerLabel(r)].filter(Boolean).join(' ／ '))}</div></div><div class="actions"><button class="btn small" id="copyCycleId">複製輪迴 ID</button><button class="btn small" id="editCycle">編輯資料</button><button class="btn small danger" id="deleteCycle">刪除輪迴</button></div></div><div class="tabs">${tabs.map(([id,name])=>`<button class="tab ${id===tab?'active':''}" data-tab="${id}">${name}</button>`).join('')}</div><div id="tabBody"></div>`;renderTab(r)}
 function renderTab(r){if(tab==='chat'){renderChat(r);mountArchiveComposerImages();return}if(tab==='events'){renderEvents(r);mountArchiveComposerImages();return}if(tab==='pilotChat'){renderPilotChat(r);mountArchiveComposerImages();return}if(tab==='quiz'||tab==='changes'){renderLog(r,tab);mountArchiveComposerImages();return}if(tab==='copilot')return renderCopilot(r);if(tab==='lore')return renderReadOnlyWorld(r);if(tab==='notes')return renderNotesSections(r);let names={opening:['輪迴開場','保存最初的角色、時間、地點、開場文字與設定。'],lore:['世界觀設定','可以寫規則、角色設定、能力、人物關係、重要限制。'],notes:['補充筆記','正史摘要、重大事件、前輩交接、尚待確認事項等。'],personality:['人格設定','記錄主角人格、個性、言行、心理、重要人際關係與本輪差異。'],easterEggs:['這輪彩蛋','記錄這輪彩蛋、伏筆、出處、對應原作與確認結果。']};let [title,hint]=names[tab];$('tabBody').innerHTML=`<h3>${title}</h3><p class="note">${hint}</p><textarea id="docEditor" class="tall" placeholder="在這裡貼入完整內容…">${safe(r[tab]||'')}</textarea><div class="actions topsp"><button id="saveDoc" class="btn primary">儲存${title}</button><button id="copyDoc" class="btn">複製文字</button></div>`}
 
@@ -837,11 +841,11 @@ function archiveCheckDialoguePairs(timeline){
   let pairs=0;
   for(let i=0;i<turns.length-1;i++)if(turns[i].role==='me'&&turns[i+1].role==='ai'){pairs++;i++}
   const time=archiveCheckChronologicalOrder(timeline);
-  return {issues,pairs,count:turns.length,excluded:timeline.length-turns.length,
+  return {issues,pairs,count:turns.length,total:timeline.length,excluded:timeline.length-turns.length,
     timeIssues:time.issues,checkedTime:time.checked,unknownTime:time.unknown};
 }
 function archiveAuditTotal(a){return a.issues.length+a.timeIssues.length}
-function archiveAuditText(a){return '完整來回 '+a.pairs+' 組／已檢查 '+a.count+' 則／紅線（回合）'+a.issues.length
+function archiveAuditText(a){return '完整訊息 '+a.total+' 則（含已接事件 '+a.excluded+' 則）／完整來回 '+a.pairs+' 組／回合檢查 '+a.count+' 則／紅線（回合）'+a.issues.length
   +' 處／橘線（時間倒流）'+a.timeIssues.length+' 處／已核對時間 '+a.checkedTime+' 則'
   +(a.unknownTime?'（原始時間未知 '+a.unknownTime+' 則，不判定）':'')}
 function archiveAuditIssueList(a,target='chat'){
@@ -856,7 +860,7 @@ function archiveAuditJump(index,kind='pair',target='chat'){
   const chat=$(target==='pilot'?'pilotChatList':'chat'),node=chat?.querySelector('[data-dialogue-index="'+index+'"]');
   if(!node)return;
   chat.scrollTo({top:Math.max(0,node.offsetTop-chat.clientHeight*.23),behavior:'smooth'});
-  const cls=kind==='time'?'archive-time-flash':'archive-audit-flash';
+  const cls=kind==='event'?'archive-event-flash':kind==='time'?'archive-time-flash':'archive-audit-flash';
   node.classList.add(cls);
   setTimeout(()=>node.classList.remove(cls),2300);
 }
@@ -877,15 +881,21 @@ function archiveAuditRail(a,target='chat'){
   });
   rail.classList.toggle('archive-audit-only-time',pilot);
   rail.innerHTML='<div class="archive-audit-viewport" aria-hidden="true"></div>';
+  const acceptedEvents=pilot?[]:rows.flatMap((row,index)=>{
+    if(!row.classList.contains('archive-event-in-story'))return [];
+    return [{index,text:row.querySelector('.who')?.textContent?.trim()||'已接事件'}];
+  });
   const marks=[
     ...a.issues.map(issue=>({issue,kind:'pair'})),
-    ...a.timeIssues.map(issue=>({issue,kind:'time'}))
+    ...a.timeIssues.map(issue=>({issue,kind:'time'})),
+    ...acceptedEvents.map(issue=>({issue,kind:'event'}))
   ].map(({issue,kind})=>{
     const b=document.createElement('button');b.type='button';
-    b.className='archive-audit-mark '+(kind==='time'?'archive-audit-time-mark':'archive-audit-pair-mark');
+    b.className='archive-audit-mark '+(kind==='event'?'archive-audit-event-mark':kind==='time'?'archive-audit-time-mark':'archive-audit-pair-mark');
     b.dataset.auditJump=issue.index;b.dataset.auditKind=kind;
-    b.setAttribute('aria-label',(kind==='time'?'時間倒流':'發言斷點')+'：跳到第 '+(issue.index+1)+' 則：'+issue.text);
-    b.title=issue.text;rail.appendChild(b);
+    const label=kind==='event'?'已接事件':kind==='time'?'時間倒流':'發言斷點';
+    b.setAttribute('aria-label',label+'：跳到完整對話第 '+(issue.index+1)+' 則：'+issue.text);
+    b.title=label+' · 第 '+(issue.index+1)+' 則 · '+issue.text;rail.appendChild(b);
     return {issue,element:b};
   });
   const viewport=rail.firstElementChild;
@@ -1009,6 +1019,8 @@ function archivePilotTimeRefresh(r){
 function archiveAuditRefresh(r){
   if(tab!=='chat'||!$('chat'))return;
   const a=archiveCheckDialoguePairs(archiveStoryTimeline(r));
+  const count=document.querySelector('#tabBody .sectionhead .stat');
+  if(count)count.textContent='（'+archiveCompleteMessageCount(r)+' 則，含已接事件 '+(r.events||[]).filter(e=>e.status==='accepted').length+' 則）';
   const status=$('archiveAuditSummary'),list=$('archiveAuditIssues'),toggle=$('archiveAuditToggle');
   status.textContent=archiveAuditText(a);
   status.classList.toggle('warning',a.issues.length>0);
@@ -1018,7 +1030,7 @@ function archiveAuditRefresh(r){
   archiveAuditRail(a);
 }
 
-function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveSortCurrentChat" class="btn small">↕ 依時間整理對話＋已接事件</button><span class="archive-audit-label">📨 已接事件不計入發言回合</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：下方原始發言時間早於上一則已知時間。手動標註／選單／GPT 回覆推定皆參與分鐘級檢查；首次擷取與雲端接收時間不參與，未知時間略過。同一分鐘正常。右側進度條可按住滑鼠拖動、單擊色線跳到異常位置；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div><div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，單擊色線跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
+function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveSortCurrentChat" class="btn small">↕ 依時間整理對話＋已接事件</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：下方原始發言時間早於上一則已知時間。手動標註／選單／GPT 回覆推定皆參與分鐘級檢查；首次擷取與雲端接收時間不參與，未知時間略過。同一分鐘正常。🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div><div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
@@ -1522,7 +1534,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.26_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.27_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -2363,8 +2375,8 @@ async function receiveAutomaticEntries(){
     +(invalid?'另有 '+invalid+' 筆不符合輪迴或格式，仍在待收取區。':'')
     +(snap.size>docs.length?'還有 '+(snap.size-docs.length)+' 筆待收取，可再按一次。':''));
 }
-// V5.26: read-only completeness diagnosis. Count each storage lane separately:
-// sidebar story count is r.messages.length, not the total sources or events.
+// V5.27: read-only completeness diagnosis. Accepted events count as complete-dialogue messages;
+// rejected/pending events do not. Alternation checks still exclude accepted event notifications.
 let missingAuditResult=null,missingAuditCycleId=null;
 const missingAuditSections={messages:'完整對話',events:'事件簿',pilotMessages:'副駕駛聊天',quizLogs:'10題',changeLogs:'修改紀錄'};
 const missingAuditExcerpt=m=>String(m?.text||'').replace(/\s+/g,' ').slice(0,145);
@@ -2389,8 +2401,9 @@ function missingAuditLocal(r,expected){
   return {
     cycle:{id:r.id,title:r.title,updatedAt:r.updatedAt||null},
     expectedStoryCount:Number.isInteger(expected)&&expected>=0?expected:null,
-    actualStoryCount:story.length,
-    difference:Number.isInteger(expected)&&expected>=0?expected-story.length:null,
+    actualStoryCount:timeline.length,
+    plainStoryCount:story.length,
+    difference:Number.isInteger(expected)&&expected>=0?expected-timeline.length:null,
     roles:roleCount(story),
     storyTimelineVisible:timeline.length,storyTimelineRealTurns:realTurns,
     acceptedEvents:events.filter(m=>m.status==='accepted').length,
@@ -2403,9 +2416,9 @@ function missingAuditLocal(r,expected){
 }
 function missingAuditDisplay(report){
   const a=report.local,c=report.cloud;
-  let out='輪迴：'+a.cycle.title+'\n本機劇情：'+a.actualStoryCount+' 則（玩家 '+a.roles.player+'／Gal AI '+a.roles.assistant+'）';
+  let out='輪迴：'+a.cycle.title+'\n本機完整對話：'+a.actualStoryCount+' 則（玩家 '+a.roles.player+'／Gal AI '+a.roles.assistant+'／已接事件 '+a.acceptedEvents+'）';
   if(a.expectedStoryCount!==null)out+='\n原始目標：'+a.expectedStoryCount+' 則；差額：'+a.difference+' 則（僅數量差，不能直接判定遺失）';
-  out+='\n已接事件：'+a.acceptedEvents+' 件（另外顯示在完整對話，但不計入側欄劇情）'
+  out+='\n已接事件：'+a.acceptedEvents+' 件（已計入上方完整對話總則數）'
     +'\n未接／待決事件：'+a.unacceptedEvents+' 件'
     +'\n副駕駛聊天：'+a.pilotCount+' 則（皮卡 '+a.pilotRoles.player+'／GPT '+a.pilotRoles.assistant+'）'
     +'\n疑似包含「我：／他：」標記、但在副駕駛聊天的訊息：'+a.storyLikePilotCount+' 則'
@@ -2413,7 +2426,7 @@ function missingAuditDisplay(report){
   if(!c)out+='\n\n雲端：尚未核對';
   else if(c.error)out+='\n\n雲端核對未完成：'+c.error;
   else{
-    out+='\n\n【Firebase 唯讀核對】\n正式雲端劇情：'+(c.cycleStoryCount===null?'無法確認':c.cycleStoryCount+' 則')
+    out+='\n\n【Firebase 唯讀核對】\n正式雲端完整對話（含已接事件）：'+(c.cycleStoryCount===null?'無法確認':c.cycleStoryCount+' 則')
       +'\n原始來源：'+c.rawTotal+' 筆（已收取 '+c.status.accepted+'、待收取 '+c.status.pending+'、其他 '+c.status.other+'）'
       +'\n原始來源內容與路徑衝突：'+c.pathConflicts.length+' 筆'
       +'\n相同來源 ID 的不同副本互相矛盾：'+c.duplicateConflicts.length+' 筆'
@@ -2442,7 +2455,7 @@ async function missingAuditCloud(r,local){
     if(parts.size!==meta.data().partCount)throw Error('雲端正式紀錄片段不完整，停止比對');
     const cloudCycle=JSON.parse(parts.docs.map(d=>d.data().data).join(''));
     if(cloudCycle.id!==r.id)throw Error('雲端輪迴 ID 不符，停止比對');
-    cycleStoryCount=(cloudCycle.messages||[]).length;
+    cycleStoryCount=archiveCompleteMessageCount(cloudCycle);
   }
   const uniq=new Map(),duplicateConflicts=[];
   for(const doc of raw.docs){
