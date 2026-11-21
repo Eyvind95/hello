@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.27｜Gal AI</title>
+<title>輪迴檔案館 V5.28｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -81,6 +81,14 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .archive-audit-flash .bubble{outline:3px solid #ff506a;outline-offset:2px}
 .archive-time-flash .bubble{outline:3px solid #ffad3d;outline-offset:2px}
 @media(max-width:760px){.archive-chat-grid{gap:4px}.archive-audit-track{flex-basis:20px}}
+
+.audit-review{border-top:1px solid #43506d;padding-top:14px;margin-top:16px}
+.audit-review details{border:1px solid #435576;border-radius:10px;padding:10px 12px;margin:8px 0;background:#19243a}
+.audit-review details details{background:#111b2e;border-color:#354765}
+.audit-review summary{cursor:pointer;font-weight:650;overflow-wrap:anywhere}
+.audit-review .audit-full-text{white-space:pre-wrap;overflow-wrap:anywhere;background:#10182c;padding:10px;border-radius:8px;max-height:250px;overflow:auto;font-size:.82rem}
+.audit-review .audit-evidence{border-left:3px solid #677aa8;padding-left:10px;margin:10px 0;font-size:.84rem}
+.audit-review .audit-small{color:#c1cbe3;font-size:.78rem;overflow-wrap:anywhere}
 </style>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
@@ -88,7 +96,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.27</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.28</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -107,6 +115,16 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
   <div class="formrow"><div><label for="missingAuditExpected">你確認的原始劇情總則數（可空白）</label><input id="missingAuditExpected" type="number" min="0" step="1" placeholder="例如 803"></div><div><label>檢查對象</label><input id="missingAuditCycleLabel" readonly></div></div>
   <div class="actions topsp"><button class="btn primary" id="missingAuditRun">讀取本機與 Firebase 核對</button><button class="btn" id="missingAuditDownload" disabled>下載診斷 JSON</button></div>
   <pre id="missingAuditReport" class="archivepreview" style="max-height:48vh;overflow:auto;white-space:pre-wrap;margin:12px 0" role="status" aria-live="polite">尚未執行。檢查不會更動資料。</pre>
+
+  <div id="missingAuditReview" class="hidden audit-review">
+    <div class="sectionhead"><h3>逐組核對原始來源（唯讀）</h3><span class="note" id="missingAuditReviewSummary"></span></div>
+    <p class="note">逐組顯示來源片段、目前最相近的正式紀錄及是否可能已經存在。<strong>相同文字不等於必然是同一回合；疑似修改也不代表資料遺失。</strong>本工具不提供一鍵補回，避免覆蓋手動修訂與時間排序。匯出的診斷 JSON 包含待核對來源全文，請自行保管。</p>
+    <div class="formrow">
+      <div><label for="missingAuditReviewFilter">核對結果</label><select id="missingAuditReviewFilter"><option value="all">全部待核對來源</option><option value="no-match">尚無可比對內容</option><option value="similar">疑似修改或截斷</option><option value="cross-section">相同文字在其他分頁</option><option value="same-source">相同文字但片段編號不同</option><option value="exact-other">相同文字已在其他紀錄</option></select></div>
+      <div><label for="missingAuditReviewSearch">來源 ID／訊息內容搜尋</label><input id="missingAuditReviewSearch" placeholder="貼來源 ID，或搜尋一小段對話"></div>
+    </div>
+    <div id="missingAuditReviewRows" style="max-height:48vh;overflow:auto;margin-top:12px"></div>
+  </div>
   <p class="note" style="color:#ffcb90">⚠ 此工具只能找到已保存、已上傳或已被分類的訊息；若擴充功能從未擷取那段對話，必須回到 ChatGPT 原始聊天核對。請先保留輪迴 JSON 備份；不要直接拿差額做自動補登。</p>
   </div>
 </div>
@@ -1534,7 +1552,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.27_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.28_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -2375,12 +2393,119 @@ async function receiveAutomaticEntries(){
     +(invalid?'另有 '+invalid+' 筆不符合輪迴或格式，仍在待收取區。':'')
     +(snap.size>docs.length?'還有 '+(snap.size-docs.length)+' 筆待收取，可再按一次。':''));
 }
-// V5.27: read-only completeness diagnosis. Accepted events count as complete-dialogue messages;
+// V5.28: read-only completeness diagnosis. Accepted events count as complete-dialogue messages;
 // rejected/pending events do not. Alternation checks still exclude accepted event notifications.
 let missingAuditResult=null,missingAuditCycleId=null;
 const missingAuditSections={messages:'完整對話',events:'事件簿',pilotMessages:'副駕駛聊天',quizLogs:'10題',changeLogs:'修改紀錄'};
 const missingAuditExcerpt=m=>String(m?.text||'').replace(/\s+/g,' ').slice(0,145);
 const missingAuditSourceKey=m=>m?.sourceEventId?m.sourceEventId+'|'+(m.sourcePartIndex??0):null;
+
+function missingAuditNormalized(text){
+  return String(text||'').normalize('NFC').replace(/\s+/gu,'').trim();
+}
+function missingAuditAnchors(text){
+  if(text.length<120)return [];
+  const width=32;
+  return [0.14,0.38,0.62,0.86].map(t=>text.slice(Math.floor((text.length-width)*t),Math.floor((text.length-width)*t)+width));
+}
+function missingAuditMakeTextIndex(rows){
+  const all=rows.map(row=>({
+    section:row.section,message:row.message,role:row.message.role,
+    norm:missingAuditNormalized(row.message.text)
+  }));
+  const exact=new Map(),byRole=new Map();
+  for(const row of all){
+    const key=row.role+'\u0000'+row.norm;
+    if(!exact.has(key))exact.set(key,[]);
+    exact.get(key).push(row);
+    if(!byRole.has(row.role))byRole.set(row.role,[]);
+    byRole.get(row.role).push(row);
+  }
+  return {exact,byRole};
+}
+function missingAuditCandidateSummary(row,hitCount=0){
+  return {
+    id:row.message.id||null,sourceEventId:row.message.sourceEventId||null,
+    sourcePartIndex:row.message.sourcePartIndex??null,
+    section:row.section,role:row.role,preview:missingAuditExcerpt(row.message),
+    anchorHits:hitCount
+  };
+}
+function missingAuditFindText(entry,index){
+  const normalized=missingAuditNormalized(entry.text),role=entry.role||'me';
+  const exact=(index.exact.get(role+'\u0000'+normalized)||[]).filter(row=>normalized.length>0);
+  if(exact.length){
+    const sorted=exact.sort((a,b)=>
+      Number(b.section===entry.target)-Number(a.section===entry.target)||
+      Number(b.message.sourceEventId===entry.sourceEventId)-Number(a.message.sourceEventId===entry.sourceEventId));
+    const best=sorted[0];
+    const kind=best.section!==entry.target?'cross-section':
+      best.message.sourceEventId===entry.sourceEventId?'same-source':'exact-other';
+    return {kind,matches:sorted.slice(0,3).map(row=>missingAuditCandidateSummary(row))};
+  }
+  const anchors=missingAuditAnchors(normalized),similar=[];
+  if(anchors.length){
+    for(const row of index.byRole.get(role)||[]){
+      const ratio=row.norm.length/normalized.length;
+      if(ratio<0.48||ratio>2.1)continue;
+      const hits=anchors.reduce((count,part)=>count+(row.norm.includes(part)?1:0),0);
+      if(hits>=3)similar.push({row,hits});
+    }
+    similar.sort((a,b)=>b.hits-a.hits||
+      Number(b.row.section===entry.target)-Number(a.row.section===entry.target)||
+      Math.abs(a.row.norm.length-normalized.length)-Math.abs(b.row.norm.length-normalized.length));
+  }
+  return similar.length?{kind:'similar',matches:similar.slice(0,3).map(x=>missingAuditCandidateSummary(x.row,x.hits))}
+    :{kind:'no-match',matches:[]};
+}
+const missingAuditReviewLabels={
+  'no-match':'未找到可靠相似內容','similar':'疑似修改／截斷（需人工核對）',
+  'cross-section':'相同文字在其他分頁','same-source':'相同文字，原來源片段編號不同',
+  'exact-other':'相同文字已在其他紀錄（來源待核對）'
+};
+function missingAuditRenderReview(){
+  const panel=$('missingAuditReview'),cloud=missingAuditResult?.cloud;
+  if(!cloud||cloud.error||!Array.isArray(cloud.missingOfficial)){
+    panel.classList.add('hidden');return;
+  }
+  panel.classList.remove('hidden');
+  const filter=$('missingAuditReviewFilter').value;
+  const query=$('missingAuditReviewSearch').value.trim().toLowerCase();
+  const all=cloud.missingOfficial;
+  const groups=new Map();
+  for(const row of all){
+    const sourceId=row.id||'未知來源';
+    if(filter!=='all'&&row.kind!==filter)continue;
+    if(query&&!(sourceId+' '+row.preview+' '+(row.fullText||'')).toLowerCase().includes(query))continue;
+    if(!groups.has(sourceId))groups.set(sourceId,[]);
+    groups.get(sourceId).push(row);
+  }
+  $('missingAuditReviewSummary').textContent=groups.size+' 組來源／'+[...groups.values()].reduce((sum,x)=>sum+x.length,0)+' 個片段';
+  const rows=[...groups].map(([sourceId,entries])=>{
+    const counts=entries.reduce((acc,row)=>{acc[row.kind]=(acc[row.kind]||0)+1;return acc},{});
+    const kinds=Object.entries(counts).map(([k,n])=>(missingAuditReviewLabels[k]||k)+' '+n).join('、');
+    const sections=entries.map(entry=>{
+      const matches=(entry.matches||[]).map(x=>'<div class="audit-evidence"><strong>候選：</strong>'
+        +safe(missingAuditSections[x.section]||x.section)+' · '+safe(x.role==='me'?'皮卡':'GPT')
+        +' · 來源 '+safe(String(x.sourceEventId||'無'))+' · 片段 '+safe(String(x.sourcePartIndex??'無'))
+        +(x.anchorHits?' · 相似錨點 '+x.anchorHits+'/4':'')
+        +'<div class="audit-small">'+safe(x.preview||'')+'</div></div>').join('');
+      return '<details><summary>'+safe(missingAuditSections[entry.target]||entry.target)+' · '+safe(entry.role==='me'?'皮卡':'GPT')
+        +' · 片段 '+safe(String(entry.sourcePartIndex))
+        +' · '+safe(missingAuditReviewLabels[entry.kind]||entry.kind)+'</summary>'
+        +'<div class="audit-evidence">來源預覽：'+safe(entry.preview||'')+'</div>'
+        +'<details><summary>查看來源完整文字</summary><div class="audit-full-text">'+safe(entry.fullText||entry.preview||'')+'</div></details>'
+        +(matches||'<p class="audit-small">暫無可信候選；可能尚未收錄，也可能曾經大幅改寫。</p>')
+        +'</details>';
+    }).join('');
+    return '<details><summary>來源 '+safe(sourceId.slice(0,14))+'… · '+entries.length+' 片段 · '+safe(kinds)+'</summary>'
+      +'<p class="audit-small">來源完整 ID：'+safe(sourceId)+'</p>'+sections+'</details>';
+  }).join('');
+  $('missingAuditReviewRows').innerHTML=rows||'<p class="note">目前篩選條件下沒有資料。</p>';
+}
+$('missingAuditReviewFilter').onchange=missingAuditRenderReview;
+$('missingAuditReviewSearch').oninput=missingAuditRenderReview;
+
 function missingAuditLocal(r,expected){
   const story=r.messages||[],pilot=r.pilotMessages||[],events=r.events||[];
   const timeline=archiveStoryTimeline(r),realTurns=timeline.filter(x=>x.type==='message').length;
@@ -2412,7 +2537,7 @@ function missingAuditLocal(r,expected){
     quizCount:(r.quizLogs||[]).length,changeCount:(r.changeLogs||[]).length,
     storyLikePilot,storyLikePilotCount:storyLikePilot.length,
     localSourcesIndexed:indexed.size,duplicateSourceParts:dup,
-    duplicateSourcePartsCount:dup.length,indexed};
+    duplicateSourcePartsCount:dup.length,indexed,lookupRows:rows};
 }
 function missingAuditDisplay(report){
   const a=report.local,c=report.cloud;
@@ -2426,6 +2551,12 @@ function missingAuditDisplay(report){
   if(!c)out+='\n\n雲端：尚未核對';
   else if(c.error)out+='\n\n雲端核對未完成：'+c.error;
   else{
+    if(c.reviewCounts)out+='\n\n【原始文字交叉比對】\n'
+      +'來源 ID／片段編號未連結，但文字已存在：'+(c.reviewCounts['same-source']||0)+(c.reviewCounts['exact-other']||0)+(c.reviewCounts['cross-section']||0)+' 則'
+      +'\n疑似修改／截斷：'+(c.reviewCounts.similar||0)+' 則'
+      +'\n仍找不到可靠相似內容：'+(c.reviewCounts['no-match']||0)+' 則'
+      +'\n已連結但原文與正式版本不同（可能手動修改）：'+(c.linkedDifferent||[]).length+' 則'
+      +'\n請展開下方逐組核對，切勿直接將上面數量視為確定遺失。';
     out+='\n\n【Firebase 唯讀核對】\n正式雲端完整對話（含已接事件）：'+(c.cycleStoryCount===null?'無法確認':c.cycleStoryCount+' 則')
       +'\n原始來源：'+c.rawTotal+' 筆（已收取 '+c.status.accepted+'、待收取 '+c.status.pending+'、其他 '+c.status.other+'）'
       +'\n原始來源內容與路徑衝突：'+c.pathConflicts.length+' 筆'
@@ -2468,7 +2599,8 @@ async function missingAuditCloud(r,local){
     // Prefer correctly scoped documents over legacy, but don't hide conflicts.
     if(doc.ref.path.includes('/cycles/'+r.id+'/incoming/'))uniq.set(doc.id,doc);
   }
-  const status={accepted:0,pending:0,other:0},missingOfficial=[],misclassified=[];
+  const status={accepted:0,pending:0,other:0},missingOfficial=[],misclassified=[],linkedDifferent=[];
+  const textIndex=missingAuditMakeTextIndex(local.lookupRows||[]);
   const pathConflicts=[],collapsedSources=[],counts={expectedStoryParts:0};
   for(const doc of uniq.values()){
     const d=doc.data();
@@ -2486,15 +2618,27 @@ async function missingAuditCloud(r,local){
       if(entry.target==='messages')counts.expectedStoryParts++;
       const key=doc.id+'|'+(entry.sourcePartIndex??0);
       const found=local.indexed.get(key);
-      if(!found)missingOfficial.push({id:doc.id,sourcePartIndex:entry.sourcePartIndex??0,
-        target:missingAuditSections[entry.target],preview:missingAuditExcerpt(entry)});
-      else if(found.section!==entry.target)misclassified.push({id:doc.id,
-        target:'預期 '+missingAuditSections[entry.target]+'／實際 '+missingAuditSections[found.section],
-        preview:missingAuditExcerpt(entry)});
+      if(!found){
+        const assessment=missingAuditFindText({...entry,sourceEventId:doc.id},textIndex);
+        missingOfficial.push({id:doc.id,sourcePartIndex:entry.sourcePartIndex??0,
+          target:entry.target,role:entry.role,preview:missingAuditExcerpt(entry),
+          fullText:entry.text,kind:assessment.kind,matches:assessment.matches});
+      }else{
+        if(found.section!==entry.target)misclassified.push({id:doc.id,
+          target:'預期 '+missingAuditSections[entry.target]+'／實際 '+missingAuditSections[found.section],
+          preview:missingAuditExcerpt(entry)});
+        if(missingAuditNormalized(found.message.text)!==missingAuditNormalized(entry.text))
+          linkedDifferent.push({id:doc.id,sourcePartIndex:entry.sourcePartIndex??0,
+            target:entry.target,actualSection:found.section,role:entry.role,
+            preview:missingAuditExcerpt(entry),officialPreview:missingAuditExcerpt(found.message)});
+      }
     }
   }
+  const reviewCounts={};
+  for(const row of missingOfficial)reviewCounts[row.kind]=(reviewCounts[row.kind]||0)+1;
   return {cycleStoryCount,rawTotal:uniq.size,status,expectedStoryParts:counts.expectedStoryParts,
-    missingOfficial,misclassified,collapsedSources,pathConflicts,duplicateConflicts};
+    missingOfficial,reviewCounts,reviewSourceGroups:new Set(missingOfficial.map(x=>x.id)).size,linkedDifferent,
+    misclassified,collapsedSources,pathConflicts,duplicateConflicts};
 }
 function missingAuditOpen(){
   const r=current();
@@ -2516,6 +2660,9 @@ $('missingAuditDownload').onclick=()=>{
 $('missingAuditRun').onclick=async()=>{
   const b=$('missingAuditRun');b.disabled=true;missingAuditResult=null;
   $('missingAuditDownload').disabled=true;
+  $('missingAuditReview').classList.add('hidden');
+  $('missingAuditReviewFilter').value='all';
+  $('missingAuditReviewSearch').value='';
   try{
     await refresh();
     const r=records.find(x=>x.id===missingAuditCycleId);
@@ -2528,11 +2675,12 @@ $('missingAuditRun').onclick=async()=>{
     try{cloud=await missingAuditCloud(r,local)}
     catch(e){cloud={error:e.message||String(e)}}
     // Drop the ephemeral indexed Map; JSON backup keeps only interpretable findings.
-    const {indexed,...safeLocal}=local;
-    missingAuditResult={format:'gal-archive-completeness-audit',version:1,
+    const {indexed,lookupRows,...safeLocal}=local;
+    missingAuditResult={format:'gal-archive-completeness-audit',version:2,
       at:new Date().toISOString(),local:safeLocal,cloud,
       warning:'唯讀診斷。則數差額不等於資料確實遺失；分類或未擷取的內容仍需人工核對。'};
     $('missingAuditReport').textContent=missingAuditDisplay({local:safeLocal,cloud});
+    missingAuditRenderReview();
     $('missingAuditDownload').disabled=false;
   }catch(e){$('missingAuditReport').textContent='診斷失敗：'+(e.message||String(e))}
   finally{b.disabled=false}
