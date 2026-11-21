@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.17｜Gal AI</title>
+<title>輪迴檔案館 V5.18｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -59,13 +59,15 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .archive-audit-issues button:hover{background:#543149}
 .archive-chat-grid{display:flex;align-items:stretch;gap:7px}
 .archive-chat-grid .chat{position:relative;min-width:0;flex:1}
-.archive-audit-track{position:relative;flex:0 0 16px;background:#1a2946;border:1px solid #50607e;border-radius:10px;cursor:pointer;min-height:60px}
+.archive-audit-track{position:relative;flex:0 0 24px;background:#1a2946;border:1px solid #50607e;border-radius:10px;cursor:grab;touch-action:none;user-select:none;min-height:60px}
+.archive-audit-track.is-dragging{cursor:grabbing}
+.archive-audit-track .archive-audit-mark{cursor:pointer}
 .archive-audit-viewport{position:absolute;left:1px;right:1px;background:#8ea5dc40;border:1px solid #849aca;border-radius:8px;pointer-events:none;z-index:1;min-height:14px}
 .archive-audit-mark{position:absolute;left:0;right:0;width:100%;height:4px;background:#ff526a;border:0;padding:0;border-radius:0;box-shadow:0 0 6px #ff526a;transform:translateY(-50%);z-index:2}
 .archive-audit-mark:hover,.archive-audit-mark:focus-visible{height:8px;background:#ffb1bd;outline:0}
 .archive-audit-fault .bubble{border-color:#e97e91}
 .archive-audit-flash .bubble{outline:3px solid #ff506a;outline-offset:2px}
-@media(max-width:760px){.archive-chat-grid{gap:4px}.archive-audit-track{flex-basis:15px}}
+@media(max-width:760px){.archive-chat-grid{gap:4px}.archive-audit-track{flex-basis:20px}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
@@ -73,7 +75,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.17</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.18</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -784,6 +786,71 @@ function archiveAuditRail(a){
   };
   chat.addEventListener('scroll',sync,{passive:true,signal});
   chat.addEventListener('load',e=>{if(e.target?.tagName==='IMG')requestAnimationFrame(place)},{capture:true,signal});
+  // Pointer dragging scrubs the actual chat scrollbar. Red markers still jump on a simple click.
+  let drag=null,preventPointerClick=false;
+  function scrubTo(clientY){
+    if(!drag)return;
+    const rect=rail.getBoundingClientRect(),height=rail.clientHeight;
+    const scrollMax=Math.max(0,chat.scrollHeight-chat.clientHeight);
+    const thumbHeight=Math.min(height,Math.max(14,height*chat.clientHeight/Math.max(1,chat.scrollHeight)));
+    const travel=Math.max(0,height-thumbHeight);
+    const offset=drag.thumbOffset===null?thumbHeight/2:drag.thumbOffset;
+    const top=Math.max(0,Math.min(travel,clientY-rect.top-offset));
+    chat.scrollTop=travel?top/travel*scrollMax:0;
+    sync();
+  }
+  function finishDrag(e,cancelled){
+    if(!drag||drag.pointerId!==e.pointerId)return;
+    const done=drag;
+    drag=null;
+    rail.classList.remove('is-dragging');
+    if(rail.hasPointerCapture?.(e.pointerId))rail.releasePointerCapture(e.pointerId);
+    if(cancelled)return;
+    if(done.moved){
+      preventPointerClick=true;
+    }else if(done.markerIndex!==null){
+      // Capturing the pointer may retarget the following click to the rail.
+      // Navigate once here and suppress that synthetic click.
+      archiveAuditJump(done.markerIndex);
+      preventPointerClick=true;
+    }
+  }
+  rail.addEventListener('pointerdown',e=>{
+    if(e.button!==0||drag)return;
+    preventPointerClick=false;
+    const rect=rail.getBoundingClientRect();
+    const thumbTop=parseFloat(viewport.style.top)||0;
+    const thumbHeight=viewport.getBoundingClientRect().height;
+    const localY=e.clientY-rect.top;
+    const marker=e.target.closest('[data-audit-jump]');
+    drag={
+      pointerId:e.pointerId,startY:e.clientY,moved:false,
+      thumbOffset:localY>=thumbTop&&localY<=thumbTop+thumbHeight?localY-thumbTop:null,
+      markerIndex:marker?Number(marker.dataset.auditJump):null
+    };
+    rail.classList.add('is-dragging');
+    rail.setPointerCapture(e.pointerId);
+  },{signal});
+  rail.addEventListener('pointermove',e=>{
+    if(!drag||drag.pointerId!==e.pointerId)return;
+    if(Math.abs(e.clientY-drag.startY)>3)drag.moved=true;
+    if(drag.moved){
+      e.preventDefault();
+      scrubTo(e.clientY);
+    }
+  },{signal});
+  rail.addEventListener('pointerup',e=>finishDrag(e,false),{signal});
+  rail.addEventListener('pointercancel',e=>finishDrag(e,true),{signal});
+  rail.addEventListener('lostpointercapture',e=>{
+    if(drag&&drag.pointerId===e.pointerId){drag=null;rail.classList.remove('is-dragging')}
+  },{signal});
+  // Capture phase makes sure a drag release cannot also trigger a red-marker jump.
+  rail.addEventListener('click',e=>{
+    if(preventPointerClick&&e.detail!==0){
+      preventPointerClick=false;
+      e.preventDefault();e.stopImmediatePropagation();
+    }
+  },{capture:true,signal});
   rail.addEventListener('click',e=>{
     if(e.target.closest('[data-audit-jump]'))return;
     const rect=rail.getBoundingClientRect();
@@ -808,7 +875,7 @@ function archiveAuditRefresh(r){
   archiveAuditRail(a);
 }
 
-function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查一來一回</button><span class="archive-audit-label">📨 已接事件不計入發言回合</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${audit.issues.length}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。右側紅線只標記疑似漏回合位置，點擊可跳轉；不更動正史。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div><div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="紅線標記斷點，點按即可跳到附近訊息" aria-label="完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
+function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查一來一回</button><span class="archive-audit-label">📨 已接事件不計入發言回合</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${audit.issues.length}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。右側進度條可按住滑鼠上下拖動，紅線標記疑似漏回合位置，單擊紅線仍可跳轉；不更動正史。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div><div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="按住滑鼠上下拖動快速捲動；紅線仍可單擊跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
@@ -1272,7 +1339,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.17_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.18_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
