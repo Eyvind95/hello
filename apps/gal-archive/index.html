@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.9｜Gal AI</title>
+<title>輪迴檔案館 V5.10｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -30,7 +30,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.9</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.10</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -1302,12 +1302,31 @@ async function receiveAutomaticEntries(){
     return;
   }
   const valid=docs.length-invalid;
+  const timeStats={menu:0,other:0,missing:0,captured:0,receivedOnly:0};
+  for(const doc of docs){
+    const item=doc.data();
+    if(item.sourceCreatedAt){
+      if(item.sourceTimeOrigin==='menu')timeStats.menu++;
+      else timeStats.other++;
+    }else{
+      timeStats.missing++;
+      if(item.capturedAt)timeStats.captured++;
+      else timeStats.receivedOnly++;
+    }
+  }
+  const timeWarning=timeStats.missing
+    ?'\\n\\n⚠ 原始發言時間缺失：'+timeStats.missing+'／'+docs.length+' 筆。'
+      +'\\n有原始時間：'+(timeStats.menu+timeStats.other)+' 筆（選單 '+timeStats.menu+'／其他 '+timeStats.other+'）。'
+      +'\\n缺少原始時間中：'+timeStats.captured+' 筆可依首次擷取時間排序；'
+      +timeStats.receivedOnly+' 筆只能依雲端接收時間排序。'
+      +'\\n這無法還原真正發言時間；建議先取消，修復 Chrome 擴充功能時間擷取後再收取。'
+    :'\\n原始發言時間：'+(timeStats.menu+timeStats.other)+'／'+docs.length+' 筆。';
   const targetSummary=[...groups.values()].map(g=>{
     const w=WORLDS.find(x=>x.id===g.record.world)?.name||g.record.world;
     return w+'／'+g.record.title+'：'+g.refs.length+' 筆';
   }).join('\\n');
   if(!confirm('準備收取 '+valid+' 筆雲端來源。\\n\\n實際目的輪迴：\\n'+targetSummary
-    +'\\n\\nGal AI 劇情新增 '+storyCount+' 則，副駕駛聊天新增 '+pilotCount+' 則。'
+    +'\\n\\nGal AI 劇情新增 '+storyCount+' 則，副駕駛聊天新增 '+pilotCount+' 則。'+timeWarning
     +(invalid?'\\n另有 '+invalid+' 筆格式不符或無法收取（其中 '+truncated+' 筆仍帶「顯示較多」，請重新展開擷取）。':'')
     +'\\n\\n請先確認目標輪迴正確，並備份重要正史。確定開始？'))return;
   let accepted=0;
