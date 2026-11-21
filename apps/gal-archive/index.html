@@ -68,7 +68,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
   <div class="modal"><div class="sectionhead"><h2 id="pilotPurgeTitle">清空本輪副駕駛聊天</h2><button class="btn small" id="pilotPurgeClose">關閉</button></div>
     <p class="note">只清除<b>目前輪迴的「副駕駛聊天」全部訊息</b>，同步清空此輪迴 Firebase cycles/parts 內相同分頁，並刪掉 incoming 中<b>只屬於副駕駛聊天</b>的來源（包含待收取與已收取）。不會清空其他分頁、其他輪迴或世界觀。</p>
     <p class="note" style="color:#ffcb90">⚠ 請先在 Chrome 擴充功能停止監看，避免清理期間新訊息同時寫入。共享 Gal AI 正史的混合來源會保留。程式會先提供本機完整備份及待刪原始來源備份，再執行清除。此操作不可直接復原。</p>
-    <div class="note" id="pilotPurgePreview" style="white-space:pre-wrap;margin:12px 0">正在檢查…</div>
+    <div class="note" id="pilotPurgePreview" style="white-space:pre-wrap;margin:12px 0;max-height:32vh;overflow:auto">正在檢查…</div>
     <div class="actions topsp"><button class="btn danger" id="pilotPurgeApply" disabled>備份後清除本輪副駕駛聊天及雲端來源</button></div>
     <p id="pilotPurgeStatus" class="note" role="status" aria-live="polite">尚未執行清除。</p>
   </div>
@@ -1173,7 +1173,10 @@ function renderPilotPurgePlan(plan){
     '混合 Gal AI 正史、必須保留的來源：'+plan.mixed.length+' 筆\n'+
     '被其他分頁／輪迴使用、必須保留的來源：'+plan.protectedRaw.length+' 筆'+
     (plan.pendingMixed.length?'\n⚠ 有 '+plan.pendingMixed.length+' 筆尚未收取的混合來源，為保護劇情，請先分類收取再清理。':'')+
-    '\n注意：擴充功能原有「已傳送」記號不會被清除；同一則舊訊息需要另外重置標記才能重傳，新發言則可正常上傳。';
+    '\n待刪來源預覽（前 15 筆）：\n'+(plan.deletable.length?plan.deletable.slice(0,15)
+      .map((d,i)=>(i+1)+'. '+(d.data().role==='ai'?'GPT':'皮卡')+' · '+String(d.data().text||'').replace(/\s+/g,' ').slice(0,85))
+      .join('\n'):'（無）')+
+    '\n\n注意：V0.5.9 擴充功能可以在指定掃描中勾選「重新傳送已傳過的訊息」；這不會自動清除任何其他輪迴。';
   $('pilotPurgeApply').disabled=!!plan.pendingMixed.length||(!plan.localCount&&!plan.deletable.length);
 }
 async function openPilotChatPurge(r){
@@ -1204,8 +1207,8 @@ $('pilotPurgeApply').onclick=async()=>{
       $('pilotPurgeStatus').textContent='偵測到資料變動，已更新預覽；請重新確認後再按一次。';return;
     }
     if(fresh.pendingMixed.length)throw Error('尚有混合正史的待收取來源，請先分類收取。');
-    const summary='即將清空「'+r.title+'」本輪副駕駛聊天 '+fresh.localCount+' 則，並移除 '+fresh.deletable.length+' 筆獨立的 Firebase incoming 來源。\\n'
-      +'混合正史來源 '+fresh.mixed.length+' 筆保留，其他分頁與輪迴不動。\\n'
+    const summary='即將清空「'+r.title+'」本輪副駕駛聊天 '+fresh.localCount+' 則，並移除 '+fresh.deletable.length+' 筆獨立的 Firebase incoming 來源。\n'
+      +'混合正史來源 '+fresh.mixed.length+' 筆保留，其他分頁與輪迴不動。\n'
       +'會先下載兩份 JSON 備份。確定繼續？';
     if(!confirm(summary))return;
     if(prompt('最後確認：請輸入「'+pilotPurgePhrase+'」才會真正刪除：')!==pilotPurgePhrase)return;
