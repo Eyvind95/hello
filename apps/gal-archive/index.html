@@ -35,7 +35,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
 <p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
@@ -383,8 +383,17 @@ async function deleteArchiveCycleWithSources(record){
       incoming:removable.map(d=>({id:d.id,data:d.data()})),
       protectedIncomingIds:protectedSources.map(d=>d.id)
     },null,2));
-  cloudStatus('已提供備份下載；正在刪除「'+record.title+'」雲端來源 '+removable.length+' 筆與輪迴資料…');
-  const refs=[...removable.map(d=>d.ref),...parts.docs.map(d=>d.ref)];
+  cloudStatus('已提供備份下載；先封閉輪迴接收入口，防止擴充功能在刪除期間再次寫入…');
+  // archiveIngest refuses new sources once this cycle index is absent.
+  if(meta.exists)await ref.delete();
+  const late=await root.collection('incoming').where('cycleId','==',record.id).get({source:'server'});
+  const allRemovable=[...new Map([...removable,...late.docs.filter(d=>!shared.has(d.id))]
+    .map(d=>[d.id,d])).values()];
+  const unexpected=allRemovable.filter(d=>!removable.some(old=>old.id===d.id));
+  if(unexpected.length)downloadText('輪迴檔案館_刪除期間新增來源補充備份_'+record.id+'.json',
+    JSON.stringify({cycleId:record.id,exportedAt:new Date().toISOString(),
+      incoming:unexpected.map(d=>({id:d.id,data:d.data()}))},null,2));
+  const refs=[...allRemovable.map(d=>d.ref),...parts.docs.map(d=>d.ref)];
   let removed=0;
   for(let i=0;i<refs.length;i+=300){
     const batch=cloudDb.batch();
@@ -393,9 +402,8 @@ async function deleteArchiveCycleWithSources(record){
     removed+=Math.min(300,refs.length-i);
     cloudStatus('刪除進度：'+removed+'／'+refs.length+' 筆雲端來源／片段');
   }
-  // Deleting a Firestore parent does NOT remove its subcollections; delete
-  // every part first, and only then delete the cycle index.
-  if(meta.exists)await ref.delete();
+  // The receiving index was already removed before cleaning raw inbox data.
+  // Firestore subcollections are deleted explicitly rather than assuming cascade.
   await operation('readwrite',{type:'delete',id:record.id});
   selected=null;
   await refresh();
@@ -405,6 +413,63 @@ async function deleteArchiveCycleWithSources(record){
   cloudStatus(result);notify(result);
   return true;
 }
+
+// 修復以前只刪 IndexedDB、卻留下 Firestore incoming 的舊版操作。
+// 必須貼出明確的已刪輪迴 ID；不會搜尋或清理不相關的資料。
+$('purgeDeletedCycleSources').onclick=async()=>{
+  const button=$('purgeDeletedCycleSources');
+  const cycleId=prompt('請貼上「以前已刪輪迴」的完整 ID（可在 Firebase incoming 文件的 cycleId 欄位找到）：');
+  if(cycleId===null)return;
+  if(!/^[a-zA-Z0-9_-]{5,160}$/.test(cycleId.trim()))return cloudStatus('輪迴 ID 不符合格式，尚未刪除任何資料。',true);
+  if(records.some(r=>r.id===cycleId.trim()))return cloudStatus('這個輪迴目前仍在本機，請直接使用該輪迴的「刪除輪迴」按鈕。',true);
+  button.disabled=true;
+  try{
+    const user=await cloudSignedIn();
+    const root=cloudDb.collection('galArchive').doc(user.uid),id=cycleId.trim();
+    const ref=root.collection('cycles').doc(id);
+    const [meta,parts,inbox]=await Promise.all([
+      ref.get({source:'server'}),ref.collection('parts').get({source:'server'}),
+      root.collection('incoming').where('cycleId','==',id).get({source:'server'})
+    ]);
+    if(!meta.exists&&!parts.size&&!inbox.size)return cloudStatus('此輪迴 ID 已無 Firebase 輪迴／incoming 殘留，不需清理。');
+    const shared=new Set(records.flatMap(r=>
+      ['messages','pilotMessages','quizLogs','changeLogs'].flatMap(section=>
+        (r[section]||[]).map(m=>m.sourceEventId).filter(Boolean))));
+    const removable=inbox.docs.filter(d=>!shared.has(d.id));
+    const protectedDocs=inbox.docs.filter(d=>shared.has(d.id));
+    const notice='正在清理「以前已刪的輪迴」：'+id+'\n'
+      +'雲端輪迴索引：'+(meta.exists?1:0)+'；資料片段：'+parts.size
+      +'；可刪 incoming：'+removable.length+'；其他輪迴仍引用（保留）：'+protectedDocs.length+'\n\n'
+      +'警告：若這是另一台裝置上仍在使用的輪迴，也會被清除！請先確認各裝置資料已備份。';
+    if(!confirm(notice))return;
+    if(prompt('高風險操作，請再輸入一次完整輪迴 ID 才執行刪除：')!==id)return;
+    const backup={format:'gal-ai-archive-orphan-deletion-backup',version:1,
+      cycleId:id,exportedAt:new Date().toISOString(),cloudCycle:meta.exists?meta.data():null,
+      cloudParts:parts.docs.map(d=>({id:d.id,data:d.data()})),
+      incoming:removable.map(d=>({id:d.id,data:d.data()})),
+      protectedIncomingIds:protectedDocs.map(d=>d.id)};
+    downloadText('輪迴檔案館_已刪輪迴來源備份_'+id+'.json',JSON.stringify(backup,null,2));
+    // Close the server's intake gate first, then requery for messages sent
+    // during confirmation so old sources cannot silently survive.
+    if(meta.exists)await ref.delete();
+    const last=await root.collection('incoming').where('cycleId','==',id).get({source:'server'});
+    const all=[...new Map([...removable,...last.docs.filter(d=>!shared.has(d.id))]
+      .map(d=>[d.id,d])).values()];
+    const late=all.filter(d=>!removable.some(old=>old.id===d.id));
+    if(late.length)downloadText('輪迴檔案館_舊輪迴刪除期間補充備份_'+id+'.json',
+      JSON.stringify({cycleId:id,items:late.map(d=>({id:d.id,data:d.data()}))},null,2));
+    const refs=[...all.map(d=>d.ref),...parts.docs.map(d=>d.ref)];
+    for(let i=0;i<refs.length;i+=300){
+      const batch=cloudDb.batch();
+      for(const document of refs.slice(i,i+300))batch.delete(document);
+      await batch.commit();
+      cloudStatus('舊輪迴來源清理進度 '+Math.min(i+300,refs.length)+'／'+refs.length);
+    }
+    cloudStatus('清理完成：舊輪迴 '+id+'，刪除 '+all.length+' 筆 incoming、'+parts.size
+      +' 筆輪迴片段；保留 '+protectedDocs.length+' 筆其他輪迴引用來源。已提供備份下載。');
+  }catch(err){cloudStatus('舊輪迴來源清理失敗／中斷：'+String(err?.message||err)+'。可能已部分清除，請核對備份再重試。',true)}
+  finally{button.disabled=false}
+};
 
 function showModal(r){editCycleId=r?.id||null;$('modalTitle').textContent=r?'編輯輪迴':'新增輪迴';$('fieldTitle').value=r?.title||'';$('fieldHero').value=r?.hero||'';$('fieldPartner').value=r?.partner||'';$('fieldManager').value=r?cycleManagerLabel(r):'';$('modal').classList.remove('hidden');$('fieldTitle').focus()}
 $('worlds').addEventListener('click',e=>{let b=e.target.closest('[data-world]');if(!b||b.disabled)return;world=b.dataset.world;selected=records.find(r=>r.world===world)?.id||null;tab='chat';renderSide();renderContent()});$('cycles').addEventListener('click',e=>{let b=e.target.closest('[data-cycle]');if(!b)return;selected=b.dataset.cycle;tab='chat';renderSide();renderContent()});$('cycleSearch').addEventListener('input',renderSide);$('newCycle').onclick=()=>showModal(null);
