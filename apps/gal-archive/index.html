@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.12｜Gal AI</title>
+<title>輪迴檔案館 V5.13｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -27,6 +27,20 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .note-section{background:#17223a;border:1px solid #415479;border-radius:14px;padding:16px;margin:14px 0;min-width:0}
 .note-section input{min-width:0;max-width:720px}.note-section textarea{min-height:170px;line-height:1.7}
 .note-section .actions{margin-top:10px}.note-section-index{font-size:.8rem;color:#c6d2ea;font-weight:700}
+
+.archive-attachments{display:flex;gap:9px;flex-wrap:wrap;margin:8px 0 11px;align-items:flex-start}
+.archive-image-tile{position:relative;display:inline-flex;flex-direction:column;align-items:center;gap:3px;max-width:165px}
+.archive-image-thumb{display:block;border:1px solid #6c86bd;background:#0b1830;padding:3px;border-radius:12px;cursor:zoom-in;max-width:165px}
+.archive-image-thumb img{display:block;max-width:155px;max-height:155px;object-fit:contain;border-radius:8px}
+.archive-image-name{font-size:.72rem;color:#c3d0eb;max-width:165px;overflow-wrap:anywhere}
+.archive-image-remove{position:absolute;top:-5px;right:-5px;background:#8b3445;color:#fff;border:1px solid #ea9aa7;border-radius:50%;width:27px;height:27px;cursor:pointer;font-weight:bold}
+.archive-attachment-zone{margin:8px 0 10px;padding:12px;border:1px dashed #647aad;border-radius:12px;background:rgba(30,45,78,.5)}
+.archive-attachment-zone .archive-attachments{margin:4px 0 10px}
+.archive-attachment-zone .note{margin:7px 0 0}
+.archive-image-viewer{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.92);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;padding:20px}
+.archive-image-viewer img{max-width:95vw;max-height:83vh;object-fit:contain}
+.archive-image-viewer .actions{justify-content:center}
+.archive-image-viewer .note{max-width:95vw;overflow-wrap:anywhere;text-align:center}
 </style>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
@@ -34,9 +48,9 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.12</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.13</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
-<div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
+<div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
 <div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
@@ -190,7 +204,7 @@ async function put(record){record.updatedAt=new Date().toISOString();await opera
 function current(){return records.find(r=>r.id===selected)}
 function renderSide(){$('worlds').innerHTML=WORLDS.map(w=>`<button class="world ${w.id===world?'active':''}" data-world="${safe(w.id)}"><span>${safe(w.name)}</span><span class="number">${records.filter(r=>r.world===w.id).length} 輪</span></button>`).join('');$('newCycle').disabled=false;$('editWorld').disabled=false;let q=$('cycleSearch').value.trim().toLowerCase();let rows=records.filter(r=>r.world===world&&[r.title,r.hero,r.partner,cycleManagerLabel(r),r.number].join(' ').toLowerCase().includes(q)).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));$('cycles').innerHTML=rows.length?rows.map(r=>`<button class="cycle ${selected===r.id?'active':''}" data-cycle="${safe(r.id)}">${safe(r.title)}<span>${safe([r.hero,cycleManagerLabel(r)&&"管理："+cycleManagerLabel(r)].filter(Boolean).join(" · "))}　${(r.messages||[]).length} 則劇情 · ${(r.pilotMessages||[]).length} 則副駕駛聊天</span></button>`).join(''):'<p class="note">這裡還沒有符合條件的輪迴。</p>'}
 function renderContent(){const r=current();if(!r){$('content').innerHTML=`<div class="empty"><strong>${safe(WORLDS.find(w=>w.id===world)?.name||'')}</strong>先點左側「編輯目前世界觀」填入作品共用設定，或新增輪迴。</div>`;return}let tabs=[['chat','完整對話'],['pilotChat','副駕駛聊天'],['opening','輪迴開場'],['lore','世界觀（唯讀）'],['notes','補充筆記'],['quiz','10題'],['changes','與皮卡修改記錄'],['personality','人格設定'],['easterEggs','這輪彩蛋'],['copilot','副駕駛閱讀']];$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">${safe(WORLDS.find(w=>w.id===r.world).name)}</div><h2>${safe(r.title)}</h2><div class="stat">${safe([r.hero&&'主角：'+r.hero,r.partner&&'重要角色：'+r.partner,cycleManagerLabel(r)&&'負責副駕駛：'+cycleManagerLabel(r)].filter(Boolean).join(' ／ '))}</div></div><div class="actions"><button class="btn small" id="copyCycleId">複製輪迴 ID</button><button class="btn small" id="editCycle">編輯資料</button><button class="btn small danger" id="deleteCycle">刪除輪迴</button></div></div><div class="tabs">${tabs.map(([id,name])=>`<button class="tab ${id===tab?'active':''}" data-tab="${id}">${name}</button>`).join('')}</div><div id="tabBody"></div>`;renderTab(r)}
-function renderTab(r){if(tab==='chat')return renderChat(r);if(tab==='pilotChat')return renderPilotChat(r);if(tab==='quiz'||tab==='changes')return renderLog(r,tab);if(tab==='copilot')return renderCopilot(r);if(tab==='lore')return renderReadOnlyWorld(r);if(tab==='notes')return renderNotesSections(r);let names={opening:['輪迴開場','保存最初的角色、時間、地點、開場文字與設定。'],lore:['世界觀設定','可以寫規則、角色設定、能力、人物關係、重要限制。'],notes:['補充筆記','正史摘要、重大事件、前輩交接、尚待確認事項等。'],personality:['人格設定','記錄主角人格、個性、言行、心理、重要人際關係與本輪差異。'],easterEggs:['這輪彩蛋','記錄這輪彩蛋、伏筆、出處、對應原作與確認結果。']};let [title,hint]=names[tab];$('tabBody').innerHTML=`<h3>${title}</h3><p class="note">${hint}</p><textarea id="docEditor" class="tall" placeholder="在這裡貼入完整內容…">${safe(r[tab]||'')}</textarea><div class="actions topsp"><button id="saveDoc" class="btn primary">儲存${title}</button><button id="copyDoc" class="btn">複製文字</button></div>`}
+function renderTab(r){if(tab==='chat'){renderChat(r);mountArchiveComposerImages();return}if(tab==='pilotChat'){renderPilotChat(r);mountArchiveComposerImages();return}if(tab==='quiz'||tab==='changes'){renderLog(r,tab);mountArchiveComposerImages();return}if(tab==='copilot')return renderCopilot(r);if(tab==='lore')return renderReadOnlyWorld(r);if(tab==='notes')return renderNotesSections(r);let names={opening:['輪迴開場','保存最初的角色、時間、地點、開場文字與設定。'],lore:['世界觀設定','可以寫規則、角色設定、能力、人物關係、重要限制。'],notes:['補充筆記','正史摘要、重大事件、前輩交接、尚待確認事項等。'],personality:['人格設定','記錄主角人格、個性、言行、心理、重要人際關係與本輪差異。'],easterEggs:['這輪彩蛋','記錄這輪彩蛋、伏筆、出處、對應原作與確認結果。']};let [title,hint]=names[tab];$('tabBody').innerHTML=`<h3>${title}</h3><p class="note">${hint}</p><textarea id="docEditor" class="tall" placeholder="在這裡貼入完整內容…">${safe(r[tab]||'')}</textarea><div class="actions topsp"><button id="saveDoc" class="btn primary">儲存${title}</button><button id="copyDoc" class="btn">複製文字</button></div>`}
 
 function noteSectionsFor(record){
   if(Array.isArray(record.noteSections))return record.noteSections.filter(x=>x&&typeof x==='object').map((x,i)=>({
@@ -273,13 +287,164 @@ function renderReadOnlyWorld(r){
   $('tabBody').innerHTML=`<div class="sectionhead"><h3>作品共用世界觀 <span class="pill">唯讀</span></h3><span class="note">所有輪迴自動同步顯示同一份世界觀</span></div><p class="note">此處直接讀取左側「編輯目前世界觀」所儲存的內容，不會為輪迴建立另一份副本；需要修改時請回到作品總覽編輯。</p><div class="world-readonly" id="commonWorldText">${common?safe(common):'<span class="note">目前尚未填寫作品共用世界觀，請從左側「編輯目前世界觀」新增。</span>'}</div><div class="actions topsp"><button class="btn" id="copySharedWorld" ${common?'':'disabled'}>複製世界觀</button></div>${legacy?`<details class="topsp"><summary>查看舊版本輪迴專屬設定（保留資料，唯讀）</summary><p class="note">這是舊版填在輪迴內的資料，為防止遺失而保留；不會覆蓋作品共用世界觀。</p><div class="world-readonly">${safe(legacy)}</div></details>`:''}`;
 }
 function renderWorldEditor(){const w=WORLDS.find(w=>w.id===world),entry=worldDocs[world]||{};$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">共用資料／獨立於每一個輪迴</div><h2>${safe(w.name)}・世界觀總設定</h2></div><button class="btn small" id="backFromWorld">返回輪迴</button></div><p class="note">這裡是唯一可以編輯此作品世界觀的地方。儲存後，所有屬於此作品的輪迴都會自動顯示最新內容；輪迴內的世界觀分頁只供閱讀，無法修改。</p><label>世界觀總設定（可貼上長篇原文）</label><textarea class="tall worldtextarea" id="worldEditor" placeholder="例如：世界運作規則、職業和能力、地點、關鍵設定、禁止違反的世界硬規則…">${safe(entry.text||'')}</textarea><div class="actions topsp"><button class="btn primary" id="saveWorld">儲存共用世界觀</button><button class="btn" id="copyWorld">複製世界觀</button><button class="btn" id="renameWorld">重新命名世界觀</button></div>`}
-function buildCopilot(r){const noteText=formatNoteSections(r);const w=WORLDS.find(w=>w.id===r.world);const common=worldDocs[r.world]?.text||'';const incl=$('includeMessages')?.checked!==false,limit=+$('chunkSize')?.value||12000;let header=`【Gal AI 輪迴檔案館・副駕駛閱讀資料】\n作品：${w.name}\n輪迴：${r.title}\n主角：${r.hero||'未填'}\n重要角色：${r.partner||'未填'}\n負責副駕駛：${cycleManagerLabel(r)||'未填'}\n\n【作品共用世界觀】\n${common||'（尚未填寫）'}\n\n【此輪迴開場】\n${r.opening||'（尚未填寫）'}\n\n${r.lore?`【舊版輪迴專屬設定（僅保留歷史資料）】\n${r.lore}\n\n`:``}【補充筆記（分區）】\n${noteText}\n\n【人格設定】\n${r.personality||'（尚未填寫）'}\n\n【這輪彩蛋】\n${r.easterEggs||'（尚未填寫）'}\n\n【10題】\n${formatLogText(r.quizLogs||[])}\n\n【與皮卡修改記錄】\n${formatLogText(r.changeLogs||[])}\n\n【副駕駛聊天（獨立於 Gal AI 劇情）】\n${(r.pilotMessages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'皮卡':m.manager||'副駕駛 GPT'}】\n${m.text}`).join('\n\n')||'（尚未填寫）'}\n\n【完整對話】\n`;let msgs=incl?(r.messages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text}\n`).join('\n'):'（未包含對話）';let full=header+msgs;let chunks=[];if(full.length<=limit)chunks=[full];else{let segments=[header,...(incl?(r.messages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text}\n\n`):[])];let cur='';for(let seg of segments){while(seg.length>limit){if(cur){chunks.push(cur);cur=''}chunks.push(seg.slice(0,limit));seg=seg.slice(limit)}if(cur.length+seg.length>limit&&cur){chunks.push(cur);cur=''}cur+=seg}if(cur)chunks.push(cur)}return {full,chunks}}
+function buildCopilot(r){const noteText=formatNoteSections(r);const w=WORLDS.find(w=>w.id===r.world);const common=worldDocs[r.world]?.text||'';const incl=$('includeMessages')?.checked!==false,limit=+$('chunkSize')?.value||12000;let header=`【Gal AI 輪迴檔案館・副駕駛閱讀資料】\n作品：${w.name}\n輪迴：${r.title}\n主角：${r.hero||'未填'}\n重要角色：${r.partner||'未填'}\n負責副駕駛：${cycleManagerLabel(r)||'未填'}\n\n【作品共用世界觀】\n${common||'（尚未填寫）'}\n\n【此輪迴開場】\n${r.opening||'（尚未填寫）'}\n\n${r.lore?`【舊版輪迴專屬設定（僅保留歷史資料）】\n${r.lore}\n\n`:``}【補充筆記（分區）】\n${noteText}\n\n【人格設定】\n${r.personality||'（尚未填寫）'}\n\n【這輪彩蛋】\n${r.easterEggs||'（尚未填寫）'}\n\n【10題】\n${formatLogText(r.quizLogs||[])}\n\n【與皮卡修改記錄】\n${formatLogText(r.changeLogs||[])}\n\n【副駕駛聊天（獨立於 Gal AI 劇情）】\n${(r.pilotMessages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'皮卡':m.manager||'副駕駛 GPT'}】\n${m.text||''}${archiveImageLabels(m)}`).join('\n\n')||'（尚未填寫）'}\n\n【完整對話】\n`;let msgs=incl?(r.messages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n`).join('\n'):'（未包含對話）';let full=header+msgs;let chunks=[];if(full.length<=limit)chunks=[full];else{let segments=[header,...(incl?(r.messages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n\n`):[])];let cur='';for(let seg of segments){while(seg.length>limit){if(cur){chunks.push(cur);cur=''}chunks.push(seg.slice(0,limit));seg=seg.slice(limit)}if(cur.length+seg.length>limit&&cur){chunks.push(cur);cur=''}cur+=seg}if(cur)chunks.push(cur)}return {full,chunks}}
 function renderCopilot(r){$('tabBody').innerHTML=`<h3>副駕駛閱讀模式</h3><p class="note">自動整理作品共用世界觀、輪迴開場、歷史設定（如有）、分區補充筆記、人格設定、這輪彩蛋、10題、皮卡修改記錄與依序排列的對話。可以直接複製給下一位 ChatGPT，也能下載全文；長篇紀錄可分段複製。匯出內容僅包含你已經實際填寫的資料。</p><div class="formrow"><label class="checklabel"><input type="checkbox" id="includeMessages" checked>包含完整對話</label><div><label>每段約多少字元</label><select id="chunkSize"><option value="6000">6,000</option><option value="12000" selected>12,000</option><option value="24000">24,000</option><option value="48000">48,000</option></select></div></div><div class="actions topsp"><button class="btn primary" id="copyCopilot">複製全文</button><button class="btn" id="downloadCopilot">下載 TXT</button></div><div id="copilotChunks" class="topsp"></div>`;renderCopilotChunks(r)}
 function renderCopilotChunks(r){let d=buildCopilot(r);$('copilotChunks').innerHTML=`<p class="note">全文 ${d.full.length.toLocaleString()} 字元，共 ${d.chunks.length} 段。</p><div class="actions">${d.chunks.map((_,i)=>`<button class="btn small" data-chunk="${i}">複製第 ${i+1}/${d.chunks.length} 段</button>`).join('')}</div><details class="topsp"><summary>預覽匯出內容</summary><pre class="archivepreview">${safe(d.full.slice(0,12000))}${d.full.length>12000?'\n……預覽僅顯示前 12,000 字元，下載檔案包含全部內容':''}</pre></details>`}
 function downloadText(filename,content){let blob=new Blob([content],{type:'text/plain;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename.replace(/[\\/:*?"<>|]/g,'_');a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
 function logKey(kind){return kind==='quiz'?'quizLogs':'changeLogs'}
-function formatLogText(items){if(!items.length)return '（尚未填寫）';return items.map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（皮卡）':m.manager||'未指定負責人'}】\n${m.text}`).join('\n\n')}
-function renderLog(r,kind){const isQuiz=kind==='quiz',key=logKey(kind),items=r[key]||[],manager=r.managers?.[kind]||'';$('tabBody').innerHTML=`<div class="sectionhead"><h3>${isQuiz?'10題':'與皮卡修改記錄'} <span class="stat">（${items.length} 則）</span></h3><span class="note">左：負責的前輩／後輩 ／ 右：皮卡</span></div><p class="note loghelp">${isQuiz?'記錄每輪迴的十題考核、回答、批改與後續討論；依原本對話順序保存，不限制訊息數量。':'記錄皮卡提出的修改、前輩／後輩的回覆與確認的修正內容。'}</p><div class="chat" id="logChat">${items.length?items.map((m,i)=>`<div data-message-id="${safe(m.id||'')}" class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'我（皮卡）':m.manager||'未指定負責人')} · #${i+1}</div><div class="body">${safe(m.text)}</div><div class="msgtools"><button data-logmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-logmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-logedit="${i}">編輯</button><button data-logremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">這個區域目前沒有紀錄，可以從下方新增。</div>'}</div><div class="composer"><h3>新增${isQuiz?'10題紀錄':'修改紀錄'}</h3><div class="speaker"><button class="btn ${logSpeaker==='ai'?'selected':''}" data-logspeaker="ai">負責人（左）</button><button class="btn ${logSpeaker==='me'?'selected':''}" data-logspeaker="me">皮卡（右）</button></div><label>左側負責人名稱（可自行填寫，每則訊息會保留當時的名稱）</label><input id="logManager" class="managerfield" placeholder="例如：負責的副駕駛名稱" value="${safe(manager)}"><label>內容（保留換行）</label><textarea id="logInput" placeholder="請輸入這一則內容…"></textarea><div class="actions topsp"><button class="btn primary" id="addLog">加入紀錄</button><button class="btn" id="toggleLogBulk">批次貼上</button></div><div id="logBulkBox" class="hidden"><div class="divider"></div><p class="note">每段以「我：」「皮卡：」「他：」或「負責人名稱：」開頭。左側訊息使用上方負責人名稱；若開頭直接寫「耀斑前輩：」等名稱，會各自保留。請先預覽再加入。</p><textarea id="logBulkInput" class="tall" placeholder="皮卡：\n這裡需要修改。\n耀斑前輩：\n收到，我確認一下。"></textarea><div class="actions topsp"><button class="btn" id="previewLogBulk">預覽辨識</button><button class="btn primary" id="appendLogBulk">確認加入</button></div><p id="logBulkPreview" class="note"></p></div></div>`}
+
+const ARCHIVE_IMAGE_LIMIT=8;
+const ARCHIVE_IMAGE_DATA_LIMIT=750000; // base64 image, usually below ~550 KiB
+const stagedArchiveImages=new Map();
+const busyArchiveImages=new Set();
+function archiveImageSection(){
+  return tab==='chat'?'messages':tab==='pilotChat'?'pilotMessages':
+    tab==='quiz'?'quizLogs':tab==='changes'?'changeLogs':null;
+}
+function archiveImageDraftKey(){return (selected||'')+'|'+tab}
+function archiveDraftImages(){return stagedArchiveImages.get(archiveImageDraftKey())||[]}
+function archiveSafeImages(m){
+  return Array.isArray(m?.images)?m.images.filter(x=>x&&typeof x.data==='string'
+    &&/^data:image\/(?:webp|png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/i.test(x.data)):[];
+}
+function archiveImagesHtml(m){
+  const images=archiveSafeImages(m);
+  if(!images.length)return '';
+  return '<div class="archive-attachments">'+images.map((im,i)=>
+    '<div class="archive-image-tile"><button type="button" class="archive-image-thumb" data-archive-image-open="'+safe(m.id||'')+'" data-image-number="'+i+'" title="點擊查看大圖">'
+    +'<img loading="lazy" src="'+safe(im.data)+'" alt="'+safe(im.name||'附加圖片')+'"></button>'
+    +'<span class="archive-image-name">'+safe(im.name||'附加圖片')+'</span></div>').join('')+'</div>';
+}
+function archiveImageLabels(m){
+  const images=archiveSafeImages(m);
+  return images.length?'\n【附加圖片：'+images.length+' 張｜'+images.map(x=>x.name||'圖片').join('、')+'；圖片請於網站觀看或透過 JSON 備份保存】':'';
+}
+function archiveComposerTextId(){
+  return {chat:'messageInput',pilotChat:'pilotInput',quiz:'logInput',changes:'logInput'}[tab]||null;
+}
+function mountArchiveComposerImages(){
+  const inputId=archiveComposerTextId(),textarea=inputId&&$(inputId);
+  if(!textarea)return;
+  const existing=$('archiveComposeImages');if(existing)existing.remove();
+  const zone=document.createElement('div');zone.id='archiveComposeImages';zone.className='archive-attachment-zone';
+  const images=archiveDraftImages();
+  zone.innerHTML='<strong>📎 附加圖片（'+images.length+'/'+ARCHIVE_IMAGE_LIMIT+'）</strong>'
+    +'<div class="archive-attachments">'+images.map((x,i)=>
+      '<div class="archive-image-tile"><button type="button" class="archive-image-thumb" data-draft-image-preview="'+i+'" title="查看大圖"><img src="'+safe(x.data)+'" alt="'+safe(x.name||'圖片')+'"></button>'
+      +'<button type="button" class="archive-image-remove" data-draft-image-remove="'+i+'" aria-label="移除圖片 '+(i+1)+'">×</button>'
+      +'<span class="archive-image-name">'+safe(x.name||'圖片')+'</span></div>').join('')+'</div>'
+    +'<button type="button" class="btn small" id="archiveChooseImage">＋加入圖片</button>'
+    +'<p class="note">可選多張，亦可在文字輸入框貼上截圖或把圖片拖進來。送出後圖片會顯示在該則訊息文字上方；只移除這次尚未送出的圖片，不會動到舊紀錄。</p>';
+  textarea.parentNode.insertBefore(zone,textarea);
+}
+function archivePickImageFiles(callback){
+  const input=document.createElement('input');
+  input.type='file';input.accept='image/png,image/jpeg,image/webp,image/gif';input.multiple=true;
+  input.style.display='none';document.body.appendChild(input);
+  input.addEventListener('change',async()=>{
+    try{if(input.files?.length)await callback([...input.files])}
+    catch(e){console.error('加入圖片失敗',e);notify('加入圖片失敗：'+(e?.message||String(e)))}
+    finally{input.remove()}
+  },{once:true});
+  input.click();
+}
+async function archiveConvertImage(file){
+  if(!file||!/^image\/(?:png|jpeg|webp|gif)$/i.test(file.type))throw Error('只支援 PNG、JPG、WEBP、GIF 圖片');
+  if(file.size>25*1024*1024)throw Error('圖片超過 25 MB，請先縮小');
+  const bitmap=await createImageBitmap(file);
+  try{
+    let width=bitmap.width,height=bitmap.height,scale=Math.min(1,1900/Math.max(width,height));
+    width=Math.max(1,Math.round(width*scale));height=Math.max(1,Math.round(height*scale));
+    const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d');
+    if(!ctx)throw Error('瀏覽器不支援圖片轉換');
+    for(const edge of [1,.88,.76,.65,.54]){
+      canvas.width=Math.max(1,Math.round(width*edge));canvas.height=Math.max(1,Math.round(height*edge));
+      ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+      for(const quality of [.89,.76,.62,.48]){
+        let data=canvas.toDataURL('image/webp',quality);
+        if(!data.startsWith('data:image/webp;'))data=canvas.toDataURL('image/jpeg',quality);
+        if(data.length<=ARCHIVE_IMAGE_DATA_LIMIT)return {id:uid(),name:(file.name||'圖片').slice(0,140),data,mime:data.slice(5,data.indexOf(';')),createdAt:new Date().toISOString()};
+      }
+    }
+    throw Error('圖片內容過大，壓縮後仍超過單張限制，請先裁切後再加入');
+  }finally{bitmap.close()}
+}
+async function archiveConvertFiles(files,existing){
+  const accepted=[...existing],max=ARCHIVE_IMAGE_LIMIT;
+  if(accepted.length+files.length>max)throw Error('每則訊息最多 '+max+' 張圖片');
+  for(const file of files)accepted.push(await archiveConvertImage(file));
+  return accepted;
+}
+async function archiveAddDraftFiles(files){
+  const key=archiveImageDraftKey();
+  if(busyArchiveImages.has(key))return notify('正在處理上一批圖片');
+  busyArchiveImages.add(key);
+  try{
+    const next=await archiveConvertFiles(files,stagedArchiveImages.get(key)||[]);
+    stagedArchiveImages.set(key,next);
+    if(key===archiveImageDraftKey())mountArchiveComposerImages();
+    notify('已附加 '+files.length+' 張圖片，送出訊息後才會儲存');
+  }finally{busyArchiveImages.delete(key)}
+}
+async function archiveAddSavedMessageFiles(section,index,files,record){
+  const source=(record[section]||[])[index];if(!source)return;
+  const key='saved:'+record.id+':'+section+':'+(source.id||index);
+  if(busyArchiveImages.has(key))return notify('這則圖片還在處理');
+  busyArchiveImages.add(key);
+  try{
+    const images=await archiveConvertFiles(files,archiveSafeImages(source));
+    const latest=current();
+    if(!latest||latest.id!==record.id)throw Error('輪迴已切換，請回原輪迴重試');
+    const updated=structuredClone(latest),target=(updated[section]||[]).find(x=>x.id===source.id);
+    if(!target)throw Error('這則訊息已變更，請重新開啟');
+    target.images=images;
+    await put(updated);
+    notify('已把圖片附到這則訊息上');
+  }finally{busyArchiveImages.delete(key)}
+}
+function archiveImageViewer(image){
+  if(!image||!archiveSafeImages({images:[image]}).length)return;
+  $('archiveImageFull').src=image.data;
+  $('archiveImageLabel').textContent=image.name||'訊息圖片';
+  $('archiveImageModal').classList.remove('hidden');
+  $('archiveImageDownload').onclick=()=>{
+    const a=document.createElement('a');a.href=image.data;
+    a.download=(image.name||'輪迴圖片').replace(/\.[^.]+$/,'')+'.'+(image.mime==='image/jpeg'?'jpg':'webp');
+    a.click();
+  };
+}
+function archiveCloseImageViewer(){
+  $('archiveImageModal').classList.add('hidden');$('archiveImageFull').removeAttribute('src');
+}
+$('archiveImageClose').onclick=archiveCloseImageViewer;
+$('archiveImageModal').addEventListener('click',e=>{if(e.target===$('archiveImageModal'))archiveCloseImageViewer()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('archiveImageModal').classList.contains('hidden'))archiveCloseImageViewer()});
+$('content').addEventListener('paste',e=>{
+  const editable=e.target.closest('#messageInput,#pilotInput,#logInput,.inline-message-editor textarea');
+  if(!editable)return;
+  const files=[...(e.clipboardData?.items||[])].filter(x=>x.kind==='file'&&x.type.startsWith('image/')).map(x=>x.getAsFile()).filter(Boolean);
+  if(!files.length)return;
+  e.preventDefault();
+  const editor=editable.closest('.inline-message-editor');
+  if(editor&&typeof editor.archiveImageAddFiles==='function')editor.archiveImageAddFiles(files);
+  else archiveAddDraftFiles(files).catch(err=>notify('貼圖失敗：'+err.message));
+});
+$('content').addEventListener('dragover',e=>{
+  if(e.dataTransfer?.types?.includes('Files')&&e.target.closest('.composer,.inline-message-editor'))e.preventDefault()
+});
+$('content').addEventListener('drop',e=>{
+  if(!e.target.closest('.composer,.inline-message-editor'))return;
+  const files=[...(e.dataTransfer?.files||[])].filter(x=>x.type.startsWith('image/'));
+  if(!files.length)return;
+  e.preventDefault();
+  const editor=e.target.closest('.inline-message-editor');
+  if(editor&&typeof editor.archiveImageAddFiles==='function')editor.archiveImageAddFiles(files);
+  else archiveAddDraftFiles(files).catch(err=>notify('拖放圖片失敗：'+err.message));
+});
+
+function formatLogText(items){if(!items.length)return '（尚未填寫）';return items.map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'我（皮卡）':m.manager||'未指定負責人'}】\n${m.text||''}${archiveImageLabels(m)}`).join('\n\n')}
+function renderLog(r,kind){const isQuiz=kind==='quiz',key=logKey(kind),items=r[key]||[],manager=r.managers?.[kind]||'';$('tabBody').innerHTML=`<div class="sectionhead"><h3>${isQuiz?'10題':'與皮卡修改記錄'} <span class="stat">（${items.length} 則）</span></h3><span class="note">左：負責的前輩／後輩 ／ 右：皮卡</span></div><p class="note loghelp">${isQuiz?'記錄每輪迴的十題考核、回答、批改與後續討論；依原本對話順序保存，不限制訊息數量。':'記錄皮卡提出的修改、前輩／後輩的回覆與確認的修正內容。'}</p><div class="chat" id="logChat">${items.length?items.map((m,i)=>`<div data-message-id="${safe(m.id||'')}" class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'我（皮卡）':m.manager||'未指定負責人')} · #${i+1}</div>${archiveImagesHtml(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-logmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-logmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-archive-attach="${i}">＋圖片</button><button data-logedit="${i}">編輯</button><button data-logremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">這個區域目前沒有紀錄，可以從下方新增。</div>'}</div><div class="composer"><h3>新增${isQuiz?'10題紀錄':'修改紀錄'}</h3><div class="speaker"><button class="btn ${logSpeaker==='ai'?'selected':''}" data-logspeaker="ai">負責人（左）</button><button class="btn ${logSpeaker==='me'?'selected':''}" data-logspeaker="me">皮卡（右）</button></div><label>左側負責人名稱（可自行填寫，每則訊息會保留當時的名稱）</label><input id="logManager" class="managerfield" placeholder="例如：負責的副駕駛名稱" value="${safe(manager)}"><label>內容（保留換行）</label><textarea id="logInput" placeholder="請輸入這一則內容…"></textarea><div class="actions topsp"><button class="btn primary" id="addLog">加入紀錄</button><button class="btn" id="toggleLogBulk">批次貼上</button></div><div id="logBulkBox" class="hidden"><div class="divider"></div><p class="note">每段以「我：」「皮卡：」「他：」或「負責人名稱：」開頭。左側訊息使用上方負責人名稱；若開頭直接寫「耀斑前輩：」等名稱，會各自保留。請先預覽再加入。</p><textarea id="logBulkInput" class="tall" placeholder="皮卡：\n這裡需要修改。\n耀斑前輩：\n收到，我確認一下。"></textarea><div class="actions topsp"><button class="btn" id="previewLogBulk">預覽辨識</button><button class="btn primary" id="appendLogBulk">確認加入</button></div><p id="logBulkPreview" class="note"></p></div></div>`}
 let logSpeaker='me';
 function parseLogBulk(input,manager){let out=[],cur=null;for(const line of input.replace(/\r\n/g,'\n').split('\n')){let match=line.match(/^\s*([^：:\n]{1,50})[：:]\s*(.*)$/);if(match){const who=match[1].trim();const role=/^(我|皮卡|玩家)$/.test(who)?'me':'ai';if(cur)out.push(cur);cur={id:uid(),role,manager:role==='ai'?(/^(他|AI|Gal\s*AI|負責人)$/i.test(who)?manager:who):'',text:match[2]}}else if(cur)cur.text+='\n'+line;else if(line.trim())cur={id:uid(),role:'me',manager:'',text:line}}if(cur)out.push(cur);return out.map(m=>({...m,text:m.text.trim()})).filter(m=>m.text)}
 
@@ -333,7 +498,7 @@ function renderPilotChat(r){
   const items=r.pilotMessages||[],suggested=pilotManagerName||cycleManagerNames(r).at(-1)||'副駕駛 GPT';
   $('tabBody').innerHTML=`<div class="sectionhead"><h3>副駕駛聊天 <span class="stat">（${items.length} 則）</span></h3><span class="note">左：副駕駛 GPT ／ 右：皮卡（與 Gal AI 劇情分開）</span></div>
   <p class="note">沒有明確「我：／他：」標記的玩家訊息，以及 GPT 的回覆，會收在這裡。這裡可以手動編輯、刪除及調整訊息順序。</p><div class="actions topsp"><button class="btn danger small" id="wipePilotChat">🧹 全刪本輪副駕駛聊天（含 Firebase 來源）</button></div>
-  <div class="chat" id="pilotChatList">${items.length?items.map((m,i)=>`<div data-message-id="${safe(m.id||'')}" class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'皮卡':m.manager||'副駕駛 GPT')} · #${i+1}</div>${archiveTimeDisplay(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-pilotmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-pilotmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-pilotedit="${i}">編輯</button><button data-pilottime="${i}">時間</button><button data-pilotremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">尚無副駕駛聊天紀錄。</div>'}</div>
+  <div class="chat" id="pilotChatList">${items.length?items.map((m,i)=>`<div data-message-id="${safe(m.id||'')}" class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'皮卡':m.manager||'副駕駛 GPT')} · #${i+1}</div>${archiveTimeDisplay(m)}${archiveImagesHtml(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-pilotmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-pilotmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-archive-attach="${i}">＋圖片</button><button data-pilotedit="${i}">編輯</button><button data-pilottime="${i}">時間</button><button data-pilotremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">尚無副駕駛聊天紀錄。</div>'}</div>
   <div class="composer"><h3>新增副駕駛聊天</h3><div class="speaker"><button class="btn ${pilotSpeaker==='ai'?'selected':''}" data-pilotspeaker="ai">副駕駛 GPT（左）</button><button class="btn ${pilotSpeaker==='me'?'selected':''}" data-pilotspeaker="me">皮卡（右）</button></div>
   <label>副駕駛名稱</label><input id="pilotManager" value="${safe(suggested)}" placeholder="請填入此輪迴的副駕駛名稱">
   <label>聊天內容</label><textarea id="pilotInput" placeholder="輸入與副駕駛 GPT 的對話內容…"></textarea>
@@ -357,6 +522,28 @@ function beginArchiveInlineEdit(button,section,record){
   const label=document.createElement('label');label.textContent='直接修改這則訊息（保留換行）';
   const textArea=document.createElement('textarea');textArea.value=m.text||'';
   label.appendChild(textArea);editor.appendChild(label);
+  let draftEditorImages=archiveSafeImages(m).map(x=>({...x}));
+  const imagesPane=document.createElement('div');imagesPane.className='archive-attachment-zone';
+  const redrawEditorImages=()=>{
+    imagesPane.innerHTML='<strong>附加圖片（'+draftEditorImages.length+'/'+ARCHIVE_IMAGE_LIMIT+'）</strong>'
+      +'<div class="archive-attachments">'+draftEditorImages.map((im,i)=>
+         '<div class="archive-image-tile"><button class="archive-image-thumb" type="button" data-editor-image-preview="'+i+'"><img src="'+safe(im.data)+'" alt="'+safe(im.name||'圖片')+'"></button>'
+         +'<button class="archive-image-remove" type="button" data-editor-image-remove="'+i+'" aria-label="移除圖片">×</button><span class="archive-image-name">'+safe(im.name||'圖片')+'</span></div>').join('')+'</div>'
+      +'<button class="btn small" type="button" data-editor-image-add="1">＋加入圖片</button><p class="note">圖片會顯示在這則訊息上方，按「儲存修改」才會保存新增或移除的圖片。</p>';
+  };
+  editor.archiveImageAddFiles=async files=>{
+    try{draftEditorImages=await archiveConvertFiles(files,draftEditorImages);redrawEditorImages()}
+    catch(err){error.textContent='圖片處理失敗：'+err.message}
+  };
+  imagesPane.addEventListener('click',ev=>{
+    const b=ev.target.closest('button');if(!b)return;
+    if(b.dataset.editorImageAdd!==undefined)archivePickImageFiles(files=>editor.archiveImageAddFiles(files));
+    else if(b.dataset.editorImageRemove!==undefined){
+      draftEditorImages.splice(Number(b.dataset.editorImageRemove),1);redrawEditorImages();
+    }else if(b.dataset.editorImagePreview!==undefined)archiveImageViewer(draftEditorImages[Number(b.dataset.editorImagePreview)]);
+  });
+  redrawEditorImages();editor.insertBefore(imagesPane,label);
+
   let managerInput=null;
   if(section!=='messages'&&m.role==='ai'){
     const managerLabel=document.createElement('label');managerLabel.textContent=section==='pilotMessages'?'副駕駛名稱':'此則負責人名稱';
@@ -385,12 +572,12 @@ function beginArchiveInlineEdit(button,section,record){
   const cancel=()=>{editor.remove();message.classList.remove('is-editing');body.classList.remove('hidden');tools.classList.remove('hidden')};
   cancelButton.addEventListener('click',cancel);
   saveButton.addEventListener('click',async()=>{
-    if(!textArea.value.trim()){error.textContent='不能儲存空白訊息';textArea.focus();return}
+    if(!textArea.value.trim()&&!draftEditorImages.length){error.textContent='請輸入內容或加入圖片';textArea.focus();return}
     saveButton.disabled=true;cancelButton.disabled=true;
     try{
       const updated=structuredClone(record),next=(updated[section]||[]).find(x=>x.id===m.id);
       if(!next)throw Error('找不到這則訊息，請重新整理後再試');
-      next.text=textArea.value;
+      next.text=textArea.value;next.images=draftEditorImages;
       if(managerInput)next.manager=managerInput.value.trim();
       if(sourceTimeInput){
         const original=archiveLocalTimeValue(m.sourceCreatedAt);
@@ -409,7 +596,7 @@ function beginArchiveInlineEdit(button,section,record){
   });
   textArea.focus();
 }
-function renderChat(r){let messages=r.messages||[];$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="chat" id="chat">${messages.length?messages.map((m,i)=>`<div data-message-id="${safe(m.id||'')}" class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${m.role==='me'?'我（皮卡）':'Gal AI'} · #${i+1}${m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):''}</div>${archiveTimeDisplay(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-move="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-move="${i}" data-dir="1" ${i===messages.length-1?'disabled':''}>↓</button><button data-edit="${i}">編輯</button><button data-time="${i}">時間</button><button data-remove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`}
+function renderChat(r){let messages=r.messages||[];$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="chat" id="chat">${messages.length?messages.map((m,i)=>`<div data-message-id="${safe(m.id||'')}" class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${m.role==='me'?'我（皮卡）':'Gal AI'} · #${i+1}${m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):''}</div>${archiveTimeDisplay(m)}${archiveImagesHtml(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-move="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-move="${i}" data-dir="1" ${i===messages.length-1?'disabled':''}>↓</button><button data-archive-attach="${i}">＋圖片</button><button data-edit="${i}">編輯</button><button data-time="${i}">時間</button><button data-remove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
@@ -599,7 +786,24 @@ if(b.id==='renameWorld'){
   if(!name.trim()||name.trim().length>150)return notify('請填入 1～150 字的名稱');
   const item={...(worldDocs[world]||{}),id:world,name:name.trim(),text:worldDocs[world]?.text||'',updatedAt:new Date().toISOString()};
   await operation('readwrite',{type:'put',item},WORLDSTORE);await refresh();notify('世界觀已重新命名');return
-}if(b.id==='copyWorld'){await navigator.clipboard.writeText($('worldEditor').value);notify('已複製世界觀');return}const r=current();if(!r)return;if(b.id==='copyCycleId'){try{await navigator.clipboard.writeText(r.id);notify('已複製輪迴 ID，可供自動歸檔設定使用')}catch(e){notify('無法複製：'+e.message)}return}if(b.id==='copySharedWorld'){await navigator.clipboard.writeText(worldDocs[r.world]?.text||'');notify('已複製共用世界觀');return}if(b.id==='copyCopilot'){await navigator.clipboard.writeText(buildCopilot(r).full);notify('已複製副駕駛資料全文');return}if(b.id==='downloadCopilot'){downloadText(r.title+'_副駕駛閱讀.txt',buildCopilot(r).full);notify('已下載閱讀資料');return}if(b.dataset.chunk!==undefined){await navigator.clipboard.writeText(buildCopilot(r).chunks[Number(b.dataset.chunk)]);notify('已複製第 '+(Number(b.dataset.chunk)+1)+' 段');return}if(b.dataset.tab){tab=b.dataset.tab;renderContent();return}if(b.id==='editCycle'){showModal(r);return}if(b.id==='deleteCycle'){try{await deleteArchiveCycleWithSources(r)}catch(err){const msg='刪除輪迴未完整完成：'+String(err?.message||err)+'。本機輪迴仍保留；如雲端部分刪除，請使用剛下載的備份並重新檢查。';notify(msg);cloudStatus(msg,true);console.error('輪迴完整刪除失敗',err)}return}if(b.id==='saveDoc'){if(!['opening','personality','easterEggs'].includes(tab))return; r[tab]=$('docEditor').value;await put(r);notify('內容已儲存');return}if(b.id==='copyDoc'){await navigator.clipboard.writeText($('docEditor').value);notify('已複製');return}
+}if(b.id==='copyWorld'){await navigator.clipboard.writeText($('worldEditor').value);notify('已複製世界觀');return}const r=current();if(!r)return;
+if(b.id==='archiveChooseImage'){archivePickImageFiles(archiveAddDraftFiles);return}
+if(b.dataset.draftImageRemove!==undefined){
+  const i=Number(b.dataset.draftImageRemove),images=archiveDraftImages();
+  if(images[i]){images.splice(i,1);stagedArchiveImages.set(archiveImageDraftKey(),images);mountArchiveComposerImages()}
+  return;
+}
+if(b.dataset.draftImagePreview!==undefined){archiveImageViewer(archiveDraftImages()[Number(b.dataset.draftImagePreview)]);return}
+if(b.dataset.archiveImageOpen!==undefined){
+  const section=archiveImageSection(),msg=(r?.[section]||[]).find(x=>x.id===b.dataset.archiveImageOpen);
+  archiveImageViewer(archiveSafeImages(msg)[Number(b.dataset.imageNumber)]);return;
+}
+if(b.dataset.archiveAttach!==undefined){
+  const section=archiveImageSection(),idx=Number(b.dataset.archiveAttach);
+  if(!section||!r?.[section]?.[idx])return;
+  archivePickImageFiles(files=>archiveAddSavedMessageFiles(section,idx,files,r));return;
+}
+if(b.id==='copyCycleId'){try{await navigator.clipboard.writeText(r.id);notify('已複製輪迴 ID，可供自動歸檔設定使用')}catch(e){notify('無法複製：'+e.message)}return}if(b.id==='copySharedWorld'){await navigator.clipboard.writeText(worldDocs[r.world]?.text||'');notify('已複製共用世界觀');return}if(b.id==='copyCopilot'){await navigator.clipboard.writeText(buildCopilot(r).full);notify('已複製副駕駛資料全文');return}if(b.id==='downloadCopilot'){downloadText(r.title+'_副駕駛閱讀.txt',buildCopilot(r).full);notify('已下載閱讀資料');return}if(b.dataset.chunk!==undefined){await navigator.clipboard.writeText(buildCopilot(r).chunks[Number(b.dataset.chunk)]);notify('已複製第 '+(Number(b.dataset.chunk)+1)+' 段');return}if(b.dataset.tab){tab=b.dataset.tab;renderContent();return}if(b.id==='editCycle'){showModal(r);return}if(b.id==='deleteCycle'){try{await deleteArchiveCycleWithSources(r)}catch(err){const msg='刪除輪迴未完整完成：'+String(err?.message||err)+'。本機輪迴仍保留；如雲端部分刪除，請使用剛下載的備份並重新檢查。';notify(msg);cloudStatus(msg,true);console.error('輪迴完整刪除失敗',err)}return}if(b.id==='saveDoc'){if(!['opening','personality','easterEggs'].includes(tab))return; r[tab]=$('docEditor').value;await put(r);notify('內容已儲存');return}if(b.id==='copyDoc'){await navigator.clipboard.writeText($('docEditor').value);notify('已複製');return}
 if(tab==='notes'&&(b.id==='addNoteSection'||b.id==='saveAllNotes'||b.id==='copyAllNotes'
    ||b.dataset.noteSave!==undefined||b.dataset.noteCopy!==undefined
    ||b.dataset.noteMove!==undefined||b.dataset.noteDelete!==undefined)){
@@ -635,24 +839,24 @@ if(tab==='notes'&&(b.id==='addNoteSection'||b.id==='saveAllNotes'||b.id==='copyA
     b.dataset.noteMove!==undefined?'已調整區塊順序':'筆記區已儲存');
   return;
 }
-if(b.dataset.logspeaker){const oldView=rememberArchiveScroll();logSpeaker=b.dataset.logspeaker;const manager=$('logManager')?.value||'';r.managers=r.managers||{};r.managers[tab]=manager;renderLog(r,tab);restoreArchiveScroll(oldView);return}if(b.id==='toggleLogBulk'){$('logBulkBox').classList.toggle('hidden');return}if(b.id==='previewLogBulk'){const a=parseLogBulk($('logBulkInput').value,$('logManager').value.trim());$('logBulkPreview').textContent=`辨識到 ${a.length} 則：皮卡 ${a.filter(m=>m.role==='me').length} 則／負責人 ${a.filter(m=>m.role==='ai').length} 則。`;return}if(b.id==='addLog'||b.id==='appendLogBulk'){const key=logKey(tab),manager=$('logManager').value.trim();r.managers=r.managers||{};r.managers[tab]=manager;let a;if(b.id==='addLog'){const value=$('logInput').value.trim();if(!value)return notify('請輸入紀錄內容');if(logSpeaker==='ai'&&!manager)return notify('請填寫左側負責人名稱');a=[{id:uid(),role:logSpeaker,manager:logSpeaker==='ai'?manager:'',text:value}]}else{a=parseLogBulk($('logBulkInput').value,manager);if(!a.length)return notify('沒有辨識到紀錄');if(a.some(m=>m.role==='ai'&&!m.manager))return notify('請填寫左側負責人名稱');if(!confirm(`確定加入 ${a.length} 則紀錄？`))return}r[key]=r[key]||[];r[key].push(...a);await put(r);const logList=$('logChat');if(logList)logList.scrollTop=logList.scrollHeight;notify(`已加入 ${a.length} 則紀錄`);return}if(b.dataset.logedit!==undefined||b.dataset.logremove!==undefined||b.dataset.logmove!==undefined){const key=logKey(tab),arr=r[key]||[],i=Number(b.dataset.logedit??b.dataset.logremove??b.dataset.logmove);if(!Number.isInteger(i)||i<0||i>=arr.length)return;if(b.dataset.logedit!==undefined){beginArchiveInlineEdit(b,key,r);return}else if(b.dataset.logremove!==undefined){if(!confirm('確定刪除這則紀錄？'))return;arr.splice(i,1)}else{const j=i+Number(b.dataset.dir);if(j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]]}await put(r);return}
+if(b.dataset.logspeaker){const oldView=rememberArchiveScroll();logSpeaker=b.dataset.logspeaker;const manager=$('logManager')?.value||'';r.managers=r.managers||{};r.managers[tab]=manager;renderLog(r,tab);mountArchiveComposerImages();restoreArchiveScroll(oldView);return}if(b.id==='toggleLogBulk'){$('logBulkBox').classList.toggle('hidden');return}if(b.id==='previewLogBulk'){const a=parseLogBulk($('logBulkInput').value,$('logManager').value.trim());$('logBulkPreview').textContent=`辨識到 ${a.length} 則：皮卡 ${a.filter(m=>m.role==='me').length} 則／負責人 ${a.filter(m=>m.role==='ai').length} 則。`;return}if(b.id==='addLog'||b.id==='appendLogBulk'){const draft=archiveDraftImages();const key=logKey(tab),manager=$('logManager').value.trim();r.managers=r.managers||{};r.managers[tab]=manager;let a;if(b.id==='addLog'){const value=$('logInput').value.trim();if(!value&&!draft.length)return notify('請輸入內容或加入圖片');if(logSpeaker==='ai'&&!manager)return notify('請填寫左側負責人名稱');a=[{id:uid(),role:logSpeaker,manager:logSpeaker==='ai'?manager:'',text:value,images:structuredClone(draft)}]}else{a=parseLogBulk($('logBulkInput').value,manager);if(!a.length)return notify('沒有辨識到紀錄');if(a.some(m=>m.role==='ai'&&!m.manager))return notify('請填寫左側負責人名稱');if(!confirm(`確定加入 ${a.length} 則紀錄？`))return}r[key]=r[key]||[];r[key].push(...a);await put(r);if(b.id==='addLog')stagedArchiveImages.delete(archiveImageDraftKey());const logList=$('logChat');if(logList)logList.scrollTop=logList.scrollHeight;notify(`已加入 ${a.length} 則紀錄`);return}if(b.dataset.logedit!==undefined||b.dataset.logremove!==undefined||b.dataset.logmove!==undefined){const key=logKey(tab),arr=r[key]||[],i=Number(b.dataset.logedit??b.dataset.logremove??b.dataset.logmove);if(!Number.isInteger(i)||i<0||i>=arr.length)return;if(b.dataset.logedit!==undefined){beginArchiveInlineEdit(b,key,r);return}else if(b.dataset.logremove!==undefined){if(!confirm('確定刪除這則紀錄？'))return;arr.splice(i,1)}else{const j=i+Number(b.dataset.dir);if(j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]]}await put(r);return}
 if(b.dataset.pilotspeaker){
   const oldView=rememberArchiveScroll();
   const oldText=$('pilotInput')?.value||'';
   const oldTime=$('pilotSourceTime')?.value||'';
   pilotManagerName=$('pilotManager')?.value.trim()||pilotManagerName;
-  pilotSpeaker=b.dataset.pilotspeaker;renderPilotChat(r);
+  pilotSpeaker=b.dataset.pilotspeaker;renderPilotChat(r);mountArchiveComposerImages();
   $('pilotInput').value=oldText;$('pilotSourceTime').value=oldTime;
   restoreArchiveScroll(oldView);return;
 }
 if(b.id==='wipePilotChat'){await openPilotChatPurge(r);return}
 if(b.id==='addPilotMessage'){
   const value=$('pilotInput').value.trim(),manager=$('pilotManager').value.trim();
-  if(!value)return notify('請輸入副駕駛聊天內容');
+  if(!value&&!archiveDraftImages().length)return notify('請輸入內容或加入圖片');
   pilotManagerName=manager;
   let timeProps;try{timeProps=archiveManualTimeProps($('pilotSourceTime').value)}catch(e){return notify(e.message)}
-  (r.pilotMessages??=[]).push({id:uid(),role:pilotSpeaker,manager:pilotSpeaker==='ai'?manager:'',text:value,capturedAt:new Date().toISOString(),...timeProps});
-  await put(r);const pilotList=$('pilotChatList');if(pilotList)pilotList.scrollTop=pilotList.scrollHeight;notify('已加入副駕駛聊天');return;
+  (r.pilotMessages??=[]).push({id:uid(),role:pilotSpeaker,manager:pilotSpeaker==='ai'?manager:'',text:value,images:structuredClone(archiveDraftImages()),capturedAt:new Date().toISOString(),...timeProps});
+  await put(r);stagedArchiveImages.delete(archiveImageDraftKey());const pilotList=$('pilotChatList');if(pilotList)pilotList.scrollTop=pilotList.scrollHeight;notify('已加入副駕駛聊天');return;
 }
 if(b.dataset.pilotedit!==undefined||b.dataset.pilottime!==undefined||b.dataset.pilotremove!==undefined||b.dataset.pilotmove!==undefined){
   const arr=r.pilotMessages||[],i=Number(b.dataset.pilotedit??b.dataset.pilottime??b.dataset.pilotremove??b.dataset.pilotmove);
@@ -673,14 +877,14 @@ if(b.dataset.speaker){
   const oldView=rememberArchiveScroll();
   const oldText=$('messageInput')?.value||'';
   const oldTime=$('messageSourceTime')?.value||'';
-  speaker=b.dataset.speaker;renderChat(r);
+  speaker=b.dataset.speaker;renderChat(r);mountArchiveComposerImages();
   $('messageInput').value=oldText;$('messageSourceTime').value=oldTime;
   restoreArchiveScroll(oldView);return
 }if(b.id==='addMessage'){
-  const t=$('messageInput').value.trim();if(!t)return notify('請輸入對話');
+  const t=$('messageInput').value.trim();if(!t&&!archiveDraftImages().length)return notify('請輸入內容或加入圖片');
   let timeProps;try{timeProps=archiveManualTimeProps($('messageSourceTime').value)}catch(e){return notify(e.message)}
-  r.messages.push({id:uid(),role:speaker,text:t,capturedAt:new Date().toISOString(),...timeProps});
-  await put(r);$('chat').scrollTop=$('chat').scrollHeight;notify('已加入對話');return}if(b.id==='toggleBulk'){$('bulkBox').classList.toggle('hidden');return}if(b.id==='previewBulk'){smartDraft=smartParse($('bulkInput').value);smartSource=$('bulkInput').value;showSmartDraft();if(!smartDraft.length)notify('沒有可預覽的內容');return}if(b.id==='appendBulk'){
+  r.messages.push({id:uid(),role:speaker,text:t,images:structuredClone(archiveDraftImages()),capturedAt:new Date().toISOString(),...timeProps});
+  await put(r);stagedArchiveImages.delete(archiveImageDraftKey());$('chat').scrollTop=$('chat').scrollHeight;notify('已加入對話');return}if(b.id==='toggleBulk'){$('bulkBox').classList.toggle('hidden');return}if(b.id==='previewBulk'){smartDraft=smartParse($('bulkInput').value);smartSource=$('bulkInput').value;showSmartDraft();if(!smartDraft.length)notify('沒有可預覽的內容');return}if(b.id==='appendBulk'){
   const status=$('bulkSaveStatus');
   b.disabled=true;b.textContent='正在儲存…';
   try{
@@ -708,7 +912,7 @@ if(b.dataset.speaker){
   }finally{b.disabled=false;b.textContent='確認加入'}
   return
 }if(b.dataset.smartsplit!==undefined||b.dataset.smartmerge!==undefined||b.dataset.smartdelete!==undefined||b.dataset.smartup!==undefined||b.dataset.smartdown!==undefined){syncSmartDraft();const action=b.dataset.smartsplit!==undefined?'split':b.dataset.smartmerge!==undefined?'merge':b.dataset.smartdelete!==undefined?'delete':b.dataset.smartup!==undefined?'up':'down';const i=Number(b.dataset.smartsplit??b.dataset.smartmerge??b.dataset.smartdelete??b.dataset.smartup??b.dataset.smartdown);if(!smartDraft[i])return;if(action==='split'){const textarea=$('bulkItems').querySelector(`textarea[data-smarttext="${i}"]`);let pos=textarea?.selectionStart??0;if(pos<=0||pos>=smartDraft[i].text.length){notify('請先在這則文字裡點選要拆開的位置，再按拆分');return}const before=smartDraft[i].text.slice(0,pos).trim(),after=smartDraft[i].text.slice(pos).trim();if(!before||!after)return notify('拆分位置兩側都需要內容');smartDraft[i].text=before;smartDraft.splice(i+1,0,{id:uid(),role:smartDraft[i].role==='me'?'ai':'me',text:after,confidence:'low',why:'人工拆分，請檢查左右身份'})}else if(action==='merge'&&i>0){smartDraft[i-1].text+='\n'+smartDraft[i].text;smartDraft.splice(i,1)}else if(action==='delete')smartDraft.splice(i,1);else if(action==='up'&&i>0)[smartDraft[i-1],smartDraft[i]]=[smartDraft[i],smartDraft[i-1]];else if(action==='down'&&i<smartDraft.length-1)[smartDraft[i+1],smartDraft[i]]=[smartDraft[i],smartDraft[i+1]];showSmartDraft();return}let i=Number(b.dataset.edit??b.dataset.time??b.dataset.remove??b.dataset.move);if(!Number.isInteger(i)||i<0||i>=r.messages.length)return;if(b.dataset.edit!==undefined||b.dataset.time!==undefined){beginArchiveInlineEdit(b,'messages',r);return}if(b.dataset.remove!==undefined){if(!confirm('確定刪除這一則對話？'))return;r.messages.splice(i,1);await put(r);return}if(b.dataset.move!==undefined){let j=i+Number(b.dataset.dir);if(j<0||j>=r.messages.length)return;[r.messages[i],r.messages[j]]=[r.messages[j],r.messages[i]];await put(r);return}});
-$('content').addEventListener('change',e=>{if((e.target.id==='includeMessages'||e.target.id==='chunkSize')&&current())renderCopilotChunks(current())});$('exportBtn').onclick=()=>{let pack={format:'gal-ai-archive',version:6,exportedAt:new Date().toISOString(),worlds:Object.values(worldDocs),cycles:records};let blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='輪迴檔案館備份_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify(`已匯出 ${records.length} 輪`) };// Import should never silently skip valid older backups or leave the UI on an empty world.
+$('content').addEventListener('change',e=>{if((e.target.id==='includeMessages'||e.target.id==='chunkSize')&&current())renderCopilotChunks(current())});$('exportBtn').onclick=()=>{let pack={format:'gal-ai-archive',version:7,exportedAt:new Date().toISOString(),worlds:Object.values(worldDocs),cycles:records};let blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='輪迴檔案館備份_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify(`已匯出 ${records.length} 輪`) };// Import should never silently skip valid older backups or leave the UI on an empty world.
 function normalizeBackupCycle(source){
   if(!source||typeof source!=='object'||Array.isArray(source))return {error:'輪迴不是物件'};
   const item={...source};
@@ -809,7 +1013,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.12_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.13_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
