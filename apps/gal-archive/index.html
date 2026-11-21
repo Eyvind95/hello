@@ -1936,7 +1936,13 @@ async function archiveIncomingByStatus(root,status){
     const slice=groups.slice(i,i+8);
     const results=await Promise.all(slice.map(async g=>({id:g.id,snap:await g.query.get({source:'server'})})));
     for(const {id,snap} of results){
-      for(const doc of snap.docs)unique.set(doc.id,{doc,cyclePath:id});
+      for(const doc of snap.docs){
+        // Never merge incoming documents from two different cycles merely
+        // because a legacy migration reused the same document ID.
+        const logicalCycle=id==='舊版共用'?(doc.data().cycleId||'未標輪迴'):id;
+        const key=logicalCycle+'|'+doc.id;
+        if(id!=='舊版共用'||!unique.has(key))unique.set(key,{doc,cyclePath:id});
+      }
     }
   }
   const found=[...unique.values()];
@@ -2231,7 +2237,7 @@ async function receiveAutomaticEntries(){
       }
       cloudStatus('沒有待收取來源，但已找到 '+accepted.size+' 筆已收取來源（最多顯示 100 筆）。'
         +'\\n它們已歸入：\\n'+[...groups].map(([name,n])=>'・'+name+'：'+n+' 筆').join('\\n')
-        +'\\n若收錯輪迴，請選擇來源輪迴並使用「轉移誤收的來源對話」。');
+        +'\\n若收錯輪迴，請選擇來源輪迴並使用「精準轉移誤收訊息（跨輪迴）」。');
     }else cloudStatus('雲端確認：沒有待收取來源。\\n目前檢查 '+snap.cloudCycleCount+' 個雲端輪迴（含本機輪迴）。'
       +'\\n檢查帳戶 UID：'+user.uid
       +'\\n若擴充功能顯示上傳成功，請核對擴充功能綁定的 UID、輪迴 ID、以及最新上傳回應是否為 created 或 duplicate。');
@@ -2241,6 +2247,13 @@ async function receiveAutomaticEntries(){
   const groups=new Map();let invalid=0,truncated=0,storyCount=0,pilotCount=0,eventCount=0;
   for(const doc of docs){
     const item=doc.data();
+    const storedCycle=snap.sources.find(x=>x.doc.ref.path===doc.ref.path)?.id;
+    if(storedCycle&&storedCycle!=='舊版共用'&&storedCycle!==item.cycleId){
+      invalid++;
+      console.error('收件匣的輪迴路徑與內部 cycleId 不符，拒絕混入正史',
+        {path:doc.ref.path,storedCycle,itemCycle:item.cycleId});
+      continue;
+    }
     const r=groups.get(item.cycleId)?.record||records.find(x=>x.id===item.cycleId);
     if(!r){
       invalid++;
