@@ -936,6 +936,132 @@ async function archiveIncomingByStatus(root,status){
   return {docs,size:docs.length,empty:!docs.length};
 }
 
+
+let archiveLegacyMigration=null;
+$('migrateInbox').onclick=()=>{
+  $('migrateModal').classList.remove('hidden');
+  $('migrateReport').textContent='請先掃描，逐輪核對來源聊天及目的輪迴。尚未更動雲端。';
+  $('migrateApply').disabled=true;
+  archiveLegacyMigration=null;
+};
+$('migrateClose').onclick=()=>$('migrateModal').classList.add('hidden');
+$('migrateScope').onchange=()=>{archiveLegacyMigration=null;$('migrateApply').disabled=true;$('migrateReport').textContent='範圍已更動，請重新掃描。'};
+async function previewLegacyIncomingMigration(){
+  const user=await cloudSignedIn();
+  await refresh();
+  const root=cloudDb.collection('galArchive').doc(user.uid);
+  const scope=$('migrateScope').value,active=current();
+  if(scope==='current'&&!active)throw Error('請先選擇要處理的輪迴。');
+  const snap=await root.collection('incoming').get({source:'server'});
+  const inScope=snap.docs.filter(d=>scope==='all'||d.data().cycleId===active.id);
+  const eligible=[],blocked=[],byCycle=new Map(),metaMap=new Map();
+  for(const doc of inScope){
+    const item=doc.data(),r=records.find(x=>x.id===item.cycleId);
+    if(!r){blocked.push({doc,reason:'輪迴 ID 無對應本機輪迴（疑似已刪／綁錯）'});continue}
+    if(!metaMap.has(r.id))metaMap.set(r.id,await root.collection('cycles').doc(r.id).get({source:'server'}));
+    const meta=metaMap.get(r.id);
+    if(!meta.exists){blocked.push({doc,reason:'輪迴尚未上傳雲端，拒絕自行建立'});continue}
+    const managers=cycleManagerNames(r);
+    if(managers.length&&item.manager&&!managers.includes(item.manager)){
+      blocked.push({doc,reason:'副駕駛名稱與目標輪迴不符'});continue;
+    }
+    const usedBy=records.filter(c=>archiveImportedEntries(c)
+      .some(x=>x.message.sourceEventId===doc.id)).map(c=>c.id);
+    if(usedBy.some(id=>id!==r.id)){
+      blocked.push({doc,reason:'正式歸檔已有其他輪迴引用，請先人工核對'});continue;
+    }
+    if(item.status==='accepted'&&!usedBy.includes(r.id)){
+      blocked.push({doc,reason:'已收取但本輪正式資料沒有這筆來源，需人工檢查'});continue;
+    }
+    eligible.push(doc);
+    const name=(WORLDS.find(w=>w.id===r.world)?.name||r.world)+'／'+r.title;
+    if(!byCycle.has(name))byCycle.set(name,{count:0,chats:new Set(),samples:[]});
+    const g=byCycle.get(name);g.count++;if(item.chatKey)g.chats.add(item.chatKey);
+    if(g.samples.length<3)g.samples.push((item.role==='me'?'皮卡':'GPT')+'：'+String(item.text||'').replace(/\s+/g,' ').slice(0,70));
+  }
+  archiveLegacyMigration={uid:user.uid,scope,activeId:active?.id||null,
+    eligible,blocked,backup:snap.docs,scanAt:new Date().toISOString()};
+  $('migrateApply').disabled=!eligible.length;
+  $('migrateReport').textContent=
+    '舊平面 incoming 總數：'+snap.size+' 筆\n'+
+    '本次範圍：'+(scope==='current'?active.title:'全部輪迴')+'\n'+
+    '可安全核對的來源：'+eligible.length+' 筆\n'+
+    '暫不遷移（可能誤收／找不到歸屬）：'+blocked.length+' 筆\n\n'+
+    [...byCycle].map(([name,g])=>name+'：'+g.count+' 筆，來源聊天 '+g.chats.size+' 組\n'+g.samples.map(t=>'　'+t).join('\n')).join('\n\n')+
+    (blocked.length?'\n\n⚠ 暫停遷移前 15 筆：\n'+blocked.slice(0,15).map(x=>'・'+x.doc.id.slice(0,12)+'：'+x.reason).join('\n'):'')+
+    '\n\n請確認畫面中的輪迴歸屬是否正確。僅靠 manager 或時間無法推斷真正輪迴。';
+}
+$('migratePreviewBtn').onclick=async()=>{
+  const b=$('migratePreviewBtn');b.disabled=true;
+  try{await previewLegacyIncomingMigration()}
+  catch(e){$('migrateReport').textContent='掃描失敗：'+e.message}
+  finally{b.disabled=false}
+};
+$('migrateApply').onclick=async()=>{
+  const plan=archiveLegacyMigration,b=$('migrateApply');
+  if(!plan||!plan.eligible.length||plan.scope!==$('migrateScope').value||
+    (plan.scope==='current'&&current()?.id!==plan.activeId))return;
+  const deleteLegacy=$('migrateDeleteFlat').checked;
+  if(!confirm('準備處理舊來源 '+plan.eligible.length+' 筆，先下載全部舊收件匣 JSON 備份。\n'
+    +'本次將複製到各輪迴獨立 incoming，逐筆核對。'+(deleteLegacy?'核對通過後會刪舊平面副本。':'舊平面副本全部保留。')
+    +'\n\n不會修改正式劇情或副駕駛聊天。請確認已停止擴充功能監看。確定？'))return;
+  if(deleteLegacy&&prompt('高風險操作：輸入「刪除已核對舊副本」才會刪掉原先的平面來源。')!=='刪除已核對舊副本')return;
+  b.disabled=true;
+  let copied=0,already=0,conflict=0,removed=0,failed=0;
+  try{
+    const user=await cloudSignedIn();
+    if(user.uid!==plan.uid)throw Error('登入帳戶已變更，請重掃');
+    const root=cloudDb.collection('galArchive').doc(user.uid);
+    downloadText('輪迴檔案館_舊平面incoming完整備份_'+new Date().toISOString().slice(0,10)+'.json',
+      JSON.stringify({format:'gal-archive-legacy-incoming-backup',version:1,
+        exportedAt:new Date().toISOString(),items:plan.backup.map(d=>({id:d.id,data:d.data()}))},null,2));
+    const verified=[];
+    for(const doc of plan.eligible){
+      const fresh=await doc.ref.get({source:'server'});
+      if(!fresh.exists||fresh.data().cycleId!==doc.data().cycleId||
+        fresh.data().sourceId!==doc.data().sourceId||
+        fresh.data().text!==doc.data().text){conflict++;continue}
+      const item=fresh.data(),dest=cycleIncoming(root,item.cycleId).doc(doc.id);
+      const existing=await dest.get({source:'server'});
+      if(existing.exists){
+        if(existing.data().sourceId!==item.sourceId||existing.data().text!==item.text||
+          existing.data().cycleId!==item.cycleId){conflict++;continue}
+        already++;
+      }else{
+        await dest.set({...item,storageLayout:'cycle-scoped',
+          migratedFromFlat:true,migratedAt:firebase.firestore.FieldValue.serverTimestamp()});
+        copied++;
+      }
+      const check=await dest.get({source:'server'});
+      if(!check.exists||check.data().text!==item.text||
+        check.data().cycleId!==item.cycleId)throw Error('驗證失敗：'+doc.id);
+      verified.push(doc);
+      if((copied+already)%20===0)$('migrateReport').textContent=
+        '已複製 '+copied+'；已有 '+already+'；衝突 '+conflict+'；驗證 '+verified.length+'／'+plan.eligible.length;
+    }
+    if(deleteLegacy){
+      for(const doc of verified){
+        const fresh=await doc.ref.get({source:'server'});
+        if(!fresh.exists||fresh.data().text!==doc.data().text||
+          fresh.data().cycleId!==doc.data().cycleId){failed++;continue}
+        await doc.ref.delete();removed++;
+      }
+    }
+    archiveLegacyMigration=null;
+    $('migrateApply').disabled=true;
+    $('migrateReport').textContent='分層遷移執行完畢。\n新複製 '+copied+' 筆；已存在 '+already+
+      ' 筆；衝突跳過 '+conflict+' 筆；刪除舊平面副本 '+removed+
+      ' 筆；刪除核對失敗 '+failed+' 筆。\n原先暫停處理 '+plan.blocked.length+
+      ' 筆，請人工確認來源輪迴。\n全部正式劇情及聊天內容保持不動。';
+    cloudStatus('舊來源分層核對完成：複製 '+copied+'、已有 '+already+'、衝突 '+conflict+
+      '、刪除平面副本 '+removed+'。');
+  }catch(e){
+    $('migrateReport').textContent='遷移中止：'+e.message+
+      '\n已複製 '+copied+'，驗證已存在 '+already+'；尚未成功全部完成。備份已提供，請重新掃描後續做。';
+    cloudStatus('遷移未完整完成：'+e.message,true);
+  }finally{b.disabled=false}
+};
+
 async function receiveAutomaticEntries(){
   const user=await cloudSignedIn();
   await refresh();
