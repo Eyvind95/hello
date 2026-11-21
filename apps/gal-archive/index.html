@@ -930,16 +930,25 @@ async function archiveGetSource(root,id,sourceId){
   return legacy.exists&&legacy.data().cycleId===id?legacy:null;
 }
 async function archiveIncomingByStatus(root,status){
-  const all=await Promise.all([
-    root.collection('incoming').where('status','==',status).get({source:'server'}),
-    ...records.map(r=>cycleIncoming(root,r.id).where('status','==',status).get({source:'server'}))
-  ]);
+  // Query all cloud cycle indexes, not just cycles cached in this browser.
+  // A successful extension upload may target a cycle not loaded locally.
+  const cloudCycles=await root.collection('cycles').get({source:'server'});
+  const ids=[...new Set([...cloudCycles.docs.map(d=>d.id),...records.map(r=>r.id)])];
   const unique=new Map();
-  for(const group of all)for(const doc of group.docs)unique.set(doc.id,doc);
-  const docs=[...unique.values()];
-  return {docs,size:docs.length,empty:!docs.length};
+  const groups=[{id:'舊版共用',query:root.collection('incoming').where('status','==',status)}];
+  for(const id of ids)groups.push({id,query:cycleIncoming(root,id).where('status','==',status)});
+  // Bound concurrent reads to avoid flooding Firestore with large archives.
+  for(let i=0;i<groups.length;i+=8){
+    const slice=groups.slice(i,i+8);
+    const results=await Promise.all(slice.map(async g=>({id:g.id,snap:await g.query.get({source:'server'})})));
+    for(const {id,snap} of results){
+      for(const doc of snap.docs)unique.set(doc.id,{doc,cyclePath:id});
+    }
+  }
+  const found=[...unique.values()];
+  return {docs:found.map(x=>x.doc),size:found.length,empty:!found.length,
+    sources:found.map(x=>({id:x.cyclePath,doc:x.doc})),cloudCycleCount:cloudCycles.size};
 }
-
 
 let archiveLegacyMigration=null;
 $('migrateInbox').onclick=()=>{
@@ -1141,7 +1150,9 @@ async function receiveAutomaticEntries(){
       cloudStatus('沒有待收取來源，但已找到 '+accepted.size+' 筆已收取來源（最多顯示 100 筆）。'
         +'\\n它們已歸入：\\n'+[...groups].map(([name,n])=>'・'+name+'：'+n+' 筆').join('\\n')
         +'\\n若收錯輪迴，請選擇來源輪迴並使用「轉移誤收的來源對話」。');
-    }else cloudStatus('沒有待收取來源；如果另一個對話沒上傳，請先檢查 Chrome 擴充功能對該對話的獨立輪迴綁定。');
+    }else cloudStatus('雲端確認：沒有待收取來源。\\n目前檢查 '+snap.cloudCycleCount+' 個雲端輪迴（含本機輪迴）。'
+      +'\\n檢查帳戶 UID：'+user.uid
+      +'\\n若擴充功能顯示上傳成功，請核對擴充功能綁定的 UID、輪迴 ID、以及最新上傳回應是否為 created 或 duplicate。');
     return;
   }
   const docs=[...snap.docs].sort(orderIncomingSnapshot).slice(0,100);
@@ -1149,7 +1160,12 @@ async function receiveAutomaticEntries(){
   for(const doc of docs){
     const item=doc.data();
     const r=groups.get(item.cycleId)?.record||records.find(x=>x.id===item.cycleId);
-    if(!r||!['chat','quiz','changes'].includes(item.section)||!['me','ai'].includes(item.role)||typeof item.text!=='string'){
+    if(!r){
+      invalid++;
+      console.warn('輪迴檔案館：雲端 incoming 存在，但本機沒有對應輪迴', {cycleId:item.cycleId,sourceId:item.sourceId,sourceEventId:doc.id});
+      continue;
+    }
+    if(!['chat','quiz','changes'].includes(item.section)||!['me','ai'].includes(item.role)||typeof item.text!=='string'){
       invalid++;continue;
     }
     // Reject collapsed previews; safely strip "顯示較少" from expanded replies.
@@ -1178,6 +1194,13 @@ async function receiveAutomaticEntries(){
   for(const group of groups.values()){
     group.record.pilotMessages=sortArchivedPilotMessages(group.record.pilotMessages||[]).items;
     group.record.messages=sortArchivedPilotMessages(group.record.messages||[]).items;
+  }
+  const unmatchedCycles=[...new Set(docs.map(d=>d.data().cycleId).filter(id=>!records.some(r=>r.id===id)))];
+  if(unmatchedCycles.length){
+    cloudStatus('發現 '+docs.length+' 筆待收取來源，但其中含有本機未載入的輪迴：\\n'
+      +unmatchedCycles.map(id=>'・'+id).join('\\n')
+      +'\\n請先從雲端合併下載該輪迴再分類收取。未更動這些來源。',true);
+    return;
   }
   const valid=docs.length-invalid;
   const targetSummary=[...groups.values()].map(g=>{
