@@ -2772,6 +2772,16 @@ const ARCHIVE_TRANSFER_LABELS={
   quizLogs:'10題',changeLogs:'與皮卡修改紀錄'
 };
 let transferState=null;
+async function archiveTransferCanonicalId(uid,fromCycleId,toCycleId,sourceId,oldEventId){
+  // archiveIngest hashes uid|cycleId|sourceId|entryIndex. The entry index
+  // is not in the document body, so recover it by verifying 0..9 hashes.
+  // Never guess: remapping official source IDs is necessary for dedup on re-scan.
+  for(let i=0;i<10;i++){
+    if(await sha256Hex(uid+'|'+fromCycleId+'|'+sourceId+'|'+i)===oldEventId)
+      return await sha256Hex(uid+'|'+toCycleId+'|'+sourceId+'|'+i);
+  }
+  return null;
+}
 function archiveTransferGroups(record){
   const groups=new Map();
   for(const section of archiveSections){
@@ -2933,13 +2943,12 @@ $('transferApply').onclick=async()=>{
     if(String(fromMeta.data().updatedAt||'')>String(from.updatedAt||'')||
       String(toMeta.data().updatedAt||'')>String(to.updatedAt||''))
       throw Error('雲端有較新的輪迴版本。請先備份並從雲端合併下載，再重新勾選。');
-    const sourceRaw=[],toStage=[],missing=[];
-    stage='核對雲端原始來源';
+    const sourceRaw=[],toStage=[],missing=[],idRemap=new Map();
+    stage='核對雲端原始來源與新輪迴 ID';
     for(const id of sourceIds){
-      const [scoped,legacy,target]=await Promise.all([
+      const [scoped,legacy]=await Promise.all([
         cycleIncoming(root,from.id).doc(id).get({source:'server'}),
-        root.collection('incoming').doc(id).get({source:'server'}),
-        cycleIncoming(root,to.id).doc(id).get({source:'server'})
+        root.collection('incoming').doc(id).get({source:'server'})
       ]);
       const existing=[scoped,legacy].filter(d=>d.exists&&d.data().cycleId===from.id);
       if(scoped.exists&&scoped.data().cycleId!==from.id)
@@ -2949,13 +2958,19 @@ $('transferApply').onclick=async()=>{
       if(existing.some(d=>d.data().text!==raw.text||d.data().sourceId!==raw.sourceId||
         d.data().role!==raw.role))
         throw Error('同 ID 雲端原始來源內容不一致：'+id.slice(0,12));
+      if(!raw.sourceId)throw Error('來源 '+id.slice(0,12)+' 缺少原始 sourceId，無法安全避免再掃描重複。');
+      const canonicalId=await archiveTransferCanonicalId(user.uid,from.id,to.id,raw.sourceId,id);
+      if(!canonicalId)throw Error('來源 '+id.slice(0,12)+' 的舊雜湊不符合來源輪迴，無法確認正確新 ID；未搬移。');
+      const target=await cycleIncoming(root,to.id).doc(canonicalId).get({source:'server'});
       if(target.exists){
         const current=target.data();
-        if(current.cycleId!==to.id||current.text!==raw.text||current.sourceId!==raw.sourceId)
-          throw Error('目標輪迴已有衝突來源：'+id.slice(0,12));
+        if(current.cycleId!==to.id||current.text!==raw.text||current.sourceId!==raw.sourceId||
+          current.role!==raw.role)
+          throw Error('目標輪迴已有同 ID 但不同內容的原始來源：'+canonicalId.slice(0,12));
       }
+      idRemap.set(id,canonicalId);
       sourceRaw.push(...existing.map(d=>({ref:d.ref,path:d.ref.path,data:d.data()})));
-      toStage.push({id,raw,targetExists:target.exists});
+      toStage.push({id:canonicalId,oldId:id,raw,targetExists:target.exists});
     }
     const src=structuredClone(from),dst=structuredClone(to),moveIds=new Set(moved.map(x=>x.section+'|'+x.message.id));
     for(const section of archiveSections){
@@ -2963,15 +2978,18 @@ $('transferApply').onclick=async()=>{
     }
     let reused=0;
     for(const {section,message:m} of moved){
+      const mappedId=m.sourceEventId?(idRemap.get(m.sourceEventId)||m.sourceEventId):null;
       const duplicate=archiveSections.flatMap(k=>dst[k]||[]).find(x=>
-        m.sourceEventId?(x.sourceEventId===m.sourceEventId&&
+        mappedId?((x.sourceEventId===mappedId||x.sourceEventId===m.sourceEventId)&&
           (x.sourcePartIndex??0)===(m.sourcePartIndex??0)):x.id===m.id);
       if(duplicate){
         if(duplicate.text!==m.text||duplicate.role!==m.role)
-          throw Error('目的輪迴已有同 ID 但內容不同的正式訊息：'+m.id);
+          throw Error('目的輪迴已有同來源但內容不同的正式訊息：'+m.id);
+        if(mappedId)duplicate.sourceEventId=mappedId;
         reused++;continue;
       }
       const cloned=structuredClone(m);
+      if(mappedId)cloned.sourceEventId=mappedId;
       if(section==='events')delete cloned.storyPlacement;
       (dst[section]??=[]).push(cloned);
     }
@@ -2984,9 +3002,10 @@ $('transferApply').onclick=async()=>{
         exportedAt:timestamp,sourceCycleId:from.id,destinationCycleId:to.id,
         selectedGroups:groups.map(g=>({key:g.key,count:g.entries.length,
           messageIds:g.entries.map(x=>x.message.id)})),sourceCycle:from,destinationCycle:to,
-        rawSources:sourceRaw.map(x=>({path:x.path,data:x.data})),missingRawSourceIds:missing},null,2));
-    $('transferPreview').textContent='備份已開始下載。原始來源 '+toStage.length+' 筆，缺失 '+missing.length
-      +' 筆（缺失者只轉移正式記錄）。正在分階段同步，請勿關閉頁面。';
+        rawSources:sourceRaw.map(x=>({path:x.path,data:x.data})),
+        sourceIdRemap:Object.fromEntries(idRemap),missingRawSourceIds:missing},null,2));
+    $('transferPreview').textContent='備份已開始下載。已核對並改算正確目的輪迴 ID 的原始來源 '+toStage.length
+      +' 筆，缺失 '+missing.length+' 筆（缺失者只轉移正式記錄，其舊來源 ID 無法保證重掃去重）。請勿關閉頁面。';
     // Stage raw copies first, and verify before removing the source.
     stage='準備目的地 incoming';
     for(const item of toStage){
