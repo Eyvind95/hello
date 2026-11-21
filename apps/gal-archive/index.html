@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.8｜Gal AI</title>
+<title>輪迴檔案館 V5.9｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -30,12 +30,12 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.8</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.9</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
 <p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
@@ -71,6 +71,17 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
     <div class="note" id="pilotPurgePreview" style="white-space:pre-wrap;margin:12px 0;max-height:32vh;overflow:auto">正在檢查…</div>
     <div class="actions topsp"><button class="btn danger" id="pilotPurgeApply" disabled>備份後清除本輪副駕駛聊天及雲端來源</button></div>
     <p id="pilotPurgeStatus" class="note" role="status" aria-live="polite">尚未執行清除。</p>
+  </div>
+</div>
+<div class="modalback hidden" id="discardPendingModal" role="dialog" aria-modal="true" aria-labelledby="discardPendingTitle">
+  <div class="modal"><div class="sectionhead"><h2 id="discardPendingTitle">🗑 拋棄待收取來源</h2><button class="btn small" id="discardPendingClose">關閉</button></div>
+  <p class="note">只刪除 Firebase 中 <code>status = pending</code> 的原始來源，不刪除已收取、正式故事、副駕駛聊天或本機資料。<strong>輪迴已刪除時，其 incoming 子集合可能仍在。</strong>先停止 Chrome 擴充功能監看。</p>
+  <label for="discardPendingScope">清理範圍</label>
+  <select id="discardPendingScope"><option value="all">所有目前能定位的輪迴及舊共用收件匣</option><option value="manual">指定輪迴 ID（可清已刪輪迴殘留）</option><option value="current">只處理目前輪迴</option></select>
+  <label for="discardPendingId">舊輪迴 ID（選指定輪迴時填寫）</label><input id="discardPendingId" placeholder="貼上錯誤提示中的舊輪迴 ID；不要填對話 ID" autocomplete="off">
+  <p class="note">「所有目前能定位」只包含本機及雲端列得出的輪迴；<b>已刪輪迴不一定能列出</b>，請改用「指定輪迴 ID」直接清理。不能確定完整掃描時不會宣稱已清空全部。</p>
+  <div class="actions topsp"><button class="btn" id="discardPendingScan">掃描待收取／預覽</button><button class="btn danger" id="discardPendingApply" disabled>下載備份並拋棄待收取</button></div>
+  <div id="discardPendingReport" class="archivepreview" style="max-height:32vh;overflow:auto;margin-top:12px">尚未掃描；不會刪除資料。</div>
   </div>
 </div>
 <div class="modalback hidden" id="migrateModal" role="dialog" aria-modal="true" aria-labelledby="migrateTitle">
@@ -672,7 +683,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.6_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.9_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -1127,6 +1138,94 @@ $('deleteAllFlatIncoming').onclick=async()=>{
       +'。請重新掃描，確認剩餘筆數。';
     cloudStatus('舊平面來源清理失敗：'+e.message,true);
   }finally{b.disabled=false}
+};
+
+
+let discardPendingPreview=null;
+$('discardPendingBtn').onclick=()=>{
+  $('discardPendingModal').classList.remove('hidden');
+  $('discardPendingReport').textContent='請先掃描。只會檢查 status = pending 的來源。';
+  $('discardPendingApply').disabled=true;discardPendingPreview=null;
+};
+$('discardPendingClose').onclick=()=>$('discardPendingModal').classList.add('hidden');
+$('discardPendingScope').onchange=()=>{discardPendingPreview=null;$('discardPendingApply').disabled=true;$('discardPendingReport').textContent='範圍已變更，請重新掃描。'};
+$('discardPendingId').oninput=()=>{discardPendingPreview=null;$('discardPendingApply').disabled=true;$('discardPendingReport').textContent='輪迴 ID 已變更，請重新掃描。'};
+async function scanDiscardPending(){
+  const user=await cloudSignedIn();
+  await refresh();
+  const root=cloudDb.collection('galArchive').doc(user.uid);
+  const scope=$('discardPendingScope').value;
+  const id=$('discardPendingId').value.trim();
+  let targets=[];
+  if(scope==='manual'){
+    if(!/^[A-Za-z0-9_-]{5,160}$/.test(id))throw Error('請填入有效的舊輪迴 ID（不是 ChatGPT 對話 ID）。');
+    targets=[{label:'指定輪迴 '+id,ref:cycleIncoming(root,id)}];
+  }else if(scope==='current'){
+    const r=current();if(!r)throw Error('請先選擇輪迴。');
+    targets=[{label:'目前輪迴 '+r.title+'（'+r.id+'）',ref:cycleIncoming(root,r.id)}];
+  }else{
+    const cloudCycles=await root.collection('cycles').get({source:'server'});
+    const ids=[...new Set([...cloudCycles.docs.map(d=>d.id),...records.map(r=>r.id)])];
+    targets=[{label:'舊版共用 incoming',ref:root.collection('incoming')},
+      ...ids.map(id=>({label:'輪迴 '+(records.find(r=>r.id===id)?.title||id)+'（'+id+'）',ref:cycleIncoming(root,id)}))];
+  }
+  const rows=[],summary=[];
+  for(const target of targets){
+    const snap=await target.ref.where('status','==','pending').get({source:'server'});
+    summary.push(target.label+'：'+snap.size+' 筆');
+    for(const doc of snap.docs)rows.push({ref:doc.ref,id:doc.id,data:doc.data(),path:doc.ref.path,label:target.label});
+  }
+  return {rows,summary,scope,id,uid:user.uid,checked:targets.length};
+}
+$('discardPendingScan').onclick=async()=>{
+  const b=$('discardPendingScan');b.disabled=true;$('discardPendingApply').disabled=true;discardPendingPreview=null;
+  $('discardPendingReport').textContent='正在向 Firebase 讀取待收取來源…';
+  try{
+    const preview=await scanDiscardPending();
+    discardPendingPreview=preview;
+    $('discardPendingReport').textContent='找到 '+preview.rows.length+' 筆待收取來源；檢查 '+preview.checked+' 個收件匣。\\n'
+      +preview.summary.join('\\n')+'\\n'
+      +(preview.scope==='all'?'注意：已刪除輪迴的幽靈子集合可能不在掃描清單，需另輸入舊輪迴 ID 清理。\\n':'')
+      +'只清待收取，已收取及正式紀錄不變。';
+    $('discardPendingApply').disabled=!preview.rows.length;
+  }catch(e){$('discardPendingReport').textContent='掃描失敗：'+(e.message||String(e));}
+  finally{b.disabled=false}
+};
+$('discardPendingApply').onclick=async()=>{
+  const b=$('discardPendingApply'),preview=discardPendingPreview;if(!preview?.rows.length)return;
+  b.disabled=true;let deleted=0,skipped=0;
+  try{
+    const user=await cloudSignedIn();
+    if(user.uid!==preview.uid||preview.scope!==$('discardPendingScope').value
+      ||preview.id!==$('discardPendingId').value.trim())throw Error('登入帳戶或操作範圍已變更，請重新掃描。');
+    if(!confirm('準備拋棄 '+preview.rows.length+' 筆待收取來源。\\n'
+      +'這只刪除待收取原始來源，已收取及正式資料都不會刪除。\\n'
+      +'請先停止擴充功能監看。操作不可復原。要先下載備份並繼續嗎？'))return;
+    const required='拋棄 '+preview.rows.length+' 筆';
+    if(prompt('最後確認，請輸入「'+required+'」：')!==required)return;
+    downloadText('輪迴檔案館_待收取來源拋棄前備份_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',
+      JSON.stringify({format:'gal-archive-pending-purge-backup',exportedAt:new Date().toISOString(),
+        uid:preview.uid,scope:preview.scope,items:preview.rows.map(x=>({path:x.path,data:x.data}))},null,2));
+    for(const x of preview.rows){
+      const fresh=await x.ref.get({source:'server'});
+      if(!fresh.exists||fresh.data().status!=='pending'){skipped++;continue}
+      const now=fresh.data();
+      // The source might be rewritten by the extension. Never delete a changed item.
+      if((now.sourceId||'')!==(x.data.sourceId||'')||
+        (now.cycleId||'')!==(x.data.cycleId||'')||
+        (now.text||'')!==(x.data.text||'')||
+        (now.role||'')!==(x.data.role||'')){skipped++;continue}
+      await x.ref.delete();deleted++;
+      if(deleted%20===0)$('discardPendingReport').textContent='已拋棄 '+deleted+'／'+preview.rows.length+' 筆…';
+    }
+    discardPendingPreview=null;
+    $('discardPendingReport').textContent='清理完成：已拋棄 '+deleted+' 筆待收取來源；跳過 '+skipped
+      +' 筆（內容變動／已非待收取）。\\n'
+      +'只處理此次掃描的收件匣；未刪已收取、正式故事、副駕駛聊天。'
+      +(preview.scope==='all'?'\\n如仍出現幽靈來源，請使用「指定輪迴 ID」清理舊子集合。':'');
+    cloudStatus('已拋棄 '+deleted+' 筆待收取來源（跳過 '+skipped+' 筆）。');
+  }catch(e){$('discardPendingReport').textContent='操作中斷：已刪 '+deleted+' 筆。原因：'+(e.message||String(e))+'。請重新掃描剩餘資料。';}
+  finally{b.disabled=false;$('discardPendingApply').disabled=true;}
 };
 
 async function receiveAutomaticEntries(){
