@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.25｜Gal AI</title>
+<title>輪迴檔案館 V5.26｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -85,12 +85,12 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.25</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.26</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn primary" id="moveConversation">↗ 精準轉移誤收訊息（跨輪迴）</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">皮卡藍框訊息含「事件到達」或 whif-icon.svg 時優先進入「事件簿」，預設待決定；已接才依來源時間顯示於完整對話。其餘行首「我：／他：」拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆進副駕駛聊天。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。沒有標註時間的手動正史不移位；有手動標註時間的訊息也會按原始時間排序。</p>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn primary" id="missingAuditOpen">🔍 對照本輪缺漏（唯讀）</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn primary" id="moveConversation">↗ 精準轉移誤收訊息（跨輪迴）</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">皮卡藍框訊息含「事件到達」或 whif-icon.svg 時優先進入「事件簿」，預設待決定；已接才依來源時間顯示於完整對話。其餘行首「我：／他：」拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆進副駕駛聊天。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。沒有標註時間的手動正史不移位；有手動標註時間的訊息也會按原始時間排序。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
 <p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
@@ -98,6 +98,15 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 <textarea id="writerToken" readonly placeholder="新金鑰只會在建立當次顯示；請複製至 GPT 動作的 API Key 設定，不要公開。" style="min-height:90px"></textarea>
 <p id="writerStatus" class="note" role="status">此功能尚未啟用。</p><p id="cloudStatus" class="note" role="status" aria-live="polite">登入後會自動建立 galArchive 雲端入口；完整世界觀與輪迴仍需按「↑ 上傳本機資料」，上傳前請先匯出 JSON 備份。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
 <div class="toast hidden" id="toast" role="status"></div>
+<div class="modalback hidden" id="missingAuditModal" role="dialog" aria-modal="true" aria-labelledby="missingAuditTitle">
+  <div class="modal" style="max-width:880px"><div class="sectionhead"><h2 id="missingAuditTitle">🔍 輪迴缺漏對照（不修改資料）</h2><button class="btn small" id="missingAuditClose">關閉</button></div>
+  <p class="note">唯讀比較目前輪迴的劇情、副駕駛聊天、事件、雲端已收取／待收取來源，並核對同一輪迴的雲端正式備份。<strong>「則數差額」不等於資料一定遺失</strong>；可能是事件、分類不同、漏掃或沒有保存的來源。這裡不會移動、補回、刪除或上傳任何紀錄。</p>
+  <div class="formrow"><div><label for="missingAuditExpected">你確認的原始劇情總則數（可空白）</label><input id="missingAuditExpected" type="number" min="0" step="1" placeholder="例如 803"></div><div><label>檢查對象</label><input id="missingAuditCycleLabel" readonly></div></div>
+  <div class="actions topsp"><button class="btn primary" id="missingAuditRun">讀取本機與 Firebase 核對</button><button class="btn" id="missingAuditDownload" disabled>下載診斷 JSON</button></div>
+  <pre id="missingAuditReport" class="archivepreview" style="max-height:48vh;overflow:auto;white-space:pre-wrap;margin:12px 0" role="status" aria-live="polite">尚未執行。檢查不會更動資料。</pre>
+  <p class="note" style="color:#ffcb90">⚠ 此工具只能找到已保存、已上傳或已被分類的訊息；若擴充功能從未擷取那段對話，必須回到 ChatGPT 原始聊天核對。請先保留輪迴 JSON 備份；不要直接拿差額做自動補登。</p>
+  </div>
+</div>
 <div class="modalback hidden" id="showMoreModal" role="dialog" aria-modal="true" aria-labelledby="showMoreTitle">
   <div class="modal"><div class="sectionhead"><h2 id="showMoreTitle">清理長訊息的介面殘留</h2><button class="btn small" id="showMoreClose">關閉</button></div>
   <p class="note">僅移除<strong>訊息結尾</strong>的介面殘留：「...／顯示較多」或<strong>獨立一行的「顯示較少」</strong>。後者只刪那一行，不會刪掉前一行「...」，也不改動發言時間、來源識別碼。僅掃描已收取的自動來源紀錄。</p>
@@ -1513,7 +1522,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.25_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.26_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -2354,6 +2363,168 @@ async function receiveAutomaticEntries(){
     +(invalid?'另有 '+invalid+' 筆不符合輪迴或格式，仍在待收取區。':'')
     +(snap.size>docs.length?'還有 '+(snap.size-docs.length)+' 筆待收取，可再按一次。':''));
 }
+// V5.26: read-only completeness diagnosis. Count each storage lane separately:
+// sidebar story count is r.messages.length, not the total sources or events.
+let missingAuditResult=null,missingAuditCycleId=null;
+const missingAuditSections={messages:'完整對話',events:'事件簿',pilotMessages:'副駕駛聊天',quizLogs:'10題',changeLogs:'修改紀錄'};
+const missingAuditExcerpt=m=>String(m?.text||'').replace(/\s+/g,' ').slice(0,145);
+const missingAuditSourceKey=m=>m?.sourceEventId?m.sourceEventId+'|'+(m.sourcePartIndex??0):null;
+function missingAuditLocal(r,expected){
+  const story=r.messages||[],pilot=r.pilotMessages||[],events=r.events||[];
+  const timeline=archiveStoryTimeline(r),realTurns=timeline.filter(x=>x.type==='message').length;
+  const roleCount=arr=>({player:arr.filter(m=>m.role==='me').length,
+    assistant:arr.filter(m=>m.role==='ai').length});
+  const rows=archiveSections.flatMap(section=>(r[section]||[]).map(m=>({section,message:m})));
+  const indexed=new Map(),dup=[];
+  for(const row of rows){
+    const key=missingAuditSourceKey(row.message);
+    if(!key)continue;
+    const first=indexed.get(key);
+    if(first)dup.push({source:key,sections:[first.section,row.section],text:missingAuditExcerpt(row.message)});
+    else indexed.set(key,row);
+  }
+  const storyLikePilot=pilot.filter(m=>m.role==='me'&&
+    /(?:^|\n)\s*(?:我|他)\s*[：:；”]/.test(String(m.text||'')))
+    .map(m=>({id:m.id,sourceEventId:m.sourceEventId||null,preview:missingAuditExcerpt(m)}));
+  return {
+    cycle:{id:r.id,title:r.title,updatedAt:r.updatedAt||null},
+    expectedStoryCount:Number.isInteger(expected)&&expected>=0?expected:null,
+    actualStoryCount:story.length,
+    difference:Number.isInteger(expected)&&expected>=0?expected-story.length:null,
+    roles:roleCount(story),
+    storyTimelineVisible:timeline.length,storyTimelineRealTurns:realTurns,
+    acceptedEvents:events.filter(m=>m.status==='accepted').length,
+    unacceptedEvents:events.filter(m=>m.status!=='accepted').length,
+    allEvents:events.length,pilotCount:pilot.length,pilotRoles:roleCount(pilot),
+    quizCount:(r.quizLogs||[]).length,changeCount:(r.changeLogs||[]).length,
+    storyLikePilot,storyLikePilotCount:storyLikePilot.length,
+    localSourcesIndexed:indexed.size,duplicateSourceParts:dup,
+    duplicateSourcePartsCount:dup.length,indexed};
+}
+function missingAuditDisplay(report){
+  const a=report.local,c=report.cloud;
+  let out='輪迴：'+a.cycle.title+'\n本機劇情：'+a.actualStoryCount+' 則（玩家 '+a.roles.player+'／Gal AI '+a.roles.assistant+'）';
+  if(a.expectedStoryCount!==null)out+='\n原始目標：'+a.expectedStoryCount+' 則；差額：'+a.difference+' 則（僅數量差，不能直接判定遺失）';
+  out+='\n已接事件：'+a.acceptedEvents+' 件（另外顯示在完整對話，但不計入側欄劇情）'
+    +'\n未接／待決事件：'+a.unacceptedEvents+' 件'
+    +'\n副駕駛聊天：'+a.pilotCount+' 則（皮卡 '+a.pilotRoles.player+'／GPT '+a.pilotRoles.assistant+'）'
+    +'\n疑似包含「我：／他：」標記、但在副駕駛聊天的訊息：'+a.storyLikePilotCount+' 則'
+    +'\n同一來源片段在多個位置重複：'+a.duplicateSourcePartsCount+' 組';
+  if(!c)out+='\n\n雲端：尚未核對';
+  else if(c.error)out+='\n\n雲端核對未完成：'+c.error;
+  else{
+    out+='\n\n【Firebase 唯讀核對】\n正式雲端劇情：'+(c.cycleStoryCount===null?'無法確認':c.cycleStoryCount+' 則')
+      +'\n原始來源：'+c.rawTotal+' 筆（已收取 '+c.status.accepted+'、待收取 '+c.status.pending+'、其他 '+c.status.other+'）'
+      +'\n原始來源內容與路徑衝突：'+c.pathConflicts.length+' 筆'
+      +'\n相同來源 ID 的不同副本互相矛盾：'+c.duplicateConflicts.length+' 筆'
+      +'\n已收取來源所預期的劇情片段：'+c.expectedStoryParts+' 則'
+      +'\n已收取來源對應的正式紀錄缺漏：'+c.missingOfficial.length+' 則'
+      +'\n已收取來源實際跑到其他分頁：'+c.misclassified.length+' 則'
+      +'\n雲端來源仍含「顯示較多」：'+c.collapsedSources.length+' 筆';
+    if(c.cycleStoryCount!==null&&c.cycleStoryCount!==a.actualStoryCount)out+='\n⚠ 本機與雲端的劇情總數不同：請先比較完整備份，不要直接覆蓋。';
+  }
+  const examples=(title,list,max=12)=>list.length?'\n\n【'+title+'，先列 '+Math.min(max,list.length)+'／'+list.length+' 筆】\n'
+    +list.slice(0,max).map(x=>(x.id||x.source||x.sourceEventId||'？')+' · '+(x.target||x.section||'')+' · '+(x.preview||x.text||'')).join('\n'):'';
+  out+=examples('疑似分類到副駕駛聊天的玩家貼文',a.storyLikePilot);
+  if(c&&!c.error){out+=examples('已收取卻無正式片段',c.missingOfficial);
+    out+=examples('來源所在的分頁與預期不同',c.misclassified);
+    out+=examples('來源路徑與輪迴 ID 衝突',c.pathConflicts);}
+  out+='\n\n結論：先核對具體來源與聊天原文。以上只是診斷，不會自動補回缺少的發言。';
+  return out;
+}
+async function missingAuditCloud(r,local){
+  const user=await cloudSignedIn(),root=cloudDb.collection('galArchive').doc(user.uid);
+  const ref=root.collection('cycles').doc(r.id);
+  const [raw,meta]=await Promise.all([archiveIncomingForCycle(root,r.id),ref.get({source:'server'})]);
+  let cycleStoryCount=null;
+  if(meta.exists){
+    const parts=await ref.collection('parts').orderBy('index').get({source:'server'});
+    if(parts.size!==meta.data().partCount)throw Error('雲端正式紀錄片段不完整，停止比對');
+    const cloudCycle=JSON.parse(parts.docs.map(d=>d.data().data).join(''));
+    if(cloudCycle.id!==r.id)throw Error('雲端輪迴 ID 不符，停止比對');
+    cycleStoryCount=(cloudCycle.messages||[]).length;
+  }
+  const uniq=new Map(),duplicateConflicts=[];
+  for(const doc of raw.docs){
+    const item=doc.data(),prev=uniq.get(doc.id);
+    if(!prev){uniq.set(doc.id,doc);continue}
+    const p=prev.data();
+    if(p.text!==item.text||p.sourceId!==item.sourceId||p.role!==item.role||
+      p.cycleId!==item.cycleId||p.section!==item.section)
+      duplicateConflicts.push({id:doc.id,preview:missingAuditExcerpt(item)});
+    // Prefer correctly scoped documents over legacy, but don't hide conflicts.
+    if(doc.ref.path.includes('/cycles/'+r.id+'/incoming/'))uniq.set(doc.id,doc);
+  }
+  const status={accepted:0,pending:0,other:0},missingOfficial=[],misclassified=[];
+  const pathConflicts=[],collapsedSources=[],counts={expectedStoryParts:0};
+  for(const doc of uniq.values()){
+    const d=doc.data();
+    if(d.cycleId!==r.id){pathConflicts.push({id:doc.id,preview:'內部 cycleId：'+d.cycleId});continue}
+    status[d.status==='accepted'?'accepted':d.status==='pending'?'pending':'other']++;
+    if(d.status!=='accepted')continue;
+    if(!['chat','quiz','changes'].includes(d.section)||!['me','ai'].includes(d.role)||typeof d.text!=='string'){
+      pathConflicts.push({id:doc.id,preview:'原始來源格式不符'});continue;
+    }
+    if(hasArchiveMoreTail(d.text)){collapsedSources.push({id:doc.id,preview:missingAuditExcerpt(d)});continue}
+    const clean={...d,text:cleanArchiveLessTail(d.text)};
+    const entries=d.section==='chat'?classifyArchiveChat(clean,doc.id)
+      :[{target:d.section==='quiz'?'quizLogs':'changeLogs',sourcePartIndex:0,text:clean.text}];
+    for(const entry of entries){
+      if(entry.target==='messages')counts.expectedStoryParts++;
+      const key=doc.id+'|'+(entry.sourcePartIndex??0);
+      const found=local.indexed.get(key);
+      if(!found)missingOfficial.push({id:doc.id,sourcePartIndex:entry.sourcePartIndex??0,
+        target:missingAuditSections[entry.target],preview:missingAuditExcerpt(entry)});
+      else if(found.section!==entry.target)misclassified.push({id:doc.id,
+        target:'預期 '+missingAuditSections[entry.target]+'／實際 '+missingAuditSections[found.section],
+        preview:missingAuditExcerpt(entry)});
+    }
+  }
+  return {cycleStoryCount,rawTotal:uniq.size,status,expectedStoryParts:counts.expectedStoryParts,
+    missingOfficial,misclassified,collapsedSources,pathConflicts,duplicateConflicts};
+}
+function missingAuditOpen(){
+  const r=current();
+  if(!r){notify('請先選擇要檢查的輪迴');return}
+  missingAuditResult=null;missingAuditCycleId=r.id;
+  $('missingAuditCycleLabel').value=r.title;
+  $('missingAuditExpected').value=/第\s*16\s*周目/.test(r.title)?'803':'';
+  $('missingAuditReport').textContent='本輪劇情 '+(r.messages||[]).length+' 則。準備進行唯讀核對。';
+  $('missingAuditDownload').disabled=true;
+  $('missingAuditModal').classList.remove('hidden');
+}
+$('missingAuditOpen').onclick=missingAuditOpen;
+$('missingAuditClose').onclick=()=>$('missingAuditModal').classList.add('hidden');
+$('missingAuditDownload').onclick=()=>{
+  if(!missingAuditResult)return;
+  downloadText('輪迴檔案館_缺漏診斷_'+new Date().toISOString().slice(0,10)+'.json',
+    JSON.stringify(missingAuditResult,null,2));
+};
+$('missingAuditRun').onclick=async()=>{
+  const b=$('missingAuditRun');b.disabled=true;missingAuditResult=null;
+  $('missingAuditDownload').disabled=true;
+  try{
+    await refresh();
+    const r=records.find(x=>x.id===missingAuditCycleId);
+    if(!r)throw Error('輪迴已切換或不存在，請重新開啟診斷');
+    const val=$('missingAuditExpected').value.trim(),expected=val?Number(val):null;
+    if(val&&(!Number.isInteger(expected)||expected<0))throw Error('目標則數必須是非負整數');
+    const local=missingAuditLocal(r,expected);
+    $('missingAuditReport').textContent=missingAuditDisplay({local});
+    let cloud=null;
+    try{cloud=await missingAuditCloud(r,local)}
+    catch(e){cloud={error:e.message||String(e)}}
+    // Drop the ephemeral indexed Map; JSON backup keeps only interpretable findings.
+    const {indexed,...safeLocal}=local;
+    missingAuditResult={format:'gal-archive-completeness-audit',version:1,
+      at:new Date().toISOString(),local:safeLocal,cloud,
+      warning:'唯讀診斷。則數差額不等於資料確實遺失；分類或未擷取的內容仍需人工核對。'};
+    $('missingAuditReport').textContent=missingAuditDisplay({local:safeLocal,cloud});
+    $('missingAuditDownload').disabled=false;
+  }catch(e){$('missingAuditReport').textContent='診斷失敗：'+(e.message||String(e))}
+  finally{b.disabled=false}
+};
+
 // Manual repair of old V4.3 imports: only entries tagged sourceEventId are moved.
 // The existing hand-curated story and all other sections remain unchanged.
 async function repairAutoImportedChats(){
