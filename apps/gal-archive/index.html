@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.4｜Gal AI</title>
+<title>輪迴檔案館 V5.5｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -30,7 +30,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.4</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.5</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -64,6 +64,15 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
   <div class="actions topsp"><button class="btn danger" id="cleanupApply">備份後清除勾選訊息</button></div>
   <p class="note" id="cleanupNotice" role="status">不會自動刪除 Firebase incoming 來源；只從正式輪迴與雲端輪迴內容移除所勾選的歸檔。</p>
 </div></div>
+<div class="modalback hidden" id="pilotPurgeModal" role="dialog" aria-modal="true" aria-labelledby="pilotPurgeTitle">
+  <div class="modal"><div class="sectionhead"><h2 id="pilotPurgeTitle">清空本輪副駕駛聊天</h2><button class="btn small" id="pilotPurgeClose">關閉</button></div>
+    <p class="note">只清除<b>目前輪迴的「副駕駛聊天」全部訊息</b>，同步清空此輪迴 Firebase cycles/parts 內相同分頁，並刪掉 incoming 中<b>只屬於副駕駛聊天</b>的來源（包含待收取與已收取）。不會清空其他分頁、其他輪迴或世界觀。</p>
+    <p class="note" style="color:#ffcb90">⚠ 請先在 Chrome 擴充功能停止監看，避免清理期間新訊息同時寫入。共享 Gal AI 正史的混合來源會保留。程式會先提供本機完整備份及待刪原始來源備份，再執行清除。此操作不可直接復原。</p>
+    <div class="note" id="pilotPurgePreview" style="white-space:pre-wrap;margin:12px 0">正在檢查…</div>
+    <div class="actions topsp"><button class="btn danger" id="pilotPurgeApply" disabled>備份後清除本輪副駕駛聊天及雲端來源</button></div>
+    <p id="pilotPurgeStatus" class="note" role="status" aria-live="polite">尚未執行清除。</p>
+  </div>
+</div>
 <div class="modalback hidden" id="transferModal" role="dialog" aria-modal="true" aria-labelledby="transferTitle">
   <div class="modal"><div class="sectionhead"><h2 id="transferTitle">轉移誤收的 ChatGPT 來源對話</h2><button class="btn small" id="transferClose">關閉</button></div>
   <p class="note">僅轉移已收取、具來源對話識別碼的自動記錄；選擇來源聊天與目標輪迴。原始訊息、時間、來源 ID 不變。請先匯出 JSON 備份。</p>
@@ -218,7 +227,7 @@ function archiveTimeDisplay(m){
 function renderPilotChat(r){
   const items=r.pilotMessages||[],suggested=pilotManagerName||cycleManagerNames(r).at(-1)||'副駕駛 GPT';
   $('tabBody').innerHTML=`<div class="sectionhead"><h3>副駕駛聊天 <span class="stat">（${items.length} 則）</span></h3><span class="note">左：副駕駛 GPT ／ 右：皮卡（與 Gal AI 劇情分開）</span></div>
-  <p class="note">沒有明確「我：／他：」標記的玩家訊息，以及 GPT 的回覆，會收在這裡。這裡可以手動編輯、刪除及調整訊息順序。</p>
+  <p class="note">沒有明確「我：／他：」標記的玩家訊息，以及 GPT 的回覆，會收在這裡。這裡可以手動編輯、刪除及調整訊息順序。</p><div class="actions topsp"><button class="btn danger small" id="wipePilotChat">🧹 全刪本輪副駕駛聊天（含 Firebase 來源）</button></div>
   <div class="chat" id="pilotChatList">${items.length?items.map((m,i)=>`<div data-message-id="${safe(m.id||'')}" class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${safe(m.role==='me'?'皮卡':m.manager||'副駕駛 GPT')} · #${i+1}</div>${archiveTimeDisplay(m)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-pilotmove="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-pilotmove="${i}" data-dir="1" ${i===items.length-1?'disabled':''}>↓</button><button data-pilotedit="${i}">編輯</button><button data-pilottime="${i}">時間</button><button data-pilotremove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">尚無副駕駛聊天紀錄。</div>'}</div>
   <div class="composer"><h3>新增副駕駛聊天</h3><div class="speaker"><button class="btn ${pilotSpeaker==='ai'?'selected':''}" data-pilotspeaker="ai">副駕駛 GPT（左）</button><button class="btn ${pilotSpeaker==='me'?'selected':''}" data-pilotspeaker="me">皮卡（右）</button></div>
   <label>副駕駛名稱</label><input id="pilotManager" value="${safe(suggested)}" placeholder="請填入此輪迴的副駕駛名稱">
@@ -365,6 +374,7 @@ if(b.dataset.pilotspeaker){
   $('pilotInput').value=oldText;$('pilotSourceTime').value=oldTime;
   restoreArchiveScroll(oldView);return;
 }
+if(b.id==='wipePilotChat'){await openPilotChatPurge(r);return}
 if(b.id==='addPilotMessage'){
   const value=$('pilotInput').value.trim(),manager=$('pilotManager').value.trim();
   if(!value)return notify('請輸入副駕駛聊天內容');
@@ -518,7 +528,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.4_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.5_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -1112,6 +1122,127 @@ $('cleanupApply').onclick=async()=>{
       +(deleteRaw?'雲端原始來源刪除 '+rawDeleted+' 筆，失敗 '+rawFailed+' 筆。':'原始收件匣保留。'));
   }catch(e){$('cleanupNotice').textContent='清理中止：'+e.message+'。請保留備份，並檢查雲端同步狀態。'}
   finally{button.disabled=false}
+};
+// Only the current cycle's pilot-chat lane can be cleared. Do not delete
+// mixed source documents containing canonical Gal AI story or other sections.
+let pilotPurgePlan=null;
+const pilotPurgePhrase='清空副駕駛聊天';
+function pilotIncomingKind(doc){
+  const v=doc.data();
+  if(v.section!=='chat'||!['me','ai'].includes(v.role)||typeof v.text!=='string')return 'other';
+  const parts=classifyArchiveChat(v,doc.id);
+  const pilot=parts.some(x=>x.target==='pilotMessages');
+  const story=parts.some(x=>x.target==='messages');
+  return pilot?(story?'mixed':'pilot'):'other';
+}
+async function getPilotPurgePlan(r){
+  const user=await cloudSignedIn();
+  const root=cloudDb.collection('galArchive').doc(user.uid);
+  const cycleRef=root.collection('cycles').doc(r.id);
+  const meta=await cycleRef.get({source:'server'});
+  if(!meta.exists)throw Error('這個輪迴尚未同步到 Firebase；請先到「雲端同步」按上傳本機資料，再清空。');
+  const localUpdated=String(r.updatedAt||''),cloudUpdated=String(meta.data()?.updatedAt||'');
+  if(cloudUpdated&&localUpdated&&cloudUpdated>localUpdated)
+    throw Error('雲端輪迴版本比目前本機新，為避免覆蓋其他分頁，請先「從雲端合併下載」再重新清理。');
+  const snap=await root.collection('incoming').where('cycleId','==',r.id).get({source:'server'});
+  const protectedIds=new Set(records.flatMap(rec=>
+    ['messages','pilotMessages','quizLogs','changeLogs'].flatMap(section=>
+      (rec[section]||[]).filter(m=>rec.id!==r.id||section!=='pilotMessages')
+        .map(m=>m.sourceEventId).filter(Boolean))));
+  const deletable=[],mixed=[],pendingMixed=[],protectedRaw=[];
+  for(const doc of snap.docs){
+    const kind=pilotIncomingKind(doc);
+    if(kind==='mixed'){
+      mixed.push(doc);
+      if(doc.data().status==='pending')pendingMixed.push(doc);
+    }else if(kind==='pilot'){
+      if(protectedIds.has(doc.id))protectedRaw.push(doc);
+      else deletable.push(doc);
+    }
+  }
+  return {cycleId:r.id,cycleTitle:r.title,localCount:(r.pilotMessages||[]).length,
+    cycleUpdatedAt:cloudUpdated,deletable,mixed,pendingMixed,protectedRaw,
+    signature:JSON.stringify([r.id,r.updatedAt||'',cloudUpdated,deletable.map(x=>x.id).sort(),
+      mixed.map(x=>x.id).sort(),pendingMixed.map(x=>x.id).sort()])};
+}
+function renderPilotPurgePlan(plan){
+  $('pilotPurgePreview').textContent=
+    '目前輪迴：'+plan.cycleTitle+'\n'+
+    '本機／正式輪迴中要清除的副駕駛訊息：'+plan.localCount+' 則\n'+
+    'Firebase incoming 確認只屬於副駕駛聊天、可刪的來源：'+plan.deletable.length+' 筆\n'+
+    '混合 Gal AI 正史、必須保留的來源：'+plan.mixed.length+' 筆\n'+
+    '被其他分頁／輪迴使用、必須保留的來源：'+plan.protectedRaw.length+' 筆'+
+    (plan.pendingMixed.length?'\n⚠ 有 '+plan.pendingMixed.length+' 筆尚未收取的混合來源，為保護劇情，請先分類收取再清理。':'')+
+    '\n注意：擴充功能原有「已傳送」記號不會被清除；同一則舊訊息需要另外重置標記才能重傳，新發言則可正常上傳。';
+  $('pilotPurgeApply').disabled=!!plan.pendingMixed.length||(!plan.localCount&&!plan.deletable.length);
+}
+async function openPilotChatPurge(r){
+  pilotPurgePlan=null;
+  $('pilotPurgeModal').classList.remove('hidden');
+  $('pilotPurgePreview').textContent='正在核對本輪迴 Firebase 來源…';
+  $('pilotPurgeApply').disabled=true;
+  $('pilotPurgeStatus').textContent='預覽階段，尚未刪除任何資料。';
+  try{
+    const plan=await getPilotPurgePlan(r);
+    if(current()?.id!==r.id)throw Error('輪迴已切換，請重新開啟清理功能');
+    pilotPurgePlan=plan;renderPilotPurgePlan(plan);
+  }catch(err){$('pilotPurgePreview').textContent='無法檢查：'+err.message}
+}
+$('pilotPurgeClose').onclick=()=>{$('pilotPurgeModal').classList.add('hidden');pilotPurgePlan=null};
+$('pilotPurgeModal').addEventListener('click',e=>{
+  if(e.target.id==='pilotPurgeModal'){$('pilotPurgeModal').classList.add('hidden');pilotPurgePlan=null}
+});
+$('pilotPurgeApply').onclick=async()=>{
+  const b=$('pilotPurgeApply'),plan=pilotPurgePlan,r=current();
+  if(!plan||!r||r.id!==plan.cycleId)return;
+  b.disabled=true;
+  try{
+    // Re-check the server to avoid deleting a changed set of source documents.
+    const fresh=await getPilotPurgePlan(r);
+    if(fresh.signature!==plan.signature||fresh.localCount!==plan.localCount){
+      pilotPurgePlan=fresh;renderPilotPurgePlan(fresh);
+      $('pilotPurgeStatus').textContent='偵測到資料變動，已更新預覽；請重新確認後再按一次。';return;
+    }
+    if(fresh.pendingMixed.length)throw Error('尚有混合正史的待收取來源，請先分類收取。');
+    const summary='即將清空「'+r.title+'」本輪副駕駛聊天 '+fresh.localCount+' 則，並移除 '+fresh.deletable.length+' 筆獨立的 Firebase incoming 來源。\\n'
+      +'混合正史來源 '+fresh.mixed.length+' 筆保留，其他分頁與輪迴不動。\\n'
+      +'會先下載兩份 JSON 備份。確定繼續？';
+    if(!confirm(summary))return;
+    if(prompt('最後確認：請輸入「'+pilotPurgePhrase+'」才會真正刪除：')!==pilotPurgePhrase)return;
+    const now=new Date().toISOString();
+    // Download BOTH local canon and raw inbox before touching Firestore.
+    $('exportBtn').click();
+    downloadText('輪迴檔案館_'+r.title+'_副駕駛雲端來源備份_'+now.slice(0,10)+'.json',
+      JSON.stringify({format:'gal-ai-archive-pilot-incoming-backup',version:1,exportedAt:now,
+        cycleId:r.id,cycleTitle:r.title,
+        items:fresh.deletable.map(d=>({id:d.id,data:d.data()}))},null,2));
+    $('pilotPurgeStatus').textContent='已啟動 JSON 備份下載。正在更新正式輪迴（其餘內容保留）…';
+    const next=structuredClone(r);
+    next.pilotMessages=[];
+    next.updatedAt=now;
+    await uploadOneCycle(next);
+    await operation('readwrite',{type:'put',item:next});
+    await refresh();
+    // Delete ONLY pilot-only incoming documents, including pending sources, in
+    // bounded Firestore batches. A failure remains visible for safe retry.
+    const total=fresh.deletable.length;
+    const dbRoot=cloudDb.collection('galArchive').doc((await cloudSignedIn()).uid);
+    let removed=0;
+    for(let start=0;start<total;start+=300){
+      const batch=cloudDb.batch();
+      for(const doc of fresh.deletable.slice(start,start+300))batch.delete(dbRoot.collection('incoming').doc(doc.id));
+      await batch.commit();
+      removed+=Math.min(300,total-start);
+      $('pilotPurgeStatus').textContent='已清空本輪正式副駕駛聊天；正在刪除雲端來源 '+removed+'／'+total+'…';
+    }
+    pilotPurgePlan=null;
+    $('pilotPurgeModal').classList.add('hidden');
+    cloudStatus('本輪「'+r.title+'」的副駕駛聊天已清空（'+fresh.localCount+' 則），雲端獨立來源刪除 '+removed+' 筆；混合正史來源保留 '+fresh.mixed.length+' 筆。請保管兩份備份。');
+    notify('副駕駛聊天已清空；其他分頁未更動');
+  }catch(err){
+    $('pilotPurgeStatus').textContent='清理中斷：'+(err.message||String(err))+'。請核對備份與雲端狀態；可能已有部分資料更新，重新開啟清理即可檢查剩餘來源。';
+    cloudStatus('副駕駛聊天清理未完整完成：'+(err.message||String(err)),true);
+  }finally{if(pilotPurgePlan)b.disabled=false}
 };
 function archiveChatGroups(r){
   const groups=new Map();
