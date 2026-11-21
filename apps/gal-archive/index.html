@@ -1679,22 +1679,30 @@ function archiveEventStatusText(status){
   return status==='accepted'?'已接':status==='declined'?'未接':'待決定';
 }
 function archiveCompareEventPosition(a,b){
-  if(a.chatKey&&a.chatKey===b.chatKey&&Number.isInteger(a.messageOrder)&&Number.isInteger(b.messageOrder))
+  // Compare original real-world times first, NEVER a source time with a capture timestamp.
+  const ta=archiveReceivedMillis(a?.sourceCreatedAt),tb=archiveReceivedMillis(b?.sourceCreatedAt);
+  if(ta>0&&tb>0){
+    const ma=Math.floor(ta/60000),mb=Math.floor(tb/60000);
+    if(ma!==mb)return ma-mb;
+  }
+  if(a?.chatKey&&a.chatKey===b?.chatKey&&Number.isInteger(a.messageOrder)&&Number.isInteger(b.messageOrder))
     return a.messageOrder-b.messageOrder;
-  const ta=archiveChronologyTime(a),tb=archiveChronologyTime(b);
-  if(!ta.ms||!tb.ms)return null;
-  const minuteA=Math.floor(ta.ms/60000),minuteB=Math.floor(tb.ms/60000);
-  if(minuteA!==minuteB)return minuteA-minuteB;
-  if(ta.basis==='captured'&&tb.basis==='captured')return ta.ms-tb.ms;
-  return 0;
+  return ta>0&&tb>0?0:null;
 }
 function archiveStoryTimeline(record){
-  // Read-only combined view; keep canonical history intact.
+  // Read-only merged view. Confirmed events still belong to events[], not messages[].
   const rows=(record.messages||[]).map((entry,index)=>({entry,index,type:'message'}));
-  const accepted=(record.events||[]).map((entry,index)=>({entry,index,type:'event'}))
-    .filter(row=>row.entry.status==='accepted')
-    .sort((a,b)=>archiveCompareEventPosition(a.entry,b.entry)??a.index-b.index);
-  for(const row of accepted){
+  const events=(record.events||[]).map((entry,index)=>({entry,index,type:'event'})).filter(x=>x.entry.status==='accepted');
+  const messageIds=new Set(rows.map(x=>x.entry.id));
+  const pinned=[],automatic=[];
+  for(const row of events){
+    const slot=row.entry.storyPlacement;
+    if(slot&&typeof slot==='object'&&Object.prototype.hasOwnProperty.call(slot,'beforeId')&&
+      (slot.beforeId===null||(typeof slot.beforeId==='string'&&messageIds.has(slot.beforeId))))pinned.push(row);
+    else automatic.push(row);
+  }
+  automatic.sort((a,b)=>archiveCompareEventPosition(a.entry,b.entry)??a.index-b.index);
+  for(const row of automatic){
     let at=rows.length;
     for(let i=0;i<rows.length;i++){
       const cmp=archiveCompareEventPosition(row.entry,rows[i].entry);
@@ -1702,7 +1710,58 @@ function archiveStoryTimeline(record){
     }
     rows.splice(at,0,row);
   }
+  const groups=new Map();
+  for(const row of pinned){
+    const beforeId=row.entry.storyPlacement.beforeId;
+    if(!groups.has(beforeId))groups.set(beforeId,[]);
+    groups.get(beforeId).push(row);
+  }
+  for(const [beforeId,group] of groups){
+    group.sort((a,b)=>(Number.isInteger(a.entry.storyPlacement.sequence)?a.entry.storyPlacement.sequence:a.index)
+      -(Number.isInteger(b.entry.storyPlacement.sequence)?b.entry.storyPlacement.sequence:b.index)||a.index-b.index);
+    const at=beforeId===null?rows.length:rows.findIndex(x=>x.type==='message'&&x.entry.id===beforeId);
+    rows.splice(at<0?rows.length:at,0,...group);
+  }
   return rows;
+}
+function archivePinAcceptedEvents(record,timeline){
+  // Persist only manual display positioning; do not edit story, time, or status.
+  const byId=new Map((record.events||[]).filter(x=>x.status==='accepted').map(x=>[x.id,x]));
+  const counters=new Map();
+  for(let i=0;i<timeline.length;i++){
+    const row=timeline[i];if(row.type!=='event')continue;
+    const event=byId.get(row.entry.id);if(!event)continue;
+    const next=timeline.slice(i+1).find(x=>x.type==='message');
+    const beforeId=next?next.entry.id:null;
+    const sequence=counters.get(beforeId)||0;
+    event.storyPlacement={beforeId,sequence};
+    counters.set(beforeId,sequence+1);
+  }
+}
+function archiveMoveAcceptedEvent(record,position,direction){
+  const updated=structuredClone(record),timeline=archiveStoryTimeline(updated);
+  if(!Number.isInteger(position)||![-1,1].includes(direction)||timeline[position]?.type!=='event'
+    ||position+direction<0||position+direction>=timeline.length)return null;
+  const id=timeline[position].entry.id,entry=timeline.splice(position,1)[0];
+  timeline.splice(position+direction,0,entry);
+  archivePinAcceptedEvents(updated,timeline);
+  return {record:updated,id,position:position+direction};
+}
+function archivePreviewCombinedStorySort(record){
+  const before=archiveStoryTimeline(record),updated=structuredClone(record);
+  const sorted=sortArchivedPilotMessages(updated.messages||[]);
+  updated.messages=sorted.items;
+  let resetPlacements=0;
+  for(const ev of updated.events||[])if(ev.status==='accepted'&&ev.storyPlacement){
+    delete ev.storyPlacement;resetPlacements++;
+  }
+  archiveSortTimedSection(updated,'events');
+  const after=archiveStoryTimeline(updated);
+  const oldOrder=before.map(x=>x.type+':'+x.entry.id),newOrder=after.map(x=>x.type+':'+x.entry.id);
+  const changed=newOrder.filter((id,i)=>id!==oldOrder[i]).length;
+  const eventPositions=new Map(before.flatMap((x,i)=>x.type==='event'?[[x.entry.id,i]]:[]));
+  const movedEvents=after.filter((x,i)=>x.type==='event'&&eventPositions.get(x.entry.id)!==i).length;
+  return {updated,changed,movedEvents,resetPlacements,messageMoved:sorted.changed,manualTimed:sorted.manualTimed};
 }
 
 function classifyArchiveChat(item,eventId){
