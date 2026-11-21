@@ -2998,13 +2998,14 @@ $('transferApply').onclick=async()=>{
     // Backup the two complete cycles AND the raw source documents before any writes.
     stage='準備備份';
     downloadText('輪迴檔案館_精準轉移備份_'+timestamp.replace(/[:.]/g,'-')+'.json',
-      JSON.stringify({format:'gal-archive-cross-cycle-transfer-backup',version:1,
-        exportedAt:timestamp,sourceCycleId:from.id,destinationCycleId:to.id,
-        selectedGroups:groups.map(g=>({key:g.key,count:g.entries.length,
-          messageIds:g.entries.map(x=>x.message.id)})),sourceCycle:from,destinationCycle:to,
-        rawSources:sourceRaw.map(x=>({path:x.path,data:x.data})),
-        sourceIdRemap:Object.fromEntries(idRemap),missingRawSourceIds:missing},null,2));
-    $('transferPreview').textContent='備份已開始下載。已核對並改算正確目的輪迴 ID 的原始來源 '+toStage.length
+      JSON.stringify({format:'gal-ai-archive',version:5.23,
+        exportedAt:timestamp,worlds:Object.values(worldDocs),cycles:[from,to],
+        transferAudit:{sourceCycleId:from.id,destinationCycleId:to.id,
+          selectedGroups:groups.map(g=>({key:g.key,count:g.entries.length,
+            messageIds:g.entries.map(x=>x.message.id)})),
+          rawSources:sourceRaw.map(x=>({path:x.path,data:x.data})),
+          sourceIdRemap:Object.fromEntries(idRemap),missingRawSourceIds:missing}},null,2));
+    $('transferPreview').textContent='兩輪輪迴資料備份已開始下載（可在網站「匯入 JSON」恢復正式內容）。已核對並改算正確目的輪迴 ID 的原始來源 '+toStage.length
       +' 筆，缺失 '+missing.length+' 筆（缺失者只轉移正式記錄，其舊來源 ID 無法保證重掃去重）。請勿關閉頁面。';
     // Stage raw copies first, and verify before removing the source.
     stage='準備目的地 incoming';
