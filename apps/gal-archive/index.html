@@ -53,7 +53,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">皮卡藍框訊息含「事件到達」或 whif-icon.svg 時優先進入「事件簿」，預設待決定；已接才依來源時間顯示於完整對話。其餘行首「我：／他：」拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆進副駕駛聊天。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
 <p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
@@ -657,7 +657,7 @@ async function deleteArchiveCycleWithSources(record){
   // A source can have been transferred to another surviving cycle. Deleting
   // the original cycle must never erase material referenced elsewhere.
   const shared=new Set(records.filter(x=>x.id!==record.id).flatMap(r=>
-    ['messages','pilotMessages','quizLogs','changeLogs'].flatMap(section=>
+    ['messages','events','pilotMessages','quizLogs','changeLogs'].flatMap(section=>
       (r[section]||[]).map(m=>m.sourceEventId).filter(Boolean))));
   const removable=inbox.docs.filter(d=>!shared.has(d.id));
   const protectedSources=inbox.docs.filter(d=>shared.has(d.id));
@@ -781,7 +781,7 @@ $('newWorld').onclick=async()=>{
   world=id;selected=null;tab='chat';await refresh();notify('已新增世界觀，可繼續建立任意輪迴');
 };
 $('editWorld').onclick=()=>renderWorldEditor();$('closeModal').onclick=()=> $('modal').classList.add('hidden');$('modal').addEventListener('click',e=>{if(e.target.id==='modal')$('modal').classList.add('hidden')});
-$('saveCycle').onclick=async()=>{let title=$('fieldTitle').value.trim();if(!title)return notify('請填寫輪迴名稱');let r=editCycleId?current():{id:uid(),world,opening:'',lore:'',notes:'',noteSections:[],personality:'',easterEggs:'',messages:[],pilotMessages:[],quizLogs:[],changeLogs:[],managers:{quiz:'',changes:''},createdAt:new Date().toISOString()};if(!r)return;Object.assign(r,{title,hero:$('fieldHero').value.trim(),partner:$('fieldPartner').value.trim(),manager:parseCycleManagers($('fieldManager').value).join('、'),managerNames:parseCycleManagers($('fieldManager').value)});selected=r.id;await put(r);$('modal').classList.add('hidden');notify('輪迴已儲存')};
+$('saveCycle').onclick=async()=>{let title=$('fieldTitle').value.trim();if(!title)return notify('請填寫輪迴名稱');let r=editCycleId?current():{id:uid(),world,opening:'',lore:'',notes:'',noteSections:[],personality:'',easterEggs:'',messages:[],events:[],pilotMessages:[],quizLogs:[],changeLogs:[],managers:{quiz:'',changes:''},createdAt:new Date().toISOString()};if(!r)return;Object.assign(r,{title,hero:$('fieldHero').value.trim(),partner:$('fieldPartner').value.trim(),manager:parseCycleManagers($('fieldManager').value).join('、'),managerNames:parseCycleManagers($('fieldManager').value)});selected=r.id;await put(r);$('modal').classList.add('hidden');notify('輪迴已儲存')};
 $('content').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;if(b.id==='backFromWorld'){renderContent();return}if(b.id==='saveWorld'){
   const item={...(worldDocs[world]||{}),id:world,name:WORLDS.find(w=>w.id===world)?.name||world,text:$('worldEditor').value,updatedAt:new Date().toISOString()};
   await operation('readwrite',{type:'put',item},WORLDSTORE);worldDocs[world]=item;notify('共用世界觀已儲存');return
@@ -929,7 +929,7 @@ if(b.dataset.speaker){
   }finally{b.disabled=false;b.textContent='確認加入'}
   return
 }if(b.dataset.smartsplit!==undefined||b.dataset.smartmerge!==undefined||b.dataset.smartdelete!==undefined||b.dataset.smartup!==undefined||b.dataset.smartdown!==undefined){syncSmartDraft();const action=b.dataset.smartsplit!==undefined?'split':b.dataset.smartmerge!==undefined?'merge':b.dataset.smartdelete!==undefined?'delete':b.dataset.smartup!==undefined?'up':'down';const i=Number(b.dataset.smartsplit??b.dataset.smartmerge??b.dataset.smartdelete??b.dataset.smartup??b.dataset.smartdown);if(!smartDraft[i])return;if(action==='split'){const textarea=$('bulkItems').querySelector(`textarea[data-smarttext="${i}"]`);let pos=textarea?.selectionStart??0;if(pos<=0||pos>=smartDraft[i].text.length){notify('請先在這則文字裡點選要拆開的位置，再按拆分');return}const before=smartDraft[i].text.slice(0,pos).trim(),after=smartDraft[i].text.slice(pos).trim();if(!before||!after)return notify('拆分位置兩側都需要內容');smartDraft[i].text=before;smartDraft.splice(i+1,0,{id:uid(),role:smartDraft[i].role==='me'?'ai':'me',text:after,confidence:'low',why:'人工拆分，請檢查左右身份'})}else if(action==='merge'&&i>0){smartDraft[i-1].text+='\n'+smartDraft[i].text;smartDraft.splice(i,1)}else if(action==='delete')smartDraft.splice(i,1);else if(action==='up'&&i>0)[smartDraft[i-1],smartDraft[i]]=[smartDraft[i],smartDraft[i-1]];else if(action==='down'&&i<smartDraft.length-1)[smartDraft[i+1],smartDraft[i]]=[smartDraft[i],smartDraft[i+1]];showSmartDraft();return}let i=Number(b.dataset.edit??b.dataset.time??b.dataset.remove??b.dataset.move);if(!Number.isInteger(i)||i<0||i>=r.messages.length)return;if(b.dataset.edit!==undefined||b.dataset.time!==undefined){beginArchiveInlineEdit(b,'messages',r);return}if(b.dataset.remove!==undefined){if(!confirm('確定刪除這一則對話？'))return;r.messages.splice(i,1);await put(r);return}if(b.dataset.move!==undefined){let j=i+Number(b.dataset.dir);if(j<0||j>=r.messages.length)return;[r.messages[i],r.messages[j]]=[r.messages[j],r.messages[i]];await put(r);return}});
-$('content').addEventListener('change',e=>{if((e.target.id==='includeMessages'||e.target.id==='chunkSize')&&current())renderCopilotChunks(current())});$('exportBtn').onclick=()=>{let pack={format:'gal-ai-archive',version:7,exportedAt:new Date().toISOString(),worlds:Object.values(worldDocs),cycles:records};let blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='輪迴檔案館備份_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify(`已匯出 ${records.length} 輪`) };// Import should never silently skip valid older backups or leave the UI on an empty world.
+$('content').addEventListener('change',e=>{if((e.target.id==='includeMessages'||e.target.id==='chunkSize')&&current())renderCopilotChunks(current())});$('exportBtn').onclick=()=>{let pack={format:'gal-ai-archive',version:8,exportedAt:new Date().toISOString(),worlds:Object.values(worldDocs),cycles:records};let blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='輪迴檔案館備份_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify(`已匯出 ${records.length} 輪`) };// Import should never silently skip valid older backups or leave the UI on an empty world.
 function normalizeBackupCycle(source){
   if(!source||typeof source!=='object'||Array.isArray(source))return {error:'輪迴不是物件'};
   const item={...source};
@@ -948,6 +948,12 @@ function normalizeBackupCycle(source){
         text:typeof n.text==='string'?n.text:''}));
   }
   // V1/V2 data may not have the V3 fields. They must be retained, not rejected.
+  if(item.events==null)item.events=[];
+  if(!Array.isArray(item.events))return {error:'events 不是事件清單'};
+  item.events=item.events.filter(ev=>ev&&typeof ev==='object'&&typeof ev.text==='string')
+    .map(ev=>({...ev,id:typeof ev.id==='string'&&ev.id?ev.id:uid(),role:'me',
+      status:['pending','accepted','declined'].includes(ev.status)?ev.status:'pending',
+      title:typeof ev.title==='string'&&ev.title.trim()?ev.title:archiveEventTitle(ev.text)}));
   for(const field of ['messages','pilotMessages','quizLogs','changeLogs']){
     if(item[field]==null)item[field]=[];
     if(!Array.isArray(item[field]))return {error:field+' 不是訊息清單'};
@@ -1227,10 +1233,49 @@ function cleanArchiveMoreTail(text){
 }
 function hasArchiveMoreTail(text){return typeof text==='string'&&archiveMoreTail.test(text)}
 function hasArchiveInterfaceTail(text){return hasArchiveMoreTail(text)||(typeof text==='string'&&archiveLessTail.test(text))}
+
+function archiveIsEventNotification(item){
+  // Only player-authored ChatGPT blue bubbles can be event notifications.
+  return item?.role==='me'&&typeof item.text==='string'&&(/事件到達/.test(item.text)||/whif-icon\.svg/i.test(item.text));
+}
+function archiveEventTitle(content){
+  return (String(content||'').split(/\r?\n/).map(x=>x.trim()).find(Boolean)||'事件到達').slice(0,100);
+}
+function archiveEventStatusText(status){
+  return status==='accepted'?'已接':status==='declined'?'未接':'待決定';
+}
+function archiveCompareEventPosition(a,b){
+  if(a.chatKey&&a.chatKey===b.chatKey&&Number.isInteger(a.messageOrder)&&Number.isInteger(b.messageOrder))
+    return a.messageOrder-b.messageOrder;
+  const ta=archiveChronologyTime(a),tb=archiveChronologyTime(b);
+  if(!ta.ms||!tb.ms)return null;
+  const minuteA=Math.floor(ta.ms/60000),minuteB=Math.floor(tb.ms/60000);
+  if(minuteA!==minuteB)return minuteA-minuteB;
+  if(ta.basis==='captured'&&tb.basis==='captured')return ta.ms-tb.ms;
+  return 0;
+}
+function archiveStoryTimeline(record){
+  // Read-only combined view; keep canonical history intact.
+  const rows=(record.messages||[]).map((entry,index)=>({entry,index,type:'message'}));
+  const accepted=(record.events||[]).map((entry,index)=>({entry,index,type:'event'}))
+    .filter(row=>row.entry.status==='accepted')
+    .sort((a,b)=>archiveCompareEventPosition(a.entry,b.entry)??a.index-b.index);
+  for(const row of accepted){
+    let at=rows.length;
+    for(let i=0;i<rows.length;i++){
+      const cmp=archiveCompareEventPosition(row.entry,rows[i].entry);
+      if(cmp!==null&&cmp<0){at=i;break}
+    }
+    rows.splice(at,0,row);
+  }
+  return rows;
+}
+
 function classifyArchiveChat(item,eventId){
   const common={sourceEventId:eventId,manager:item.manager||'',receivedAt:archiveReceivedMillis(item.receivedAt),sourceCreatedAt:item.sourceCreatedAt||null,sourceTimeOrigin:item.sourceTimeOrigin||null,sourceTimePrecision:item.sourceTimePrecision||null,capturedAt:item.capturedAt||null,chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null};
   const pilot=(role,text,i=0)=>({target:'pilotMessages',role,text,sourcePartIndex:i,...common});
   if(item.role!=='me')return [pilot('ai',item.text)];
+  if(archiveIsEventNotification(item))return [{target:'events',role:'me',text:item.text,title:archiveEventTitle(item.text),status:'pending',sourcePartIndex:0,...common}];
   const lines=item.text.replace(/\r\n?/g,'\n').split('\n');
   let current=null,inFence=false;const parts=[];
   const finish=()=>{if(current&&current.text.trim())parts.push({...current,text:current.text.trim()});current=null};
@@ -1248,7 +1293,7 @@ function classifyArchiveChat(item,eventId){
     :pilot('me',p.text,i));
 }
 function hasArchivedSource(record,eventId,index){
-  return ['messages','pilotMessages','quizLogs','changeLogs'].some(key=>
+  return ['messages','events','pilotMessages','quizLogs','changeLogs'].some(key=>
     (record[key]||[]).some(x=>x.sourceEventId===eventId&&(x.sourcePartIndex??0)===index));
 }
 
@@ -1632,7 +1677,7 @@ async function receiveAutomaticEntries(){
     return;
   }
   const docs=[...snap.docs].sort(orderIncomingSnapshot).slice(0,100);
-  const groups=new Map();let invalid=0,truncated=0,storyCount=0,pilotCount=0;
+  const groups=new Map();let invalid=0,truncated=0,storyCount=0,pilotCount=0,eventCount=0;
   for(const doc of docs){
     const item=doc.data();
     const r=groups.get(item.cycleId)?.record||records.find(x=>x.id===item.cycleId);
@@ -1658,18 +1703,21 @@ async function receiveAutomaticEntries(){
       if(hasArchivedSource(record,entry.sourceEventId,entry.sourcePartIndex))continue;
       (record[entry.target]??=[]).push({
         id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
+        ...(entry.target==='events'?{title:entry.title,status:'pending'}:{}),
         sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,
         receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,sourceTimeOrigin:entry.sourceTimeOrigin||null,sourceTimePrecision:entry.sourceTimePrecision||null,capturedAt:entry.capturedAt||null,chatKey:entry.chatKey||'',messageOrder:entry.messageOrder
       });
       group.added++;
       if(entry.target==='messages')storyCount++;
       if(entry.target==='pilotMessages')pilotCount++;
+      if(entry.target==='events')eventCount++;
     }
     group.refs.push(doc.ref);
   }
   for(const group of groups.values()){
     group.record.pilotMessages=sortArchivedPilotMessages(group.record.pilotMessages||[]).items;
     group.record.messages=sortArchivedPilotMessages(group.record.messages||[]).items;
+    group.record.events=sortArchivedPilotMessages(group.record.events||[]).items;
   }
   const unmatchedCycles=[...new Set(docs.map(d=>d.data().cycleId).filter(id=>!records.some(r=>r.id===id)))];
   if(unmatchedCycles.length){
@@ -1703,7 +1751,7 @@ async function receiveAutomaticEntries(){
     return w+'／'+g.record.title+'：'+g.refs.length+' 筆';
   }).join('\\n');
   if(!confirm('準備收取 '+valid+' 筆雲端來源。\\n\\n實際目的輪迴：\\n'+targetSummary
-    +'\\n\\nGal AI 劇情新增 '+storyCount+' 則，副駕駛聊天新增 '+pilotCount+' 則。'+timeWarning
+    +'\\n\\nGal AI 劇情新增 '+storyCount+' 則，副駕駛聊天新增 '+pilotCount+' 則，事件簿 '+eventCount+' 件。'+timeWarning
     +(invalid?'\\n另有 '+invalid+' 筆格式不符或無法收取（其中 '+truncated+' 筆仍帶「顯示較多」，請重新展開擷取）。':'')
     +'\\n\\n請先確認目標輪迴正確，並備份重要正史。確定開始？'))return;
   let accepted=0;
@@ -1720,7 +1768,7 @@ async function receiveAutomaticEntries(){
     }
   }
   await refresh();
-  cloudStatus('收取完成：'+accepted+' 筆來源；新增劇情 '+storyCount+' 則、副駕駛聊天 '+pilotCount+' 則。'
+  cloudStatus('收取完成：'+accepted+' 筆來源；新增劇情 '+storyCount+' 則、副駕駛聊天 '+pilotCount+' 則、事件簿 '+eventCount+' 件。'
     +(invalid?'另有 '+invalid+' 筆不符合輪迴或格式，仍在待收取區。':'')
     +(snap.size>docs.length?'還有 '+(snap.size-docs.length)+' 筆待收取，可再按一次。':''));
 }
@@ -1750,7 +1798,7 @@ async function repairAutoImportedChats(){
         return compareArchiveChronology({...a,...x},{...b,...y})||a.legacyPosition-b.legacyPosition;
       });
     r.messages=existing.filter(m=>!(m.sourceEventId&&m.sourcePartIndex===undefined));
-    r.pilotMessages??=[];
+    r.pilotMessages??=[];r.events??=[];
     for(const m of old){
       const meta=source.get(m.sourceEventId)||{};
       const parts=classifyArchiveChat({
@@ -1763,7 +1811,7 @@ async function repairAutoImportedChats(){
         r[entry.target].push({id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
           sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,sourceTimeOrigin:entry.sourceTimeOrigin||null,sourceTimePrecision:entry.sourceTimePrecision||null,capturedAt:entry.capturedAt||null,
           chatKey:entry.chatKey||'',messageOrder:entry.messageOrder});
-        if(entry.target==='messages')storyAdded++;else pilotAdded++;
+        if(entry.target==='messages')storyAdded++;else if(entry.target==='pilotMessages')pilotAdded++;
       }
     }
     r.messages=sortArchivedPilotMessages(r.messages||[]).items;
@@ -1780,7 +1828,7 @@ async function repairAutoImportedChats(){
 async function reorderPilotMessagesFromCloud(onlyCurrent=false){
   const user=await cloudSignedIn();
   await refresh();
-  const sections=['pilotMessages','messages'];
+  const sections=['pilotMessages','messages','events'];
   const cycleId=onlyCurrent?current()?.id:null;
   if(onlyCurrent&&!cycleId)throw Error('請先選擇要校正的輪迴');
   const targets=records.filter(r=>(!onlyCurrent||r.id===cycleId)
@@ -1868,7 +1916,7 @@ $('cloudInbox').onclick=async()=>{
   catch(e){cloudStatus('收取失敗：'+e.message+'。原始待收取紀錄會保留。',true)}
   finally{b.disabled=false}
 };
-const archiveSections=['messages','pilotMessages','quizLogs','changeLogs'];
+const archiveSections=['messages','events','pilotMessages','quizLogs','changeLogs'];
 let moreCleanPreview=[];
 function findMoreCleanup(scope){
   const list=scope==='all'?records:[current()].filter(Boolean);
