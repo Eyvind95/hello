@@ -57,15 +57,15 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .archive-audit-issues{display:grid;gap:6px;max-height:220px;overflow:auto;padding:10px;margin-bottom:10px;background:#20253e;border:1px solid #71526a;border-radius:11px}
 .archive-audit-issues button{display:block;width:100%;text-align:left;color:#ffe7ee;background:#39283e;border:1px solid #79526e;border-radius:8px;padding:8px;overflow-wrap:anywhere}
 .archive-audit-issues button:hover{background:#543149}
-.archive-chat-grid{display:grid;grid-template-columns:minmax(0,1fr) 16px;gap:7px}
-.archive-chat-grid .chat{position:relative;min-width:0}
-.archive-audit-track{position:relative;background:#1a2946;border:1px solid #50607e;border-radius:10px;cursor:pointer;min-height:60px}
+.archive-chat-grid{display:flex;align-items:stretch;gap:7px}
+.archive-chat-grid .chat{position:relative;min-width:0;flex:1}
+.archive-audit-track{position:relative;flex:0 0 16px;background:#1a2946;border:1px solid #50607e;border-radius:10px;cursor:pointer;min-height:60px}
 .archive-audit-viewport{position:absolute;left:1px;right:1px;background:#8ea5dc40;border:1px solid #849aca;border-radius:8px;pointer-events:none;z-index:1;min-height:14px}
 .archive-audit-mark{position:absolute;left:0;right:0;width:100%;height:4px;background:#ff526a;border:0;padding:0;border-radius:0;box-shadow:0 0 6px #ff526a;transform:translateY(-50%);z-index:2}
 .archive-audit-mark:hover,.archive-audit-mark:focus-visible{height:8px;background:#ffb1bd;outline:0}
 .archive-audit-fault .bubble{border-color:#e97e91}
 .archive-audit-flash .bubble{outline:3px solid #ff506a;outline-offset:2px}
-@media(max-width:760px){.archive-chat-grid{grid-template-columns:minmax(0,1fr) 15px;gap:4px}}
+@media(max-width:760px){.archive-chat-grid{gap:4px}.archive-audit-track{flex-basis:15px}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
