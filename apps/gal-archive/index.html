@@ -154,12 +154,26 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
   </div>
 </div>
 <div class="modalback hidden" id="transferModal" role="dialog" aria-modal="true" aria-labelledby="transferTitle">
-  <div class="modal"><div class="sectionhead"><h2 id="transferTitle">轉移誤收的 ChatGPT 來源對話</h2><button class="btn small" id="transferClose">關閉</button></div>
-  <p class="note">僅轉移已收取、具來源對話識別碼的自動記錄；選擇來源聊天與目標輪迴。原始訊息、時間、來源 ID 不變；會同步轉移 Firebase 原始來源。請先匯出 JSON 備份並停止舊輪迴監看。</p>
-  <label>來源聊天</label><select id="transferSource" style="width:100%"></select>
-  <label>目標輪迴</label><select id="transferDestination" style="width:100%"></select>
-  <p id="transferPreview" class="note">請檢查來源及目標</p>
-  <div class="actions topsp"><button class="btn primary" id="transferApply">備份後轉移</button></div>
+  <div class="modal"><div class="sectionhead"><h2 id="transferTitle">↗ 精準轉移誤收的輪迴資料</h2><button class="btn small" id="transferClose">關閉</button></div>
+  <p class="note">從目前輪迴挑選真正屬於其他輪迴的訊息，<strong>不會再按整個 ChatGPT 對話 ID 一次搬光</strong>。相同原始來源拆出的各個片段會一起轉移。會保留原文、圖片、角色、原始時間、接取狀態；原始 Firebase 來源需核對後才會改綁。請先停止 Chrome 擴充功能監看。</p>
+  <label for="transferDestination">目的輪迴（務必檢查）</label><select id="transferDestination" style="width:100%"></select>
+  <div class="formrow">
+    <div><label for="transferSection">篩選分頁</label><select id="transferSection">
+      <option value="all">所有分頁（含手動紀錄）</option><option value="messages">完整對話</option><option value="events">事件簿</option><option value="pilotMessages">副駕駛聊天</option><option value="quizLogs">10題</option><option value="changeLogs">與皮卡修改紀錄</option><option value="manual">只看手動訊息</option><option value="automatic">只看自動收取</option>
+    </select></div>
+    <div><label for="transferQuery">搜尋訊息內容／來源對話</label><input id="transferQuery" placeholder="例如：暗玄、某段原文、來源 ID" autocomplete="off"></div>
+  </div>
+  <div class="actions topsp"><button class="btn small" id="transferSelectVisible">勾選目前篩選結果</button><button class="btn small" id="transferClearSelected">清空勾選</button></div>
+  <div class="formrow">
+    <div><label for="transferRangeFrom">從第幾組（可選）</label><input id="transferRangeFrom" type="number" min="1" placeholder="起點組號"></div>
+    <div><label for="transferRangeTo">到第幾組（可選）</label><input id="transferRangeTo" type="number" min="1" placeholder="終點組號"></div>
+  </div>
+  <div class="actions"><button class="btn small" id="transferSelectRange">勾選指定連續組號</button></div>
+  <p class="note">組號只供這次勾選範圍，<strong>真正轉移以穩定訊息 ID／來源 ID 核對</strong>，不會把組號寫進正史。來源相同的一則原始訊息若拆成多段，會視為一組，防止只搬一半。</p>
+  <div id="transferList" style="max-height:37vh;overflow:auto;border:1px solid #53678b;border-radius:10px;padding:8px;margin-top:8px"></div>
+  <p id="transferPreview" class="note" style="white-space:pre-wrap">尚未勾選；不會修改任何資料。</p>
+  <div class="actions topsp"><button class="btn primary" id="transferApply" disabled>下載兩輪備份並轉移所選訊息</button></div>
+  <p class="note" style="color:#ffcb90">⚠ 轉移會同步修改目前輪迴、目的輪迴與能核對的 Firebase 原始來源。先預覽並備份，不會單憑時間、副駕駛名稱或同一個 chatKey 猜歸屬。雲端版本有衝突會中止操作。</p>
 </div></div>
 <script>
 'use strict';
