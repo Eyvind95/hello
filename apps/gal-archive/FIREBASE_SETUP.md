@@ -78,3 +78,12 @@ match /galArchive/{uid}/{path=**} {
 另外新版 galArchive 的雲端輪迴始終優先於舊 users 路徑中的同 ID 輪迴，避免舊備份因較晚的 updatedAt 再次覆蓋新版。
 
 **還原注意：**轉移前下載的備份可在網站「匯入 JSON」回復兩輪正式資料；Firebase 原始 incoming 收在 transferAudit.rawSources，需人工核對，不能靠一般匯入直接重建。若轉移中斷，勿連續重試，先檢查兩輪與來源狀態。
+
+## V5.25：歷史上錯綁輪迴的 incoming ID 修復
+
+- 轉移前仍以目前來源輪迴的 SHA-256（UID / cycleId / sourceId / entryIndex）確認 ID；若不符，再逐一核對**本機已存在的輪迴 ID**及來源記錄中的歷史來源輪迴 ID，而不是直接拒絕。
+- 若歷史來源輪迴已刪除、無從重建舊雜湊，只有符合官方 Chrome 擴充功能格式的 **單筆聊天來源**（`chrome-` + 48 位十六進位、`section=chat`、`role=me/ai`、`schemaVersion=1/2`）才依固定 `entryIndex=0` 重算目的輪迴 ID；其他來源仍停止，不會猜測。
+- 原始 incoming 必須位於目前來源輪迴的路徑或舊平面收件匣，且 `cycleId` 必須與來源輪迴一致；同 ID 多個來源必須內容一致；目的輪迴若同 ID 但原文、角色或 `sourceId` 不同，仍拒絕轉移。
+- 完整備份的 `transferAudit.sourceHashRepairs` 會記錄修復原因、舊／新來源 ID、索引及可核對的歷史輪迴 ID；成功彈窗顯示修復筆數。新 incoming 會標示 `originalIncomingEventId` 和 `transferHashValidation`，方便查核。
+- 操作仍由使用者勾選、確認目標輪迴與輸入輪迴名稱，**不會自動猜測暗玄／暗夢歸屬**。實際 Firebase 資料未經遠端驗收，請保留 JSON 備份，先以少量明確的誤收來源測試，核對兩輪再大量搬移。
+- 本次只改網站前端及 PWA 快取版號。**不需要重新部署 Cloud Functions**。
