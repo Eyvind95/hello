@@ -1945,6 +1945,7 @@ async function repairAutoImportedChats(){
       for(const entry of parts){
         if(hasArchivedSource(r,entry.sourceEventId,entry.sourcePartIndex))continue;
         r[entry.target].push({id:uid(),role:entry.role,manager:entry.manager,text:entry.text,
+          ...(entry.target==='events'?{title:entry.title,status:'pending'}:{}),
           sourceEventId:entry.sourceEventId,sourcePartIndex:entry.sourcePartIndex,receivedAt:entry.receivedAt,sourceCreatedAt:entry.sourceCreatedAt||null,sourceTimeOrigin:entry.sourceTimeOrigin||null,sourceTimePrecision:entry.sourceTimePrecision||null,capturedAt:entry.capturedAt||null,
           chatKey:entry.chatKey||'',messageOrder:entry.messageOrder});
         if(entry.target==='messages')storyAdded++;else if(entry.target==='pilotMessages')pilotAdded++;
