@@ -1,41 +1,64 @@
-# 輪迴檔案館 V4.0：Firebase 設定
+# 輪迴檔案館 V5.7：Firebase 分層來源與安全遷移
 
-網站：`https://eyvind95.github.io/hello/apps/gal-archive/index.html`
+網站：https://eyvind95.github.io/hello/apps/gal-archive/index.html
 
-## 已使用共用專案
-
-檔案館和記帳本、每日任務、計時器使用相同 Firebase 專案：`eyvind95-182f0`，且直接使用 Google 登入；**不需要再貼 Firebase 設定 JSON**。
-
-## 必要設定
-
-1. 到 [Firebase 主控台](https://console.firebase.google.com/) 開啟上述專案的 **Cloud Firestore > 規則**。
-2. 確保 Authentication 已啟用 Google 並授權 `eyvind95.github.io`。
-3. **將 `firestore.rules` 中的 `match /galArchive/{uid}/{path=**}` 區塊合併到目前安全規則的 `match /databases/{database}/documents` 內。** 不要覆蓋其他網站的規則。
-4. 按「發布」後，開啟輪迴檔案館 V4.0 →「☁ 雲端同步」→ Google 登入。
-5. **先匯出 JSON 備份，再按「↑ 上傳本機資料」。** 登入本身不會建立集合／上傳資料。
-6. 完成時會顯示「上傳完成」及世界觀、輪迴數量；Firestore 根目錄應可看見 `galArchive` 集合。可打開 `galArchive / 你的登入 UID` 查看 `worlds` 與 `cycles` 子集合。
-7. 手機上使用相同 Google 帳號登入，按「↓ 從雲端合併下載」。
-
-## V4.0 儲存結構
+## 儲存架構
 
 ```text
-galArchive (根集合)
-└── {登入 UID} (含 app、schemaVersion、worldCount、cycleCount 等欄位的文件)
-    ├── worlds
-    │   └── {worldId}：共用世界觀
-    └── cycles
-        └── {cycleId}：輪迴索引
-            └── parts
-                └── 000000 ...：對話／設定的分段內容
+galArchive/{uid}
+├── worlds/{worldId}                      世界觀
+├── cycles/{cycleId}                      輪迴索引、管理人名單
+│   ├── parts/{partId}                    正式劇情／副駕駛聊天等資料片段
+│   └── incoming/{sourceEventId}          ★ 這個輪迴專用的自動收取來源
+├── integration/autoWriter               自動寫入授權（雜湊金鑰）
+└── incoming/{sourceEventId}             舊版平面來源：僅相容讀取／人工遷移
 ```
 
-舊版本使用 `users/{uid}/worlds` 與 `users/{uid}/cycles`，V4.0 的「雲端合併下載」仍會讀取這些資料以避免舊資料遺失；它**不會刪除舊路徑**。若要把舊資料遷移至新集合，請先合併下載後再手動上傳一次，並確認新集合內容正確，才考慮清理舊資料。
+- V5.7 起，`archiveIngest` **只將新來源寫入指定 `cycleId` 下的 incoming**，不再往使用者共用的平面 incoming 新增資料。
+- 網站「分類收取」同時讀取新版與舊版來源，遇到相同文件 ID 優先採用新版；對刪除／清理則核對兩個位置，避免平面舊副本遺漏。
+- `manager` 只是副駕駛名稱，**不是輪迴識別碼**；真正決定目標的是 `cycleId`。不同輪迴可使用同一位副駕駛。
+- 一個 ChatGPT 對話可以在不同時段切換輪迴綁定，單純相同 `chatKey` 不足以確定輪迴歸屬。擴充功能應依當時綁定的 `cycleId` 上傳。
+- 更改檔案館網頁本身**不會**部署 Firebase Functions；兩部分需要分別更新。
 
-## 注意
+## 先部署 Firebase Functions
 
-- 登入≠上傳；Firestore 不會只因網站部署 GitHub 或 Google 登入成功就自動建立集合。
-- 根文件現在會在「上傳本機資料」成功後建立，因此能在 Firestore 主控台直接找到 `galArchive`。
-- 讀取舊路徑的權限由你先前已發布的 `/users/{uid}/{document=**}` 規則負責。
-- 網站程式是公開的，**不會將故事 JSON 寫到 GitHub**。資料保護靠 Firebase Authentication 與 Firestore 安全規則。
-- 同 ID 的雲端合併仍按 updatedAt 比較，請定期匯出 JSON 備份。
-- 雲端同步是手動的，避免在空資料狀態覆蓋正史。
+在 Windows 命令提示字元（CMD）進入含有 `firebase.json` 的 `apps\gal-archive` 目錄，再執行：
+
+```bat
+firebase deploy --only functions:gal-archive --project eyvind95-182f0
+```
+
+以出現 `Successful update operation` 與 `Deploy complete!` 為成功依據。不要使用 `--only functions:archiveIngest`，因為此專案採用名為 `gal-archive` 的 codebase。部署前請確保本機的 `functions/index.js` **已同步至 GitHub 最新版**，否則會重新部署舊程式！
+
+## 舊資料處理（需人工核對）
+
+1. **停止 Chrome 擴充功能監看**。先從檔案館匯出完整輪迴 JSON 備份。
+2. 打開「☁ 雲端同步」→「📦 舊來源分層遷移／核對」。
+3. 建議先選「只處理目前輪迴」，按「掃描舊來源／預覽」；檢查所列內容確實屬於這個輪迴。
+4. 如果來源本來就綁錯，先到該輪迴使用「↗ 轉移誤收的來源對話」，並重新核對。**不要只靠副駕駛名稱或時間盲目分類。**
+5. 第一次遷移請保持「刪除舊平面副本」**不勾**，先確認新路徑、件數及內容一致。
+6. 再次掃描核對，若要移除舊平面來源，可勾選「複製並驗證成功後，刪除舊平面 incoming 的對應副本」，備份後輸入第二次確認詞。
+7. 不符合目標輪迴、副駕駛名單、正式紀錄引用或雲端輪迴索引的資料會暫停遷移、保留原始資料，等待手動調查。
+
+遷移會建立新路徑、驗證已保存，再決定是否刪除舊文件；**不會自動修改任何劇情／副駕駛聊天文字**，也不會自動恢復曾經漏抓的訊息。刪除前請自行確認下載的備份完整且可讀。
+
+## Firestore 安全規則
+
+已提供 `apps/gal-archive/firestore.rules`。在 Firebase 主控台的既有 Firestore 規則內，確認有：
+
+```js
+match /galArchive/{uid}/{path=**} {
+  allow read, write: if request.auth != null && request.auth.uid == uid;
+}
+```
+
+規則版本為 `rules_version = '2'` 時，這個遞迴比對同時涵蓋 `cycles/{cycleId}/incoming/{id}`。**請只合併上述區塊，不要用這份範例取代其他 app 的既有規則。**
+
+注意：Firebase Admin SDK 寫入由 Functions 授權金鑰、輪迴存在與副駕駛名單檢查保護，不依賴上述前端規則。
+
+## 驗收
+
+- 新增一組全新測試輪迴並在 Chrome 擴充功能正確綁定；收到一則皮卡／GPT 訊息後，Firestore 中應出現 `galArchive/{uid}/cycles/{cycleId}/incoming/{id}`，而不是 `galArchive/{uid}/incoming/{id}`。
+- 選「分類收取自動紀錄」，確認只進入綁定輪迴。
+- 在另一個輪迴重複一次，核對兩個 `incoming` 子集合互相獨立。
+- 舊資料維持可檢索，刪除輪迴前依介面提示備份；若發現來源混錯，優先先轉移並比對，避免直接全部刪除。
