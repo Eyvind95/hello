@@ -87,3 +87,7 @@ match /galArchive/{uid}/{path=**} {
 - 完整備份的 `transferAudit.sourceHashRepairs` 會記錄修復原因、舊／新來源 ID、索引及可核對的歷史輪迴 ID；成功彈窗顯示修復筆數。新 incoming 會標示 `originalIncomingEventId` 和 `transferHashValidation`，方便查核。
 - 操作仍由使用者勾選、確認目標輪迴與輸入輪迴名稱，**不會自動猜測暗玄／暗夢歸屬**。實際 Firebase 資料未經遠端驗收，請保留 JSON 備份，先以少量明確的誤收來源測試，核對兩輪再大量搬移。
 - 本次只改網站前端及 PWA 快取版號。**不需要重新部署 Cloud Functions**。
+
+## V5.26：本輪對話缺漏唯讀診斷
+
+雲端同步 →「🔍 對照本輪缺漏（唯讀）」：輸入外部核對的完整對話預期則數（如第十六周目 803），可對照本機 `messages`、已接事件、未接事件、`pilotMessages`、雙方人數、疑似錯分的玩家貼文。讀取 Firebase 指定輪迴的新分層／舊平面 `incoming` 以及雲端正式 `parts`，報告已收取來源中缺少對應正式片段、錯分頁、來源衝突與折疊訊息，並可下載診斷 JSON。只診斷不修改、不上傳、不刪除資料；差額不代表真正遺失，沒有擷取過的原始聊天必須回 ChatGPT 核對。檢查之前建議備份 JSON；Firebase 讀取需要登入、可能產生讀取計費。
