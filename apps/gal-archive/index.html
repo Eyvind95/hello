@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.6｜Gal AI</title>
+<title>輪迴檔案館 V5.7｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -30,7 +30,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.6</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.7</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -354,7 +354,7 @@ async function deleteArchiveCycleWithSources(record){
   const [meta,parts,inbox]=await Promise.all([
     ref.get({source:'server'}),
     ref.collection('parts').get({source:'server'}),
-    root.collection('incoming').where('cycleId','==',record.id).get({source:'server'})
+    archiveIncomingForCycle(root,record.id)
   ]);
   // A source can have been transferred to another surviving cycle. Deleting
   // the original cycle must never erase material referenced elsewhere.
@@ -386,7 +386,7 @@ async function deleteArchiveCycleWithSources(record){
   cloudStatus('已提供備份下載；先封閉輪迴接收入口，防止擴充功能在刪除期間再次寫入…');
   // archiveIngest refuses new sources once this cycle index is absent.
   if(meta.exists)await ref.delete();
-  const late=await root.collection('incoming').where('cycleId','==',record.id).get({source:'server'});
+  const late=await archiveIncomingForCycle(root,record.id);
   const allRemovable=[...new Map([...removable,...late.docs.filter(d=>!shared.has(d.id))]
     .map(d=>[d.id,d])).values()];
   const unexpected=allRemovable.filter(d=>!removable.some(old=>old.id===d.id));
@@ -429,7 +429,7 @@ $('purgeDeletedCycleSources').onclick=async()=>{
     const ref=root.collection('cycles').doc(id);
     const [meta,parts,inbox]=await Promise.all([
       ref.get({source:'server'}),ref.collection('parts').get({source:'server'}),
-      root.collection('incoming').where('cycleId','==',id).get({source:'server'})
+      archiveIncomingForCycle(root,id)
     ]);
     if(!meta.exists&&!parts.size&&!inbox.size)return cloudStatus('此輪迴 ID 已無 Firebase 輪迴／incoming 殘留，不需清理。');
     const shared=new Set(records.flatMap(r=>
@@ -452,7 +452,7 @@ $('purgeDeletedCycleSources').onclick=async()=>{
     // Close the server's intake gate first, then requery for messages sent
     // during confirmation so old sources cannot silently survive.
     if(meta.exists)await ref.delete();
-    const last=await root.collection('incoming').where('cycleId','==',id).get({source:'server'});
+    const last=await archiveIncomingForCycle(root,id);
     const all=[...new Map([...removable,...last.docs.filter(d=>!shared.has(d.id))]
       .map(d=>[d.id,d])).values()];
     const late=all.filter(d=>!removable.some(old=>old.id===d.id));
@@ -896,19 +896,51 @@ function orderIncomingSnapshot(a,b){
     ||a.id.localeCompare(b.id);
 }
 
+// V5.7: new raw sources live inside cycles/{cycleId}/incoming.
+// The old flat inbox stays readable until the owner confirms migration.
+function cycleIncoming(root,id){return root.collection('cycles').doc(id).collection('incoming')}
+async function archiveIncomingForCycle(root,id){
+  const [legacy,scoped]=await Promise.all([
+    root.collection('incoming').where('cycleId','==',id).get({source:'server'}),
+    cycleIncoming(root,id).get({source:'server'})
+  ]);
+  const unique=new Map();
+  for(const doc of legacy.docs)unique.set(doc.id,doc);
+  for(const doc of scoped.docs)unique.set(doc.id,doc);
+  const docs=[...unique.values()];
+  return {docs,size:docs.length,empty:!docs.length};
+}
+async function archiveGetSource(root,id,sourceId){
+  if(!id||!sourceId)return null;
+  const current=await cycleIncoming(root,id).doc(sourceId).get({source:'server'});
+  if(current.exists)return current;
+  const legacy=await root.collection('incoming').doc(sourceId).get({source:'server'});
+  return legacy.exists&&legacy.data().cycleId===id?legacy:null;
+}
+async function archiveIncomingByStatus(root,status){
+  const all=await Promise.all([
+    root.collection('incoming').where('status','==',status).get({source:'server'}),
+    ...records.map(r=>cycleIncoming(root,r.id).where('status','==',status).get({source:'server'}))
+  ]);
+  const unique=new Map();
+  for(const group of all)for(const doc of group.docs)unique.set(doc.id,doc);
+  const docs=[...unique.values()];
+  return {docs,size:docs.length,empty:!docs.length};
+}
+
 async function receiveAutomaticEntries(){
   const user=await cloudSignedIn();
   await refresh();
-  const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
-  // Sort pending entries by original time, then first-capture time.
-  const snap=await inbox.where('status','==','pending').get();
+  const root=cloudDb.collection('galArchive').doc(user.uid);
+  // Always inspect both layouts. New messages are stored under their own cycle.
+  const snap=await archiveIncomingByStatus(root,'pending');
   if(snap.empty){
     // A received message may have already been accepted into another cycle.
     // Do not tell the user "nothing exists" when the inbox contains accepted sources.
-    const accepted=await inbox.where('status','==','accepted').limit(100).get();
+    const accepted=await archiveIncomingByStatus(root,'accepted');
     if(!accepted.empty){
       const groups=new Map();
-      for(const d of accepted.docs){
+      for(const d of accepted.docs.slice(0,100)){
         const item=d.data();
         const r=records.find(x=>x.id===item.cycleId);
         const target=r?((WORLDS.find(w=>w.id===r.world)?.name||r.world)+'／'+r.title):'其他輪迴（'+item.cycleId+'）';
@@ -991,12 +1023,13 @@ async function repairAutoImportedChats(){
   if(!targets.length){cloudStatus('沒有發現需要修正的舊版自動收取訊息。');return}
   const total=targets.reduce((n,r)=>n+(r.messages||[]).filter(m=>m.sourceEventId&&m.sourcePartIndex===undefined).length,0);
   if(!confirm('找到 '+total+' 則舊版自動收取訊息。\n只處理附有 sourceEventId 的紀錄，手動輸入的正史不會改動。\n建議先匯出 JSON 備份。確定修正分類及順序？'))return;
-  const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
-  const ids=[...new Set(targets.flatMap(r=>(r.messages||[]).filter(m=>m.sourceEventId&&m.sourcePartIndex===undefined).map(m=>m.sourceEventId)))];
+  const root=cloudDb.collection('galArchive').doc(user.uid);
+  const cycleBySource=new Map(targets.flatMap(r=>(r.messages||[]).filter(m=>m.sourceEventId&&m.sourcePartIndex===undefined).map(m=>[m.sourceEventId,r.id])));
+  const ids=[...cycleBySource.keys()];
   const source=new Map();
   for(const id of ids){
-    const doc=await inbox.doc(id).get();
-    if(doc.exists)source.set(id,doc.data());
+    const doc=await archiveGetSource(root,cycleBySource.get(id),id);
+    if(doc?.exists)source.set(id,doc.data());
   }
   let pilotAdded=0,storyAdded=0,cyclesFixed=0;
   for(const original of targets){
@@ -1040,11 +1073,12 @@ async function reorderPilotMessagesFromCloud(){
   const sections=['pilotMessages','messages'];
   const targets=records.filter(r=>sections.some(k=>(r[k]||[]).some(m=>m.sourceEventId)));
   if(!targets.length){cloudStatus('沒有已收取的自動歸檔紀錄可校正。');return}
-  const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
-  const sourceIds=[...new Set(targets.flatMap(r=>sections.flatMap(k=>(r[k]||[])
-    .filter(m=>m.sourceEventId).map(m=>m.sourceEventId))))];
+  const root=cloudDb.collection('galArchive').doc(user.uid);
+  const cycleBySource=new Map(targets.flatMap(r=>sections.flatMap(k=>(r[k]||[])
+    .filter(m=>m.sourceEventId).map(m=>[m.sourceEventId,r.id]))));
+  const sourceIds=[...cycleBySource.keys()];
   const sources=new Map();
-  for(const id of sourceIds){const snap=await inbox.doc(id).get();if(snap.exists)sources.set(id,snap.data())}
+  for(const id of sourceIds){const snap=await archiveGetSource(root,cycleBySource.get(id),id);if(snap?.exists)sources.set(id,snap.data())}
   const plans=[];let reorderable=0,changed=0,actual=0,captured=0,fallback=0;
   for(const original of targets){
     const r=structuredClone(original);
@@ -1238,12 +1272,12 @@ $('cleanupApply').onclick=async()=>{
     if(deleteRaw){
       const sourceIds=[...new Set(all.filter(x=>ids.has(x.message.id)).map(x=>x.message.sourceEventId).filter(Boolean))];
       const stillUsed=new Set(records.flatMap(x=>archiveImportedEntries(x).map(m=>m.message.sourceEventId)));
-      const inbox=cloudDb.collection('galArchive').doc(user.uid).collection('incoming');
+      const root=cloudDb.collection('galArchive').doc(user.uid);
       for(const sourceId of sourceIds){
         if(stillUsed.has(sourceId))continue;
         try{
-          const ref=inbox.doc(sourceId),doc=await ref.get();
-          if(doc.exists&&doc.data().status==='accepted'&&doc.data().cycleId===r.id){await ref.delete();rawDeleted++}
+          const doc=await archiveGetSource(root,r.id,sourceId);
+          if(doc?.exists&&doc.data().status==='accepted'&&doc.data().cycleId===r.id){await doc.ref.delete();rawDeleted++}
         }catch(e){rawFailed++;console.error('原始來源刪除失敗',e)}
       }
     }
@@ -1274,7 +1308,7 @@ async function getPilotPurgePlan(r){
   const localUpdated=String(r.updatedAt||''),cloudUpdated=String(meta.data()?.updatedAt||'');
   if(cloudUpdated&&localUpdated&&cloudUpdated>localUpdated)
     throw Error('雲端輪迴版本比目前本機新，為避免覆蓋其他分頁，請先「從雲端合併下載」再重新清理。');
-  const snap=await root.collection('incoming').where('cycleId','==',r.id).get({source:'server'});
+  const snap=await archiveIncomingForCycle(root,r.id);
   const protectedIds=new Set(records.flatMap(rec=>
     ['messages','pilotMessages','quizLogs','changeLogs'].flatMap(section=>
       (rec[section]||[]).filter(m=>rec.id!==r.id||section!=='pilotMessages')
@@ -1363,7 +1397,7 @@ $('pilotPurgeApply').onclick=async()=>{
     let removed=0;
     for(let start=0;start<total;start+=300){
       const batch=cloudDb.batch();
-      for(const doc of fresh.deletable.slice(start,start+300))batch.delete(dbRoot.collection('incoming').doc(doc.id));
+      for(const doc of fresh.deletable.slice(start,start+300))batch.delete(doc.ref);
       await batch.commit();
       removed+=Math.min(300,total-start);
       $('pilotPurgeStatus').textContent='已清空本輪正式副駕駛聊天；正在刪除雲端來源 '+removed+'／'+total+'…';
