@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.23｜Gal AI</title>
+<title>輪迴檔案館 V5.24｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -85,7 +85,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.23</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.24</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -175,6 +175,13 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
   <div class="actions topsp"><button class="btn primary" id="transferApply" disabled>下載兩輪備份並轉移所選訊息</button></div>
   <p class="note" style="color:#ffcb90">⚠ 轉移會同步修改目前輪迴、目的輪迴與能核對的 Firebase 原始來源。先預覽並備份，不會單憑時間、副駕駛名稱或同一個 chatKey 猜歸屬。雲端版本有衝突會中止操作。</p>
 </div></div>
+<div class="modalback hidden" id="transferResultModal" role="dialog" aria-modal="true" aria-labelledby="transferResultTitle">
+  <div class="modal" style="max-width:580px">
+    <div class="sectionhead"><h2 id="transferResultTitle">輪迴轉移結果</h2><button class="btn small" id="transferResultClose">關閉</button></div>
+    <p class="note" id="transferResultText" role="status" style="white-space:pre-wrap;line-height:1.8;overflow-wrap:anywhere"></p>
+    <div class="actions topsp"><button class="btn primary" id="transferResultOk">我知道了</button></div>
+  </div>
+</div>
 <script>
 'use strict';
 const BASE_WORLDS=[
@@ -1506,7 +1513,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.23_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.24_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -2795,6 +2802,18 @@ async function archiveTransferCanonicalId(uid,fromCycleId,toCycleId,sourceId,old
   }
   return null;
 }
+function archiveShowTransferResult(success,title,message){
+  $('transferResultTitle').textContent=(success?'✅ ':'⚠️ ')+title;
+  $('transferResultText').textContent=message;
+  $('transferResultModal').classList.remove('hidden');
+  $('transferResultOk').focus();
+}
+function archiveCloseTransferResult(){$('transferResultModal').classList.add('hidden')}
+$('transferResultClose').onclick=archiveCloseTransferResult;
+$('transferResultOk').onclick=archiveCloseTransferResult;
+$('transferResultModal').addEventListener('click',e=>{
+  if(e.target.id==='transferResultModal')archiveCloseTransferResult();
+});
 function archiveTransferGroups(record){
   const groups=new Map();
   for(const section of archiveSections){
@@ -2920,7 +2939,9 @@ $('transferApply').onclick=async()=>{
     to=records.find(x=>x.id===$('transferDestination').value);
   if(!state||!from||!to||from.id===to.id)return;
   if((from.updatedAt||'')!==state.sourceUpdatedAt){
-    $('transferPreview').textContent='來源輪迴已更新，為避免使用舊勾選範圍，請關閉後重新開啟轉移。';return;
+    const warning='來源輪迴已更新，為避免使用舊勾選範圍，請關閉後重新開啟轉移。';
+    $('transferPreview').textContent=warning;
+    archiveShowTransferResult(false,'尚未開始轉移',warning);return;
   }
   const groups=archiveTransferGroups(from).filter(g=>state.selected.has(g.key));
   const moved=groups.flatMap(g=>g.entries);
@@ -2929,23 +2950,28 @@ $('transferApply').onclick=async()=>{
   const otherUse=records.filter(r=>r.id!==from.id&&r.id!==to.id&&
     archiveImportedEntries(r).some(x=>sourceIds.includes(x.message.sourceEventId)));
   if(otherUse.length){
-    $('transferPreview').textContent='停止轉移：選中來源也被其他輪迴引用：'
-      +otherUse.map(x=>x.title).join('、')+'。請先逐筆核對，避免同一份來源被分裂到多個輪迴。';return;
+    const warning='選中來源也被其他輪迴引用：'
+      +otherUse.map(x=>x.title).join('、')+'。請先逐筆核對，避免同一份來源被分裂到多個輪迴。';
+    $('transferPreview').textContent='停止轉移：'+warning;
+    archiveShowTransferResult(false,'轉移已中止',warning+'\n沒有開始寫入。');return;
   }
   const managers=[...new Set(moved.filter(x=>x.message.role==='ai')
     .map(x=>x.message.manager).filter(Boolean))];
   const allowed=cycleManagerNames(to);
   if(allowed.length&&managers.some(x=>!allowed.includes(x))){
-    $('transferPreview').textContent='目標輪迴的副駕駛管理名單不包含：'
+    const warning='目標輪迴的副駕駛管理名單不包含：'
       +managers.filter(x=>!allowed.includes(x)).join('、')
-      +'。請先到目的輪迴「編輯資料」確認正確的管理人名單。';return;
+      +'。請先到目的輪迴「編輯資料」確認正確的管理人名單。';
+    $('transferPreview').textContent=warning;
+    archiveShowTransferResult(false,'轉移已中止',warning+'\n沒有開始寫入。');return;
   }
   if(!confirm('來源輪迴：「'+from.title+'」\n目的輪迴：「'+to.title+'」\n'
     +'所選 '+groups.length+' 組，合計 '+moved.length+' 則。只轉移這些，不移動整個 chatKey。\n'
     +'會同時寫入兩個輪迴及核對到的 Firebase 來源；先下載兩輪 JSON 備份。\n'
     +'請確認 Chrome 擴充功能監看已停止。確定繼續？'))return;
   if(prompt('最後核對目的地：請完整輸入「'+to.title+'」：')!==to.title)return;
-  const button=$('transferApply');button.disabled=true;
+  const button=$('transferApply'),originalButtonText=button.textContent;
+  button.disabled=true;button.textContent='轉移處理中…';
   let stage='開始檢查';
   try{
     const user=await cloudSignedIn(),root=cloudDb.collection('galArchive').doc(user.uid);
@@ -3054,16 +3080,22 @@ $('transferApply').onclick=async()=>{
       await raw.ref.delete();removed++;
     }
     $('transferModal').classList.add('hidden');transferState=null;
-    cloudStatus('精準轉移完成：「'+from.title+'」→「'+to.title+'」，移動 '+moved.length
-      +' 則（已存在 '+reused+' 則不重複），原始來源新存 '+toStage.length
-      +' 筆、刪舊副本 '+removed+' 筆；找不到原始來源 '+missing.length
-      +' 筆，仍已移動正式訊息；保護未刪來源 '+protectedCount
-      +' 筆。記得把 Chrome 擴充功能改綁到正確輪迴，再重新掃描後續內容。');
+    const successText='來源：「'+from.title+'」\n目的：「'+to.title+'」\n'
+      +'成功處理 '+moved.length+' 則訊息（其中 '+reused+' 則已存在，未重複加入）。\n'
+      +'原始來源已核對／轉入 '+toStage.length+' 筆；移除舊副本 '+removed+' 筆；'
+      +'原始來源缺失 '+missing.length+' 筆；保留受保護來源 '+protectedCount+' 筆。\n\n'
+      +'兩個輪迴的正式資料及雲端同步已完成。'
+      +(missing.length?'\n⚠ '+missing.length+' 筆缺少原始來源，日後重新擷取時可能無法完全去重。':'')
+      +'\n請檢查兩輪資料，並將擴充功能重新綁到正確輪迴。';
+    cloudStatus('精準轉移完成：「'+from.title+'」→「'+to.title+'」，'+moved.length+' 則。');
+    archiveShowTransferResult(true,'轉移成功',successText);
   }catch(e){
-    $('transferPreview').textContent='轉移中止於「'+stage+'」：'+(e.message||String(e))
-      +'。可能已階段性寫入部分雲端資料。請保留 JSON 備份，先檢查來源與目的兩輪，不要連續重按。';
+    const notice='轉移中止於「'+stage+'」：'+(e.message||String(e))
+      +'。\n\n若已開始寫入，可能有部分雲端資料變更；請先核對兩個輪迴及 JSON 備份，切勿反覆按轉移。';
+    $('transferPreview').textContent=notice;
     cloudStatus('精準轉移未完整完成：'+(e.message||String(e)),true);
-  }finally{button.disabled=false}
+    archiveShowTransferResult(false,'轉移未完成',notice);
+  }finally{button.disabled=false;button.textContent=originalButtonText}
 };
 
 const cloudParts=text=>{let a=[];for(let i=0;i<text.length;i+=110000)a.push(text.slice(i,i+110000));return a};
