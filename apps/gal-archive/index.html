@@ -80,6 +80,10 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
   <label class="checklabel"><input type="checkbox" id="migrateDeleteFlat">複製並驗證成功後，刪除舊平面 incoming 的對應副本（預設不勾）</label>
   <p class="note" style="color:#ffcb90">⚠ 若來源原本就綁錯輪迴，請先用「轉移誤收的來源對話」修正；別直接大量遷移。刪除舊副本前會有第二次確認。請先停止擴充功能監看。</p>
   <div class="actions topsp"><button class="btn" id="migratePreviewBtn">掃描舊來源／預覽</button><button class="btn primary" id="migrateApply" disabled>下載備份並執行</button></div>
+  <div class="topsp" style="border-top:1px solid var(--line,#60708d);padding-top:14px">
+    <p class="note"><strong>🗑 清空舊版共用來源</strong>：只刪除目前登入帳戶 <code>galArchive/UID/incoming</code> 底下的所有舊平面來源；不會動到各輪迴 <code>cycles/輪迴ID/incoming</code>、正式紀錄、世界觀或本機資料。此操作不可復原，請先停止擴充功能監看。</p>
+    <button class="btn danger" id="deleteAllFlatIncoming">🗑 全部刪除舊平面 incoming（不含新版）</button>
+  </div>
   <div id="migrateReport" class="archivepreview" style="margin-top:12px;max-height:38vh">尚未掃描，不會更動任何資料。</div>
   </div>
 </div>
@@ -1059,6 +1063,60 @@ $('migrateApply').onclick=async()=>{
     $('migrateReport').textContent='遷移中止：'+e.message+
       '\n已複製 '+copied+'，驗證已存在 '+already+'；尚未成功全部完成。備份已提供，請重新掃描後續做。';
     cloudStatus('遷移未完整完成：'+e.message,true);
+  }finally{b.disabled=false}
+};
+
+// Purge ONLY the legacy root-level inbox. Never delete cycle-scoped incoming or parts.
+$('deleteAllFlatIncoming').onclick=async()=>{
+  const b=$('deleteAllFlatIncoming');if(b.disabled)return;
+  b.disabled=true;
+  let deleted=0;
+  try{
+    const user=await cloudSignedIn();
+    const root=cloudDb.collection('galArchive').doc(user.uid);
+    const collection=root.collection('incoming');
+    const snap=await collection.get({source:'server'});
+    if(snap.empty){
+      $('migrateReport').textContent='舊平面 incoming 已經是空的（0 筆）。沒有刪除任何資料。';
+      return;
+    }
+    if(!confirm('只清空舊版共用 incoming：'+snap.size+' 筆。\\n\\n不刪各輪迴自己的 incoming、正式劇情或副駕駛聊天。\\n這項操作不可復原。請確認已停止擴充功能監看。\\n\\n要先匯出完整 JSON 備份，再執行嗎？'))return;
+    const typed=prompt('最後確認：輸入「刪除舊來源 '+snap.size+' 筆」才會開始。');
+    if(typed!=='刪除舊來源 '+snap.size+' 筆'){
+      $('migrateReport').textContent='已取消清空：確認文字不符。沒有刪除任何資料。';return;
+    }
+    downloadText('輪迴檔案館_刪除前舊平面incoming備份_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',
+      JSON.stringify({format:'gal-archive-legacy-incoming-backup',version:1,
+        exportedAt:new Date().toISOString(),uid:user.uid,
+        items:snap.docs.map(d=>({id:d.id,data:d.data()}))},null,2));
+    // Only delete documents from the original server snapshot. Skip any source
+    // that changed during confirmation / scanning; never delete newly arrived items.
+    let changed=0,alreadyGone=0;
+    for(const doc of snap.docs){
+      const fresh=await doc.ref.get({source:'server'});
+      if(!fresh.exists){alreadyGone++;continue}
+      const original=doc.data(),latest=fresh.data();
+      if((latest.sourceId||'')!==(original.sourceId||'')||
+        (latest.cycleId||'')!==(original.cycleId||'')||
+        (latest.text||'')!==(original.text||'')||
+        (latest.status||'')!==(original.status||'')||
+        (latest.role||'')!==(original.role||'')){changed++;continue}
+      await doc.ref.delete();deleted++;
+      if(deleted%20===0)$('migrateReport').textContent=
+        '清空舊平面 incoming 中：已刪除 '+deleted+'／'+snap.size+' 筆。新版資料不受影響。';
+    }
+    const remain=await collection.get({source:'server'});
+    archiveLegacyMigration=null;$('migrateApply').disabled=true;
+    $('migrateReport').textContent='舊版共用 incoming 清空操作完成。\\n'
+      +'原先 '+snap.size+' 筆；已刪除 '+deleted+' 筆；其他地方已不存在 '+alreadyGone
+      +' 筆；期間有變動而保留 '+changed+' 筆。\\n'
+      +'目前舊平面 incoming 尚有 '+remain.size+' 筆。\\n'
+      +'各輪迴獨立來源及正式故事／聊天均未被本操作刪除。';
+    cloudStatus('已清理舊平面 incoming '+deleted+' 筆；剩餘 '+remain.size+' 筆。');
+  }catch(e){
+    $('migrateReport').textContent='清空未完全完成：已刪除 '+deleted+' 筆；錯誤：'+e.message
+      +'。請重新掃描，確認剩餘筆數。';
+    cloudStatus('舊平面來源清理失敗：'+e.message,true);
   }finally{b.disabled=false}
 };
 
