@@ -677,7 +677,28 @@ async function archiveRecoverMisfiledEvents(r){
   await put(updated);notify('已找回 '+moved+' 件，全部待決定');
 }
 
-function renderChat(r){let messages=r.messages||[];$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="chat" id="chat">${messages.length?messages.map((m,i)=>`<div data-message-id="${safe(m.id||'')}" class="message ${m.role==='me'?'me':'ai'}"><div class="bubble"><div class="who">${m.role==='me'?'我（皮卡）':'Gal AI'} · #${i+1}${m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):''}</div>${archiveTimeDisplay(m)}${archiveImagesHtml(m,i)}<div class="body">${safe(m.text)}</div><div class="msgtools"><button data-move="${i}" data-dir="-1" ${i===0?'disabled':''}>↑</button><button data-move="${i}" data-dir="1" ${i===messages.length-1?'disabled':''}>↓</button><button data-archive-attach="${i}">＋圖片</button><button data-edit="${i}">編輯</button><button data-time="${i}">時間</button><button data-remove="${i}">刪除</button></div></div></div>`).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`}
+
+function archiveStoryBubble(row,i,record){
+  const m=row.entry,story=row.type==='message';
+  const label=story?(m.role==='me'?'我（皮卡）':'Gal AI'):'📨 已接事件 · '+(m.title||'事件到達');
+  const tools=story
+    ?'<button data-move="'+row.index+'" data-dir="-1" '+(row.index===0?'disabled':'')+'>↑</button>'
+     +'<button data-move="'+row.index+'" data-dir="1" '+(row.index===(record.messages||[]).length-1?'disabled':'')+'>↓</button>'
+     +'<button data-archive-attach="'+row.index+'">＋圖片</button>'
+     +'<button data-edit="'+row.index+'">編輯</button>'
+     +'<button data-time="'+row.index+'">時間</button>'
+     +'<button data-remove="'+row.index+'">刪除</button>'
+    :'<button data-event-open="'+row.index+'">查看事件簿／修改接取狀態</button>';
+  return '<div data-message-id="'+safe(m.id||'')+'" class="message '+(m.role==='me'?'me':'ai')
+    +(story?'':' archive-event-in-story')+'"><div class="bubble">'
+    +'<div class="who">'+safe(label)+' · #'+(i+1)
+    +(story&&m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):'')+'</div>'
+    +archiveTimeDisplay(m)+archiveImagesHtml(m,row.index)
+    +'<div class="body">'+safe(m.text||'')+'</div>'
+    +'<div class="msgtools">'+tools+'</div></div></div>';
+}
+
+function renderChat(r){let messages=archiveStoryTimeline(r);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
