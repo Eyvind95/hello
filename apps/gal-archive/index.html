@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.24｜Gal AI</title>
+<title>輪迴檔案館 V5.25｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -85,7 +85,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.24</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.25</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -1513,7 +1513,7 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.24_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.25_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
@@ -2792,14 +2792,33 @@ const ARCHIVE_TRANSFER_LABELS={
   quizLogs:'10題',changeLogs:'與皮卡修改紀錄'
 };
 let transferState=null;
-async function archiveTransferCanonicalId(uid,fromCycleId,toCycleId,sourceId,oldEventId){
-  // archiveIngest hashes uid|cycleId|sourceId|entryIndex. The entry index
-  // is not in the document body, so recover it by verifying 0..9 hashes.
-  // Never guess: remapping official source IDs is necessary for dedup on re-scan.
-  for(let i=0;i<10;i++){
-    if(await sha256Hex(uid+'|'+fromCycleId+'|'+sourceId+'|'+i)===oldEventId)
-      return await sha256Hex(uid+'|'+toCycleId+'|'+sourceId+'|'+i);
+async function archiveTransferCanonicalId(uid,fromCycleId,toCycleId,sourceId,oldEventId,raw){
+  // archiveIngest hashes UID|cycleId|sourceId|entryIndex. Historical incoming
+  // documents may have been copied to the WRONG cycle without remapping their
+  // document ID. In that case "fromCycleId" alone cannot reproduce the hash.
+  // First verify against known cycle IDs; never use manager/chatKey/time as proof.
+  const candidates=[...new Set([fromCycleId,raw?.transferredFromCycleId,
+    ...records.map(r=>r.id)].filter(x=>typeof x==='string'&&x))];
+  for(const originalCycleId of candidates){
+    for(let i=0;i<10;i++){
+      if(await sha256Hex(uid+'|'+originalCycleId+'|'+sourceId+'|'+i)===oldEventId){
+        return {id:await sha256Hex(uid+'|'+toCycleId+'|'+sourceId+'|'+i),
+          entryIndex:i,validation:originalCycleId===fromCycleId?'current-cycle-hash':'historical-cycle-hash',
+          originalCycleId};
+      }
+    }
   }
+  // The official archive extension sends EXACTLY ONE chat entry per sourceId,
+  // always at index 0. A source copied from a now-deleted/renamed cycle can
+  // lose its verifiable old hash; the stable Chrome sourceId, section, role and
+  // ingestion schema still establish its one-entry layout. This does NOT apply
+  // to other sources, which must pass the original hash verification above.
+  const singleChrome=/^chrome-[0-9a-f]{48}$/i.test(sourceId)
+    && raw?.sourceId===sourceId && raw?.section==='chat'
+    && ['me','ai'].includes(raw?.role)
+    && [1,2].includes(Number(raw?.schemaVersion));
+  if(singleChrome)return {id:await sha256Hex(uid+'|'+toCycleId+'|'+sourceId+'|0'),
+    entryIndex:0,validation:'verified-chrome-single-entry',originalCycleId:null};
   return null;
 }
 function archiveShowTransferResult(success,title,message){
@@ -2968,7 +2987,7 @@ $('transferApply').onclick=async()=>{
   if(!confirm('來源輪迴：「'+from.title+'」\n目的輪迴：「'+to.title+'」\n'
     +'所選 '+groups.length+' 組，合計 '+moved.length+' 則。只轉移這些，不移動整個 chatKey。\n'
     +'會同時寫入兩個輪迴及核對到的 Firebase 來源；先下載兩輪 JSON 備份。\n'
-    +'請確認 Chrome 擴充功能監看已停止。確定繼續？'))return;
+    +'歷史上綁錯輪迴的 Chrome 單筆來源可能需重建來源 ID（僅限可核對的單筆格式）；不符合條件仍會停止。\n'+'請確認 Chrome 擴充功能監看已停止。確定繼續？'))return;
   if(prompt('最後核對目的地：請完整輸入「'+to.title+'」：')!==to.title)return;
   const button=$('transferApply'),originalButtonText=button.textContent;
   button.disabled=true;button.textContent='轉移處理中…';
@@ -2982,7 +3001,7 @@ $('transferApply').onclick=async()=>{
     if(String(fromMeta.data().updatedAt||'')>String(from.updatedAt||'')||
       String(toMeta.data().updatedAt||'')>String(to.updatedAt||''))
       throw Error('雲端有較新的輪迴版本。請先備份並從雲端合併下載，再重新勾選。');
-    const sourceRaw=[],toStage=[],missing=[],idRemap=new Map();
+    const sourceRaw=[],toStage=[],missing=[],idRemap=new Map(),sourceHashRepairs=[];
     stage='核對雲端原始來源與新輪迴 ID';
     for(const id of sourceIds){
       const [scoped,legacy]=await Promise.all([
@@ -2998,8 +3017,12 @@ $('transferApply').onclick=async()=>{
         d.data().role!==raw.role))
         throw Error('同 ID 雲端原始來源內容不一致：'+id.slice(0,12));
       if(!raw.sourceId)throw Error('來源 '+id.slice(0,12)+' 缺少原始 sourceId，無法安全避免再掃描重複。');
-      const canonicalId=await archiveTransferCanonicalId(user.uid,from.id,to.id,raw.sourceId,id);
-      if(!canonicalId)throw Error('來源 '+id.slice(0,12)+' 的舊雜湊不符合來源輪迴，無法確認正確新 ID；未搬移。');
+      const mapping=await archiveTransferCanonicalId(user.uid,from.id,to.id,raw.sourceId,id,raw);
+      if(!mapping)throw Error('來源 '+id.slice(0,12)+' 的雜湊無法對上已知輪迴，且不是可核對的 Chrome 單筆來源；為避免誤收，未搬移。');
+      const canonicalId=mapping.id;
+      if(mapping.validation!=='current-cycle-hash')
+        sourceHashRepairs.push({oldId:id,newId:canonicalId,entryIndex:mapping.entryIndex,
+          validation:mapping.validation,originalCycleId:mapping.originalCycleId});
       const target=await cycleIncoming(root,to.id).doc(canonicalId).get({source:'server'});
       if(target.exists){
         const current=target.data();
@@ -3009,7 +3032,7 @@ $('transferApply').onclick=async()=>{
       }
       idRemap.set(id,canonicalId);
       sourceRaw.push(...existing.map(d=>({ref:d.ref,path:d.ref.path,data:d.data()})));
-      toStage.push({id:canonicalId,oldId:id,raw,targetExists:target.exists});
+      toStage.push({id:canonicalId,oldId:id,raw,targetExists:target.exists,hashValidation:mapping.validation});
     }
     const src=structuredClone(from),dst=structuredClone(to),moveIds=new Set(moved.map(x=>x.section+'|'+x.message.id));
     for(const section of archiveSections){
@@ -3037,22 +3060,24 @@ $('transferApply').onclick=async()=>{
     // Backup the two complete cycles AND the raw source documents before any writes.
     stage='準備備份';
     downloadText('輪迴檔案館_精準轉移備份_'+timestamp.replace(/[:.]/g,'-')+'.json',
-      JSON.stringify({format:'gal-ai-archive',version:5.23,
+      JSON.stringify({format:'gal-ai-archive',version:5.25,
         exportedAt:timestamp,worlds:Object.values(worldDocs),cycles:[from,to],
         transferAudit:{sourceCycleId:from.id,destinationCycleId:to.id,
           selectedGroups:groups.map(g=>({key:g.key,count:g.entries.length,
             messageIds:g.entries.map(x=>x.message.id)})),
           rawSources:sourceRaw.map(x=>({path:x.path,data:x.data})),
-          sourceIdRemap:Object.fromEntries(idRemap),missingRawSourceIds:missing}},null,2));
+          sourceIdRemap:Object.fromEntries(idRemap),sourceHashRepairs,missingRawSourceIds:missing}},null,2));
     $('transferPreview').textContent='兩輪輪迴資料備份已開始下載（可在網站「匯入 JSON」恢復正式內容）。已核對並改算正確目的輪迴 ID 的原始來源 '+toStage.length
-      +' 筆，缺失 '+missing.length+' 筆（缺失者只轉移正式記錄，其舊來源 ID 無法保證重掃去重）。請勿關閉頁面。';
+      +' 筆，其中歷史雜湊重新核對／修復 '+sourceHashRepairs.length
+      +' 筆；缺失 '+missing.length+' 筆（缺失者只轉移正式記錄，其舊來源 ID 無法保證重掃去重）。請勿關閉頁面。';
     // Stage raw copies first, and verify before removing the source.
     stage='準備目的地 incoming';
     for(const item of toStage){
       const ref=cycleIncoming(root,to.id).doc(item.id);
       if(!item.targetExists)await ref.set({...item.raw,cycleId:to.id,status:'accepted',
         storageLayout:'cycle-scoped',transferredFromCycleId:from.id,
-        transferredAt:firebase.firestore.FieldValue.serverTimestamp()});
+        transferredAt:firebase.firestore.FieldValue.serverTimestamp(),
+        originalIncomingEventId:item.oldId,transferHashValidation:item.hashValidation});
       const verify=await ref.get({source:'server'});
       if(!verify.exists||verify.data().cycleId!==to.id||verify.data().text!==item.raw.text)
         throw Error('來源 '+item.id.slice(0,12)+' 寫入目的輪迴後核對失敗。');
@@ -3082,7 +3107,7 @@ $('transferApply').onclick=async()=>{
     $('transferModal').classList.add('hidden');transferState=null;
     const successText='來源：「'+from.title+'」\n目的：「'+to.title+'」\n'
       +'成功處理 '+moved.length+' 則訊息（其中 '+reused+' 則已存在，未重複加入）。\n'
-      +'原始來源已核對／轉入 '+toStage.length+' 筆；移除舊副本 '+removed+' 筆；'
+      +'原始來源已核對／轉入 '+toStage.length+' 筆（歷史雜湊重新核對／修復 '+sourceHashRepairs.length+' 筆）；移除舊副本 '+removed+' 筆；'
       +'原始來源缺失 '+missing.length+' 筆；保留受保護來源 '+protectedCount+' 筆。\n\n'
       +'兩個輪迴的正式資料及雲端同步已完成。'
       +(missing.length?'\n⚠ '+missing.length+' 筆缺少原始來源，日後重新擷取時可能無法完全去重。':'')
