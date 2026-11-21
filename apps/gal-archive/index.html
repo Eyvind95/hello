@@ -2903,13 +2903,21 @@ async function pullCloud(){
     {ref:cloudDb.collection('galArchive').doc(u.uid),label:'新版 galArchive'},
     {ref:cloudDb.collection('users').doc(u.uid),label:'舊版 users'}
   ];
-  let worldsAdded=0,cyclesAdded=0,checked=0;
+  let worldsAdded=0,cyclesAdded=0,checked=0,legacySkipped=0;
   const cycleMap=new Map(records.map(x=>[x.id,x]));
+  // New galArchive is canonical. Never let an old users/{uid} snapshot
+  // overwrite a cycle that exists in galArchive, even if old updatedAt is newer.
+  const canonicalCycleIds=new Set(),canonicalWorldIds=new Set();
   for(const root of roots){
     const ws=await root.ref.collection('worlds').get();
     const cs=await root.ref.collection('cycles').get();
     checked+=ws.size+cs.size;
+    if(root.label==='新版 galArchive'){
+      for(const d of ws.docs)canonicalWorldIds.add(d.id);
+      for(const d of cs.docs)canonicalCycleIds.add(d.id);
+    }
     for(const d of ws.docs){
+      if(root.label==='舊版 users'&&canonicalWorldIds.has(d.id)){legacySkipped++;continue}
       const w=d.data(),local=worldDocs[w.id];
       if(!w.id)continue;
       if(!local||String(w.updatedAt||'')>String(local.updatedAt||'')){
@@ -2919,6 +2927,7 @@ async function pullCloud(){
       }
     }
     for(const d of cs.docs){
+      if(root.label==='舊版 users'&&canonicalCycleIds.has(d.id)){legacySkipped++;continue}
       const meta=d.data(),existing=cycleMap.get(d.id);
       if(existing&&String(existing.updatedAt||'')>=String(meta.updatedAt||''))continue;
       const snap=await d.ref.collection('parts').orderBy('index').get();
@@ -2932,7 +2941,8 @@ async function pullCloud(){
     }
   }
   await refresh();
-  cloudStatus('合併完成：檢查 '+checked+' 個雲端項目、更新 '+worldsAdded+' 個世界觀、'+cyclesAdded+' 個輪迴（含舊版 users 路徑相容）。');
+  cloudStatus('合併完成：檢查 '+checked+' 個雲端項目、更新 '+worldsAdded+' 個世界觀、'+cyclesAdded+' 個輪迴。'
+    +'舊版 users 僅補足新版不存在的輪迴；跳過可能覆蓋新版的舊項目 '+legacySkipped+' 筆。');
 }
 $('cloudPush').onclick=async()=>{const b=$('cloudPush');b.disabled=true;try{if(!confirm('確定將這個瀏覽器的世界觀與輪迴上傳至你的私人 Firestore？請先保留 JSON 備份。'))return;cloudStatus('正在上傳…');await pushCloud()}catch(e){cloudStatus('上傳失敗：'+e.message,true)}finally{b.disabled=false}};
 $('cloudPull').onclick=async()=>{const b=$('cloudPull');b.disabled=true;try{if(!confirm('確定下載雲端資料並與本機合併？相同 ID 中更新日期較新的版本會覆蓋舊版。'))return;cloudStatus('正在下載…');await pullCloud()}catch(e){cloudStatus('下載失敗：'+e.message,true)}finally{b.disabled=false}};
