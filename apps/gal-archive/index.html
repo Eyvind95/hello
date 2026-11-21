@@ -35,7 +35,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 <div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderPilot">↕ 依時間校正自動歸檔順序</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn" id="moveConversation">↗ 轉移誤收的來源對話</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button></div><p class="note">帶有行首「我：／他：」的玩家貼文會拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆則放入「副駕駛聊天」。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。手動輸入的正史不會移位。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
 <p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
@@ -71,6 +71,16 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
     <div class="note" id="pilotPurgePreview" style="white-space:pre-wrap;margin:12px 0;max-height:32vh;overflow:auto">正在檢查…</div>
     <div class="actions topsp"><button class="btn danger" id="pilotPurgeApply" disabled>備份後清除本輪副駕駛聊天及雲端來源</button></div>
     <p id="pilotPurgeStatus" class="note" role="status" aria-live="polite">尚未執行清除。</p>
+  </div>
+</div>
+<div class="modalback hidden" id="migrateModal" role="dialog" aria-modal="true" aria-labelledby="migrateTitle">
+  <div class="modal"><div class="sectionhead"><h2 id="migrateTitle">📦 舊 Firebase 收件匣分層遷移</h2><button class="btn small" id="migrateClose">關閉</button></div>
+  <p class="note">舊版所有來源放在使用者的平面 incoming；新版已改成 cycles／各輪迴 ID／incoming。先核對舊 cycleId，確認沒有誤收，再備份並搬移。<strong>這個功能不會猜測正確輪迴，也不會修改故事。</strong></p>
+  <label for="migrateScope">操作範圍</label><select id="migrateScope"><option value="current">只處理目前輪迴（建議）</option><option value="all">所有存在的輪迴（需逐輪核對）</option></select>
+  <label class="checklabel"><input type="checkbox" id="migrateDeleteFlat">複製並驗證成功後，刪除舊平面 incoming 的對應副本（預設不勾）</label>
+  <p class="note" style="color:#ffcb90">⚠ 若來源原本就綁錯輪迴，請先用「轉移誤收的來源對話」修正；別直接大量遷移。刪除舊副本前會有第二次確認。請先停止擴充功能監看。</p>
+  <div class="actions topsp"><button class="btn" id="migratePreviewBtn">掃描舊來源／預覽</button><button class="btn primary" id="migrateApply" disabled>下載備份並執行</button></div>
+  <div id="migrateReport" class="archivepreview" style="margin-top:12px;max-height:38vh">尚未掃描，不會更動任何資料。</div>
   </div>
 </div>
 <div class="modalback hidden" id="transferModal" role="dialog" aria-modal="true" aria-labelledby="transferTitle">
@@ -904,10 +914,8 @@ async function archiveIncomingForCycle(root,id){
     root.collection('incoming').where('cycleId','==',id).get({source:'server'}),
     cycleIncoming(root,id).get({source:'server'})
   ]);
-  const unique=new Map();
-  for(const doc of legacy.docs)unique.set(doc.id,doc);
-  for(const doc of scoped.docs)unique.set(doc.id,doc);
-  const docs=[...unique.values()];
+  // Keep BOTH copies visible to deletion and audit. Dedup is used only when receiving.
+  const docs=[...legacy.docs,...scoped.docs];
   return {docs,size:docs.length,empty:!docs.length};
 }
 async function archiveGetSource(root,id,sourceId){
