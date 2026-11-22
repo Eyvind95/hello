@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.34｜Gal AI</title>
+<title>輪迴檔案館 V5.35｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -111,11 +111,22 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.34</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.6.6.zip" download title="下載 Chrome 歸檔助手 V0.6.6 ZIP，覆蓋原資料夾並重新載入">🧩 歸檔助手 V0.6.6</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.35</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.6.6.zip" download title="下載 Chrome 歸檔助手 V0.6.6 ZIP，覆蓋原資料夾並重新載入">🧩 歸檔助手 V0.6.6</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">選擇以前匯出的 JSON 檔案，或直接貼上 JSON 內容。匯入不會清除其他輪迴；相同 ID 的紀錄會更新。</p><label for="importFile">選擇 JSON 備份檔</label><input type="file" id="importFile" accept=".json,application/json"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
+<div class="modalback hidden" id="galNativeModal" role="dialog" aria-modal="true" aria-labelledby="galNativeTitle">
+<div class="modal" style="max-width:840px">
+<div class="sectionhead"><h2 id="galNativeTitle">🌐 Gal AI 原生正史（絕對優先來源）</h2><button class="btn small" id="galNativeClose">關閉</button></div>
+<p class="note">從新版 Chrome 助手的「Gal AI 獨立掃描」取得 JSON，<strong>先比對、備份，再只覆蓋目前輪迴的「輪迴開場」「完整對話」「事件簿」</strong>。副駕駛聊天、10題、彩蛋、筆記、人物設定和其他輪迴絕不碰。此工具不會自動操作 Firebase。</p>
+<p class="note" style="color:#ffd59b">⚠ Gal AI 原始內容具有正史優先權，即使與現有手動修訂內容不同也會以來源為準；但事件「已接取／未接取」是玩家決定，不應單憑新來源文字自動更改。必須完整由開場掃描到結尾，不能用半段資料覆蓋。</p>
+<label for="galNativeFile">選擇 Gal AI 原生掃描 JSON</label>
+<input type="file" id="galNativeFile" accept=".json,application/json">
+<div class="actions topsp"><button class="btn primary" id="galNativePreview">🔎 核對來源與覆蓋預覽（唯讀）</button><button class="btn danger" id="galNativeApply" disabled>📦 下載備份並覆蓋本機正史</button></div>
+<label class="checklabel" style="margin:12px 0"><input type="checkbox" id="galNativeConfirmLostAccepted">我已核對全部已接事件；如果新掃描找不到舊事件，允許在備份後以 Gal AI 原始事件列表為準</label>
+<pre id="galNativeStatus" class="archivepreview" role="status" aria-live="polite" style="max-height:45vh;overflow:auto;white-space:pre-wrap;margin:12px 0">尚未讀取掃描檔；不會修改資料。</pre>
+</div></div>
 <div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">與記帳本、每日任務、計時器共用 Firebase 專案及 Google 帳號，<strong>不需要貼設定 JSON</strong>。登入後會自動建立獨立 galArchive 集合；為保護正史，完整資料上傳／下載仍需手動點選。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn primary" id="missingAuditOpen">🔍 對照本輪缺漏（唯讀）</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn primary" id="moveConversation">↗ 精準轉移誤收訊息（跨輪迴）</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">皮卡藍框訊息含「事件到達」或 whif-icon.svg 時優先進入「事件簿」，預設待決定；已接才依來源時間顯示於完整對話。其餘行首「我：／他：」拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆進副駕駛聊天。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。沒有標註時間的手動正史不移位；有手動標註時間的訊息也會按原始時間排序。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
@@ -396,6 +407,176 @@ function buildCopilot(r){const eventText=(r.events||[]).map((ev,i)=>'【事件 '
 function renderCopilot(r){$('tabBody').innerHTML=`<h3>副駕駛閱讀模式</h3><p class="note">自動整理作品共用世界觀、輪迴開場、歷史設定（如有）、分區補充筆記、人格設定、這輪彩蛋、事件簿及接取狀態、10題、皮卡修改記錄與依序排列的對話。可以直接複製給下一位 ChatGPT，也能下載全文；長篇紀錄可分段複製。匯出內容僅包含你已經實際填寫的資料。</p><div class="formrow"><label class="checklabel"><input type="checkbox" id="includeMessages" checked>包含完整對話</label><div><label>每段約多少字元</label><select id="chunkSize"><option value="6000">6,000</option><option value="12000" selected>12,000</option><option value="24000">24,000</option><option value="48000">48,000</option></select></div></div><div class="actions topsp"><button class="btn primary" id="copyCopilot">複製全文</button><button class="btn" id="downloadCopilot">下載 TXT</button></div><div id="copilotChunks" class="topsp"></div>`;renderCopilotChunks(r)}
 function renderCopilotChunks(r){let d=buildCopilot(r);$('copilotChunks').innerHTML=`<p class="note">全文 ${d.full.length.toLocaleString()} 字元，共 ${d.chunks.length} 段。</p><div class="actions">${d.chunks.map((_,i)=>`<button class="btn small" data-chunk="${i}">複製第 ${i+1}/${d.chunks.length} 段</button>`).join('')}</div><details class="topsp"><summary>預覽匯出內容</summary><pre class="archivepreview">${safe(d.full.slice(0,12000))}${d.full.length>12000?'\n……預覽僅顯示前 12,000 字元，下載檔案包含全部內容':''}</pre></details>`}
 function downloadText(filename,content){let blob=new Blob([content],{type:'text/plain;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename.replace(/[\\/:*?"<>|]/g,'_');a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
+
+/* V5.35: Gal AI native authoritative import. Applies only to one selected cycle.
+   Source is a downloaded file, not the ChatGPT incoming inbox.
+   Mandatory user confirmation and JSON backup before local replacement. */
+let galNativeLoaded=null,galNativePlan=null;
+function galNativeText(v){return String(v==null?'':v).replace(/\r\n?/g,'\n').trim()}
+function galNativeWorld(v){return galNativeText(v).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase()}
+function galNativeVerify(obj,r){
+ const fail=[],warn=[];
+ if(!r){fail.push('請先在檔案館左側選擇要覆蓋的輪迴');return {fail,warn}}
+ if(!obj||obj.format!=='gal-ai-authoritative-scan'||obj.version!==1||obj.scope!=='entire-opening-to-bottom'
+   ||obj.readOnlyUntilImported!==true)fail.push('不是完整開場到結尾的 Gal AI 原生正史掃描檔');
+ if(obj?.validation?.ok!==true)fail.push('來源掃描未通過原始回合完整性檢查');
+ if(obj?.target?.cycleId!==r.id)fail.push('目標輪迴 ID 不一致：禁止跨輪迴覆蓋');
+ const selectedWorld=WORLDS.find(x=>x.id===r.world)?.name||'';
+ if(!obj?.target?.worldName||galNativeWorld(obj.target.worldName)!==galNativeWorld(selectedWorld))
+  fail.push('世界觀不一致：來源「'+(obj?.target?.worldName||'未填')+'」，目前為「'+selectedWorld+'」');
+ const opening=galNativeText(obj?.opening);
+ if(opening.length<8||opening.length>300000)fail.push('輪迴開場為空、不完整或超過安全上限');
+ if(!Array.isArray(obj?.messages)||obj.messages.length<2||obj.messages.length%2!==0
+   ||obj.messages.length>20000)fail.push('完整對話不是可辨識的「我／他」雙數回合');
+ if(!Array.isArray(obj?.events)||obj.events.length>5000)fail.push('事件清單格式或數量異常');
+ const ids=new Set(),messages=[],events=[],gameTimes=[];
+ for(let i=0;i<(Array.isArray(obj?.messages)?obj.messages.length:0);i++){
+  const raw=obj.messages[i],expected=i%2===0?'me':'ai';
+  if(raw?.role!==expected)fail.push('第 '+(i+1)+' 則回合身份不符，原始正史必須我／他交替');
+  if(typeof raw?.text!=='string'||!raw.text.trim()||raw.text.length>30000)fail.push('第 '+(i+1)+' 則原文無效／太長');
+  if(typeof raw?.id!=='string'||ids.has(raw.id))fail.push('第 '+(i+1)+' 則 ID 重複或無效');
+  ids.add(raw?.id);
+  const clock=raw?.gameTime;
+  if(typeof clock!=='string'||!Number.isFinite(Date.parse(clock)))fail.push('第 '+(i+1)+' 則沒有可靠的 Gal AI 劇情時間');
+  const header=i%2===1?archiveParseGalAIClock(raw):null;
+  if(i%2===1&&(!header||header.ms!==Date.parse(clock)))
+   fail.push('第 '+(i+1)+' 則 Gal AI 正文時間與 JSON 時間不一致');
+  if(i%2===0)gameTimes.push(clock);
+  else if(clock!==gameTimes.at(-1))fail.push('第 '+(i+1)+' 則的「我／他」劇情時間未對齊');
+  messages.push({...raw,role:expected,text:raw?.text||'',
+    sourceKind:'gal-ai-native',sourceCreatedAt:null,sourceTimeOrigin:null,
+    capturedAt:null,receivedAt:null});
+ }
+ for(let i=0;i<(Array.isArray(obj?.events)?obj.events.length:0);i++){
+  const raw=obj.events[i];
+  if(typeof raw?.text!=='string'||!raw.text.trim()||raw.text.length>30000)
+   fail.push('第 '+(i+1)+' 件事件缺少原文');
+  if(typeof raw?.id!=='string'||ids.has(raw.id))fail.push('第 '+(i+1)+' 件事件 ID 重複或無效');
+  ids.add(raw?.id);
+  const m=String(raw?.text||'').match(/與\s*《([^》]+)》\s*的\s*(?:世界|事件)/u);
+  if(m&&galNativeWorld(m[1])!==galNativeWorld(selectedWorld))fail.push('第 '+(i+1)+' 件事件是另一個世界觀：「'+m[1]+'」');
+  events.push({...raw,role:'me',text:raw?.text||'',status:'pending',
+    sourceCreatedAt:null,sourceTimeOrigin:null,capturedAt:null,receivedAt:null});
+ }
+ if(messages.length===0||messages.length/2!==obj?.validation?.pairs)
+  fail.push('訊息組數與來源驗證報告不同');
+ if(events.length!==obj?.validation?.events)fail.push('事件數量與來源驗證報告不同');
+ if(Array.isArray(obj?.validation?.errors)&&obj.validation.errors.length)fail.push('來源報告仍有錯誤，不能覆蓋');
+ if(Array.isArray(obj?.validation?.warnings))warn.push(...obj.validation.warnings.slice(0,8));
+ return {fail,warn,opening,messages,events,selectedWorld};
+}
+function galNativeBuildPlan(obj,r){
+ const v=galNativeVerify(obj,r);
+ if(v.fail.length)return {...v,ok:false};
+ const updated=structuredClone(r);
+ // Gal AI source wins over formerly edited ChatGPT-transcribed story text.
+ // Keep non-authoritative tabs untouched; carry over user-chosen accepted status on a unique event match.
+ const used=new Set(),oldEvents=r.events||[];
+ let matched=0,acceptedUnmatched=0;
+ const normalized=x=>galNativeText(x).replace(/\s+/g,'').replace(/[：:;；，,。!！]/g,'');
+ const mapped=v.events.map(ev=>{
+  const candidates=oldEvents.filter(o=>!used.has(o.id)&&
+    (normalized(o.text)===normalized(ev.text)||
+     (normalized(o.title).length>12&&normalized(o.title)===normalized(ev.title))));
+  if(candidates.length!==1)return ev;
+  const old=candidates[0];used.add(old.id);matched++;
+  return {...ev,id:old.id,status:old.status==='accepted'?'accepted':'pending',
+    ...(old.status==='accepted'?{receivedAt:null}:{}), // do not inherit incorrect GPT clock
+    ...(old.storyPlacement&&v.messages.some(m=>m.id===old.storyPlacement.beforeId)
+       ?{storyPlacement:old.storyPlacement}:{})};
+ });
+ acceptedUnmatched=oldEvents.filter(e=>e.status==='accepted'&&!used.has(e.id)).length;
+ updated.opening=v.opening;
+ updated.messages=v.messages;
+ updated.events=mapped;
+ // The only fields permitted to change are exactly the three user-authorized sections.
+ const untouched=Object.keys(r).every(k=>['opening','messages','events'].includes(k)
+   ||JSON.stringify(r[k])===JSON.stringify(updated[k]));
+ const check=archiveCheckDialoguePairs(archiveStoryTimeline(updated));
+ const ok=untouched&&!check.issues.length;
+ return {...v,ok,updated,matched,acceptedUnmatched,
+   sourceCounts:{opening:v.opening.length,messages:v.messages.length,events:v.events.length},
+   previousCounts:{opening:(r.opening||'').length,messages:(r.messages||[]).length,events:oldEvents.length},
+   afterOrange:check.timeIssues.length,afterRoleIssues:check.issues.length,untouched};
+}
+function galNativeShowStatus(t){$('galNativeStatus').textContent=t}
+function galNativePreview(){
+ const r=current();
+ if(!galNativeLoaded)return galNativeShowStatus('請先讀取 Gal AI 掃描檔');
+ let plan;
+ try{plan=galNativeBuildPlan(galNativeLoaded,r)}
+ catch(err){galNativePlan=null;$('galNativeApply').disabled=true;galNativeShowStatus('來源核對失敗：'+String(err?.message||err));return}
+ galNativePlan=plan;
+ $('galNativeApply').disabled=!plan.ok;
+ let lines=[
+  '【Gal AI 原生正史：覆蓋預覽】',
+  '目標：'+(r?.title||'未選輪迴')+'（'+(r?.id||'未知 ID')+'）',
+  '世界觀：'+(plan.selectedWorld||'未確認'),
+  '來源：'+(galNativeLoaded.source?.url||'未標示'),
+  plan.ok?'✅ 來源核驗完成：允許人工確認後覆蓋':'⛔ 來源核驗未通過，拒絕寫入',
+  ...plan.fail.map(x=>'⛔ '+x)
+ ];
+ if(plan.ok){
+  lines.push('輪迴開場：'+plan.previousCounts.opening+' → '+plan.sourceCounts.opening+' 字',
+   '完整對話：'+plan.previousCounts.messages+' → '+plan.sourceCounts.messages+' 則（'+plan.sourceCounts.messages/2+' 組「我／他」）',
+   '事件簿：'+plan.previousCounts.events+' → '+plan.sourceCounts.events+' 件',
+   '舊事件狀態唯一對應：'+plan.matched+' 件',
+   '舊已接事件找不到對應：'+plan.acceptedUnmatched+' 件'+(plan.acceptedUnmatched?'（需勾選額外確認才可覆蓋）':''),
+   '新對話紅線：'+plan.afterRoleIssues+'；橘線：'+plan.afterOrange,
+   '其他欄位全部保留：'+(plan.untouched?'是':'否'),
+   '注意：這是「整輪來源優先替換」，不是單純補齊缺漏；會先提供整輪備份，並只修改本機。');
+ }
+ lines.push(...plan.warn.map(x=>'⚠ '+x));
+ galNativeShowStatus(lines.join('\n'));
+}
+$('galNativeOpen').onclick=()=>{
+ const r=current();if(!r)return notify('請先選擇要匯入原生正史的輪迴');
+ galNativeLoaded=null;galNativePlan=null;$('galNativeFile').value='';
+ $('galNativeApply').disabled=true;$('galNativeConfirmLostAccepted').checked=false;
+ galNativeShowStatus('已選擇：'+r.title+'（'+r.id+'）\n請選擇由 Gal AI 專用掃描器輸出的 JSON。');
+ $('galNativeModal').classList.remove('hidden');
+};
+$('galNativeClose').onclick=()=>$('galNativeModal').classList.add('hidden');
+$('galNativeFile').onchange=async e=>{
+ galNativeLoaded=null;galNativePlan=null;$('galNativeApply').disabled=true;
+ const file=e.target.files?.[0];if(!file)return;
+ if(file.size>40*1024*1024){galNativeShowStatus('JSON 超過40MB，請停止匯入並檢查掃描範圍');return}
+ try{
+  galNativeLoaded=JSON.parse(await file.text());
+  galNativeShowStatus('已讀取 '+file.name+'；按「核對來源與覆蓋預覽」。這一步尚未修改正史。');
+ }catch(err){galNativeShowStatus('JSON 無法解析：'+String(err?.message||err))}
+};
+$('galNativePreview').onclick=galNativePreview;
+$('galNativeApply').onclick=async()=>{
+ const r=current(),p=galNativePlan;
+ if(!p?.ok||!r||galNativeLoaded.target.cycleId!==r.id){
+  notify('先重新核對來源、輪迴 ID 與世界觀，禁止跳過預覽');return;
+ }
+ if(p.acceptedUnmatched>0&&!$('galNativeConfirmLostAccepted').checked){
+  galNativeShowStatus('⛔ '+p.acceptedUnmatched+' 件舊已接事件未在原生掃描中匹配，必須明確勾選後才能以 Gal AI 事件列表為準。');return;
+ }
+ if(!confirm('正式使用 Gal AI 原生資料覆蓋「'+r.title+'」開場、完整對話與事件？'
+   +'\n現有完整對話：'+p.previousCounts.messages+' → '+p.sourceCounts.messages
+   +'\n現有事件：'+p.previousCounts.events+' → '+p.sourceCounts.events
+   +'\n其餘分頁不動。先下載完整備份、然後只在本機套用。繼續？'))return;
+ // Re-derive the plan to prevent file/selection changes between preview and apply.
+ const fresh=galNativeBuildPlan(galNativeLoaded,r);
+ if(!fresh.ok||!fresh.untouched)throw Error('套用前再次驗證失敗，已停止');
+ if(fresh.acceptedUnmatched>0&&!$('galNativeConfirmLostAccepted').checked)return;
+ downloadText('輪迴檔案館_GalAI絕對優先覆蓋前_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',
+  JSON.stringify({format:'gal-ai-restore-backup',version:1,exportedAt:new Date().toISOString(),cycle:r},null,2));
+ try{
+  await put(fresh.updated);
+  const result=current();
+  if(!result||result.messages.length!==fresh.sourceCounts.messages||result.events.length!==fresh.sourceCounts.events
+    ||result.opening!==fresh.updated.opening)throw Error('本機回讀不一致，請立刻使用剛下載的備份還原');
+  galNativeShowStatus('✅ Gal AI 正史覆蓋完成並核對本機寫入：'
+   +'\n開場 '+fresh.sourceCounts.opening+' 字，完整對話 '+fresh.sourceCounts.messages+' 則，事件 '+fresh.sourceCounts.events+' 件。'
+   +'\n副駕駛聊天、彩蛋、世界觀與其他欄位沒有改動。\n⚠ 尚未上傳 Firebase；請核對事件已接取狀態後再手動同步。');
+  $('galNativeApply').disabled=true;
+ }catch(err){galNativeShowStatus('⛔ 套用異常：'+String(err?.message||err)+'。請保留下載的備份，不要繼續雲端同步。')}
+};
+
 function logKey(kind){return kind==='quiz'?'quizLogs':'changeLogs'}
 
 const ARCHIVE_IMAGE_LIMIT=8;
