@@ -21,7 +21,7 @@ async function state(){
  const all=[...Object.values(pmap),...Object.values(old)].filter(p=>p?.cycleId&&p?.worldName);
  const unique=[...new Map(all.map(p=>[p.uid+'|'+p.cycleId,p])).values()];
  for(let i=0;i<unique.length;i++){const o=document.createElement('option');o.value=String(i);o.textContent=label(unique[i]);$('profileSelect').append(o)}
- $('profileSelect').onchange=()=>{const p=unique[Number($('profileSelect').value)];if(p){fill(p);write('已套用預設值，按「儲存此頁面綁定」後才會用於掃描。')}};
+ $('profileSelect').onchange=()=>{const selected=$('profileSelect').value;if(selected==='')return;const p=unique[Number(selected)];if(p){fill(p);write('已套用預設值，按「儲存此頁面綁定」後才會用於掃描。')}};
  fill(profile||{uid:data.profile?.uid||'',worldName:'',cycleTitle:'',cycleId:'',manager:''});
  if(profile)write('已載入此 Gal AI 頁面的輪迴綁定：'+label(profile));
 }

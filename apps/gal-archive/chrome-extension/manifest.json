@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "輪迴檔案館｜ChatGPT 對話歸檔助手",
-  "version": "0.6.6",
-  "description": "保留V0.6.5完整配對、27%/477ms慢掃；新增Gal AI劇情時間與疑似跳過片段的唯讀診斷（排序交由檔案館）。",
+  "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
+  "version": "0.7.0",
+  "description": "雙掃描工具：原 ChatGPT 監看27%/477ms與獨立 Gal AI 原生正史掃描20%/400ms/350固定，Gal AI 僅輸出待核對 JSON。",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
