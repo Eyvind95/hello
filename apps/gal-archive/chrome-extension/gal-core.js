@@ -1,4 +1,4 @@
-/* Gal AI native scanner: shared pure parser, v0.7.0. No ChatGPT DOM rules here. */
+/* Gal AI native scanner: shared pure parser. No ChatGPT DOM rules here. */
 (() => {
 'use strict';
 if(globalThis.GalArchiveCore)return;
@@ -154,5 +154,5 @@ function markdownFromDom(node,options={}){
  };
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
 }
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.7'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.8'};
 })();
