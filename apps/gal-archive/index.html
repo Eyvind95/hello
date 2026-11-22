@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.30｜Gal AI</title>
+<title>輪迴檔案館 V5.31｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -111,7 +111,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.30</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.31</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -1811,27 +1811,93 @@ function archiveReceivedMillis(v){
   if(typeof v==='number')return v;
   const t=Date.parse(v||'');return Number.isFinite(t)?t:0;
 }
-function archiveChronologyTime(m){
+
+/* V5.31: Gal AI in-world timestamp is a distinct time axis from ChatGPT sent time.
+   Parse a status HEADER near the start of a canonical Gal AI reply only. */
+function archiveParseGalAIClock(m){
+  if(m?.role!=='ai'||typeof m.text!=='string')return null;
+  const head=m.text.replace(/\r\n?/g,'\n').split('\n').slice(0,12).join('\n').slice(0,950);
+  const date=head.match(/(?:^|\n)\s*[｜|│]?\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u);
+  const time=head.match(/(?:^|\n)\s*[｜|│]?\s*(?:⏰|⌚|🕒|[\u{1F550}-\u{1F567}]|時間\s*[：:]?)\s*(\d{1,2})\s*[：:]\s*(\d{2})(?:[.:](\d{1,2}))?/u);
+  if(!date||!time)return null;
+  const [year,month,day]=date.slice(1).map(Number);
+  const hour=+time[1],minute=+time[2],second=+(time[3]||0);
+  if(year<100||month<1||month>12||day<1||day>31||hour>23||minute>59||second>59)return null;
+  const ms=Date.UTC(year,month-1,day,hour-8,minute,second);
+  const check=new Date(ms+8*3600000);
+  if(!Number.isFinite(ms)||check.getUTCFullYear()!==year||check.getUTCMonth()+1!==month
+    ||check.getUTCDate()!==day||check.getUTCHours()!==hour||check.getUTCMinutes()!==minute)return null;
+  return {ms,basis:'gal',domain:'story',precision:time[3]?'second':'minute'};
+}
+/* Player and response are the SAME in-world time. Prefer matching source parts,
+   then adjacent ChatGPT orders, then genuinely adjacent canonical turns. Do NOT
+   write inferred world timestamps into stored sourceCreatedAt/manual labels. */
+function archiveGalTimeContext(messages){
+  const context=new Map(),players=messages.filter(m=>m?.role==='me');
+  const positions=new Map(messages.map((m,i)=>[m,i]));
+  for(const ai of messages){
+    const clock=archiveParseGalAIClock(ai);
+    if(!clock)continue;
+    context.set(ai,clock);
+    const sameSource=players.filter(m=>m.sourceEventId&&m.sourceEventId===ai.sourceEventId
+      &&Number.isInteger(m.sourcePartIndex)&&Number.isInteger(ai.sourcePartIndex)
+      &&m.sourcePartIndex+1===ai.sourcePartIndex&&!context.has(m));
+    const sameChat=players.filter(m=>m.chatKey&&ai.chatKey&&m.chatKey===ai.chatKey
+      &&Number.isInteger(m.messageOrder)&&Number.isInteger(ai.messageOrder)
+      &&m.messageOrder+1===ai.messageOrder&&!context.has(m));
+    const index=positions.get(ai),previous=index>0?messages[index-1]:null;
+    const validAdjacent=previous?.role==='me'&&!context.has(previous)
+      &&!(previous.chatKey&&ai.chatKey&&previous.chatKey!==ai.chatKey)
+      &&!(previous.chatKey&&ai.chatKey&&Number.isInteger(previous.messageOrder)
+        &&Number.isInteger(ai.messageOrder)&&previous.messageOrder+1!==ai.messageOrder)
+      &&!(previous.sourceEventId&&ai.sourceEventId&&previous.sourceEventId===ai.sourceEventId
+        &&Number.isInteger(previous.sourcePartIndex)&&Number.isInteger(ai.sourcePartIndex)
+        &&previous.sourcePartIndex+1!==ai.sourcePartIndex);
+    const me=sameSource.at(-1)||sameChat.at(-1)||(validAdjacent?previous:null);
+    if(me)context.set(me,{...clock,basis:'gal-paired',pairedWith:ai});
+  }
+  return context;
+}
+function archiveRealChronologyTime(m){
   const source=archiveReceivedMillis(m?.sourceCreatedAt);
   const captured=archiveReceivedMillis(m?.capturedAt);
   const received=archiveReceivedMillis(m?.receivedAt);
-  // The GPT menu minute is shared with the preceding player message on purpose.
-  // reply-inferred is a valid *estimated source minute*, not a capture-time fallback.
-  if(source)return {ms:source,basis:m?.sourceTimeOrigin==='reply-inferred'?'inferred':'source'};
-  if(captured)return {ms:captured,basis:'captured'};
-  if(received)return {ms:received,basis:'received'};
-  return {ms:0,basis:'unknown'};
+  if(source)return {ms:source,domain:'real',
+    basis:m?.sourceTimeOrigin==='reply-inferred'?'inferred':'source'};
+  if(captured)return {ms:captured,domain:'real',basis:'captured'};
+  if(received)return {ms:received,domain:'real',basis:'received'};
+  return {ms:0,domain:'real',basis:'unknown'};
 }
-function compareArchiveChronology(a,b){
-  const x=archiveChronologyTime(a),y=archiveChronologyTime(b);
-  const minuteA=x.ms?Math.floor(x.ms/60000):0,minuteB=y.ms?Math.floor(y.ms/60000):0;
-  // ChatGPT 選單只有分鐘精度：同分鐘內先照來源回合順序，避免 GPT 被排在玩家之前。
-  if(minuteA&&minuteB&&minuteA!==minuteB)return minuteA-minuteB;
+function archiveChronologyTime(m,galContext=null){
+  return galContext?.get(m)||archiveRealChronologyTime(m);
+}
+/* If both have in-world time, compare it. If one lacks in-world time,
+   compare their best available REAL clock instead. Never subtract
+   in-world 2026-08 from ChatGPT real 2026-11. */
+function archiveComparableChronology(a,b,galContext=null){
+  const ga=galContext?.get(a),gb=galContext?.get(b);
+  if(ga&&gb)return {a:ga,b:gb,domain:'story'};
+  const ra=archiveRealChronologyTime(a),rb=archiveRealChronologyTime(b);
+  return ra.ms&&rb.ms?{a:ra,b:rb,domain:'real'}:null;
+}
+function compareArchiveChronology(a,b,galContext=null){
+  const ga=galContext?.get(a),gb=galContext?.get(b);
+  if(ga?.pairedWith===b)return -1;
+  if(gb?.pairedWith===a)return 1;
+  const pair=archiveComparableChronology(a,b,galContext);
+  if(pair){
+    const x=pair.domain==='story'?pair.a.ms:Math.floor(pair.a.ms/60000);
+    const y=pair.domain==='story'?pair.b.ms:Math.floor(pair.b.ms/60000);
+    if(x!==y)return x-y;
+  }
   if(a.chatKey&&a.chatKey===b.chatKey&&Number.isInteger(a.messageOrder)
     &&Number.isInteger(b.messageOrder)&&a.messageOrder!==b.messageOrder)return a.messageOrder-b.messageOrder;
-  if(x.ms!==y.ms)return x.ms?(y.ms?x.ms-y.ms:-1):1;
-  return (a.sourcePartIndex??0)-(b.sourcePartIndex??0);
+  if(a.sourceEventId&&a.sourceEventId===b.sourceEventId
+    &&Number.isInteger(a.sourcePartIndex)&&Number.isInteger(b.sourcePartIndex)
+    &&a.sourcePartIndex!==b.sourcePartIndex)return a.sourcePartIndex-b.sourcePartIndex;
+  return 0; // not comparable: preserve manually curated relative position
 }
+
 // Only trim at the END of automatically captured messages.
 // "顯示較少" appears after expanding a long reply. Strip the control label
 // alone; never consume the preceding ellipsis, which may be authored content.
@@ -1861,15 +1927,15 @@ function archiveEventStatusText(status){
   return status==='accepted'?'已接':status==='declined'?'未接':'待決定';
 }
 function archiveCompareEventPosition(a,b){
-  // Compare original real-world times first, NEVER a source time with a capture timestamp.
-  const ta=archiveReceivedMillis(a?.sourceCreatedAt),tb=archiveReceivedMillis(b?.sourceCreatedAt);
-  if(ta>0&&tb>0){
-    const ma=Math.floor(ta/60000),mb=Math.floor(tb/60000);
+  // Events have no Gal AI clock; align using the real conversation time axis.
+  const ta=archiveRealChronologyTime(a),tb=archiveRealChronologyTime(b);
+  if(ta.ms&&tb.ms){
+    const ma=Math.floor(ta.ms/60000),mb=Math.floor(tb.ms/60000);
     if(ma!==mb)return ma-mb;
   }
   if(a?.chatKey&&a.chatKey===b?.chatKey&&Number.isInteger(a.messageOrder)&&Number.isInteger(b.messageOrder))
     return a.messageOrder-b.messageOrder;
-  return ta>0&&tb>0?0:null;
+  return ta.ms&&tb.ms?0:null;
 }
 function archiveStoryTimeline(record){
   // Read-only merged view. Confirmed events still belong to events[], not messages[].
@@ -1931,7 +1997,7 @@ function archiveMoveAcceptedEvent(record,position,direction){
 }
 function archivePreviewCombinedStorySort(record){
   const before=archiveStoryTimeline(record),updated=structuredClone(record);
-  const sorted=sortArchivedPilotMessages(updated.messages||[]);
+  const sorted=sortArchivedPilotMessages(updated.messages||[],'messages');
   updated.messages=sorted.items;
   let resetPlacements=0;
   for(const ev of updated.events||[])if(ev.status==='accepted'&&ev.storyPlacement){
@@ -2013,26 +2079,30 @@ function archiveRestoreCyclePairedEventTimes(record){
   return {filled:fixed.filled,pairs:fixed.pairs};
 }
 
-// Hand-entered messages with an explicit timestamp are chronological entries too.
-// Hand-entered messages with NO original timestamp retain their existing slots.
-// Do not confuse the story's in-world date with a message's real sent time.
+// Hand-entered messages with explicit real time OR a Gal AI time/pair can sort.
+// Truly untimed manual entries remain pinned in their original slots.
 function archiveHasManualSortTime(message){
   return !message?.sourceEventId&&message?.sourceTimeOrigin==='manual'
     &&archiveReceivedMillis(message.sourceCreatedAt)>0;
 }
-function sortArchivedPilotMessages(items){
-  const slots=items.map((m,i)=>(m.sourceEventId||archiveHasManualSortTime(m))?i:-1).filter(i=>i>=0);
+
+function sortArchivedPilotMessages(items,section='pilotMessages'){
+  const gal=section==='messages'?archiveGalTimeContext(items):null;
+  const eligible=m=>!!(m.sourceEventId||archiveHasManualSortTime(m)||gal?.has(m));
+  const slots=items.map((m,i)=>eligible(m)?i:-1).filter(i=>i>=0);
   const manualTimed=slots.filter(i=>archiveHasManualSortTime(items[i])).length;
-  if(slots.length<2)return {items,changed:0,orderable:slots.length,manualTimed};
+  const galCount=slots.filter(i=>gal?.has(items[i])).length;
+  if(slots.length<2)return {items,changed:0,orderable:slots.length,manualTimed,galCount};
   const sorted=slots.map(i=>({m:items[i],i})).sort((a,b)=>
-    compareArchiveChronology(a.m,b.m)||a.i-b.i).map(x=>x.m);
+    compareArchiveChronology(a.m,b.m,gal)||a.i-b.i).map(x=>x.m);
   const result=items.slice();
   slots.forEach((i,j)=>{result[i]=sorted[j]});
-  return {items:result,changed:slots.filter(i=>result[i]!==items[i]).length,orderable:slots.length,manualTimed};
+  return {items:result,changed:slots.filter(i=>result[i]!==items[i]).length,orderable:slots.length,manualTimed,galCount};
 }
+
 function archiveSortTimedSection(record,section){
   if(!['messages','pilotMessages','events'].includes(section))return {changed:0,manualTimed:0,orderable:0};
-  const sorted=sortArchivedPilotMessages(record[section]||[]);
+  const sorted=sortArchivedPilotMessages(record[section]||[],section);
   record[section]=sorted.items;
   return sorted;
 }
@@ -2437,7 +2507,7 @@ async function receiveAutomaticEntries(){
   for(const group of groups.values()){
     archiveRestoreCyclePairedEventTimes(group.record);
     group.record.pilotMessages=sortArchivedPilotMessages(group.record.pilotMessages||[]).items;
-    group.record.messages=sortArchivedPilotMessages(group.record.messages||[]).items;
+    group.record.messages=sortArchivedPilotMessages(group.record.messages||[],'messages').items;
     group.record.events=sortArchivedPilotMessages(group.record.events||[]).items;
   }
   const unmatchedCycles=[...new Set(docs.map(d=>d.data().cycleId).filter(id=>!records.some(r=>r.id===id)))];
@@ -2891,7 +2961,7 @@ async function repairAutoImportedChats(){
         if(entry.target==='messages')storyAdded++;else if(entry.target==='pilotMessages')pilotAdded++;
       }
     }
-    r.messages=sortArchivedPilotMessages(r.messages||[]).items;
+    r.messages=sortArchivedPilotMessages(r.messages||[],'messages').items;
     r.pilotMessages=sortArchivedPilotMessages(r.pilotMessages||[]).items;
     r.updatedAt=new Date().toISOString();
     await operation('readwrite',{type:'put',item:r});
@@ -2944,7 +3014,7 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
         else if(basis==='captured')captured++;
         else fallback++;
       }
-      const sorted=sortArchivedPilotMessages(normalized.items);
+      const sorted=sortArchivedPilotMessages(normalized.items,section);
       r[section]=sorted.items;
       reorderable+=sorted.orderable;changed+=sorted.changed;
     }
