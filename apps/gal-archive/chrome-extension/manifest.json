@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.7.5",
-  "description": "V0.7.5：Gal AI 事件以「與《世界觀》的事件」為開頭、✎＋👍👎等操作列為結束；不再誤當普通回覆。保留原 ChatGPT 掃描。",
+  "version": "0.7.6",
+  "description": "輪迴檔案館 V0.7.6：Gal AI 原生事件一律由 AI 左側發出、掃到代表已接取，玩家藍框引用用「」及斜體 *...* 保留；ChatGPT 掃描器保留。",
   "permissions": [
     "storage",
     "activeTab",
