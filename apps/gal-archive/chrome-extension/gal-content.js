@@ -1,4 +1,4 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.1 */
+/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.2 */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
@@ -17,7 +17,7 @@ function mount(){
   '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.1</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.2</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button></div>'+
@@ -161,7 +161,7 @@ function inspect(){
  const candidates=scrollCandidates();
  const common=[...root.querySelectorAll(rowSelectors.join(','))];
  return {
-  version:'0.7.1',pageOrigin:location.origin,
+  version:'0.7.2',pageOrigin:location.origin,
   root:{tag:root.tagName,className:String(root.className||'').slice(0,150),
     scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
     width:Math.round(r.width),height:Math.round(r.height)},
@@ -223,8 +223,8 @@ function messageText(node){
   ||node;
  return core.markdownFromDom(body).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
 }
-function snapshot(){
- const root=scroller(),rs=candidateRows(root);
+function snapshot(fixedRoot=null){
+ const root=fixedRoot?.isConnected?fixedRoot:scroller(),rs=candidateRows(root);
  const rows=rs.map(({node,role,rect})=>{
   const text=messageText(node);
   const id=node.getAttribute('data-message-id')||node.getAttribute('data-id')||node.getAttribute('data-testid')||'';
@@ -287,56 +287,84 @@ function canonical(rows,valid){
  };
 }
 async function scan(profile){
- if(busy)return {ok:false,error:'Gal AI 掃描已經在進行'};
+ if(busy)return {ok:false,error:'正在掃描中'};
  busy=true;cancelled=false;lastResult=null;target=profile;mount();
  if($('gal-scan-export'))$('gal-scan-export').disabled=true;
- const collected=[];
- let bottomFrames=0,stepCount=0,failure='';
- try {
-  const first=snapshot();
-  diagnostic=inspect();
-  if(!first.rows.length){diagnostic=inspect();throw Error('目前找不到可辨識的訊息泡泡。請按「🎯 點選開場校準」選取左側第一則正文，再按「🔁 重新掃描」；若仍失敗，按「📋 複製版面診斷」。已辨識候選：'+diagnostic.recognizedRows+'。')}
+ const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0;
+ const recoveryLog=[];
+ try{
+  const first=snapshot();diagnostic=inspect();
+  if(!first.rows.length)throw Error('找不到訊息泡泡，請按「🎯 點選開場校準」後重新掃描。');
   if(first.rows[0].role!=='ai'||core.parseGameTime(first.rows[0].text))
-   throw Error('目前畫面第一則不是「左側無時間的開場」。請先捲到輪迴開場，從那裡開始，不能用中途片段覆蓋全部正史。');
-  while(!cancelled&&stepCount<5000){
-   const shot=snapshot();
-   if(!shot.rows.length)throw Error('第 '+stepCount+' 步找不到訊息泡泡，停止以免漏掉正史');
-   const info=appendSample(shot,collected);
-   if(shot.rows.some(row=>row.text.length>25000))
-    throw Error('單則訊息超過25,000字，請不要將截斷版本當正史');
-   if(collected.length>20000)throw Error('已掃超過20,000則，為避免異常終止');
-   const root=shot.root;
-   status('掃描中：已收取 '+collected.length+' 則，步數 '+stepCount+'。'
-    +'\n捲動：每步20%（最多350px），400ms等待＋固定350ms穩定。'
-    +'\n目前 '+(info.added?'新增 '+info.added+' 則':'與前一畫面重疊')+'。'
-    +'\n⚠ 不開啟時間選單／不點展開；只讀取遊戲回覆中的時間。');
-   if(isBottom(root)){bottomFrames++;if(bottomFrames>=3)break}
-   else bottomFrames=0;
+   throw Error('第一則不是左側無時間開場，請校準真正的開場訊息');
+  root=first.root;lastGoodY=root.scrollTop;
+  const nominal=Math.max(12,Math.min(MAX_SCROLL_PX,Math.floor(root.clientHeight*SCROLL_RATIO)));
+  stepPx=nominal;
+  while(!cancelled&&stepCount<12000){
+   if(!root.isConnected)throw Error('頁面替換了原捲動容器，為避免漏掃已停止');
+   const shot=snapshot(root);
+   let info;
+   try{info=appendSample(shot,collected)}
+   catch(err){
+    const reason=String(err?.message||err);
+    if(!/重疊|無法找到順序|無法比對|沒有可比對的訊息/.test(reason))throw err;
+    recovery++;
+    recoveryLog.push({step:stepCount,kind:'no-overlap',distance:stepPx,seen:shot.rows.length,stored:collected.length});
+    diagnostic={...inspect(),recoveryLog:recoveryLog.slice(-10),lastGoodY,
+      failingY:root.scrollTop,lastRole:collected.at(-1)?.role||null,
+      currentFirstRole:shot.rows[0]?.role||null};
+    if(recovery>9||stepPx<=12)
+     throw Error('第 '+stepCount+' 步無法對上前後視窗，縮至 '+stepPx+'px 仍失敗，已保護正史並停止');
+    root.scrollTop=lastGoodY;
+    await sleep(WAIT_MS+STABLE_MS);
+    if(Math.abs(root.scrollTop-lastGoodY)>4)
+     throw Error('無法退回上一可信捲動位置，拒絕猜測中間訊息');
+    stepPx=Math.max(12,Math.floor(stepPx/2));
+    const next=Math.min(root.scrollHeight-root.clientHeight,lastGoodY+stepPx);
+    if(next<=lastGoodY)throw Error('縮小步距後無法前進，停止避免死循環');
+    root.scrollTop=next;
+    status('⚠ 第 '+stepCount+' 步找不到重疊訊息，已返回上個可信位置並改為 '+stepPx+
+     'px 微捲動（重試 '+recovery+'/9）。目前保留 '+collected.length+' 則。');
+    await sleep(WAIT_MS+STABLE_MS);
+    continue;
+   }
+   recovery=0;lastGoodY=root.scrollTop;
+   if(shot.rows.some(x=>x.text.length>25000))throw Error('訊息超長，禁止存入截斷正史');
+   if(collected.length>20000)throw Error('已達20,000則安全上限');
+   noProgress=info.added?0:noProgress+1;
+   if(noProgress>180)throw Error('連續180次沒有新訊息，可能捲動區錯誤');
+   status('掃描中：已讀 '+collected.length+' 則，步數 '+stepCount+
+    '。\n目前步距 '+stepPx+'px，20%／350px上限；400ms＋350ms等待。'+
+    '\n'+(info.added?'新增 '+info.added+' 則':'前後畫面重疊')+'；尚未匯出或覆蓋。');
+   if(isBottom(root)){bottomFrames++;if(bottomFrames>=3)break}else bottomFrames=0;
+   if(info.added&&stepPx<nominal)stepPx=Math.min(nominal,Math.max(stepPx+12,Math.floor(stepPx*1.2)));
    const before=root.scrollTop;
-   root.scrollTop=Math.min(root.scrollTop+Math.max(45,Math.min(MAX_SCROLL_PX,Math.floor(root.clientHeight*SCROLL_RATIO))),root.scrollHeight);
-   await sleep(WAIT_MS);await sleep(STABLE_MS);
-   if(root.scrollTop===before&&!isBottom(root))throw Error('畫面無法向下捲動，可能選到錯誤捲動容器');
+   root.scrollTop=Math.min(root.scrollHeight-root.clientHeight,before+stepPx);
+   await sleep(WAIT_MS+STABLE_MS);
+   if(root.scrollTop<=before&&!isBottom(root))throw Error('畫面無法向下捲動，請複製版面診斷');
    stepCount++;
   }
-  if(cancelled)throw Error('使用者停止掃描，未產生可匯入檔案');
-  if(stepCount>=5000)throw Error('捲動步數達上限，未確認掃描到底');
+  if(cancelled)throw Error('使用者停止掃描');
+  if(stepCount>=12000)throw Error('未確認掃描到底，達到安全上限');
   const validation=core.validate(collected,target.worldName);
-  if(!validation.ok)throw Error('完整性驗證不通過：\n'+validation.errors.slice(0,12).join('\n'));
+  if(!validation.ok)throw Error('完整性檢查失敗：\n'+validation.errors.slice(0,12).join('\n'));
   lastResult=canonical(collected,validation);
   if($('gal-scan-export'))$('gal-scan-export').disabled=false;
-  status('✅ 掃描完成，**尚未修改任何正史**。'
-    +'\n開場：'+validation.opening.length+'字'
-    +'\n「我／他」完整回合：'+validation.pairs+'組，劇情訊息：'+lastResult.messages.length+'則'
-    +'\n事件：'+validation.events.length+'件（新事件預設待接取；匯入時保留舊事件已接取狀態）'
-    +'\n劇情時間：完全取自 Gal AI 回覆；玩家共用同回合時間。'
-    +(validation.warnings.length?'\n需核對：'+validation.warnings.slice(0,5).join('；'):'')
-    +'\n按「下載原生正史 JSON」，再到檔案館確認有優先權的覆蓋。');
- }catch(err){failure=String(err?.message||err);status('⛔ 已停止：'+failure+'\n沒有改動輪迴正史，沒有上傳半份資料。');}
- finally{busy=false}
+  status('✅ 已掃描完畢，未修改正史。\n開場：'+validation.opening.length+'字，完整回合：'+validation.pairs+
+   '組，事件：'+validation.events.length+'件。'+(recoveryLog.length?'\n曾縮小步距修復 '+recoveryLog.length+' 次。':'')+
+   '\n請下載 JSON 後到檔案館核對並備份。');
+ }catch(err){
+  failure=String(err?.message||err);
+  if(root?.isConnected)root.scrollTop=lastGoodY;
+  diagnostic={...(diagnostic||inspect()),error:failure,trustedCount:collected.length,
+   recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
+  status('⛔ 安全停止：'+failure+'\n可信訊息 '+collected.length+
+   ' 則，未輸出半份正史；可按「📋 複製版面診斷」。');
+ }finally{busy=false}
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.1',busy,hasResult:!!lastResult});return false}
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.2',busy,hasResult:!!lastResult});return false}
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
   const p=msg.profile||{};
@@ -349,5 +377,5 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:'0.7.1'};
+globalThis.GalArchivePageScanner={scan,version:'0.7.2'};
 })();
