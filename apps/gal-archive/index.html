@@ -941,7 +941,10 @@ function archiveCheckChronologicalOrder(timeline,useGalAI=false){
         const now=tier==='story'?clock.ms:Math.floor(clock.ms/60000)*60000;
         if(now<old){
           const delta=Math.ceil((old-now)/60000);
-          const duration=delta>=60?Math.floor(delta/60)+' 小時 '+(delta%60)+' 分鐘':delta+' 分鐘';
+          const deltaSeconds=Math.ceil((old-now)/1000);
+          const duration=tier==='story'
+            ?(deltaSeconds<60?deltaSeconds+' 秒':Math.floor(deltaSeconds/60)+' 分鐘'+(deltaSeconds%60?' '+(deltaSeconds%60)+' 秒':''))
+            :(delta>=60?Math.floor(delta/60)+' 小時 '+(delta%60)+' 分鐘':delta+' 分鐘');
           const label=tier==='story'?'Gal AI 劇情':tier==='real-source'?'ChatGPT／手動發言':tier==='real-captured'?'首次擷取（僅低可信線索）':'雲端接收（僅低可信線索）';
           issues.push({index,anchorIndex:previous.index,
             text:'第 '+(index+1)+' 則 '+format(now)+'，早於上一則同類時間（第 '+(previous.index+1)
