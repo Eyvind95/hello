@@ -99,7 +99,7 @@ function markdownFromDom(node,options={}){
  const blueBox=n=>{
   if(!player||n===node||!['DIV','SECTION','ASIDE','BLOCKQUOTE','P'].includes(n.tagName))return false;
   const st=css(n),p=css(n.parentElement),b=rgb(st?.backgroundColor);
-  const explicit=/\b(?:quoted?|quote-card|citation|reference|引用|引述|原文)\b/i.test(String(n.className||''));
+  const explicit=/(?:quoted?|quote-card|citation|reference|引用|引述|原文)/i.test(String(n.className||''));
   if(explicit)return true;
   if(!b||b.a<0.08||b.b-b.r<17||b.b-b.g<6||b.b<70)return false;
   if(st?.backgroundColor===p?.backgroundColor)return false;
@@ -128,7 +128,8 @@ function markdownFromDom(node,options={}){
     return '\n'+t.split('\n').map(x=>'> '+x).join('\n')+'\n';
   }
   const st=css(n);
-  const italic=(tag==='em'||tag==='i'||(n!==node&&st?.fontStyle==='italic'));
+  const italic=(tag==='em'||tag==='i'||(n!==node&&st?.fontStyle==='italic'
+    &&css(n.parentElement)?.fontStyle!=='italic'));
   if(italic&&inner.trim())return '*'+inner.trim()+'*';
   if((tag==='strong'||tag==='b')&&inner.trim())return '**'+inner.trim()+'**';
   if(tag==='code'&&n.parentElement?.tagName!=='PRE')return String.fromCharCode(96)+inner+String.fromCharCode(96);
