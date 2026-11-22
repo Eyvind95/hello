@@ -1,4 +1,4 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.5 */
+/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.6 */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
@@ -17,7 +17,7 @@ function mount(){
   '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.5</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.6</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button></div>'+
@@ -161,7 +161,7 @@ function inspect(){
  const candidates=scrollCandidates();
  const common=[...root.querySelectorAll(rowSelectors.join(','))];
  return {
-  version:'0.7.5',pageOrigin:location.origin,
+  version:'0.7.6',pageOrigin:location.origin,
   root:{tag:root.tagName,className:String(root.className||'').slice(0,150),
     scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
     width:Math.round(r.width),height:Math.round(r.height)},
@@ -223,7 +223,7 @@ function chooseOpening(){
  document.addEventListener('click',listener,true);
 }
 
-/* V0.7.5: Gal AI message boundaries.
+/* V0.7.6: Gal AI message boundaries.
  * Header "《current world》" begins an AI message; the message's like/reaction
  * bar ends it. Neither header nor button row is archived as story prose.
  * This is deliberately separate from the ChatGPT assistant extractor.
@@ -301,14 +301,14 @@ function boundaryToolbars(root){
  }
  return [...matched].filter(x=>![...matched].some(y=>y!==x&&x.contains(y))).sort(boundaryOrder);
 }
-function boundaryFragmentText(start,end){
+function boundaryFragmentText(start,end,role='ai'){
  if(!boundaryFollows(start,end))return '';
  const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
  const holder=document.createElement('div');
  holder.appendChild(range.cloneContents());
  // Controls embedded in an incomplete DOM fragment are not game narration.
  holder.querySelectorAll('button,[role="button"],[role="toolbar"],svg,style,script,textarea,input').forEach(n=>n.remove());
- return core.markdownFromDom(holder).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
+ return core.markdownFromDom(holder,{role}).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
 }
 function boundaryRead(root){
  const headings=boundaryHeaders(root),tools=boundaryToolbars(root);
@@ -330,7 +330,7 @@ function boundaryRead(root){
  for(let i=0;i<pairs.length;i++){
   const item=pairs[i];
   if(i){
-   const gap=boundaryFragmentText(pairs[i-1].end,item.start);
+   const gap=boundaryFragmentText(pairs[i-1].end,item.start,'me');
    // A complete AI event is not itself a user turn.
    if(gap.length>=2){
     rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1});
@@ -347,11 +347,11 @@ function boundaryRead(root){
  return {rows,debug};
 }
 
-function messageText(node){
+function messageText(node,role='ai'){
  // Prefer the rendered message body; remove menu/action chrome from copy.
  const body=node.querySelector('[data-message-content],[data-testid*="message-content"],.markdown,.prose,.message-content,.bubble-content')
   ||node;
- return core.markdownFromDom(body).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
+ return core.markdownFromDom(body,{role}).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
 }
 function snapshot(fixedRoot=null,preferredMode='auto'){
  const root=fixedRoot?.isConnected?fixedRoot:scroller();
@@ -366,7 +366,7 @@ function snapshot(fixedRoot=null,preferredMode='auto'){
  }
  const rs=candidateRows(root);
  const rows=rs.map(({node,role,rect})=>{
-  const text=messageText(node);
+  const text=messageText(node,role);
   // data-testid is usually shared by EVERY bubble (e.g. "message"), not a unique ID.
   // Comparing it as identity could silently skip a different message of the same role.
   const id=node.getAttribute('data-message-id')||node.getAttribute('data-id')||'';
@@ -431,8 +431,8 @@ function canonical(rows,valid){
   sourceKind:'gal-ai-native',sourceSite:location.origin
  });
  const messages=valid.messages.map((m,i)=>build(m,i,'message'));
- const events=valid.events.map((e,i)=>({...build(e,e.scanIndex,'event'),role:'me',
-  status:'pending',title:e.title,worldName:e.worldName||null,scanIndex:e.scanIndex}));
+ const events=valid.events.map((e,i)=>({...build(e,e.scanIndex,'event'),role:'ai',
+  status:'accepted',title:e.title,worldName:e.worldName||null,scanIndex:e.scanIndex}));
  return {
   format:'gal-ai-authoritative-scan',version:1,generatedAt:new Date().toISOString(),
   scope:'entire-opening-to-bottom',source:{url:location.origin+location.pathname,origin:location.origin,
@@ -527,7 +527,7 @@ async function scan(profile){
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.5',busy,hasResult:!!lastResult});return false}
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.6',busy,hasResult:!!lastResult});return false}
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
   const p=msg.profile||{};
@@ -540,5 +540,5 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:'0.7.5'};
+globalThis.GalArchivePageScanner={scan,version:'0.7.6'};
 })();
