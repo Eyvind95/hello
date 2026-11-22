@@ -142,8 +142,11 @@ function markdownFromDom(node,options={}){
    if(parseFloat(borderWidth(n))>=3&&borderStyle(n)==='solid'&&borderColor(n)!=='transparent'){
     const t=clean(out);if(t)return '\n'+t.split('\n').map(line=>'> '+line).join('\n')+'\n';
    }
-   if(display(n)==='block'&&n.parentElement?.children?.length>1&&clean(out))return out+'\n';
   }
+  // Preserve visual block boundaries from the live DOM, including block spans.
+  // Inline spans stay inline because their computed display is not block-level.
+  if(n!==node&&/^(?:block|flow-root|flex|grid|list-item)$/.test(display(n))&&clean(out))
+   return '\n'+out+'\n';
   return out;
  };
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
