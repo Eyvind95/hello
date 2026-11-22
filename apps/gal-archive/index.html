@@ -1220,7 +1220,7 @@ function archiveAuditRefresh(r){
   archiveAuditRail(a);
 }
 
-function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages),galContext=archiveGalTimeContext(r.messages||[]);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveTimeForensicsExport" class="btn small">🧭 匯出時間診斷 JSON（唯讀）</button><button id="archiveSortCurrentChat" class="btn small">↕ 依時間整理對話＋已接事件</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：只有同類時間發生倒流才標示。Gal AI 劇情時間（同回合「我／他」相同）、ChatGPT 原始＝手動、首次擷取、雲端接收按優先級辨識；不同類型不能直接比大小（略過並計數）。擷取與接收時間僅是低可信線索。已接事件不參與橘線比較。**版本更新只更新檢查邏輯，並不會自動整理以前已排錯的訊息；請先用「🧭 匯出時間診斷 JSON（唯讀）」找出原因。** 🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。🟥 深紅線：皮卡原句包含 made in heaven／做愛跳過，提示可能主動省略的劇情（不計為漏回合）。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div>${archiveSkipPanelHtml(audit.skipIssues,'chat')}<div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r,galContext)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件，深紅線為疑似做愛跳過；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
+function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages),galContext=archiveGalTimeContext(r.messages||[]);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveTimeForensicsExport" class="btn small">🧭 匯出時間診斷 JSON（唯讀）</button><button id="archiveSortCurrentChat" class="btn small">🔧 修復已確認錯序（預覽＋備份）</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：只有同類時間發生倒流才標示。Gal AI 劇情時間（同回合「我／他」相同）、ChatGPT 原始＝手動、首次擷取、雲端接收按優先級辨識；不同類型不能直接比大小（略過並計數）。擷取與接收時間僅是低可信線索。已接事件不參與橘線比較。**版本更新只更新檢查邏輯，並不會自動整理以前已排錯的訊息；請先用「🧭 匯出時間診斷 JSON（唯讀）」找出原因。** 🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。🟥 深紅線：皮卡原句包含 made in heaven／做愛跳過，提示可能主動省略的劇情（不計為漏回合）。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div>${archiveSkipPanelHtml(audit.skipIssues,'chat')}<div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r,galContext)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件，深紅線為疑似做愛跳過；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
@@ -1420,25 +1420,34 @@ if(b.id==='archiveTimeForensicsExport'){
 }
 if(b.id==='archiveSortCurrentChat'){
   const preview=archivePreviewCombinedStorySort(r);
+  if(!preview.integrity?.safe){
+    notify('安全停止：預覽未通過原文／事件完整性或回合檢查，沒有改動資料。');return;
+  }
+  if(preview.afterOrange>preview.beforeOrange||preview.afterRoleIssues>preview.beforeRoleIssues){
+    notify('安全停止：預覽會增加異常標記，沒有改動資料。');return;
+  }
   if(preview.separatedPairs){notify('安全停止：偵測到 '+preview.separatedPairs+' 組已知「我／他」不相鄰，必須先逐組核對，這次沒有重新排序或改動任何紀錄。');return}
   if(!preview.changed){notify('目前沒有可安全重排的位置差異。不同時間來源的訊息不會跨類型硬排。');return}
   const galContext=archiveGalTimeContext(r.messages||[]);
   const fixed=(r.messages||[]).filter(m=>!m.sourceEventId&&!archiveHasManualSortTime(m)&&!galContext.has(m)).length;
   const lines=[
     '安全整理「'+r.title+'」的完整對話與已接事件（劇情與現實時間不混排）。',
-    '一般對話重排 '+preview.messageMoved+' 則；已接事件移動 '+preview.movedEvents+' 件；合計位置異動 '+preview.changed+' 個。',
+    '完整對話紅線：'+preview.beforeRoleIssues+' → '+preview.afterRoleIssues+'；橘線：'+preview.beforeOrange+' → '+preview.afterOrange+'。', 
+    '一般對話位置變化 '+preview.messageMoved+' 則；已接事件位置變化 '+preview.movedEvents+' 件；合計 '+preview.changed+' 個位置。',
     '其中 '+preview.galTimed+' 則有 Gal AI 劇情時間（含同回合玩家配對）；「我／他」同組移動。',
     '跨時間類型分界 '+preview.mixedTiers+' 處不跨越重排，避免不一致排序。',
-    '已手動定位的事件 '+preview.preservedPlacements+' 件會保留原本錨點，絕不清除位置。',
+    '已手動定位的事件 '+preview.preservedPlacements+' 件保留原本錨點。下列為8件以內事件的位置預覽：',
+    ...preview.eventAnchors.map(e=>'事件 '+e.name+'：第 '+e.originalIndex+' → '+e.correctedIndex+' 則'), 
+    '完整性核對：'+preview.integrity.storyCountBefore+' 則原文全數一致，'+preview.integrity.eventCountBefore+' 件已接事件保留。',
     fixed?'沒有原始時間的手動對話 '+fixed+' 則仍固定在其原槽位。':'',
-    '未接事件仍只在事件簿。內容、圖片、接取狀態、原始時間與手動事件錨點不變。操作前先下載本輪 JSON 備份。',
+    '不修改原文、圖片、接取狀態、原始時間與手動錨點。先下載本輪 JSON 備份，確認後才修改「本機」；不會自動覆蓋雲端。',
     '確定套用？'
   ];
   if(!confirm(lines.filter(Boolean).join(String.fromCharCode(10))))return;
   downloadText('輪迴檔案館_事件與對話校正前_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',
     JSON.stringify({format:'gal-archive-manual-sort-backup',version:2,exportedAt:new Date().toISOString(),cycle:r},null,2));
   await put(preview.updated);
-  notify('校正完成：位置異動 '+preview.changed+' 處，其中已接事件 '+preview.movedEvents+' 件');
+  notify('錯序修復完成（本機）：橘線 '+preview.beforeOrange+' → '+preview.afterOrange+'、完整對話位置異動 '+preview.changed+' 處；請先核對黃點，再手動上傳雲端。');
   return;
 }
 if(b.id==='archiveAuditRun'){archiveAuditRefresh(r);notify('完整對話的回合及時間檢查完成');return}
@@ -2129,6 +2138,7 @@ function archiveMoveAcceptedEvent(record,position,direction){
   return {record:updated,id,position:position+direction};
 }
 function archivePreviewCombinedStorySort(record){
+  // Dry-run only. Commit is allowed after explicit user confirmation and a backup.
   const before=archiveStoryTimeline(record),updated=structuredClone(record);
   const sorted=sortArchivedPilotMessages(updated.messages||[],'messages');
   updated.messages=sorted.items;
@@ -2142,9 +2152,40 @@ function archivePreviewCombinedStorySort(record){
   const changed=newOrder.filter((id,i)=>id!==oldOrder[i]).length;
   const eventPositions=new Map(before.flatMap((x,i)=>x.type==='event'?[[x.entry.id,i]]:[]));
   const movedEvents=after.filter((x,i)=>x.type==='event'&&eventPositions.get(x.entry.id)!==i).length;
+  const beforeAudit=archiveCheckDialoguePairs(before),afterAudit=archiveCheckDialoguePairs(after);
+  const sourceMessages=record.messages||[],sortedMessages=updated.messages||[];
+  const sourceEvents=record.events||[],sortedEvents=updated.events||[];
+  const stableCollection=(one,two)=>{
+    if(one.length!==two.length)return false;
+    const map=new Map(one.map(m=>[m.id,JSON.stringify(m)]));
+    return map.size===one.length&&two.every(m=>map.get(m.id)===JSON.stringify(m));
+  };
+  const integrity={
+    allStoryMessagesPreserved:stableCollection(sourceMessages,sortedMessages),
+    allEventRecordsPreserved:stableCollection(sourceEvents,sortedEvents),
+    noNewRoleIssues:afterAudit.issues.length<=beforeAudit.issues.length,
+    eventCountBefore:before.filter(x=>x.type==='event').length,
+    eventCountAfter:after.filter(x=>x.type==='event').length,
+    storyCountBefore:sourceMessages.length,storyCountAfter:sortedMessages.length
+  };
+  integrity.safe=integrity.allStoryMessagesPreserved&&integrity.allEventRecordsPreserved
+    &&integrity.noNewRoleIssues&&integrity.eventCountBefore===integrity.eventCountAfter
+    &&integrity.storyCountBefore===integrity.storyCountAfter;
+  const indexAfter=new Map(after.map((x,i)=>[x.entry.id,i]));
+  const eventAnchors=before.filter(x=>x.type==='event').map(x=>({
+    name:String(x.entry.title||'已接事件').slice(0,24),
+    originalIndex:eventPositions.get(x.entry.id)+1,
+    correctedIndex:(indexAfter.get(x.entry.id)||0)+1,
+    sourceTime:x.entry.sourceCreatedAt||null,
+    sourceChat:x.entry.chatKey||null,
+    beforeNextStory:after.slice(indexAfter.get(x.entry.id)+1).find(z=>z.type==='message')?.entry?.id||null
+  }));
   return {updated,changed,movedEvents,resetPlacements,messageMoved:sorted.changed,manualTimed:sorted.manualTimed,
     galTimed:sorted.galCount||0,separatedPairs:sorted.separatedPairs||0,
-    mixedTiers:sorted.mixedTiers||0,preservedPlacements};
+    mixedTiers:sorted.mixedTiers||0,preservedPlacements,
+    beforeOrange:beforeAudit.timeIssues.length,afterOrange:afterAudit.timeIssues.length,
+    beforeRoleIssues:beforeAudit.issues.length,afterRoleIssues:afterAudit.issues.length,
+    integrity,eventAnchors};
 }
 
 function classifyArchiveChat(item,eventId){
