@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+*{box-sizing:border-box}body{margin:0;padding:16px;width:366px;background:#11192c;color:#f6f1ff;font:13px/1.5 system-ui,'Microsoft JhengHei',sans-serif}
+h2{font-size:17px;margin:0 0 4px}.sub{font-size:12px;color:#bcb1e8;margin-bottom:12px}.notice{white-space:pre-wrap;overflow-wrap:anywhere;background:#202c48;border:1px solid #455370;border-radius:10px;padding:9px;margin:9px 0}
+.notice.warn{border-color:#e1a064;color:#ffd7a5}label{display:block;color:#c7cbf5;font-size:12px;margin:9px 0 4px}
+input,select{width:100%;padding:9px 10px;color:white;background:#1a2743;border:1px solid #4a577d;border-radius:7px}
+button,a.btn{cursor:pointer;display:inline-block;padding:9px 11px;border:0;border-radius:8px;background:#6d5cdb;color:white;font-weight:700;text-decoration:none;text-align:center}
+button.secondary,a.secondary{background:#334260}button:disabled{opacity:.45}
+.row{display:flex;gap:7px;margin:12px 0}.row>*{flex:1}
+small,.help{font-size:11px;color:#bcbbe0;line-height:1.6}
+hr{border:0;border-top:1px solid #394669;margin:14px 0}
+</style></head><body>
+<h2>🧭 Gal AI 原生正史掃描器</h2>
+<div class="sub">V0.7.0 · 獨立工具 · 20%／400ms／350固定穩定等待</div>
+<a class="btn secondary" href="popup.html" style="width:100%">返回原 ChatGPT 歸檔助手</a>
+<div class="notice" id="pageStatus">正在讀取目前頁面…</div>
+<label for="profileSelect">沿用已綁定的輪迴設定（選用）</label>
+<select id="profileSelect"><option value="">— 新增此 Gal AI 對話的綁定 —</option></select>
+<label for="worldName">當前世界觀（必填，從 Gal AI 原始事件核對）</label><input id="worldName" placeholder="例如：全員精神穩定，感情除外">
+<label for="cycleTitle">輪迴名稱（僅供辨識）</label><input id="cycleTitle" placeholder="第16周目・杜林">
+<label for="cycleId">檔案館輪迴文件 ID（必填）</label><input id="cycleId" placeholder="從檔案館複製，不要自行猜">
+<label for="manager">負責副駕駛（可保留原名稱）</label><input id="manager" placeholder="例如：暗夢後輩">
+<label for="uid">Firebase UID（選填；本版不直接上傳）</label><input id="uid" placeholder="可沿用既有帳號設定">
+<div class="row"><button id="save" class="secondary">儲存此頁面綁定</button><button id="start">↓ 從現在畫面掃描到底</button></div>
+<div class="notice" id="scanStatus">尚未開始。請先在 Gal AI 頁面移至「第一則無時間的開場」，再開始掃描。</div>
+<div class="help">這是另一套獨立工具，不使用 ChatGPT 的「展開時間」或「顯示較多」。只讀取 Gal AI 劇情時間；第一則左側 AI 為「輪迴開場」，其後逐回合「我／他」，事件另存。藍色引用框補成 &gt;，斜體補成 *...*。掃描完整驗證後在頁面右上角下載 JSON，再到檔案館預覽，由 Gal AI 原文覆蓋指定欄位。<strong>掃描本身不會動到 Firebase／正史。</strong></div>
+<script src="gal-popup.js"></script></body></html>
