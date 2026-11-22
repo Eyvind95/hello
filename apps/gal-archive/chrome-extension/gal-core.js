@@ -7,9 +7,12 @@ const clean=x=>txt(x).replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').trim();
 const normalizedWorld=x=>clean(x).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase();
 function parseGameTime(input){
   const head=clean(input).split('\n').slice(0,18).join('\n').slice(0,1600);
-  const date=head.match(/(?:^|\n)\s*[｜|│]?\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u)
-    ||head.match(/(?:^|\n)\s*[｜|│]?\s*(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?=\D|$)/u);
-  const time=head.match(/(?:^|\n)\s*[｜|│]?\s*(?:[^\d\n]{0,24}?)?(\d{1,2})\s*[：:]\s*(\d{2})(?:[.:：](\d{1,2}))?(?=\D|$)/u);
+  // A Gal AI event may place the entire status header on ONE rendered line.
+  // Keep the search in the header and prefer the clock closest after its date.
+  const date=head.match(/(?:^|\n|[｜|│]\s*)(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u)
+    ||head.match(/(?:^|\n|[｜|│]\s*)(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?=\D|$)/u);
+  const afterDate=date?head.slice((date.index||0)+date[0].length,(date.index||0)+date[0].length+260):'';
+  const time=afterDate.match(/(?:[｜|│]\s*|\n\s*|^\s*)(?:[^\d\n]{0,48}?)?(\d{1,2})\s*[：:]\s*(\d{2})(?:[.:：](\d{1,2}))?(?=\D|$)/u);
   if(!date||!time)return null;
   const y=+date[1],mo=+date[2],d=+date[3],h=+time[1],mi=+time[2],sec=+(time[3]||0);
   if(y<100||mo<1||mo>12||d<1||d>31||h>23||mi>59||sec>59)return null;
@@ -49,9 +52,11 @@ function validate(rows,expectedWorld){
   if(domain&&expectedWorld&&normalizedWorld(domain)!==normalizedWorld(expectedWorld))
     errors.push('第 '+(i+1)+' 則事件／世界名稱「'+domain+'」與綁定世界觀「'+expectedWorld+'」不符；不能覆蓋其他世界觀');
   if(role==='ai'&&(row.eventType==='event'||isEvent(t))){
-   events.push({role:'me',text:t,title:(t.split('\n').find(Boolean)||'事件').slice(0,70),
-    status:'pending',scanIndex:i,worldName:row.worldName||domain||null,
-    gameTime:parseGameTime(t)?.iso||null});
+   const eventTime=parseGameTime(t);
+   if(!eventTime)warnings.push('第 '+(i+1)+' 則 Gal AI 事件沒有可確認的劇情時間，保留原文但不推測時間');
+   events.push({role:'ai',text:t,title:(t.split('\n').find(Boolean)||'事件').slice(0,70),
+    status:'accepted',scanIndex:i,worldName:row.worldName||domain||null,
+    gameTime:eventTime?.iso||null});
    continue;
   }
   if(role==='me'){
@@ -80,39 +85,69 @@ function validate(rows,expectedWorld){
  return {ok:errors.length===0,errors,warnings,opening,messages:canon,events,pairs,
   worldNames:sourceNames,scannedRows:rows.length};
 }
-function markdownFromDom(node){
- // Preserve blue blockquotes and italic/bold rendering; raw innerText would lose markers.
+function markdownFromDom(node,options={}){
+ // Player-side blue quote cards must become 「...」, not ordinary > blockquotes.
+ // Preserve italic as *...* (bold remains **...**) even when formatting is CSS,
+ // rather than semantic <em>. Leave AI-side quote styling untouched.
  if(!node)return '';
  const T=Node.TEXT_NODE,E=Node.ELEMENT_NODE;
+ const player=options.role==='me';
  const skip=/^(BUTTON|SVG|PATH|SCRIPT|STYLE|NOSCRIPT|INPUT|TEXTAREA|SELECT)$/i;
- const walk=(n,depth=0)=>{
+ const css=n=>typeof getComputedStyle==='function'?getComputedStyle(n):null;
+ const rgb=str=>{const m=String(str||'').match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/i);
+   return m?{r:+m[1],g:+m[2],b:+m[3],a:m[4]===undefined?1:+m[4]}:null};
+ const blueBox=n=>{
+  if(!player||n===node||!['DIV','SECTION','ASIDE','BLOCKQUOTE','P'].includes(n.tagName))return false;
+  const st=css(n),p=css(n.parentElement),b=rgb(st?.backgroundColor);
+  const explicit=/\b(?:quoted?|quote-card|citation|reference|引用|引述|原文)\b/i.test(String(n.className||''));
+  if(explicit)return true;
+  if(!b||b.a<0.08||b.b-b.r<17||b.b-b.g<6||b.b<70)return false;
+  if(st?.backgroundColor===p?.backgroundColor)return false;
+  // A bubble's own blue surface should not turn the entire player turn into a quote.
+  const pText=clean(n.parentElement?.innerText||'');
+  const selfText=clean(n.innerText||'');
+  if(pText.length&&selfText.length>=pText.length*.94)return false;
+  const radius=parseFloat(st?.borderTopLeftRadius||st?.borderRadius||'0');
+  return radius>=3||parseFloat(st?.borderLeftWidth||0)>=2;
+ };
+ const wrapQuote=t=>{
+  const content=clean(t);
+  return content?'\n「'+content.replace(/^「|」$/g,'')+'」\n':'';
+ };
+ const walk=(n,depth=0,insideQuote=false)=>{
   if(n.nodeType===T)return n.nodeValue||'';
   if(n.nodeType!==E||skip.test(n.tagName))return '';
-  if(n.closest&&n!==node&&n.matches('[role="toolbar"],[aria-label*="操作"],[data-role="toolbar"],[contenteditable="true"]'))return '';
+  if(n!==node&&n.matches?.('[role="toolbar"],[aria-label*="操作"],[data-role="toolbar"],[contenteditable="true"]'))return '';
   const tag=n.tagName.toLowerCase();
   if(tag==='br')return '\n';
-  const inner=[...n.childNodes].map(child=>walk(child,depth+1)).join('');
+  const quote=player&&!insideQuote&&(tag==='blockquote'||blueBox(n));
+  const inner=[...n.childNodes].map(c=>walk(c,depth+1,insideQuote||quote)).join('');
+  if(quote)return wrapQuote(inner);
   if(tag==='blockquote'){
-    const m=clean(inner);return '\n'+m.split('\n').map(x=>'> '+x).join('\n')+'\n';
+    const t=clean(inner);
+    return '\n'+t.split('\n').map(x=>'> '+x).join('\n')+'\n';
   }
-  if(tag==='em'||tag==='i')return '*'+inner.trim()+'*';
-  if(tag==='strong'||tag==='b')return '**'+inner.trim()+'**';
+  const st=css(n);
+  const italic=(tag==='em'||tag==='i'||(n!==node&&st?.fontStyle==='italic'));
+  if(italic&&inner.trim())return '*'+inner.trim()+'*';
+  if((tag==='strong'||tag==='b')&&inner.trim())return '**'+inner.trim()+'**';
   if(tag==='code'&&n.parentElement?.tagName!=='PRE')return String.fromCharCode(96)+inner+String.fromCharCode(96);
   if(tag==='pre')return '\n'+String.fromCharCode(96).repeat(3)+'\n'+inner+'\n'+String.fromCharCode(96).repeat(3)+'\n';
   if(tag==='li')return '\n- '+inner;
   if(/^h[1-6]$/.test(tag))return '\n'+'#'.repeat(+tag[1])+' '+inner+'\n';
   if(tag==='p'||tag==='article')return inner+'\n';
-  // A quote styled with a left border but without semantic blockquote needs protection.
   if((tag==='div'||tag==='section')&&n!==node){
-    const style=typeof getComputedStyle==='function'?getComputedStyle(n):null;
-    const border=parseFloat(style?.borderLeftWidth||'0');
-    if(border>=3&&style?.borderLeftStyle==='solid'&&style?.borderLeftColor!=='transparent'){
-      const m=clean(inner);if(m)return '\n'+m.split('\n').map(x=>'> '+x).join('\n')+'\n';
+    const border=parseFloat(st?.borderLeftWidth||'0');
+    if(border>=3&&st?.borderLeftStyle==='solid'&&st?.borderLeftColor!=='transparent'){
+      const t=clean(inner);
+      if(t)return '\n'+t.split('\n').map(x=>'> '+x).join('\n')+'\n';
     }
+    // Gal AI uses nested <div> lines in both dialogue and status tables.
+    if(st?.display==='block'&&n.parentElement?.children?.length>1&&clean(inner))return inner+'\n';
   }
-  return inner+(tag==='div'&&n!==node&&/\n/.test(inner)?'\n':'');
+  return inner;
  };
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
 }
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.5'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.6'};
 })();
