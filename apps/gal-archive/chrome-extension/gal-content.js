@@ -1,4 +1,4 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.2 */
+/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.3 */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
@@ -17,7 +17,7 @@ function mount(){
   '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.2</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.3</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button></div>'+
@@ -161,7 +161,7 @@ function inspect(){
  const candidates=scrollCandidates();
  const common=[...root.querySelectorAll(rowSelectors.join(','))];
  return {
-  version:'0.7.2',pageOrigin:location.origin,
+  version:'0.7.3',pageOrigin:location.origin,
   root:{tag:root.tagName,className:String(root.className||'').slice(0,150),
     scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
     width:Math.round(r.width),height:Math.round(r.height)},
@@ -217,6 +217,117 @@ function chooseOpening(){
  };
  document.addEventListener('click',listener,true);
 }
+
+/* V0.7.3: Gal AI message boundaries.
+ * Header "《current world》" begins an AI message; the message's like/reaction
+ * bar ends it. Neither header nor button row is archived as story prose.
+ * This is deliberately separate from the ChatGPT assistant extractor.
+ */
+function boundaryOrder(a,b){
+ if(a===b)return 0;
+ const v=a.compareDocumentPosition(b);
+ return v&Node.DOCUMENT_POSITION_FOLLOWING?-1:v&Node.DOCUMENT_POSITION_PRECEDING?1:0;
+}
+function boundaryFollows(a,b){return !!(a&&b&&(a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING))}
+function boundaryDirectText(n){
+ return [...(n.childNodes||[])].filter(x=>x.nodeType===Node.TEXT_NODE)
+   .map(x=>x.nodeValue||'').join('').replace(/\s+/g,' ').trim();
+}
+function boundaryTitles(root){
+ const name=core.normalizedWorld(target?.worldName||'');
+ if(!name)return [];
+ const elements=[...root.querySelectorAll('span,strong,b,p,h1,h2,h3,h4,label,div')];
+ const matches=elements.filter(n=>{
+  if(n.closest('#'+PANEL)||n.closest('button,[role="button"],nav,header,footer'))return false;
+  const t=boundaryDirectText(n);
+  if(!t||t.length>name.length+25)return false;
+  const normalized=core.normalizedWorld(t);
+  if(normalized!==name)return false;
+  const st=getComputedStyle(n);
+  return st.display!=='none'&&st.visibility!=='hidden';
+ });
+ // Avoid matching the exact same heading again through a containing parent.
+ return matches.filter(n=>!matches.some(ch=>ch!==n&&n.contains(ch))).sort(boundaryOrder);
+}
+function boundaryIconTag(n){
+ const icon=n.querySelector?.('svg,use,img')||n;
+ const attrs=['aria-label','title','data-testid','data-icon','class','href','alt','data-lucide','name'];
+ return [n,icon].map(x=>attrs.map(a=>String(x.getAttribute?.(a)||'')).join(' ')).join(' ').toLowerCase();
+}
+function boundaryIsLike(n){return /thumbs[-_ ]?up|hand[-_ ]?thumb|like(?:-button)?|upvote|點讚|点赞|喜歡|按讚|讚好|赞同/i.test(boundaryIconTag(n))}
+function boundaryToolbars(root){
+ const candidates=[...root.querySelectorAll('button,[role="button"],div,[role="toolbar"]')];
+ const groups=new Set();
+ const good=n=>{
+  if(n.closest('#'+PANEL)||n.closest('nav,header,footer'))return false;
+  const controls=[...n.querySelectorAll('button,[role="button"]')].filter(c=>!!c.querySelector('svg,img,use')||!!boundaryIconTag(c).match(/copy|like|thumb|share|bookmark|複製|書籤|讚/));
+  const iconCount=n.querySelectorAll('svg,img,use').length;
+  const text=core.clean(n.innerText||'');
+  const r=n.getBoundingClientRect();
+  return controls.length>=3&&controls.length<=12&&iconCount>=3
+    &&text.length<=95&&r.height<105&&r.width<780;
+ };
+ for(const node of candidates){
+  if(node.tagName==='BUTTON'||node.getAttribute('role')==='button'){
+   if(!boundaryIsLike(node)&&!boundaryIsLike(node.querySelector('svg')||node))continue;
+   let p=node.parentElement;
+   for(let tries=0;p&&tries<5;tries++,p=p.parentElement){
+    if(good(p)){groups.add(p);break}
+   }
+  }
+ }
+ // Some icons don't have readable thumb labels. The 4+ compact icon actions
+ // at the end of a message are a secondary signal, never a bare emoji guess.
+ for(const node of candidates){
+  if(node.tagName==='BUTTON'||node.getAttribute('role')==='button')continue;
+  if(!good(node))continue;
+  const children=[...node.children].filter(c=>!!c.querySelector('svg')||c.tagName==='BUTTON');
+  if(children.length>=3)groups.add(node);
+ }
+ return [...groups].filter(n=>![...groups].some(ch=>ch!==n&&n.contains(ch)))
+   .sort(boundaryOrder);
+}
+function boundaryFragmentText(start,end){
+ if(!boundaryFollows(start,end))return '';
+ const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
+ const holder=document.createElement('div');
+ holder.appendChild(range.cloneContents());
+ // Controls embedded in an incomplete DOM fragment are not game narration.
+ holder.querySelectorAll('button,[role="button"],[role="toolbar"],svg,style,script,textarea,input').forEach(n=>n.remove());
+ return core.markdownFromDom(holder).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
+}
+function boundaryRead(root){
+ const headers=boundaryTitles(root),tools=boundaryToolbars(root);
+ const rows=[],debug={headers:headers.length,reactionBars:tools.length,completeAI:0,playerGaps:0,
+  incompleteAI:0,mode:'header-and-thumbs'};
+ if(!headers.length)return {rows,debug};
+ const pairs=[];
+ for(let i=0;i<headers.length;i++){
+  const start=headers[i],next=headers[i+1]||null;
+  const buttons=tools.filter(t=>boundaryFollows(start,t)&&(!next||boundaryFollows(t,next)));
+  if(!buttons.length){debug.incompleteAI++;break}
+  const end=buttons[0];
+  const text=boundaryFragmentText(start,end);
+  if(text.length<8||text.length>25000){debug.incompleteAI++;break}
+  pairs.push({start,end,text});
+ }
+ for(let i=0;i<pairs.length;i++){
+  const item=pairs[i];
+  if(i){
+   const gap=boundaryFragmentText(pairs[i-1].end,item.start);
+   // Between AI messages is where the user's right-hand turn lives. If there
+   // is no gap, this may be an AI-only event; the final validator decides.
+   if(gap.length>=2){
+    rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1});
+    debug.playerGaps++;
+   }
+  }
+  rows.push({role:'ai',text:item.text,id:'',top:item.start.getBoundingClientRect().top});
+  debug.completeAI++;
+ }
+ return {rows,debug};
+}
+
 function messageText(node){
  // Prefer the rendered message body; remove menu/action chrome from copy.
  const body=node.querySelector('[data-message-content],[data-testid*="message-content"],.markdown,.prose,.message-content,.bubble-content')
@@ -224,7 +335,13 @@ function messageText(node){
  return core.markdownFromDom(body).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
 }
 function snapshot(fixedRoot=null){
- const root=fixedRoot?.isConnected?fixedRoot:scroller(),rs=candidateRows(root);
+ const root=fixedRoot?.isConnected?fixedRoot:scroller();
+ if(target?.worldName){
+  const anchored=boundaryRead(root);
+  diagnostic={...(diagnostic||{}),...anchored.debug};
+  return {root,rows:anchored.rows,method:'world-header-reaction-bar',boundaryDebug:anchored.debug};
+ }
+ const rs=candidateRows(root);
  const rows=rs.map(({node,role,rect})=>{
   const text=messageText(node);
   // data-testid is usually shared by EVERY bubble (e.g. "message"), not a unique ID.
@@ -380,7 +497,7 @@ async function scan(profile){
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.2',busy,hasResult:!!lastResult});return false}
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.3',busy,hasResult:!!lastResult});return false}
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
   const p=msg.profile||{};
@@ -393,5 +510,5 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:'0.7.2'};
+globalThis.GalArchivePageScanner={scan,version:'0.7.3'};
 })();
