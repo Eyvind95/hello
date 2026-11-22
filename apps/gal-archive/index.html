@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.33｜Gal AI</title>
+<title>輪迴檔案館 V5.34｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -111,7 +111,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.33</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.6.6.zip" download title="下載 Chrome 歸檔助手 V0.6.6 ZIP，覆蓋原資料夾並重新載入">🧩 歸檔助手 V0.6.6</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.34</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.6.6.zip" download title="下載 Chrome 歸檔助手 V0.6.6 ZIP，覆蓋原資料夾並重新載入">🧩 歸檔助手 V0.6.6</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -2012,17 +2012,57 @@ function archiveEventTitle(content){
 function archiveEventStatusText(status){
   return status==='accepted'?'已接':status==='declined'?'未接':'待決定';
 }
+
+/* V5.34: when different story-time branches overlap in a single ChatGPT chat,
+ * messageOrder can be reused and is NOT sufficient to position accepted events.
+ * Prefer nearest same-chat, same-source-tier *real sent time* among actual
+ * canonical turns. Never subtract the Gal AI (in-world) time from GPT time.
+ */
 function archiveCompareEventPosition(a,b){
-  // Same ChatGPT conversation order is the strongest event locator.
-  if(a?.chatKey&&a.chatKey===b?.chatKey&&Number.isInteger(a.messageOrder)&&Number.isInteger(b.messageOrder)
+  const ta=archiveRealChronologyTime(a),tb=archiveRealChronologyTime(b);
+  if(ta.ms&&tb.ms&&archiveClockTier(ta)===archiveClockTier(tb)){
+    const delta=Math.floor(ta.ms/60000)-Math.floor(tb.ms/60000);
+    if(delta)return delta;
+  }
+  if(a?.chatKey&&b?.chatKey&&a.chatKey===b.chatKey
+    &&Number.isInteger(a.messageOrder)&&Number.isInteger(b.messageOrder)
     &&a.messageOrder!==b.messageOrder)return a.messageOrder-b.messageOrder;
   if(a?.sourceEventId&&a.sourceEventId===b?.sourceEventId
     &&Number.isInteger(a.sourcePartIndex)&&Number.isInteger(b.sourcePartIndex))
     return a.sourcePartIndex-b.sourcePartIndex;
-  // Never position a receipt-time event among actual ChatGPT authored times.
-  const ta=archiveRealChronologyTime(a),tb=archiveRealChronologyTime(b);
-  if(!ta.ms||!tb.ms||archiveClockTier(ta)!==archiveClockTier(tb))return null;
-  return Math.floor(ta.ms/60000)-Math.floor(tb.ms/60000);
+  return null;
+}
+function archiveEventNearestStoryIndex(event,rows,gal){
+  const origin=archiveRealChronologyTime(event),tier=archiveClockTier(origin);
+  if(!origin.ms||tier==='unknown')return null;
+  const candidates=rows.map((row,i)=>({row,i})).filter(x=>{
+    if(x.row.type!=='message')return false;
+    const m=x.row.entry;
+    if(event.chatKey&&m.chatKey!==event.chatKey)return false;
+    const clock=archiveRealChronologyTime(m);
+    return clock.ms&&archiveClockTier(clock)===tier;
+  });
+  if(!candidates.length)return null;
+  candidates.sort((a,b)=>{
+    const aa=archiveRealChronologyTime(a.row.entry).ms,bb=archiveRealChronologyTime(b.row.entry).ms;
+    return Math.abs(aa-origin.ms)-Math.abs(bb-origin.ms)
+      ||(a.row.entry.role==='me'?-1:1)-(b.row.entry.role==='me'?-1:1)
+      ||a.i-b.i;
+  });
+  const nearest=candidates[0],nearestClock=archiveRealChronologyTime(nearest.row.entry),
+    delta=origin.ms-nearestClock.ms;
+  let at=nearest.i;
+  if(delta>0)at=nearest.i+1;
+  else if(delta===0&&Number.isInteger(event.messageOrder)&&Number.isInteger(nearest.row.entry.messageOrder)
+    &&event.messageOrder>nearest.row.entry.messageOrder)at=nearest.i+1;
+  // If the insertion would split a known player -> Gal AI response, shift it
+  // to the *outside* of the pair, in the intended before/after direction.
+  if(at>0&&at<rows.length&&rows[at-1].type==='message'&&rows[at].type==='message'
+    &&archiveIsTrustedAdjacentTurn(rows[at-1].entry,rows[at].entry,gal)){
+    if(delta>0)at++;
+    else at--;
+  }
+  return Math.max(0,Math.min(rows.length,at));
 }
 function archiveStoryTimeline(record){
   // Read-only merged view. Confirmed events still belong to events[], not messages[].
@@ -2039,14 +2079,16 @@ function archiveStoryTimeline(record){
   }
   automatic.sort((a,b)=>archiveCompareEventPosition(a.entry,b.entry)??a.index-b.index);
   for(const row of automatic){
-    let at=rows.length;
-    for(let i=0;i<rows.length;i++){
-      const cmp=archiveCompareEventPosition(row.entry,rows[i].entry);
-      if(cmp!==null&&cmp<0){at=i;break}
+    let at=archiveEventNearestStoryIndex(row.entry,rows,pairedClocks);
+    if(at===null){
+      at=rows.length;
+      for(let i=0;i<rows.length;i++){
+        const cmp=archiveCompareEventPosition(row.entry,rows[i].entry);
+        if(cmp!==null&&cmp<0){at=i;break}
+      }
+      if(at>0&&at<rows.length&&rows[at-1].type==='message'&&rows[at].type==='message'
+        &&archiveIsTrustedAdjacentTurn(rows[at-1].entry,rows[at].entry,pairedClocks))at--;
     }
-    // Automatic event placement must never split an acknowledged player/AI pair.
-    if(at>0&&at<rows.length&&rows[at-1].type==='message'&&rows[at].type==='message'
-      &&archiveIsTrustedAdjacentTurn(rows[at-1].entry,rows[at].entry,pairedClocks))at--;
     rows.splice(at,0,row);
   }
   const groups=new Map();
