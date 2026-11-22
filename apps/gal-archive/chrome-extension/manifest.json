@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "輪迴檔案館｜ChatGPT 對話歸檔助手",
+  "version": "0.6.6",
+  "description": "保留V0.6.5完整配對、27%/477ms慢掃；新增Gal AI劇情時間與疑似跳過片段的唯讀診斷（排序交由檔案館）。",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://asia-east1-eyvind95-182f0.cloudfunctions.net/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "輪迴歸檔助手"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

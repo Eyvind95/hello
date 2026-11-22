@@ -1,0 +1,38 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body{font-family:system-ui,'Microsoft JhengHei',sans-serif;background:#101729;color:#eef2ff;width:350px;margin:0;padding:17px;box-sizing:border-box}h2{font-size:18px;margin:0 0 5px}.sub{font-size:12px;color:#aab6db;margin-bottom:15px}.field{margin-bottom:12px}label{display:block;font-size:12px;margin:0 0 4px;color:#c6d2f3}input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #47567c;border-radius:8px;background:#1c2944;color:white}button{padding:10px;border:0;border-radius:8px;background:#626cf5;color:white;font-weight:bold;cursor:pointer}button.secondary{background:#34415d}button:disabled{opacity:.45} .buttons{display:flex;gap:8px;margin:12px 0}.buttons button{flex:1}.hint{font-size:11px;color:#aab6db;line-height:1.6}.notice{white-space:pre-wrap;font-size:12px;background:#1f2d46;padding:10px;margin:9px 0;border-radius:8px;overflow-wrap:anywhere} .good{color:#78e3bb}.bad{color:#ffb1b1}hr{border:0;border-top:1px solid #354461;margin:16px 0}summary{cursor:pointer;padding:10px 0;font-weight:650}details#bindingPanel{border:1px solid #354461;border-radius:9px;padding:0 10px 11px;margin:12px 0}details#bindingPanel .field{margin:8px 0 12px}.sectionhead{font-size:13px;color:#e4e5ff;font-weight:700;margin:13px 0 6px}#status,#lastWriteStatus,#timeCaptureStatus,#timeUploadStatus,#diagnostics{font-size:12px;line-height:1.5}
+</style></head><body>
+<h2>📚 輪迴自動歸檔助手</h2><div class="sub">V0.6.6 · Gal AI 時間線索／深紅跳過診斷／27% 慢掃／完整配對</div>
+<div class="notice" id="current">正在檢查這個頁面……</div>
+<details id="bindingPanel" open><summary>⚙️ 目前對話的輪迴綁定設定（點擊展開／收合）</summary>
+<div class="field"><label for="targetPicker">套用已儲存的輪迴設定（選用）</label><select id="targetPicker" style="width:100%;padding:9px;background:#1c2944;color:white;border:1px solid #47567c;border-radius:8px"><option value="">— 為此對話設定新輪迴 —</option></select></div>
+<div class="field"><label for="uid">Firebase UID</label><input id="uid" autocomplete="off" placeholder="從網站雲端同步面板複製"></div>
+<div class="field"><label for="worldName">世界觀名稱（辨識用，不傳送）</label><input id="worldName" autocomplete="off" placeholder="例如：全員精神穩定"></div>
+<div class="field"><label for="cycleTitle">輪迴名稱（辨識用，不傳送）</label><input id="cycleTitle" autocomplete="off" placeholder="輸入這個輪迴的辨識名稱"></div>
+<div class="field"><label for="cycleId">輪迴文件 ID（從檔案館該輪迴複製）</label><input id="cycleId" autocomplete="off" placeholder="必須是此輪迴真正的文件 ID"></div>
+<div class="field"><label for="manager">此次負責的副駕駛（單一名稱）</label><input id="manager" autocomplete="off" placeholder="填入負責此輪迴的副駕駛名稱"></div>
+<div class="field"><label for="key">寫入金鑰（僅儲存於本機 Chrome）</label><input id="key" type="password" autocomplete="new-password" placeholder="原有的 64 位寫入金鑰"></div>
+<button id="save" style="width:100%">將此對話綁定到上面輪迴</button>
+<div class="hint" style="margin-top:8px">換對話要重新選擇或確認綁定；不會沿用上一個對話的目標。建立新輪迴後須先在檔案館上傳本機資料。</div>
+</details>
+<div class="buttons"><button id="start">開始監看此對話</button><button class="secondary" id="stop">停止監看</button></div>
+<div style="font-size:12px;padding:8px 0"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input id="autoTime" type="checkbox" style="width:auto"/> 自動讀取新訊息的選單時間（可關閉）</label><div class="hint">只在監看中、訊息穩定後短暫開關選單；可能閃動。原始時間精確到分鐘，不能冒充秒數。</div></div>
+<div class="sectionhead">🕒 時間擷取與查看（恢復常駐顯示）</div>
+<button id="testTime" class="secondary" style="width:100%;margin-bottom:8px">測試讀取目前最後一則的時間（不傳送）</button>
+<div class="notice" id="timeCaptureStatus">最近時間擷取：尚無紀錄</div>
+<div class="notice" id="timeUploadStatus">最近時間上傳：尚無紀錄</div>
+<div class="sectionhead">🧭 Gal AI 劇情時間與跳過線索（唯讀）</div>
+<div class="notice" id="storyHintsStatus">正在檢查目前可見訊息中的劇情時間…</div>
+<div class="hint">網站 V5.31 會將 Gal AI 回覆內的時間優先用於「我／他」同回合排序。這裡只從已載入的皮卡訊息尋找「他：」狀態表和 made in heaven／做愛跳過，不修改 ChatGPT 原始時間、不自動補寫缺漏。</div>
+<div class="sectionhead">🔎 歷史範圍掃描（必須有完整回覆）</div>
+<div class="buttons"><button id="scanDown" class="secondary">↓ 從現在畫面掃描到底</button><button id="pickRange" class="secondary">▧ 在頁面框選範圍</button></div>
+<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;margin:7px 0 11px"><input id="replayExisting" type="checkbox" style="width:auto;margin-top:3px"/> <span><strong>本次掃描重新傳送「已傳過」的訊息</strong><span class="hint" style="display:block">清空舊版副駕駛聊天後，要重新擷取同一段 ChatGPT 對話時才勾選。只影響這一次掃描；原本正史來源若仍存在，Firebase 會拒絕重複。請先確認輪迴綁定與掃描範圍。</span></span></label>
+<div class="notice" id="bulkStatus">範圍掃描：尚未執行</div>
+<div class="hint">【雙向檢查】每一則皮卡發言必須有一則 GPT 回覆，且每則 GPT 回覆都必須有一則皮卡發言；任一端缺漏就停止，這一批不會上傳。【防跳過】改為小步慢速捲動並確認前後視窗有重疊訊息；無法接續會嘗試稍微回捲，仍無法確認就報錯、不傳送。本次完整性檢查完成前不會上傳任何訊息。起點需包含一組完整的「皮卡＋GPT」，不會自動跳過開頭孤立的 GPT；只有框選模式需要明確指定起點／終點。長篇掃描可能需要數分鐘。</div>
+<div class="sectionhead">📥 訊息監看與雲端紀錄</div>
+<button id="backfill" class="secondary" style="width:100%;margin-bottom:8px">回補目前頁面已顯示的歷史訊息</button>
+<div class="notice" id="status">操作提示：尚無新操作</div>
+<div class="notice" id="lastWriteStatus">最近寫入：尚無紀錄</div>
+<div class="notice" id="diagnostics">偵測診斷：檢查中……</div>
+<button id="refresh" class="secondary" style="width:100%;margin-bottom:12px">重新檢查偵測與時間狀態</button>
+<div class="hint">監看預設只記新增訊息；回補前會再次詢問目標輪迴，最多取目前網頁已載入的 200 則。超長回覆會先嘗試按「顯示較多」；展開失敗會停止回補以免只存半段。這裡顯示的是目前 ChatGPT 對話的最近紀錄；不會下載 ChatGPT 伺服器的完整歷史。超過 25,000 字元的單則暫不支援。請勿在公開電腦存放金鑰。</div>
+<script src="popup.js"></script></body></html>
