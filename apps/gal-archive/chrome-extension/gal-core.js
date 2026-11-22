@@ -124,7 +124,14 @@ function markdownFromDom(node,options={}){
   const italicNow=(tag==='em'||tag==='i'||italicStyle(n)==='italic')
     &&!inItalic&&(n===node||italicStyle(n.parentElement)!=='italic');
   const nextItalic=inItalic||italicNow||italicStyle(n)==='italic';
-  const inner=[...n.childNodes].map(child=>walk(child,inQuote||quoted,nextItalic)).join('');
+  let inner='';
+  for(const child of n.childNodes){
+   const part=walk(child,inQuote||quoted,nextItalic);
+   const block=child.nodeType===E&&/^(?:block|flow-root|flex|grid|list-item)$/.test(display(child));
+   if(block&&part.trim()&&inner&&!inner.endsWith('\n'))inner+='\n';
+   inner+=part;
+   if(block&&part.trim()&&!inner.endsWith('\n'))inner+='\n';
+  }
   if(quoted)return quoteText(inner);
   if(tag==='blockquote'){
    const t=clean(inner);
@@ -143,10 +150,6 @@ function markdownFromDom(node,options={}){
     const t=clean(out);if(t)return '\n'+t.split('\n').map(line=>'> '+line).join('\n')+'\n';
    }
   }
-  // Preserve visual block boundaries from the live DOM, including block spans.
-  // Inline spans stay inline because their computed display is not block-level.
-  if(n!==node&&/^(?:block|flow-root|flex|grid|list-item)$/.test(display(n))&&clean(out))
-   return '\n'+out+'\n';
   return out;
  };
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
