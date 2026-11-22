@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.7.8",
-  "description": "輪迴檔案館 V0.7.8：保留 Gal AI 回覆段落換行、玩家 #250C57 引用框與斜體。",
+  "version": "0.7.9",
+  "description": "輪迴檔案館 V0.7.9：辨識 Gal AI 灰底與玩家紫底引用框，保留原有段落、行內排版與斜體。",
   "permissions": [
     "storage",
     "activeTab",

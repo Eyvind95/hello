@@ -66,7 +66,7 @@ test('preserves exact player quote color and independent italic formatting', () 
   const other = element('span', 'inline', text('普通文字。'));
   other.sourceStyles['data-gal-source-bg'] = '#250C58';
   const root = element('div', 'block', quote, italic, other);
-  assert.equal(markdownFromDom(root, { role: 'me' }), '「引用。」\n*動作。*普通文字。');
+  assert.equal(markdownFromDom(root, { role: 'me' }), '「引用。」*動作。*普通文字。');
   assert.equal(markdownFromDom(root, { role: 'ai' }), '引用。*動作。*普通文字。');
 });
 

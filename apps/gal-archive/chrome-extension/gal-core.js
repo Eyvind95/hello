@@ -85,34 +85,64 @@ function validate(rows,expectedWorld){
  return {ok:errors.length===0,errors,warnings,opening,messages:canon,events,pairs,
   worldNames:sourceNames,scannedRows:rows.length};
 }
+function copyRangeWithLiveStyles(range){
+ const root=range.commonAncestorContainer;
+ const base=root.nodeType===Node.ELEMENT_NODE?root:root.parentElement;
+ const props=[
+  ['bg','backgroundColor'],['italic','fontStyle'],['display','display'],
+  ['border-width','borderLeftWidth'],['border-style','borderLeftStyle'],['border-color','borderLeftColor']
+ ];
+ const originals=[...(base?.querySelectorAll('*')||[])].filter(el=>range.intersectsNode(el));
+ const snapshots=originals.map(el=>{
+  const computed=getComputedStyle(el);
+  return [...props.map(([name,prop])=>[name,computed[prop]]),
+   ['parent-bg',getComputedStyle(el.parentElement).backgroundColor],
+   ['complete',range.isPointInRange(el,0)&&range.isPointInRange(el,el.childNodes.length)?'yes':'no']];
+ });
+ const fragment=range.cloneContents();
+ const copies=[...fragment.querySelectorAll('*')];
+ if(originals.length!==copies.length||originals.some((el,i)=>el.tagName!==copies[i].tagName)){
+  return {fragment,mapped:false,reason:'range-structure-diff',originals:originals.length,copies:copies.length};
+ }
+ for(let i=0;i<copies.length;i++){
+  for(const [name,value] of snapshots[i])copies[i].setAttribute('data-gal-source-'+name,value);
+ }
+ return {fragment,mapped:true,sourceElements:originals.length};
+}
 function markdownFromDom(node,options={}){
- // Only the real Gal AI purple #250C57 segment is a 「quoted player card」.
- // Plain user text and italic-only text do NOT receive Japanese quotes.
  if(!node)return '';
  const T=Node.TEXT_NODE,E=Node.ELEMENT_NODE,player=options.role==='me';
  const skip=/^(BUTTON|SVG|PATH|SCRIPT|STYLE|NOSCRIPT|INPUT|TEXTAREA|SELECT)$/i;
  const source=(n,key,fallback='')=>n?.getAttribute?.('data-gal-source-'+key)||fallback;
- const css=n=>typeof getComputedStyle==='function'?getComputedStyle(n):null;
- const color=n=>source(n,'bg',css(n)?.backgroundColor||n?.style?.backgroundColor||'');
- const italicStyle=n=>source(n,'italic',css(n)?.fontStyle||n?.style?.fontStyle||'normal');
- const display=n=>source(n,'display',css(n)?.display||'');
- const radius=n=>source(n,'radius',css(n)?.borderTopLeftRadius||'0');
- const borderWidth=n=>source(n,'border-width',css(n)?.borderLeftWidth||'0');
- const borderStyle=n=>source(n,'border-style',css(n)?.borderLeftStyle||'');
- const borderColor=n=>source(n,'border-color',css(n)?.borderLeftColor||'');
- function purple(src){
+ const style=(n,key,prop)=>source(n,key)||(n?.nodeType===E?getComputedStyle(n)[prop]:'');
+ const color=n=>style(n,'bg','backgroundColor');
+ const italicStyle=n=>style(n,'italic','fontStyle');
+ const display=n=>style(n,'display','display');
+ const borderWidth=n=>style(n,'border-width','borderLeftWidth');
+ const borderStyle=n=>style(n,'border-style','borderLeftStyle');
+ const borderColor=n=>style(n,'border-color','borderLeftColor');
+ function quoteColor(src){
   const s=String(src||'').trim().toLowerCase().replace(/\s+/g,'');
-  if(s==='#250c57'||s==='#250c57ff')return true;
-  const match=s.match(/^rgba?\((\d+),(\d+),(\d+)(?:[,/]([\d.]+))?\)$/);
-  return !!match&&+match[1]===37&&+match[2]===12&&+match[3]===87
-    &&(match[4]===undefined||+match[4]>.95);
+  if(/^#250c57(?:ff)?$/.test(s)||/^rgba?\(37,12,87(?:,1)?\)$/.test(s))return 'me';
+  if(/^#2a2a34(?:ff)?$/.test(s)||/^rgba?\(42,42,52(?:,1)?\)$/.test(s))return 'ai';
+  return null;
  }
- const quoteCard=n=>player&&n!==node&&purple(color(n))&&!purple(color(n.parentElement));
+ const bubble='span.message-bubble-text';
+ const body='[data-message-content],[data-testid*="message-content"],.markdown,.prose,.message-content,.bubble-content';
+ function quoteCard(n,inQuote){
+  if(inQuote||n===node||source(n,'complete')==='no'||quoteColor(color(n))!==(player?'me':'ai'))return false;
+  if(quoteColor(source(n,'parent-bg')||color(n.parentElement))===(player?'me':'ai'))return false;
+  if(player)return true;
+  // A gray message surface can use the same color as an embedded quote.
+  // Require an observed bubble-text element within a body with sibling content.
+  return n.matches(bubble)&&!n.matches(body)&&!n.querySelector(bubble)&&
+   [...n.parentElement.childNodes].some(peer=>peer!==n&&clean(peer.textContent)&&
+    (peer.nodeType===T||(peer.nodeType===E&&!skip.test(peer.tagName)&&!peer.matches('[role="button"],[role="toolbar"]'))));
+ }
  const quoteText=value=>{
   const t=clean(value);
-  if(!t)return '';
-  // One quote card = one pair of 「」 and a line break before/after it.
-  return '\n「'+t+'」\n';
+  if(!t||t.startsWith('「')&&t.endsWith('」'))return t;
+  return '「'+t+'」';
  };
  const walk=(n,inQuote=false,inItalic=false)=>{
   if(n.nodeType===T)return n.nodeValue||'';
@@ -120,15 +150,15 @@ function markdownFromDom(node,options={}){
   if(n!==node&&n.matches?.('[role="toolbar"],[aria-label*="操作"],[data-role="toolbar"],[contenteditable="true"]'))return '';
   const tag=n.tagName.toLowerCase();
   if(tag==='br')return '\n';
-  const quoted=!inQuote&&quoteCard(n);
+  const quoted=quoteCard(n,inQuote);
   const italicNow=(tag==='em'||tag==='i'||italicStyle(n)==='italic')
     &&!inItalic&&(n===node||italicStyle(n.parentElement)!=='italic');
   const nextItalic=inItalic||italicNow||italicStyle(n)==='italic';
   let inner='';
   for(const child of n.childNodes){
    const part=walk(child,inQuote||quoted,nextItalic);
-   const block=child.nodeType===E&&/^(?:block|flow-root|flex|grid|list-item)$/.test(display(child));
-   if(block&&part.trim()&&inner&&!inner.endsWith('\n'))inner+='\n';
+   const block=child.nodeType===E&&/^(?:block|flow-root|flex|grid|list-item|table)$/.test(display(child));
+   if(block&&part.trim()&&inner&&!inner.endsWith('\n')&&!part.startsWith('\n'))inner+='\n';
    inner+=part;
    if(block&&part.trim()&&!inner.endsWith('\n'))inner+='\n';
   }
@@ -138,13 +168,12 @@ function markdownFromDom(node,options={}){
    return '\n'+t.split('\n').map(line=>'> '+line).join('\n')+'\n';
   }
   let out=inner;
-  if(italicNow&&out.trim())out='*'+out.trim()+'*';
+  if(italicNow&&out.trim())out=out.replace(/\S[\s\S]*\S|\S/,t=>'*'+t+'*');
   if((tag==='strong'||tag==='b')&&out.trim())out='**'+out.trim()+'**';
   if(tag==='code'&&n.parentElement?.tagName!=='PRE')return String.fromCharCode(96)+out+String.fromCharCode(96);
   if(tag==='pre')return '\n'+String.fromCharCode(96).repeat(3)+'\n'+out+'\n'+String.fromCharCode(96).repeat(3)+'\n';
   if(tag==='li')return '\n- '+out;
   if(/^h[1-6]$/.test(tag))return '\n'+'#'.repeat(+tag[1])+' '+out+'\n';
-  if(tag==='p'||tag==='article')return out+'\n';
   if((tag==='div'||tag==='section')&&n!==node){
    if(parseFloat(borderWidth(n))>=3&&borderStyle(n)==='solid'&&borderColor(n)!=='transparent'){
     const t=clean(out);if(t)return '\n'+t.split('\n').map(line=>'> '+line).join('\n')+'\n';
@@ -154,5 +183,5 @@ function markdownFromDom(node,options={}){
  };
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
 }
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.8'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,version:'0.7.9'};
 })();

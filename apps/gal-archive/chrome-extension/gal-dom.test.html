@@ -1,0 +1,101 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gal AI DOM regression tests</title>
+<style>
+  .player { background: #250C57; }
+  .gray { background: #2A2A34; }
+  .near-gray { background: #2A2A35; }
+  .block { display: block; }
+  .status { display: table; }
+  .name { display: inline-block; color: purple; }
+  .italic { font-style: italic; }
+</style>
+<main id="fixture"></main>
+<pre id="result">RUNNING</pre>
+<script src="gal-core.js"></script>
+<script>
+const fixture = document.querySelector('#fixture');
+const result = document.querySelector('#result');
+const { copyRangeWithLiveStyles, markdownFromDom, validate } = GalArchiveCore;
+const failures = [];
+let checks = 0;
+function equal(label, actual, expected) {
+  checks++;
+  if (actual !== expected) failures.push(label + ': ' + JSON.stringify({ actual, expected }));
+}
+function verify(label, role, markup, expected) {
+  fixture.innerHTML = '<header>《世界觀》</header><div class="message-content">' + markup +
+    '</div><footer>工具列</footer>';
+  const body = fixture.querySelector('.message-content');
+  equal(label + ' live', markdownFromDom(body, { role }), expected);
+  const range = document.createRange();
+  range.setStartAfter(fixture.firstElementChild);
+  range.setEndBefore(fixture.lastElementChild);
+  const { fragment, mapped } = copyRangeWithLiveStyles(range);
+  equal(label + ' mapped', mapped, true);
+  const holder = document.createElement('div');
+  holder.append(fragment);
+  const actual = markdownFromDom(holder, { role });
+  equal(label + ' cloned', actual, expected);
+  return actual;
+}
+verify('single player quote', 'me', '<span class="player">說話。</span>', '「說話。」');
+verify('adjacent block player quotes', 'me',
+  '<div>敘述。</div><span class="player block">一。</span><span class="player block">二。</span>',
+  '敘述。\n「一。」\n「二。」');
+verify('single AI gray quote', 'ai', '他說：<span class="message-bubble-text gray">第一句。</span>',
+  '他說：「第一句。」');
+verify('five grey quotes', 'ai', [1,2,3,4,5].map(n =>
+  '<span class="message-bubble-text gray block">' + n + '</span>').join(''), '「1」\n「2」\n「3」\n「4」\n「5」');
+verify('ordinary AI dark wrapper and similar gray', 'ai',
+  '<div class="message-bubble-text gray"><span>一般敘述。</span></div>' +
+  '<div class="message-bubble-text near-gray">普通正文。</div>',
+  '一般敘述。\n普通正文。');
+verify('entire AI bubble', 'ai', '<div class="message-bubble-text gray">一般敘述。</div>', '一般敘述。');
+verify('generic dark regions and role mismatch', 'ai',
+  '<div class="gray">普通。</div><span class="player">紫色。</span>', '普通。\n紫色。');
+verify('wrong role gray', 'me', '普通。<span class="message-bubble-text gray">灰色。</span>', '普通。灰色。');
+verify('existing punctuation', 'ai', '他說：<span class="message-bubble-text gray">「原文，標點！」</span>',
+  '他說：「原文，標點！」');
+verify('alternating content', 'ai',
+  '<p>普通敘述</p><span class="message-bubble-text gray block">第一段對話</span>' +
+  '<p>普通敘述</p><span class="message-bubble-text gray block">第二段對話</span>',
+  '普通敘述\n「第一段對話」\n普通敘述\n「第二段對話」');
+verify('explicit blank line preserved', 'ai',
+  '敘述<br><br><span class="message-bubble-text gray block">對話</span>', '敘述\n\n「對話」');
+verify('inline styled names and ordinary span', 'ai',
+  '灰白霧氣<span>芒</span>，頓時引來雪豹<span class="name">雷因</span>的幽藍虛影……',
+  '灰白霧氣芒，頓時引來雪豹雷因的幽藍虛影……');
+verify('player CSS italic', 'me', '<span class="player">引用。</span><span class="italic"> 動作。 </span>繼續。',
+  '「引用。」 *動作。* 繼續。');
+verify('nested gray surfaces', 'ai',
+  '<div class="gray">敘述<span class="message-bubble-text gray">正文。</span></div>',
+  '敘述正文。');
+fixture.innerHTML = '<span class="message-bubble-text gray">前綴文字</span>敘述';
+const partial = document.createRange();
+partial.setStart(fixture.firstChild.firstChild, 2);
+partial.setEndAfter(fixture.lastChild);
+const clipped = copyRangeWithLiveStyles(partial);
+equal('partial range mapped', clipped.mapped, true);
+const partialHolder = document.createElement('div');
+partialHolder.append(clipped.fragment);
+equal('incomplete card stays plain', markdownFromDom(partialHolder, { role: 'ai' }), '文字敘述');
+const later = verify('status and story', 'ai',
+  '<div class="status">｜2026年8月22日｜09:30｜</div><div>洛倫斯 🦒 回答。</div>',
+  '｜2026年8月22日｜09:30｜\n洛倫斯 🦒 回答。');
+const event = verify('event status and body', 'ai',
+  '<div class="status">事件通知｜2026年8月22日｜09:35｜</div><div>內容。</div>',
+  '事件通知｜2026年8月22日｜09:35｜\n內容。');
+const validated = validate([
+  { role: 'ai', text: '這裡是完整的輪迴開場。' },
+  { role: 'me', text: '第一輪。' }, { role: 'ai', text: later }, { role: 'ai', text: event },
+  { role: 'me', text: '第二輪。' }, { role: 'ai', text: later.replace('09:30', '09:20') }
+]);
+equal('validation', validated.ok, true);
+equal('role and scan order', validated.messages.map(row => row.role + row.scanIndex).join(), 'me1,ai2,me4,ai5');
+equal('game time', validated.messages[0].gameTime, '2026-08-22T01:30:00.000Z');
+equal('event role, acceptance and time', validated.events.map(row =>
+  [row.role, row.scanIndex, row.status, row.gameTime].join()).join(), 'ai,3,accepted,2026-08-22T01:35:00.000Z');
+equal('out-of-order time warns without reordering', validated.warnings.length, 1);
+result.textContent = failures.length ? failures.join('\n') : 'PASS ' + checks + ' DOM assertions';
+</script>

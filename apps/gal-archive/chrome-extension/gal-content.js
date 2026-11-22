@@ -1,4 +1,4 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.8 */
+/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.9 */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
@@ -17,7 +17,7 @@ function mount(){
   '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.8</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.9</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button></div>'+
@@ -161,7 +161,7 @@ function inspect(){
  const candidates=scrollCandidates();
  const common=[...root.querySelectorAll(rowSelectors.join(','))];
  return {
-  version:'0.7.8',pageOrigin:location.origin,
+  version:'0.7.9',pageOrigin:location.origin,
   root:{tag:root.tagName,className:String(root.className||'').slice(0,150),
     scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
     width:Math.round(r.width),height:Math.round(r.height)},
@@ -302,39 +302,11 @@ function boundaryToolbars(root){
  return [...matched].filter(x=>![...matched].some(y=>y!==x&&x.contains(y))).sort(boundaryOrder);
 }
 
-function copyRangeWithLiveStyles(range){
- // Range.cloneContents creates detached nodes. Their stylesheet-computed
- // colors and italic styles can disappear. Capture each source element's
- // LIVE computed style before parsing the cloned fragment.
- const fragment=range.cloneContents();
- const root=range.commonAncestorContainer;
- const base=root?.nodeType===Node.ELEMENT_NODE?root:root?.parentElement;
- if(!base?.querySelectorAll)return {fragment,mapped:false,reason:'no-common-element'};
- const originals=[...base.querySelectorAll('*')].filter(el=>{
-  try{return range.intersectsNode(el)}catch{return false}
- });
- const copies=[...fragment.querySelectorAll('*')];
- if(originals.length!==copies.length||originals.some((el,i)=>el.tagName!==copies[i].tagName)){
-  return {fragment,mapped:false,reason:'range-structure-diff',originals:originals.length,copies:copies.length};
- }
- const props=[
-  ['bg','backgroundColor'],['italic','fontStyle'],['display','display'],
-  ['radius','borderTopLeftRadius'],['border-width','borderLeftWidth'],
-  ['border-style','borderLeftStyle'],['border-color','borderLeftColor']
- ];
- for(let i=0;i<originals.length;i++){
-  const computed=getComputedStyle(originals[i]);
-  if(!computed)continue;
-  for(const [name,prop] of props)copies[i].setAttribute('data-gal-source-'+name,computed[prop]||'');
- }
- return {fragment,mapped:true,sourceElements:originals.length};
-}
-
 function boundaryFragmentText(start,end,role='ai'){
  if(!boundaryFollows(start,end))return '';
  const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
  const holder=document.createElement('div');
- const live=copyRangeWithLiveStyles(range);
+ const live=core.copyRangeWithLiveStyles(range);
  holder.appendChild(live.fragment);
  if(diagnostic){
   diagnostic.styleSnapshots=(diagnostic.styleSnapshots||0)+1;
@@ -562,7 +534,7 @@ async function scan(profile){
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.8',busy,hasResult:!!lastResult});return false}
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.9',busy,hasResult:!!lastResult});return false}
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
   const p=msg.profile||{};
@@ -575,5 +547,5 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:'0.7.8'};
+globalThis.GalArchivePageScanner={scan,version:'0.7.9'};
 })();
