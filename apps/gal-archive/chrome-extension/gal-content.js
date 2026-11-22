@@ -102,19 +102,27 @@ function roleOf(node,root){
  return null;
 }
 function genericRows(root){
- // Scan generic *blocks* rather than the old site-specific message classes.
- // Select block containers with enough readable text; choose leaf-ish message wrappers.
+ // Fallback for UIs with anonymous / generated CSS classes. The outermost
+ // role-homogeneous message body is wanted, never each of its paragraphs.
  const all=[...root.querySelectorAll('article,li,[role="listitem"],[role="article"],[class*="bubble"],[class*="Bubble"],p,div,section')];
- const pool=all.filter(node=>{
-  if(!isVisible(node,root)||node.matches('button,input,textarea,[role="toolbar"],nav,header,footer'))return false;
-  const text=core.clean(node.innerText||'');
-  if(text.length<8||text.length>25000)return false;
-  if(!roleOf(node,root))return false;
-  const bigChildren=[...node.children].filter(c=>core.clean(c.innerText||'').length>8&&isVisible(c,root));
-  // Reject parents that clearly contain several independent conversation bubbles.
-  return bigChildren.length<3||node.matches('article,li,[role="article"],[role="listitem"]');
+ const content=n=>core.clean(n.innerText||'');
+ const pool=all.filter(n=>{
+  if(n===root||!isVisible(n,root)||n.matches('button,input,textarea,[role="toolbar"],nav,header,footer'))return false;
+  const t=content(n);if(t.length<8||t.length>25000)return false;
+  if(n.scrollHeight-n.clientHeight>200&&/auto|scroll/.test(getComputedStyle(n).overflowY))return false;
+  const role=roleOf(n,root);if(!role)return false;
+  // A feed/container contains both speakers. Don't turn the entire conversation
+  // into a single left-aligned "AI" message.
+  const descendants=[...n.querySelectorAll('p,article,blockquote,[class*="bubble"],[class*="Bubble"],[class*="message"],[class*="Message"]')]
+    .filter(x=>x!==n&&isVisible(x,root)&&content(x).length>=8);
+  if(descendants.some(x=>roleOf(x,root)&&roleOf(x,root)!==role))return false;
+  return true;
  });
- return pool.filter(node=>!pool.some(child=>child!==node&&node.contains(child)));
+ // Prefer a complete multiline message wrapper instead of its child paragraphs.
+ // A container that also encloses another complete role-separated bubble is
+ // already filtered out above.
+ return pool.filter(n=>!pool.some(parent=>parent!==n&&parent.contains(n)
+   &&roleOf(parent,root)===roleOf(n,root)));
 }
 function calibratedRows(root){
  if(!calibration?.node?.isConnected)return [];
@@ -174,10 +182,11 @@ function openingNode(target,root){
   const parent=n.parentElement;
   const siblings=parent?[...parent.children].filter(x=>x!==n&&x.tagName===n.tagName
     &&core.clean(x.innerText||'').length>=8):[];
-  const semantic=/message|bubble|reply|chat|turn|response/i.test(String(n.className||''));
-  const score=(siblings.length?28:0)+(semantic?14:0)+(r.width>250?3:0)
-    +(r.height>55?5:0)+Math.min(t.length/1000,6)
-    -(parent===document.body?60:0);
+  const semantic=/message|bubble|reply|chat|turn|response|prose|markdown/i.test(String(n.className||''));
+  const opposite=siblings.some(x=>roleOf(x,root)!==roleOf(n,root));
+  const score=(opposite?35:siblings.length?6:0)+(semantic?17:0)+(r.width>250?3:0)
+    +(r.height>55?8:0)+Math.min(t.length/400,10)
+    -(n.tagName==='P'?24:0)-(parent===document.body?60:0);
   ancestors.push({node:n,score,siblings:siblings.length});
  }
  ancestors.sort((a,b)=>b.score-a.score);
