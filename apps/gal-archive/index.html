@@ -914,7 +914,7 @@ function archiveCheckChronologicalOrder(timeline,useGalAI=false){
   let previous=null,checked=0,unknown=0,storyCount=0,pairedCount=0;
   const issues=[];
   const format=ms=>new Date(ms).toLocaleString('zh-TW',{
-    timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',
+    timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',
     hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
   for(let index=0;index<timeline.length;index++){
     const entry=timeline[index].entry,clock=archiveChronologyTime(entry,gal);
@@ -1523,10 +1523,10 @@ if(b.dataset.speaker){
   let timeProps;try{timeProps=archiveManualTimeProps($('messageSourceTime').value)}catch(e){return notify(e.message)}
   const message={id:uid(),role:speaker,text:t,images:structuredClone(archiveDraftImages()),capturedAt:new Date().toISOString(),...timeProps};
   r.messages.push(message);
-  if(timeProps.sourceCreatedAt)archiveSortTimedSection(r,'messages');
+  if(timeProps.sourceCreatedAt||archiveParseGalAIClock(message))archiveSortTimedSection(r,'messages');
   await put(r);archiveClearDraftAfterSave(draftKey);
   archiveFocusStoredMessage(message.id,'chat');
-  notify('已加入對話'+(timeProps.sourceCreatedAt?'，依手動時間定位':''));return}if(b.id==='toggleBulk'){$('bulkBox').classList.toggle('hidden');return}if(b.id==='previewBulk'){smartDraft=smartParse($('bulkInput').value);smartSource=$('bulkInput').value;showSmartDraft();if(!smartDraft.length)notify('沒有可預覽的內容');return}if(b.id==='appendBulk'){
+  notify('已加入對話'+(archiveParseGalAIClock(message)?'，依 Gal AI 劇情時間定位':timeProps.sourceCreatedAt?'，依手動時間定位':''));return}if(b.id==='toggleBulk'){$('bulkBox').classList.toggle('hidden');return}if(b.id==='previewBulk'){smartDraft=smartParse($('bulkInput').value);smartSource=$('bulkInput').value;showSmartDraft();if(!smartDraft.length)notify('沒有可預覽的內容');return}if(b.id==='appendBulk'){
   const status=$('bulkSaveStatus');
   b.disabled=true;b.textContent='正在儲存…';
   try{
@@ -1536,7 +1536,7 @@ if(b.dataset.speaker){
     if(!a.length){status.textContent='沒有可加入的對話，請先貼上文字並智慧辨識。';notify(status.textContent);return}
     const previous=(r.messages||[]).length;
     const updated={...r,messages:[...(r.messages||[]),...a]};
-    if(a.some(m=>m.sourceCreatedAt))archiveSortTimedSection(updated,'messages');
+    if(a.some(m=>m.sourceCreatedAt||archiveParseGalAIClock(m)))archiveSortTimedSection(updated,'messages');
     // 按下「確認加入」本身就是同意匯入，不再要求可能被阻擋的原生 confirm 對話框。
     updated.updatedAt=new Date().toISOString();
     await operation('readwrite',{type:'put',item:updated});
@@ -2994,7 +2994,8 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
   const cycleId=onlyCurrent?current()?.id:null;
   if(onlyCurrent&&!cycleId)throw Error('請先選擇要校正的輪迴');
   const targets=records.filter(r=>(!onlyCurrent||r.id===cycleId)
-    &&sections.some(k=>(r[k]||[]).some(m=>m.sourceEventId||archiveHasManualSortTime(m))));
+    &&sections.some(k=>(r[k]||[]).some(m=>m.sourceEventId||archiveHasManualSortTime(m)
+      ||(k==='messages'&&archiveParseGalAIClock(m)))));
   if(!targets.length){cloudStatus(onlyCurrent?'目前輪迴沒有已收取的自動歸檔紀錄。':'沒有已收取的自動歸檔紀錄可校正。');return}
   const root=cloudDb.collection('galArchive').doc(user.uid);
   const cycleBySource=new Map(targets.flatMap(r=>sections.flatMap(k=>(r[k]||[])
