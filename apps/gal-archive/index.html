@@ -1860,6 +1860,8 @@ function archiveGalTimeContext(messages){
     const index=positions.get(ai),previous=index>0?messages[index-1]:null;
     const validAdjacent=previous?.role==='me'&&!context.has(previous)
       &&!(previous.chatKey&&ai.chatKey&&previous.chatKey!==ai.chatKey)
+      &&!(previous.sourceEventId&&ai.sourceEventId&&previous.sourceEventId!==ai.sourceEventId
+        &&!(previous.chatKey&&ai.chatKey&&previous.chatKey===ai.chatKey))
       &&!(previous.chatKey&&ai.chatKey&&Number.isInteger(previous.messageOrder)
         &&Number.isInteger(ai.messageOrder)&&previous.messageOrder+1!==ai.messageOrder)
       &&!(previous.sourceEventId&&ai.sourceEventId&&previous.sourceEventId===ai.sourceEventId
