@@ -247,19 +247,23 @@ function boundaryHeaders(root){
   if(n.closest('#'+PANEL+',button,[role="button"],nav,[role="navigation"]'))continue;
   // The event author heading is "與《世界觀》的事件"; ordinary AI replies
   // have just "《世界觀》". Keep BOTH as explicit, distinct boundaries.
-  const direct=boundaryDirectText(n);
-  const shown=core.clean(n.innerText||'');
-  const raw=direct&&direct.length>=4?direct:shown;
-  const text=core.normalizedWorld(raw);
-  const kind=text===name||text==='與'+name?'reply':
-   text==='與'+name+'的事件'||text===name+'的事件'?'event':null;
-  if(!kind||raw.length>name.length+22)continue;
+  const direct=boundaryDirectText(n),shown=core.clean(n.innerText||'');
+  // The world name can be nested inside the event label.
+  const found=[direct,shown].filter(Boolean).map(raw=>{
+   const normalized=core.normalizedWorld(raw);
+   const kind=normalized==='與'+name+'的事件'||normalized===name+'的事件'?'event':
+     normalized===name||normalized==='與'+name?'reply':null;
+   return {raw,kind};
+  }).find(x=>x.kind&&x.raw.length<=name.length+22);
+  if(!found)continue;
+  const kind=found.kind;
   const style=getComputedStyle(n);
   if(style.display==='none'||style.visibility==='hidden')continue;
   candidates.push({node:n,kind});
  }
- // Prefer the smallest heading element, not an entire parent chat bubble.
- const minimal=candidates.filter(a=>!candidates.some(b=>b.node!==a.node&&a.node.contains(b.node)));
+ // Event's outer banner wins over the nested 《世界觀》 span.
+ const withoutNestedEvent=candidates.filter(a=>!candidates.some(b=>b!==a&&b.kind==='event'&&b.node.contains(a.node)));
+ const minimal=withoutNestedEvent.filter(a=>!withoutNestedEvent.some(b=>b!==a&&a.node.contains(b.node)));
  return minimal.sort((a,b)=>boundaryOrder(a.node,b.node));
 }
 function boundaryTitles(root){return boundaryHeaders(root).filter(h=>h.kind==='reply').map(h=>h.node)}
@@ -374,9 +378,11 @@ function snapshot(fixedRoot=null,preferredMode='auto'){
 }
 /* Repeated literal text is common ("嗯", "..."). Never globally deduplicate
  * by text: merge overlapping windows as an ORDERED sequence instead. */
-function sameRow(a,b){return a.role===b.role&&(a.id&&b.id&&a.id===b.id||a.text===b.text)}
+function sameRow(a,b){return a.role===b.role&&(a.eventType||null)===(b.eventType||null)
+  &&(a.id&&b.id&&a.id===b.id||a.text===b.text)}
 function appendSample(sample,all){
- const incoming=sample.rows.map(r=>({role:r.role,text:r.text,domId:r.id||null,id:r.id||null}));
+ const incoming=sample.rows.map(r=>({role:r.role,text:r.text,domId:r.id||null,id:r.id||null,
+   eventType:r.eventType||null,worldName:r.worldName||null}));
  if(!incoming.length)throw Error('當前視窗沒有可比對的訊息');
  if(all.length===0){all.push(...incoming.map(({id,...rest})=>rest));return {repeated:0,added:incoming.length}}
  // The next viewport may still contain the ENTIRE last viewport, including
