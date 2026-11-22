@@ -2030,10 +2030,10 @@ function archivePreviewCombinedStorySort(record){
   const before=archiveStoryTimeline(record),updated=structuredClone(record);
   const sorted=sortArchivedPilotMessages(updated.messages||[],'messages');
   updated.messages=sorted.items;
-  let resetPlacements=0;
-  for(const ev of updated.events||[])if(ev.status==='accepted'&&ev.storyPlacement){
-    delete ev.storyPlacement;resetPlacements++;
-  }
+  // Preserve every manual event position. Removing storyPlacement used to
+  // undo the user's earlier corrections whenever the timeline was sorted.
+  const preservedPlacements=(updated.events||[]).filter(ev=>ev.status==='accepted'&&ev.storyPlacement).length;
+  const resetPlacements=0;
   archiveSortTimedSection(updated,'events');
   const after=archiveStoryTimeline(updated);
   const oldOrder=before.map(x=>x.type+':'+x.entry.id),newOrder=after.map(x=>x.type+':'+x.entry.id);
@@ -2041,7 +2041,8 @@ function archivePreviewCombinedStorySort(record){
   const eventPositions=new Map(before.flatMap((x,i)=>x.type==='event'?[[x.entry.id,i]]:[]));
   const movedEvents=after.filter((x,i)=>x.type==='event'&&eventPositions.get(x.entry.id)!==i).length;
   return {updated,changed,movedEvents,resetPlacements,messageMoved:sorted.changed,manualTimed:sorted.manualTimed,
-    galTimed:sorted.galCount||0};
+    galTimed:sorted.galCount||0,separatedPairs:sorted.separatedPairs||0,
+    mixedTiers:sorted.mixedTiers||0,preservedPlacements};
 }
 
 function classifyArchiveChat(item,eventId){
@@ -2118,18 +2119,71 @@ function archiveHasManualSortTime(message){
     &&archiveReceivedMillis(message.sourceCreatedAt)>0;
 }
 
+
+/* V5.32 safe sorting:
+ * - player + Gal AI response are atomic when their pairing is verified;
+ * - never compare/swap different clock tiers (story, original, captured, cloud);
+ * - manually curated, untimed messages stay exactly where they were;
+ * - pre-existing split Gal pairs block all reordering for safety.
+ */
+function archiveIsTrustedAdjacentTurn(me,ai,gal){
+  if(me?.role!=='me'||ai?.role!=='ai')return false;
+  if(gal?.get(me)?.pairedWith===ai)return true;
+  if(me.sourceEventId&&ai.sourceEventId&&me.sourceEventId===ai.sourceEventId
+    &&Number.isInteger(me.sourcePartIndex)&&Number.isInteger(ai.sourcePartIndex)
+    &&me.sourcePartIndex+1===ai.sourcePartIndex)return true;
+  if(me.chatKey&&ai.chatKey&&me.chatKey===ai.chatKey
+    &&Number.isInteger(me.messageOrder)&&Number.isInteger(ai.messageOrder)
+    &&me.messageOrder+1===ai.messageOrder)return true;
+  return !me.sourceEventId&&!ai.sourceEventId&&!me.chatKey&&!ai.chatKey;
+}
+function archiveSortableUnitClock(members,gal){
+  const isAllowed=m=>m.sourceEventId||archiveHasManualSortTime(m)||gal?.has(m);
+  if(!members.every(isAllowed))return {tier:'pinned',ms:0};
+  const clocks=members.map(m=>gal?.get(m)).filter(Boolean);
+  if(clocks.length)return {tier:'story',ms:clocks.at(-1).ms};
+  const ranked=members.map(m=>archiveRealChronologyTime(m)).filter(c=>c.ms)
+    .map(c=>({...c,tier:archiveClockTier(c)}));
+  const tierPriority={'real-source':0,'real-captured':1,'real-received':2};
+  ranked.sort((a,b)=>(tierPriority[a.tier]??99)-(tierPriority[b.tier]??99));
+  const c=ranked[0];
+  return c?{tier:c.tier,ms:Math.floor(c.ms/60000)*60000}:{tier:'pinned',ms:0};
+}
 function sortArchivedPilotMessages(items,section='pilotMessages'){
   const gal=section==='messages'?archiveGalTimeContext(items):null;
-  const eligible=m=>!!(m.sourceEventId||archiveHasManualSortTime(m)||gal?.has(m));
-  const slots=items.map((m,i)=>eligible(m)?i:-1).filter(i=>i>=0);
-  const manualTimed=slots.filter(i=>archiveHasManualSortTime(items[i])).length;
-  const galCount=slots.filter(i=>gal?.has(items[i])).length;
-  if(slots.length<2)return {items,changed:0,orderable:slots.length,manualTimed,galCount};
-  const sorted=slots.map(i=>({m:items[i],i})).sort((a,b)=>
-    compareArchiveChronology(a.m,b.m,gal)||a.i-b.i).map(x=>x.m);
-  const result=items.slice();
-  slots.forEach((i,j)=>{result[i]=sorted[j]});
-  return {items:result,changed:slots.filter(i=>result[i]!==items[i]).length,orderable:slots.length,manualTimed,galCount};
+  const manualTimed=items.filter(archiveHasManualSortTime).length;
+  const galCount=gal?items.filter(m=>gal.has(m)).length:0;
+  const pairs=gal?[...gal.entries()].filter(([m,c])=>c.basis==='gal-paired'&&c.pairedWith):[];
+  const positions=new Map(items.map((m,i)=>[m,i]));
+  const separatedPairs=pairs.filter(([m,c])=>positions.get(c.pairedWith)!==positions.get(m)+1);
+  if(separatedPairs.length)return {
+    items,changed:0,orderable:0,manualTimed,galCount,
+    separatedPairs:separatedPairs.length,reason:'已配對的我／他不相鄰，停止自動重排'
+  };
+  const units=[];
+  for(let i=0;i<items.length;){
+    const a=items[i],b=items[i+1];
+    const group=gal&&b&&archiveIsTrustedAdjacentTurn(a,b,gal)?[a,b]:[a];
+    const clock=archiveSortableUnitClock(group,gal);
+    units.push({members:group,index:i,...clock});
+    i+=group.length;
+  }
+  const orderable=units.filter(u=>u.tier!=='pinned').reduce((total,u)=>total+u.members.length,0);
+  const mixedTiers=units.slice(1).reduce((total,u,i)=>
+    total+(u.tier!==units[i].tier&&u.tier!=='pinned'&&units[i].tier!=='pinned'?1:0),0);
+  const sorted=[];
+  for(let i=0;i<units.length;){
+    const tier=units[i].tier;
+    let j=i+1;
+    if(tier!=='pinned')while(j<units.length&&units[j].tier===tier)j++;
+    const group=units.slice(i,j);
+    if(tier!=='pinned')group.sort((a,b)=>a.ms-b.ms||a.index-b.index);
+    sorted.push(...group);
+    i=j;
+  }
+  const result=sorted.flatMap(u=>u.members);
+  return {items:result,changed:result.filter((m,i)=>m!==items[i]).length,
+    orderable,manualTimed,galCount,separatedPairs:0,mixedTiers};
 }
 
 function archiveSortTimedSection(record,section){
