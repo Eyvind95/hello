@@ -455,7 +455,13 @@ function galNativeVerify(obj,r){
   ids.add(raw?.id);
   const m=String(raw?.text||'').match(/與\s*《([^》]+)》\s*的\s*(?:世界|事件)/u);
   if(m&&galNativeWorld(m[1])!==galNativeWorld(selectedWorld))fail.push('第 '+(i+1)+' 件事件是另一個世界觀：「'+m[1]+'」');
-  events.push({...raw,role:'me',text:raw?.text||'',status:'pending',
+  // A native Gal AI scan includes only events actually accepted by the player.
+  // Older scanner JSON may say me/pending; normalize without editing prose.
+  if(raw?.role!=='ai'||raw?.status!=='accepted')
+    warn.push('第 '+(i+1)+' 件事件為舊版欄位，將校正為 Gal AI 左側／已接取');
+  if(!raw?.gameTime)
+    warn.push('第 '+(i+1)+' 件事件缺少可核對的劇情時間；保留原始掃描位置，不推測時間');
+  events.push({...raw,role:'ai',text:raw?.text||'',status:'accepted',
     sourceCreatedAt:null,sourceTimeOrigin:null,capturedAt:null,receivedAt:null});
  }
  if(messages.length===0||messages.length/2!==obj?.validation?.pairs)
@@ -480,12 +486,20 @@ function galNativeBuildPlan(obj,r){
      (normalized(o.title).length>12&&normalized(o.title)===normalized(ev.title))));
   if(candidates.length!==1)return ev;
   const old=candidates[0];used.add(old.id);matched++;
-  return {...ev,id:old.id,status:old.status==='accepted'?'accepted':'pending',
-    ...(old.status==='accepted'?{receivedAt:null}:{}), // do not inherit incorrect GPT clock
-    ...(old.storyPlacement&&v.messages.some(m=>m.id===old.storyPlacement.beforeId)
-       ?{storyPlacement:old.storyPlacement}:{})};
+  return {...ev,id:old.id,role:'ai',status:'accepted',
+    receivedAt:null}; // original Gal AI source replaces GPT status/time guesses
  });
  acceptedUnmatched=oldEvents.filter(e=>e.status==='accepted'&&!used.has(e.id)).length;
+ // Preserve original native sequence independently of overlapping messageOrder.
+ // Pin each event before the next scanned conversation bubble.
+ const slots=new Map();
+ for(const ev of mapped){
+   if(!Number.isInteger(ev.scanIndex))continue;
+   const next=v.messages.find(m=>Number.isInteger(m.scanIndex)&&m.scanIndex>ev.scanIndex);
+   const beforeId=next?.id||null,sequence=slots.get(beforeId)||0;
+   ev.storyPlacement={beforeId,sequence};
+   slots.set(beforeId,sequence+1);
+ }
  updated.opening=v.opening;
  updated.messages=v.messages;
  updated.events=mapped;
@@ -926,7 +940,7 @@ function renderEvents(r){
     const actions=[
       ['accepted','✓ 接受事件'],['declined','✕ 不接'],['pending','待決定']
     ].map(([value,label])=>'<button type="button" data-event-status="'+value+'" data-event-index="'+i+'">'+label+'</button>').join('');
-    return '<div class="message me" data-message-id="'+safe(ev.id||'')+'"><div class="bubble archive-event-card" style="max-width:100%;width:100%">'
+    return '<div class="message ai" data-message-id="'+safe(ev.id||'')+'"><div class="bubble archive-event-card" style="max-width:100%;width:100%">'
       +'<div class="archive-event-head"><strong>'+safe(ev.title||'事件到達')+'</strong>'
       +'<span class="archive-event-status">'+archiveEventStatusText(ev.status)+'</span>'
       +'<span class="note">事件 #'+(i+1)+'</span></div>'
@@ -940,8 +954,8 @@ function renderEvents(r){
   }).join('');
   $('tabBody').innerHTML=
     '<div class="sectionhead"><h3>事件簿 <span class="stat">（'+items.length+' 件）</span></h3><span class="note">'+statusCounts+'</span></div>'
-    +'<p class="note">只有皮卡的藍框訊息包含「事件到達」或 whif-icon.svg，才會自動進入事件簿。GPT 回覆不會觸發。'
-    +'事件預設待決定；接受後按原始發言時間顯示在「完整對話」，未接則只留事件簿。可按「時間／定位」改原始發言時間，或在完整對話按 ↑↓ 手動調整；手動移動不改發言時間。</p>'
+    +'<p class="note">事件是 Gal AI 左側的獨立通知；由皮卡轉貼進 ChatGPT 的事件來源仍可以暫時待決定。'
+    +'Gal AI 原生掃描到的事件代表已接取，直接記為「已接」。已接事件進完整對話，但不參與「我／他」回合或紅線檢查；未接事件只留事件簿。</p>'
     +'<div class="actions topsp"><button type="button" class="btn" id="recoverMisfiledEvents">🔎 找回舊版誤分事件（先預覽）</button><button type="button" class="btn" id="archiveSortCurrentChat">↕ 校正完整對話＋已接事件</button></div>'
     +'<div id="eventList" class="chat">'+(cards||'<div class="empty">目前沒有事件，等待皮卡的事件通知。</div>')+'</div>'
     +'<div class="composer"><h3>手動新增事件</h3>'
@@ -1075,7 +1089,7 @@ function archiveStoryBubble(row,i,record,galContext=null){
      +'<button data-story-event-move="'+i+'" data-dir="1" '+(i===timelineLength-1?'disabled':'')+'>↓</button>'
      +'<button data-eventtime="'+row.index+'">時間</button>'
      +'<button data-event-open="'+row.index+'">查看事件簿／修改接取狀態</button>';
-  return '<div data-message-id="'+safe(m.id||'')+'" class="message '+(m.role==='me'?'me':'ai')
+  return '<div data-message-id="'+safe(m.id||'')+'" class="message '+(story&&m.role==='me'?'me':'ai')
     +(story?'':' archive-event-in-story')+(story&&archiveSkipMatches(m)?' archive-skip-match':'')+'" data-dialogue-index="'+i+'"><div class="bubble">'
     +'<div class="who">'+safe(label)+' · #'+(i+1)
     +(story&&m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):'')
@@ -1182,11 +1196,11 @@ function archiveCheckChronologicalOrder(timeline,useGalAI=false){
 }
 
 function archiveCheckDialoguePairs(timeline){
-  // An accepted event is a system notification, not a player turn.
-  // Valid order: Gal AI → accepted event → player response → Gal AI.
-  // Keep event in the visible timeline, but skip it for dialogue alternation.
-  const turns=timeline.map((row,index)=>({index,role:row.entry?.role==='me'?'me':'ai',type:row.type}))
-    .filter(x=>x.type!=='event');
+  // Event notices belong to Gal AI (left), but are NOT an additional
+  // assistant turn. Exclude event rows before applying red-line detection,
+  // including older saved events whose legacy role is 'me'.
+  const turns=timeline.flatMap((row,index)=>row.type==='event'?[]:
+    [{index,role:row.entry?.role==='me'?'me':'ai',type:row.type}]);
   const issues=[];
   if(turns[0]?.role==='ai')issues.push({index:turns[0].index,text:'第一則是 Gal AI，前面沒有皮卡發言（也可能是從中途開始歸檔）'});
   for(let i=1;i<turns.length;i++){
@@ -2373,7 +2387,7 @@ function classifyArchiveChat(item,eventId){
   const common={sourceEventId:eventId,manager:item.manager||'',receivedAt:archiveReceivedMillis(item.receivedAt),sourceCreatedAt:item.sourceCreatedAt||null,sourceTimeOrigin:item.sourceTimeOrigin||null,sourceTimePrecision:item.sourceTimePrecision||null,capturedAt:item.capturedAt||null,chatKey:item.chatKey||'',messageOrder:Number.isInteger(item.messageOrder)?item.messageOrder:null};
   const pilot=(role,text,i=0)=>({target:'pilotMessages',role,text,sourcePartIndex:i,...common});
   if(item.role!=='me')return [pilot('ai',item.text)];
-  if(archiveIsEventNotification(item))return [{target:'events',role:'me',text:item.text,title:archiveEventTitle(item.text),status:'pending',sourcePartIndex:0,...common}];
+  if(archiveIsEventNotification(item))return [{target:'events',role:'ai',text:item.text,title:archiveEventTitle(item.text),status:'pending',sourcePartIndex:0,...common}];
   const lines=item.text.replace(/\r\n?/g,'\n').split('\n');
   let current=null,inFence=false;const parts=[];
   const finish=()=>{if(current&&current.text.trim())parts.push({...current,text:current.text.trim()});current=null};
