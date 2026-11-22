@@ -467,6 +467,8 @@ function galNativeVerify(obj,r){
  if(messages.length===0||messages.length/2!==obj?.validation?.pairs)
   fail.push('訊息組數與來源驗證報告不同');
  if(events.length!==obj?.validation?.events)fail.push('事件數量與來源驗證報告不同');
+ if(events.length&&messages.some(m=>!Number.isInteger(m.scanIndex)))
+   fail.push('這份舊掃描檔沒有完整的原始訊息順序，事件無法安全定位；請使用 V0.7.6 重新掃描後匯入，避免把事件移到最後');
  if(Array.isArray(obj?.validation?.errors)&&obj.validation.errors.length)fail.push('來源報告仍有錯誤，不能覆蓋');
  if(Array.isArray(obj?.validation?.warnings))warn.push(...obj.validation.warnings.slice(0,8));
  return {fail,warn,opening,messages,events,selectedWorld};
