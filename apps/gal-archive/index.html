@@ -2724,6 +2724,9 @@ $('missingAuditReviewSearch').oninput=missingAuditRenderReview;
 function missingAuditLocal(r,expected){
   const story=r.messages||[],pilot=r.pilotMessages||[],events=r.events||[];
   const timeline=archiveStoryTimeline(r),realTurns=timeline.filter(x=>x.type==='message').length;
+  const galClock=archiveGalTimeContext(r.messages||[]);
+  const galTimedAI=(r.messages||[]).filter(m=>m.role==='ai'&&galClock.has(m)).length;
+  const galPairedPlayers=(r.messages||[]).filter(m=>m.role==='me'&&galClock.has(m)).length;
   const roleCount=arr=>({player:arr.filter(m=>m.role==='me').length,
     assistant:arr.filter(m=>m.role==='ai').length});
   const rows=archiveSections.flatMap(section=>(r[section]||[]).map(m=>({section,message:m})));
@@ -2748,6 +2751,7 @@ function missingAuditLocal(r,expected){
     difference:Number.isInteger(expected)&&expected>=0?expected-timeline.length:null,
     roles:roleCount(story),
     storyTimelineVisible:timeline.length,storyTimelineRealTurns:realTurns,
+    galTimedAI,galPairedPlayers,
     acceptedEvents:events.filter(m=>m.status==='accepted').length,
     unacceptedEvents:events.filter(m=>m.status!=='accepted').length,
     allEvents:events.length,pilotCount:pilot.length,pilotRoles:roleCount(pilot),
@@ -2765,6 +2769,7 @@ function missingAuditDisplay(report){
     +'\n未接／待決事件：'+a.unacceptedEvents+' 件'
     +'\n副駕駛聊天：'+a.pilotCount+' 則（皮卡 '+a.pilotRoles.player+'／GPT '+a.pilotRoles.assistant+'）'
     +'\n疑似包含「我：／他：」標記、但在副駕駛聊天的訊息：'+a.storyLikePilotCount+' 則'
+    +'\nGal AI 回覆劇情時間：'+(a.galTimedAI||0)+' 則；同回合玩家時間：'+(a.galPairedPlayers||0)+' 則'
     +'\n同一來源片段在多個位置重複：'+a.duplicateSourcePartsCount+' 組'
     +'\n🟥 深紅（疑似做愛跳過）：'+(a.suspectedSkipCount||0)+' 則玩家訊息（非確定缺漏）';
   if(!c)out+='\n\n雲端：尚未核對';
@@ -2997,7 +3002,7 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
   const sourceIds=[...cycleBySource.keys()];
   const sources=new Map();
   for(const id of sourceIds){const snap=await archiveGetSource(root,cycleBySource.get(id),id);if(snap?.exists)sources.set(id,snap.data())}
-  const plans=[];let reorderable=0,changed=0,actual=0,inferred=0,captured=0,fallback=0,pairedFilled=0,pairedSeen=0,manualPinned=0,manualTimed=0;
+  const plans=[];let reorderable=0,changed=0,actual=0,inferred=0,captured=0,fallback=0,pairedFilled=0,pairedSeen=0,manualPinned=0,manualTimed=0,galCount=0;
   for(const original of targets){
     const r=structuredClone(original);
     for(const section of sections){
@@ -3015,10 +3020,12 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
       });
       const normalized=archiveRestorePairedMinutes(enriched);
       pairedFilled+=normalized.filled;pairedSeen+=normalized.pairs;
-      manualPinned+=normalized.items.filter(m=>!m.sourceEventId&&!archiveHasManualSortTime(m)).length;
+      const galContext=section==='messages'?archiveGalTimeContext(normalized.items):null;
+      manualPinned+=normalized.items.filter(m=>!m.sourceEventId&&!archiveHasManualSortTime(m)&&!galContext?.has(m)).length;
       manualTimed+=normalized.items.filter(archiveHasManualSortTime).length;
       for(const m of normalized.items.filter(x=>x.sourceEventId)){
-        const basis=archiveChronologyTime(m).basis;
+        const basis=archiveChronologyTime(m,galContext).basis;
+        if(basis==='gal'||basis==='gal-paired')continue;
         if(basis==='source')actual++;
         else if(basis==='inferred')inferred++;
         else if(basis==='captured')captured++;
@@ -3026,6 +3033,7 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
       }
       const sorted=sortArchivedPilotMessages(normalized.items,section);
       r[section]=sorted.items;
+      galCount+=sorted.galCount||0;
       reorderable+=sorted.orderable;changed+=sorted.changed;
     }
     archiveRestoreCyclePairedEventTimes(r);
@@ -3034,11 +3042,12 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
   }
   const targetName=onlyCurrent?(targets[0]?.title||'目前輪迴'):'全部有自動歸檔的輪迴';
   if(!confirm('校正範圍：'+targetName+'。\n已比對 '+sourceIds.length+' 筆雲端來源。\n'
-    +'選單原始時間：'+actual+' 則；GPT 同回合推定：'+inferred+' 則；首次擷取：'+captured+' 則；接收備援：'+fallback+' 則。\n'
+    +'Gal AI 劇情時間（含玩家同回合配對）：'+galCount+' 則。\n'
+    +'ChatGPT／手動原始時間：'+actual+' 則；GPT 同回合推定：'+inferred+' 則；首次擷取：'+captured+' 則；接收備援：'+fallback+' 則。\n'
     +'找到可核對的皮卡＋GPT 相鄰來源 '+pairedSeen+' 組，補回缺失的皮卡推定時間 '+pairedFilled+' 則。\n'
-    +'可排序 '+reorderable+' 則（含手動標註 '+manualTimed+' 則），預計移動 '+changed+' 個位置。'
+    +'可排序 '+reorderable+' 則（含手動標註 '+manualTimed+' 則），預計移動 '+changed+' 個位置；劇情／現實時間不跨軸直接比較。'
     +(manualPinned?'\n另有 '+manualPinned+' 則未標時間的手動紀錄會固定在原槽位。':'')
-    +'\n不改文字或圖片、不刪訊息；有時間的手動紀錄會依時間重新定位。將先下載這次校正範圍的 JSON 備份。確定套用？'))return;
+    +'\n不改文字或圖片、不刪訊息、不覆蓋手動標註的發言時間；同回合的劇情時間只在排序時推定。將先下載這次校正範圍的 JSON 備份。確定套用？'))return;
   downloadText('輪迴檔案館_校正前備份_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',
     JSON.stringify({format:'gal-archive-order-backup',exportedAt:new Date().toISOString(),
       scope:targetName,cycles:targets},null,2));
@@ -3048,18 +3057,18 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
     await uploadOneCycle(r);
   }
   await refresh();
-  cloudStatus('時間校正完成（'+targetName+'）：'+reorderable+' 則、移動 '+changed+' 個位置。選單原始 '+actual+'／GPT 推定 '+inferred+'／首次擷取 '+captured+'／接收備援 '+fallback+' 則；補齊推定 '+pairedFilled+' 則。');
+  cloudStatus('時間校正完成（'+targetName+'）：'+reorderable+' 則、移動 '+changed+' 個位置。Gal AI 劇情時間 '+galCount+' 則；ChatGPT／手動 '+actual+'／GPT 推定 '+inferred+'／首次擷取 '+captured+'／雲端接收 '+fallback+' 則；補齊 GPT 原始時間推定 '+pairedFilled+' 則。');
 }
 
 $('reorderCurrentPilot').onclick=async()=>{
   const b=$('reorderCurrentPilot');b.disabled=true;
-  try{cloudStatus('正在校正目前輪迴，保留 GPT 回覆與皮卡同回合分鐘…');await reorderPilotMessagesFromCloud(true)}
+  try{cloudStatus('正在按 Gal AI 劇情時間優先、ChatGPT 原始／手動時間次之校正目前輪迴…');await reorderPilotMessagesFromCloud(true)}
   catch(e){cloudStatus('校正失敗：'+e.message+'。請保留校正前備份。',true)}
   finally{b.disabled=false}
 };
 $('reorderPilot').onclick=async()=>{
   const b=$('reorderPilot');b.disabled=true;
-  try{cloudStatus('正在依原始發言／首次擷取時間校正自動紀錄…');await reorderPilotMessagesFromCloud()}
+  try{cloudStatus('正在依 Gal AI 劇情／現實發言／擷取／接收優先順序校正自動紀錄…');await reorderPilotMessagesFromCloud()}
   catch(e){cloudStatus('校正失敗：'+e.message+'。沒有刪除任何來源，請保留備份。',true)}
   finally{b.disabled=false}
 };
