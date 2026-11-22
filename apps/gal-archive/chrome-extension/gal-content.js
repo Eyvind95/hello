@@ -241,19 +241,33 @@ function appendSample(sample,all){
  const incoming=sample.rows.map(r=>({role:r.role,text:r.text,domId:r.id||null,id:r.id||null}));
  if(!incoming.length)throw Error('當前視窗沒有可比對的訊息');
  if(all.length===0){all.push(...incoming.map(({id,...rest})=>rest));return {repeated:0,added:incoming.length}}
- let overlap=0;
- for(let k=Math.min(incoming.length,all.length);k>=1;k--){
-  if(incoming.slice(0,k).every((entry,i)=>sameRow(entry,all[all.length-k+i]))){overlap=k;break}
+ // The next viewport may still contain the ENTIRE last viewport, including
+ // its old beginning. Find an ordered *suffix* of stored messages ANYWHERE
+ // in the incoming window, not only at the incoming window's first row.
+ let size=0,matches=[];
+ const max=Math.min(all.length,incoming.length);
+ for(let k=max;k>=1;k--){
+  const candidates=[];
+  for(let start=0;start<=incoming.length-k;start++){
+   if(incoming.slice(start,start+k).every((x,j)=>sameRow(x,all[all.length-k+j])))
+    candidates.push(start);
+  }
+  if(candidates.length){size=k;matches=candidates;break}
  }
- if(!overlap)throw Error('目前畫面與上一視窗無法找到順序重疊，已停止以免漏掉對話');
- if(overlap===1){
-  const last=all[all.length-1],first=incoming[0];
-  if(!last.domId&&!first.domId&&all.filter(x=>sameRow(x,last)).length>1)
-   throw Error('重複短句造成單則重疊位置不唯一；無穩定 DOM ID，拒絕可能漏掃的歸檔');
+ if(!size)throw Error('目前畫面與上一視窗無法找到順序重疊，已停止以免漏掉對話');
+ // Repeated identical "嗯" messages can make a one-message anchor ambiguous.
+ // Never guess which occurrence was already collected.
+ if(matches.length>1){
+  const strong=matches.filter(start=>incoming.slice(start,start+size).some(x=>!!x.id));
+  if(size<2||strong.length!==1)throw Error('重疊錨點不唯一，可能是重複短句造成，拒絕跳過對話');
+  matches=strong;
  }
- const extra=incoming.slice(overlap).map(({id,...rest})=>rest);
+ const start=matches[0];
+ if(size===1&&!incoming[start].id&&all.filter(x=>sameRow(x,incoming[start])).length>1)
+  throw Error('重複短句錨點不唯一，已安全停止');
+ const extra=incoming.slice(start+size).map(({id,...rest})=>rest);
  all.push(...extra);
- return {repeated:overlap,added:extra.length};
+ return {repeated:size,added:extra.length,anchorPosition:start};
 }
 function isBottom(root){
  const y=root===document.scrollingElement||root===document.documentElement?root.scrollTop:root.scrollTop;
@@ -307,7 +321,7 @@ async function scan(profile){
    try{info=appendSample(shot,collected)}
    catch(err){
     const reason=String(err?.message||err);
-    if(!/重疊|無法找到順序|無法比對|沒有可比對的訊息/.test(reason))throw err;
+    if(!/重疊|無法找到順序|無法比對|沒有可比對的訊息|錨點不唯一|重複短句/.test(reason))throw err;
     recovery++;
     recoveryLog.push({step:stepCount,kind:'no-overlap',distance:stepPx,seen:shot.rows.length,stored:collected.length});
     diagnostic={...inspect(),recoveryLog:recoveryLog.slice(-10),lastGoodY,
