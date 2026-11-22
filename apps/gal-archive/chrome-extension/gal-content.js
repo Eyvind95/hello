@@ -1,4 +1,4 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.3 */
+/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.4 */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
@@ -17,7 +17,7 @@ function mount(){
   '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.3</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.4</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button></div>'+
@@ -161,7 +161,7 @@ function inspect(){
  const candidates=scrollCandidates();
  const common=[...root.querySelectorAll(rowSelectors.join(','))];
  return {
-  version:'0.7.3',pageOrigin:location.origin,
+  version:'0.7.4',pageOrigin:location.origin,
   root:{tag:root.tagName,className:String(root.className||'').slice(0,150),
     scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
     width:Math.round(r.width),height:Math.round(r.height)},
@@ -221,7 +221,7 @@ function chooseOpening(){
  document.addEventListener('click',listener,true);
 }
 
-/* V0.7.3: Gal AI message boundaries.
+/* V0.7.4: Gal AI message boundaries.
  * Header "《current world》" begins an AI message; the message's like/reaction
  * bar ends it. Neither header nor button row is archived as story prose.
  * This is deliberately separate from the ChatGPT assistant extractor.
@@ -245,7 +245,8 @@ function boundaryTitles(root){
   const t=boundaryDirectText(n);
   if(!t||t.length>name.length+25)return false;
   const normalized=core.normalizedWorld(t);
-  if(normalized!==name)return false;
+  // Gal AI sometimes prefixes its author heading with 「與」.
+  if(normalized!==name&&normalized!=='與'+name)return false;
   const st=getComputedStyle(n);
   return st.display!=='none'&&st.visibility!=='hidden';
  });
@@ -259,36 +260,32 @@ function boundaryIconTag(n){
 }
 function boundaryIsLike(n){return /thumbs[-_ ]?up|hand[-_ ]?thumb|like(?:-button)?|upvote|點讚|点赞|喜歡|按讚|讚好|赞同/i.test(boundaryIconTag(n))}
 function boundaryToolbars(root){
- const candidates=[...root.querySelectorAll('button,[role="button"],div,[role="toolbar"]')];
- const groups=new Set();
- const good=n=>{
-  if(n.closest('#'+PANEL)||n.closest('nav'))return false;
-  const controls=[...n.querySelectorAll('button,[role="button"]')].filter(c=>!!c.querySelector('svg,img,use')||!!boundaryIconTag(c).match(/copy|like|thumb|share|bookmark|複製|書籤|讚/));
-  const iconCount=n.querySelectorAll('svg,img,use').length;
-  const text=core.clean(n.innerText||'');
+ // The thumbs action strip can contain bare SVGs nested in spans/divs
+ // instead of HTML buttons. Detect a small horizontal row of 4–8 icons.
+ const svgs=[...root.querySelectorAll('svg')].filter(svg=>!svg.closest(
+  '#'+PANEL+',nav,form,[role="textbox"],[role="dialog"],[contenteditable="true"]'));
+ const matched=new Set();
+ function isStrip(n){
+  if(!n||n===root||n.closest('#'+PANEL+',nav,form,[role="textbox"],[role="dialog"],[contenteditable="true"]'))
+   return false;
+  const icons=[...n.querySelectorAll('svg')];
+  if(icons.length<4||icons.length>8)return false;
+  const bounds=icons.map(x=>x.getBoundingClientRect());
+  const spread=Math.max(...bounds.map(x=>x.left))-Math.min(...bounds.map(x=>x.left));
+  const ys=bounds.map(x=>x.top+x.height/2).sort((a,b)=>a-b);
+  const mid=ys[Math.floor(ys.length/2)];
   const r=n.getBoundingClientRect();
-  return (controls.length>=3&&controls.length<=12&&iconCount>=3||iconCount>=5&&iconCount<=12)
-    &&text.length<=95&&r.height<105&&r.width<Math.max(780,innerWidth*.95);
- };
- for(const node of candidates){
-  if(node.tagName==='BUTTON'||node.getAttribute('role')==='button'){
-   if(!boundaryIsLike(node)&&!boundaryIsLike(node.querySelector('svg')||node))continue;
-   let p=node.parentElement;
-   for(let tries=0;p&&tries<5;tries++,p=p.parentElement){
-    if(good(p)){groups.add(p);break}
-   }
+  return r.width>=60&&r.width<Math.min(innerWidth*.9,760)&&r.height<110
+    &&spread>=40&&spread<690&&bounds.filter(x=>Math.abs(x.top+x.height/2-mid)<=16).length>=4
+    &&core.clean(n.innerText||'').length<80;
+ }
+ for(const svg of svgs){
+  let p=svg.parentElement;
+  for(let depth=0;p&&p!==root&&depth<8;depth++,p=p.parentElement){
+   if(isStrip(p)){matched.add(p);break;}
   }
  }
- // Some icons don't have readable thumb labels. The 4+ compact icon actions
- // at the end of a message are a secondary signal, never a bare emoji guess.
- for(const node of candidates){
-  if(node.tagName==='BUTTON'||node.getAttribute('role')==='button')continue;
-  if(!good(node))continue;
-  const children=[...node.children].filter(c=>!!c.querySelector('svg')||c.tagName==='BUTTON');
-  if(children.length>=3||node.querySelectorAll('svg').length>=5)groups.add(node);
- }
- return [...groups].filter(n=>![...groups].some(ch=>ch!==n&&n.contains(ch)))
-   .sort(boundaryOrder);
+ return [...matched].filter(x=>![...matched].some(y=>y!==x&&x.contains(y))).sort(boundaryOrder);
 }
 function boundaryFragmentText(start,end){
  if(!boundaryFollows(start,end))return '';
@@ -337,11 +334,15 @@ function messageText(node){
   ||node;
  return core.markdownFromDom(body).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
 }
-function snapshot(fixedRoot=null){
+function snapshot(fixedRoot=null,preferredMode='auto'){
  const root=fixedRoot?.isConnected?fixedRoot:scroller();
- if(target?.worldName){
-  const anchored=boundaryRead(root);
-  diagnostic={...(diagnostic||{}),...anchored.debug};
+ const anchored=target?.worldName?boundaryRead(root):{rows:[],debug:{headers:0,reactionBars:0,completeAI:0}};
+ diagnostic={...(diagnostic||{}),...anchored.debug};
+ // Regression fix: v0.7.3 ALWAYS returned empty when two markers were not
+ // simultaneously recognized, disabling the 0.7.2 scanner that read 4 turns.
+ // Keep that parser as a live fallback; freeze mode per scan to avoid mixing
+ // two incompatible message segmentation systems midway through the timeline.
+ if(preferredMode==='bounded'||(preferredMode==='auto'&&anchored.rows.length)){
   return {root,rows:anchored.rows,method:'world-header-reaction-bar',boundaryDebug:anchored.debug};
  }
  const rs=candidateRows(root);
@@ -354,7 +355,7 @@ function snapshot(fixedRoot=null){
  }).filter(r=>r.text.length>5);
  const start=calibration?.node?.isConnected?rows.findIndex(r=>r.node===calibration.node):-1;
  return {root,rows:(start>=0?rows.slice(start):rows).map(({node,...rest})=>rest),
-   method:rs.length?'message-dom':'no-message-container'};
+   method:'legacy-dom',boundaryDebug:anchored.debug};
 }
 /* Repeated literal text is common ("嗯", "..."). Never globally deduplicate
  * by text: merge overlapping windows as an ORDERED sequence instead. */
@@ -426,11 +427,12 @@ async function scan(profile){
  if(busy)return {ok:false,error:'正在掃描中'};
  busy=true;cancelled=false;lastResult=null;target=profile;mount();
  if($('gal-scan-export'))$('gal-scan-export').disabled=true;
- const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0;
+ const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,scanMode='auto';
  const recoveryLog=[];
  try{
   const first=snapshot();diagnostic=inspect();
-  if(!first.rows.length)throw Error('找不到完整「世界觀標頭→👍操作列」回覆；可複製版面診斷（含標頭和操作列數量），不會保存片段。');
+  if(!first.rows.length)throw Error('找不到完整訊息。世界觀界線與舊版泡泡辨識都沒有結果；請複製版面診斷。');
+  scanMode=first.method==='world-header-reaction-bar'?'bounded':'legacy';
   if(first.rows[0].role!=='ai'||core.parseGameTime(first.rows[0].text))
    throw Error('第一則不是左側無時間開場，請校準真正的開場訊息');
   root=first.root;lastGoodY=root.scrollTop;
@@ -438,7 +440,7 @@ async function scan(profile){
   stepPx=nominal;
   while(!cancelled&&stepCount<12000){
    if(!root.isConnected)throw Error('頁面替換了原捲動容器，為避免漏掃已停止');
-   const shot=snapshot(root);
+   const shot=snapshot(root,scanMode);
    let info;
    try{info=appendSample(shot,collected)}
    catch(err){
@@ -469,7 +471,8 @@ async function scan(profile){
    if(collected.length>20000)throw Error('已達20,000則安全上限');
    noProgress=info.added?0:noProgress+1;
    if(noProgress>180)throw Error('連續180次沒有新訊息，可能捲動區錯誤');
-   status('掃描中：已讀 '+collected.length+' 則（只計完整界線），步數 '+stepCount+
+   status('掃描中：已讀 '+collected.length+' 則，步數 '+stepCount+
+    '；辨識方式 '+(scanMode==='bounded'?'世界觀＋👍界線':'原泡泡辨識（備援）')+
     '。\n已找到世界觀標頭 '+(shot.boundaryDebug?.headers??0)+' 個、👍操作列 '+(shot.boundaryDebug?.reactionBars??0)+' 組、完整 Gal AI 回覆 '+(shot.boundaryDebug?.completeAI??0)+' 則。'+
     '\n目前步距 '+stepPx+'px，20%／350px上限；400ms＋350ms等待。'+
     '\n'+(info.added?'新增 '+info.added+' 則':'前後畫面重疊')+'；尚未匯出或覆蓋。');
@@ -493,7 +496,7 @@ async function scan(profile){
  }catch(err){
   failure=String(err?.message||err);
   if(root?.isConnected)root.scrollTop=lastGoodY;
-  diagnostic={...(diagnostic||inspect()),error:failure,trustedCount:collected.length,
+  diagnostic={...(diagnostic||inspect()),scanMode,error:failure,trustedCount:collected.length,
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
   status('⛔ 安全停止：'+failure+'\n可信訊息 '+collected.length+
    ' 則，未輸出半份正史；可按「📋 複製版面診斷」。');
@@ -501,7 +504,7 @@ async function scan(profile){
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.3',busy,hasResult:!!lastResult});return false}
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.4',busy,hasResult:!!lastResult});return false}
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
   const p=msg.profile||{};
@@ -514,5 +517,5 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:'0.7.3'};
+globalThis.GalArchivePageScanner={scan,version:'0.7.4'};
 })();
