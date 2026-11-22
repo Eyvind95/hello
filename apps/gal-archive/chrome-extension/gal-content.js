@@ -94,21 +94,26 @@ function snapshot(){
   return {role,text,id,top:rect.top};
  }).filter(r=>r.text.length>5),method:rs.length?'message-dom':'no-message-container'};
 }
-function fingerprint(r){return (r.id?'dom:'+r.id+'|':'')+r.role+'|'+core.meaningful(r.text);}
-function appendSample(sample,all,seen){
- // Require overlap for virtualized panes. If the root is fully persistent,
- // overlap is guaranteed after the second frame.
- let repeated=0,added=0;
- const inFrame=new Set();
- for(const row of sample.rows){
-  const key=fingerprint(row);
-  if(inFrame.has(key))continue; // same nested wrapper in one frame
-  inFrame.add(key);
-  if(seen.has(key)){repeated++;continue}
-  seen.add(key);
-  all.push({role:row.role,text:row.text,domId:row.id||null});added++;
+/* Repeated literal text is common ("嗯", "..."). Never globally deduplicate
+ * by text: merge overlapping windows as an ORDERED sequence instead. */
+function sameRow(a,b){return a.role===b.role&&(a.id&&b.id&&a.id===b.id||a.text===b.text)}
+function appendSample(sample,all){
+ const incoming=sample.rows.map(r=>({role:r.role,text:r.text,domId:r.id||null,id:r.id||null}));
+ if(!incoming.length)throw Error('當前視窗沒有可比對的訊息');
+ if(all.length===0){all.push(...incoming.map(({id,...rest})=>rest));return {repeated:0,added:incoming.length}}
+ let overlap=0;
+ for(let k=Math.min(incoming.length,all.length);k>=1;k--){
+  if(incoming.slice(0,k).every((entry,i)=>sameRow(entry,all[all.length-k+i]))){overlap=k;break}
  }
- return {repeated,added};
+ if(!overlap)throw Error('目前畫面與上一視窗無法找到順序重疊，已停止以免漏掉對話');
+ if(overlap===1){
+  const last=all[all.length-1],first=incoming[0];
+  if(!last.domId&&!first.domId&&all.filter(x=>sameRow(x,last)).length>1)
+   throw Error('重複短句造成單則重疊位置不唯一；無穩定 DOM ID，拒絕可能漏掃的歸檔');
+ }
+ const extra=incoming.slice(overlap).map(({id,...rest})=>rest);
+ all.push(...extra);
+ return {repeated:overlap,added:extra.length};
 }
 function isBottom(root){
  const y=root===document.scrollingElement||root===document.documentElement?root.scrollTop:root.scrollTop;
@@ -145,8 +150,8 @@ async function scan(profile){
  if(busy)return {ok:false,error:'Gal AI 掃描已經在進行'};
  busy=true;cancelled=false;lastResult=null;target=profile;mount();
  if($('gal-scan-export'))$('gal-scan-export').disabled=true;
- const collected=[],seen=new Set();
- let previousFrame=new Set(),started=false,bottomFrames=0,stepCount=0,failure='';
+ const collected=[];
+ let bottomFrames=0,stepCount=0,failure='';
  try {
   const first=snapshot();
   if(!first.rows.length)throw Error('目前頁面沒有找到可靠的訊息容器。此版本不猜測訊息，以免覆蓋正史；請保留此畫面供辨識版面。');
@@ -155,10 +160,7 @@ async function scan(profile){
   while(!cancelled&&stepCount<5000){
    const shot=snapshot();
    if(!shot.rows.length)throw Error('第 '+stepCount+' 步找不到訊息泡泡，停止以免漏掉正史');
-   const keys=new Set(shot.rows.map(fingerprint));
-   if(started&&previousFrame.size&&![...keys].some(k=>previousFrame.has(k)))
-    throw Error('第 '+stepCount+' 步與上一畫面完全沒有重疊訊息，無法保證沒有漏掃；本批不匯出');
-   const info=appendSample(shot,collected,seen);
+   const info=appendSample(shot,collected);
    if(shot.rows.some(row=>row.text.length>25000))
     throw Error('單則訊息超過25,000字，請不要將截斷版本當正史');
    if(collected.length>20000)throw Error('已掃超過20,000則，為避免異常終止');
@@ -173,7 +175,7 @@ async function scan(profile){
    root.scrollTop=Math.min(root.scrollTop+Math.max(45,Math.min(MAX_SCROLL_PX,Math.floor(root.clientHeight*SCROLL_RATIO))),root.scrollHeight);
    await sleep(WAIT_MS);await sleep(STABLE_MS);
    if(root.scrollTop===before&&!isBottom(root))throw Error('畫面無法向下捲動，可能選到錯誤捲動容器');
-   previousFrame=keys;started=true;stepCount++;
+   stepCount++;
   }
   if(cancelled)throw Error('使用者停止掃描，未產生可匯入檔案');
   if(stepCount>=5000)throw Error('捲動步數達上限，未確認掃描到底');
