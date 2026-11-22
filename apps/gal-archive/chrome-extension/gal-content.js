@@ -170,7 +170,10 @@ function inspect(){
     sh:n.scrollHeight,ch:n.clientHeight,w:Math.round(n.getBoundingClientRect().width)})),
   knownSelectors:common.length,
   genericCandidates:genericRows(root).length,
-  recognizedRows:candidateRows(root).length,
+  worldHeaderMarkers:boundaryTitles(root).length,
+  reactionBarMarkers:boundaryToolbars(root).length,
+  boundedReplies:boundaryRead(root).debug.completeAI,
+  recognizedRows:target?.worldName?boundaryRead(root).rows.length:candidateRows(root).length,
   calibrated:!!calibration?.node?.isConnected,
   iframeCount:document.querySelectorAll('iframe').length
  };
@@ -238,7 +241,7 @@ function boundaryTitles(root){
  if(!name)return [];
  const elements=[...root.querySelectorAll('span,strong,b,p,h1,h2,h3,h4,label,div')];
  const matches=elements.filter(n=>{
-  if(n.closest('#'+PANEL)||n.closest('button,[role="button"],nav,header,footer'))return false;
+  if(n.closest('#'+PANEL)||n.closest('button,[role="button"],nav'))return false;
   const t=boundaryDirectText(n);
   if(!t||t.length>name.length+25)return false;
   const normalized=core.normalizedWorld(t);
@@ -259,13 +262,13 @@ function boundaryToolbars(root){
  const candidates=[...root.querySelectorAll('button,[role="button"],div,[role="toolbar"]')];
  const groups=new Set();
  const good=n=>{
-  if(n.closest('#'+PANEL)||n.closest('nav,header,footer'))return false;
+  if(n.closest('#'+PANEL)||n.closest('nav'))return false;
   const controls=[...n.querySelectorAll('button,[role="button"]')].filter(c=>!!c.querySelector('svg,img,use')||!!boundaryIconTag(c).match(/copy|like|thumb|share|bookmark|複製|書籤|讚/));
   const iconCount=n.querySelectorAll('svg,img,use').length;
   const text=core.clean(n.innerText||'');
   const r=n.getBoundingClientRect();
-  return controls.length>=3&&controls.length<=12&&iconCount>=3
-    &&text.length<=95&&r.height<105&&r.width<780;
+  return (controls.length>=3&&controls.length<=12&&iconCount>=3||iconCount>=5&&iconCount<=12)
+    &&text.length<=95&&r.height<105&&r.width<Math.max(780,innerWidth*.95);
  };
  for(const node of candidates){
   if(node.tagName==='BUTTON'||node.getAttribute('role')==='button'){
@@ -282,7 +285,7 @@ function boundaryToolbars(root){
   if(node.tagName==='BUTTON'||node.getAttribute('role')==='button')continue;
   if(!good(node))continue;
   const children=[...node.children].filter(c=>!!c.querySelector('svg')||c.tagName==='BUTTON');
-  if(children.length>=3)groups.add(node);
+  if(children.length>=3||node.querySelectorAll('svg').length>=5)groups.add(node);
  }
  return [...groups].filter(n=>![...groups].some(ch=>ch!==n&&n.contains(ch)))
    .sort(boundaryOrder);
@@ -427,7 +430,7 @@ async function scan(profile){
  const recoveryLog=[];
  try{
   const first=snapshot();diagnostic=inspect();
-  if(!first.rows.length)throw Error('找不到訊息泡泡，請按「🎯 點選開場校準」後重新掃描。');
+  if(!first.rows.length)throw Error('找不到完整「世界觀標頭→👍操作列」回覆；可複製版面診斷（含標頭和操作列數量），不會保存片段。');
   if(first.rows[0].role!=='ai'||core.parseGameTime(first.rows[0].text))
    throw Error('第一則不是左側無時間開場，請校準真正的開場訊息');
   root=first.root;lastGoodY=root.scrollTop;
