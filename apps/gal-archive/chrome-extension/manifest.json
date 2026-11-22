@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.7.1",
-  "description": "V0.7.1：Gal AI 原生掃描新增通用泡泡辨識、點選開場校準及版面診斷；ChatGPT 舊掃描器保留。",
+  "version": "0.7.2",
+  "description": "V0.7.2：Gal AI 掃描修正跨畫面重疊比對，找不到重疊會退回縮小步距重試；原 ChatGPT 掃描完整保留。",
   "permissions": [
     "storage",
     "activeTab",
