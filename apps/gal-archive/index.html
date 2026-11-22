@@ -1368,15 +1368,18 @@ if(b.id==='renameWorld'){
 }if(b.id==='copyWorld'){await navigator.clipboard.writeText($('worldEditor').value);notify('已複製世界觀');return}const r=current();if(!r)return;
 if(b.id==='archiveSortCurrentChat'){
   const preview=archivePreviewCombinedStorySort(r);
-  if(!preview.changed){notify('目前完整對話和已接事件沒有可校正的位置差異');return}
-  const fixed=(r.messages||[]).filter(m=>!m.sourceEventId&&!archiveHasManualSortTime(m)).length;
+  if(preview.separatedPairs){notify('安全停止：偵測到 '+preview.separatedPairs+' 組已知「我／他」不相鄰，必須先逐組核對，這次沒有重新排序或改動任何紀錄。');return}
+  if(!preview.changed){notify('目前沒有可安全重排的位置差異。不同時間來源的訊息不會跨類型硬排。');return}
+  const galContext=archiveGalTimeContext(r.messages||[]);
+  const fixed=(r.messages||[]).filter(m=>!m.sourceEventId&&!archiveHasManualSortTime(m)&&!galContext.has(m)).length;
   const lines=[
-    '依原始發言時間校正「'+r.title+'」的完整對話與已接事件。',
+    '安全整理「'+r.title+'」的完整對話與已接事件（劇情與現實時間不混排）。',
     '一般對話重排 '+preview.messageMoved+' 則；已接事件移動 '+preview.movedEvents+' 件；合計位置異動 '+preview.changed+' 個。',
-    '其中 '+preview.galTimed+' 則將優先採用 Gal AI 劇情時間（含同回合玩家配對）。',
-    preview.resetPlacements?'已手動移動的事件 '+preview.resetPlacements+' 件會解除手動定位，重新依時間定位。':'',
+    '其中 '+preview.galTimed+' 則有 Gal AI 劇情時間（含同回合玩家配對）；「我／他」同組移動。',
+    '跨時間類型分界 '+preview.mixedTiers+' 處不跨越重排，避免不一致排序。',
+    '已手動定位的事件 '+preview.preservedPlacements+' 件會保留原本錨點，絕不清除位置。',
     fixed?'沒有原始時間的手動對話 '+fixed+' 則仍固定在其原槽位。':'',
-    '未接事件仍只在事件簿。內容、圖片、接取狀態和原始時間不變。操作前先下載本輪 JSON 備份。',
+    '未接事件仍只在事件簿。內容、圖片、接取狀態、原始時間與手動事件錨點不變。操作前先下載本輪 JSON 備份。',
     '確定套用？'
   ];
   if(!confirm(lines.filter(Boolean).join(String.fromCharCode(10))))return;
@@ -3079,7 +3082,7 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
   const sourceIds=[...cycleBySource.keys()];
   const sources=new Map();
   for(const id of sourceIds){const snap=await archiveGetSource(root,cycleBySource.get(id),id);if(snap?.exists)sources.set(id,snap.data())}
-  const plans=[];let reorderable=0,changed=0,actual=0,inferred=0,captured=0,fallback=0,pairedFilled=0,pairedSeen=0,manualPinned=0,manualTimed=0,galCount=0;
+  const plans=[];let reorderable=0,changed=0,actual=0,inferred=0,captured=0,fallback=0,pairedFilled=0,pairedSeen=0,manualPinned=0,manualTimed=0,galCount=0,separatedPairs=0,mixedTiers=0;
   for(const original of targets){
     const r=structuredClone(original);
     for(const section of sections){
@@ -3109,6 +3112,8 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
         else fallback++;
       }
       const sorted=sortArchivedPilotMessages(normalized.items,section);
+      separatedPairs+=sorted.separatedPairs||0;
+      mixedTiers+=sorted.mixedTiers||0;
       r[section]=sorted.items;
       galCount+=sorted.galCount||0;
       reorderable+=sorted.orderable;changed+=sorted.changed;
@@ -3118,11 +3123,12 @@ async function reorderPilotMessagesFromCloud(onlyCurrent=false){
     plans.push(r);
   }
   const targetName=onlyCurrent?(targets[0]?.title||'目前輪迴'):'全部有自動歸檔的輪迴';
+  if(separatedPairs)throw Error('安全停止：有 '+separatedPairs+' 組已配對的「我／他」被舊排序拆開；請先人工核對。此次未開始寫入。');
   if(!confirm('校正範圍：'+targetName+'。\n已比對 '+sourceIds.length+' 筆雲端來源。\n'
     +'Gal AI 劇情時間（含玩家同回合配對）：'+galCount+' 則。\n'
     +'ChatGPT／手動原始時間：'+actual+' 則；GPT 同回合推定：'+inferred+' 則；首次擷取：'+captured+' 則；接收備援：'+fallback+' 則。\n'
     +'找到可核對的皮卡＋GPT 相鄰來源 '+pairedSeen+' 組，補回缺失的皮卡推定時間 '+pairedFilled+' 則。\n'
-    +'可排序 '+reorderable+' 則（含手動標註 '+manualTimed+' 則），預計移動 '+changed+' 個位置；劇情／現實時間不跨軸直接比較。'
+    +'可排序 '+reorderable+' 則（含手動標註 '+manualTimed+' 則），預計移動 '+changed+' 個位置。不同時間來源分界 '+mixedTiers+' 處不跨越重排；「我／他」同組移動。'
     +(manualPinned?'\n另有 '+manualPinned+' 則未標時間的手動紀錄會固定在原槽位。':'')
     +'\n不改文字或圖片、不刪訊息、不覆蓋手動標註的發言時間；同回合的劇情時間只在排序時推定。將先下載這次校正範圍的 JSON 備份。確定套用？'))return;
   downloadText('輪迴檔案館_校正前備份_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',
