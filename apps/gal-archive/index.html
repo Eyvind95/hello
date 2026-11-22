@@ -130,6 +130,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
   <div class="formrow"><div><label for="missingAuditExpected">你確認的原始劇情總則數（可空白）</label><input id="missingAuditExpected" type="number" min="0" step="1" placeholder="例如 803"></div><div><label>檢查對象</label><input id="missingAuditCycleLabel" readonly></div></div>
   <div class="actions topsp"><button class="btn primary" id="missingAuditRun">讀取本機與 Firebase 核對</button><button class="btn" id="missingAuditDownload" disabled>下載診斷 JSON</button></div>
   <pre id="missingAuditReport" class="archivepreview" style="max-height:48vh;overflow:auto;white-space:pre-wrap;margin:12px 0" role="status" aria-live="polite">尚未執行。檢查不會更動資料。</pre>
+  <div id="missingAuditSkipped" class="audit-skip-report hidden" aria-label="疑似做愛跳過的玩家訊息與來源線索"></div>
 
   <div id="missingAuditReview" class="hidden audit-review">
     <div class="sectionhead"><h3>逐組核對原始來源（唯讀）</h3><span class="note" id="missingAuditReviewSummary"></span></div>
@@ -849,17 +850,31 @@ function archiveSkipRefreshBox(id,issues,target){
   if(open)$(id).open=true;
 }
 function missingAuditRenderSkipped(){
-  const box=$('missingAuditSkipped'),issues=missingAuditResult?.local?.suspectedSkipScenes||[];
+  const box=$('missingAuditSkipped');
   if(!box)return;
   if(!missingAuditResult){box.classList.add('hidden');box.innerHTML='';return}
+  const local=missingAuditResult.local?.suspectedSkipScenes||[];
+  const raw=missingAuditResult.cloud?.rawSkipped||[];
+  const cloudOk=!!missingAuditResult.cloud&&!missingAuditResult.cloud.error;
   box.classList.remove('hidden');
-  box.innerHTML='<h3>🟥 跳過片段線索（'+issues.length+' 則玩家訊息）</h3>'
-    +'<p class="note">下面疑似因為做愛被跳過。以下只是已保存的提示語句，並不等於缺漏數；'
-    +'從未擷取的劇情無法藉此推算數量。只讀不修改。</p><div class="archive-skip-list">'
-    +(issues.map(x=>'<div class="note">🟥 '+(x.section==='pilotMessages'?'副駕駛聊天':'完整對話')
-      +'第 '+(x.index+1)+' 則 · '+safe(x.cue)+' · '+safe(x.preview)+'</div>').join('')
-      ||'<div class="note">沒有偵測到提示詞，不代表原始聊天沒有略過段落。</div>')
+  const line=(x,scope)=>'<div class="audit-skip-item">'
+    +'<strong>🟥 '+scope+'</strong> · '+safe(x.cue||'')
+    +'<div class="note">'+safe(x.preview||'')+'</div>'
+    +(x.id||x.sourceEventId?'<div class="note">來源 ID：'+safe(x.id||x.sourceEventId)+'</div>':'')
     +'</div>';
+  box.innerHTML='<h3>🟥 疑似因為做愛被跳過</h3>'
+    +'<p class="note">下面疑似因為做愛被跳過。這些只是皮卡寫過的「made in heaven」或「做愛跳過」提示。'
+    +'一筆提示不等於一則缺漏，也無法從這些文字推算未寫出的劇情有幾則；工具不會改動正式紀錄。</p>'
+    +'<div class="note">本機玩家訊息 '+local.length+' 則'
+    +(cloudOk?'／雲端原始來源 '+raw.length+' 筆（可能是同一則，不能相加）':'／雲端來源本次未核對完成')+'</div>'
+    +'<details class="archive-skip-box"><summary>本機命中位置（'+local.length+'）</summary><div class="archive-skip-list">'
+    +(local.map(x=>line(x,(x.section==='pilotMessages'?'副駕駛聊天':'完整對話')+'第 '+(x.index+1)+' 則')).join('')
+      ||'<div class="note">本機未找到標記，不代表原始聊天一定沒有略過。</div>')
+    +'</div></details>'
+    +'<details class="archive-skip-box"><summary>雲端來源命中（'+raw.length+'）</summary><div class="archive-skip-list">'
+    +(raw.map(x=>line(x,'原始來源 '+(x.status||'未知狀態'))).join('')
+      ||'<div class="note">本次沒有在可讀取的雲端來源找到提示。</div>')
+    +'</div></details>';
 }
 function archiveStoryBubble(row,i,record){
   const m=row.entry,story=row.type==='message';
@@ -2640,6 +2655,8 @@ function missingAuditLocal(r,expected){
     if(first)dup.push({source:key,sections:[first.section,row.section],text:missingAuditExcerpt(row.message)});
     else indexed.set(key,row);
   }
+  const suspectedSkipScenes=[...archiveSkipIssuesForRows(timeline,'messages'),
+    ...archiveSkipIssuesForRows(pilot.map(entry=>({type:'message',entry})),'pilotMessages')];
   const storyLikePilot=pilot.filter(m=>m.role==='me'&&
     /(?:^|\n)\s*(?:我|他)\s*[：:；”]/.test(String(m.text||'')))
     .map(m=>({id:m.id,sourceEventId:m.sourceEventId||null,preview:missingAuditExcerpt(m)}));
@@ -2656,6 +2673,7 @@ function missingAuditLocal(r,expected){
     allEvents:events.length,pilotCount:pilot.length,pilotRoles:roleCount(pilot),
     quizCount:(r.quizLogs||[]).length,changeCount:(r.changeLogs||[]).length,
     storyLikePilot,storyLikePilotCount:storyLikePilot.length,
+    suspectedSkipScenes,suspectedSkipCount:suspectedSkipScenes.length,
     localSourcesIndexed:indexed.size,duplicateSourceParts:dup,
     duplicateSourcePartsCount:dup.length,indexed,lookupRows:rows};
 }
@@ -2667,7 +2685,8 @@ function missingAuditDisplay(report){
     +'\n未接／待決事件：'+a.unacceptedEvents+' 件'
     +'\n副駕駛聊天：'+a.pilotCount+' 則（皮卡 '+a.pilotRoles.player+'／GPT '+a.pilotRoles.assistant+'）'
     +'\n疑似包含「我：／他：」標記、但在副駕駛聊天的訊息：'+a.storyLikePilotCount+' 則'
-    +'\n同一來源片段在多個位置重複：'+a.duplicateSourcePartsCount+' 組';
+    +'\n同一來源片段在多個位置重複：'+a.duplicateSourcePartsCount+' 組'
+    +'\n🟥 深紅（疑似做愛跳過）：'+(a.suspectedSkipCount||0)+' 則玩家訊息（非確定缺漏）';
   if(!c)out+='\n\n雲端：尚未核對';
   else if(c.error)out+='\n\n雲端核對未完成：'+c.error;
   else{
@@ -2687,13 +2706,16 @@ function missingAuditDisplay(report){
       +'\n已收取來源所預期的劇情片段：'+c.expectedStoryParts+' 則'
       +'\n已收取來源對應的正式紀錄缺漏：'+c.missingOfficial.length+' 則'
       +'\n已收取來源實際跑到其他分頁：'+c.misclassified.length+' 則'
-      +'\n雲端來源仍含「顯示較多」：'+c.collapsedSources.length+' 筆';
+      +'\n雲端來源仍含「顯示較多」：'+c.collapsedSources.length+' 筆'
+      +'\n🟥 雲端原始來源含跳過提示：'+(c.rawSkipped||[]).length+' 筆（與本機可能重疊，不要相加）';
     if(c.cycleStoryCount!==null&&c.cycleStoryCount!==a.actualStoryCount)out+='\n⚠ 本機與雲端的劇情總數不同：請先比較完整備份，不要直接覆蓋。';
   }
   const examples=(title,list,max=12)=>list.length?'\n\n【'+title+'，先列 '+Math.min(max,list.length)+'／'+list.length+' 筆】\n'
     +list.slice(0,max).map(x=>(x.id||x.source||x.sourceEventId||'？')+' · '+(x.target||x.section||'')+' · '+(x.preview||x.text||'')).join('\n'):'';
   out+=examples('疑似分類到副駕駛聊天的玩家貼文',a.storyLikePilot);
-  if(c&&!c.error){out+=examples('已收取卻無正式片段',c.missingOfficial);
+  out+=examples('下面疑似因為做愛被跳過：本機已保存的玩家訊息（不等於缺漏）',a.suspectedSkipScenes||[],25);
+  if(c&&!c.error){out+=examples('下面疑似因為做愛被跳過：雲端來源玩家訊息（不等於缺漏）',c.rawSkipped||[],25);
+    out+=examples('已收取卻無正式片段',c.missingOfficial);
     out+=examples('來源所在的分頁與預期不同',c.misclassified);
     out+=examples('來源路徑與輪迴 ID 衝突',c.pathConflicts);
     out+=examples('疑似事件到達註解誤判',c.suspectedEventNotes||[]);}
@@ -2725,11 +2747,13 @@ async function missingAuditCloud(r,local){
   }
   const status={accepted:0,pending:0,other:0},missingOfficial=[],misclassified=[],linkedDifferent=[];
   const textIndex=missingAuditMakeTextIndex(local.lookupRows||[]);
-  const crossCycle=missingAuditOtherCycleIndexes(r.id),suspectedEventNotes=[];
+  const crossCycle=missingAuditOtherCycleIndexes(r.id),suspectedEventNotes=[],rawSkipped=[];
   const pathConflicts=[],collapsedSources=[],counts={expectedStoryParts:0};
   for(const doc of uniq.values()){
     const d=doc.data();
     if(d.cycleId!==r.id){pathConflicts.push({id:doc.id,preview:'內部 cycleId：'+d.cycleId});continue}
+    if(archiveSkipMatches(d))rawSkipped.push({id:doc.id,section:d.section||null,status:d.status||null,
+      cue:archiveSkipCues(d).join('、'),preview:missingAuditExcerpt(d)});
     status[d.status==='accepted'?'accepted':d.status==='pending'?'pending':'other']++;
     if(d.status!=='accepted')continue;
     if(!['chat','quiz','changes'].includes(d.section)||!['me','ai'].includes(d.role)||typeof d.text!=='string'){
@@ -2773,7 +2797,7 @@ async function missingAuditCloud(r,local){
   const reviewCounts={};
   for(const row of missingOfficial)reviewCounts[row.kind]=(reviewCounts[row.kind]||0)+1;
   return {cycleStoryCount,rawTotal:uniq.size,status,expectedStoryParts:counts.expectedStoryParts,
-    missingOfficial,reviewCounts,reviewSourceGroups:new Set(missingOfficial.map(x=>x.id)).size,linkedDifferent,
+    missingOfficial,rawSkipped,reviewCounts,reviewSourceGroups:new Set(missingOfficial.map(x=>x.id)).size,linkedDifferent,
     suspectedEventNotes,otherCycleExactGroups:new Set(missingOfficial.filter(x=>x.kind==='other-cycle-exact').map(x=>x.id)).size,
     misclassified,collapsedSources,pathConflicts,duplicateConflicts};
 }
@@ -2785,6 +2809,7 @@ function missingAuditOpen(){
   $('missingAuditExpected').value=/第\s*16\s*周目/.test(r.title)?'803':'';
   $('missingAuditReport').textContent='本輪劇情 '+(r.messages||[]).length+' 則。準備進行唯讀核對。';
   $('missingAuditDownload').disabled=true;
+  $('missingAuditSkipped').classList.add('hidden');$('missingAuditSkipped').innerHTML='';
   $('missingAuditModal').classList.remove('hidden');
 }
 $('missingAuditOpen').onclick=missingAuditOpen;
@@ -2813,11 +2838,11 @@ $('missingAuditRun').onclick=async()=>{
     catch(e){cloud={error:e.message||String(e)}}
     // Drop the ephemeral indexed Map; JSON backup keeps only interpretable findings.
     const {indexed,lookupRows,...safeLocal}=local;
-    missingAuditResult={format:'gal-archive-completeness-audit',version:3,
+    missingAuditResult={format:'gal-archive-completeness-audit',version:4,
       at:new Date().toISOString(),local:safeLocal,cloud,
       warning:'唯讀診斷。則數差額不等於資料確實遺失；分類或未擷取的內容仍需人工核對。'};
     $('missingAuditReport').textContent=missingAuditDisplay({local:safeLocal,cloud});
-    missingAuditRenderReview();
+    missingAuditRenderReview();missingAuditRenderSkipped();
     $('missingAuditDownload').disabled=false;
   }catch(e){$('missingAuditReport').textContent='診斷失敗：'+(e.message||String(e))}
   finally{b.disabled=false}
