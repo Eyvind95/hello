@@ -28,7 +28,8 @@ function worldInText(content){
 function isEvent(content){
  const t=clean(content);
  // An event must be presented as a notification, not merely mentioned in prose.
- return /^(?:[⚠❗❕!！\s　]*)?(?:事件(?:到達|通知|發生|觸發)|與\s*《[^》]{2,120}》\s*的\s*事件)/u.test(t)
+ return /^(?:[⚠❗❕!！\uFE0F\s　]*)?(?:事件(?:到達|通知|發生|觸發)|與\s*《[^》]{2,120}》\s*的\s*事件)/u.test(t)
+   || /^[!！⚠\uFE0F\s　]+與\s*《[^》]{2,120}》\s*的\s*世界/u.test(t)
    || /^.{0,45}(?:世界事件|緊急事件)\s*(?:到達|通知|觸發)/u.test(t);
 }
 function meaningful(str){return clean(str).replace(/\s+/g,' ')}
