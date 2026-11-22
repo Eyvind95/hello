@@ -1961,19 +1961,21 @@ function archiveEventStatusText(status){
   return status==='accepted'?'已接':status==='declined'?'未接':'待決定';
 }
 function archiveCompareEventPosition(a,b){
-  // Events have no Gal AI clock; align using the real conversation time axis.
+  // Same ChatGPT conversation order is the strongest event locator.
+  if(a?.chatKey&&a.chatKey===b?.chatKey&&Number.isInteger(a.messageOrder)&&Number.isInteger(b.messageOrder)
+    &&a.messageOrder!==b.messageOrder)return a.messageOrder-b.messageOrder;
+  if(a?.sourceEventId&&a.sourceEventId===b?.sourceEventId
+    &&Number.isInteger(a.sourcePartIndex)&&Number.isInteger(b.sourcePartIndex))
+    return a.sourcePartIndex-b.sourcePartIndex;
+  // Never position a receipt-time event among actual ChatGPT authored times.
   const ta=archiveRealChronologyTime(a),tb=archiveRealChronologyTime(b);
-  if(ta.ms&&tb.ms){
-    const ma=Math.floor(ta.ms/60000),mb=Math.floor(tb.ms/60000);
-    if(ma!==mb)return ma-mb;
-  }
-  if(a?.chatKey&&a.chatKey===b?.chatKey&&Number.isInteger(a.messageOrder)&&Number.isInteger(b.messageOrder))
-    return a.messageOrder-b.messageOrder;
-  return ta.ms&&tb.ms?0:null;
+  if(!ta.ms||!tb.ms||archiveClockTier(ta)!==archiveClockTier(tb))return null;
+  return Math.floor(ta.ms/60000)-Math.floor(tb.ms/60000);
 }
 function archiveStoryTimeline(record){
   // Read-only merged view. Confirmed events still belong to events[], not messages[].
   const rows=(record.messages||[]).map((entry,index)=>({entry,index,type:'message'}));
+  const pairedClocks=archiveGalTimeContext(record.messages||[]);
   const events=(record.events||[]).map((entry,index)=>({entry,index,type:'event'})).filter(x=>x.entry.status==='accepted');
   const messageIds=new Set(rows.map(x=>x.entry.id));
   const pinned=[],automatic=[];
@@ -1990,6 +1992,9 @@ function archiveStoryTimeline(record){
       const cmp=archiveCompareEventPosition(row.entry,rows[i].entry);
       if(cmp!==null&&cmp<0){at=i;break}
     }
+    // Automatic event placement must never split an acknowledged player/AI pair.
+    if(at>0&&at<rows.length&&rows[at-1].type==='message'&&rows[at].type==='message'
+      &&archiveIsTrustedAdjacentTurn(rows[at-1].entry,rows[at].entry,pairedClocks))at--;
     rows.splice(at,0,row);
   }
   const groups=new Map();
