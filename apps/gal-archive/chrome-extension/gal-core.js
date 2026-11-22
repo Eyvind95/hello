@@ -50,7 +50,8 @@ function validate(rows,expectedWorld){
     errors.push('第 '+(i+1)+' 則事件／世界名稱「'+domain+'」與綁定世界觀「'+expectedWorld+'」不符；不能覆蓋其他世界觀');
   if(role==='ai'&&(row.eventType==='event'||isEvent(t))){
    events.push({role:'me',text:t,title:(t.split('\n').find(Boolean)||'事件').slice(0,70),
-    status:'pending',scanIndex:i,worldName:row.worldName||domain||null});
+    status:'pending',scanIndex:i,worldName:row.worldName||domain||null,
+    gameTime:parseGameTime(t)?.iso||null});
    continue;
   }
   if(role==='me'){
