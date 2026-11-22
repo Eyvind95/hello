@@ -469,8 +469,9 @@ async function scan(profile){
    if(collected.length>20000)throw Error('已達20,000則安全上限');
    noProgress=info.added?0:noProgress+1;
    if(noProgress>180)throw Error('連續180次沒有新訊息，可能捲動區錯誤');
-   status('掃描中：已讀 '+collected.length+' 則，步數 '+stepCount+
-    '。\n目前步距 '+stepPx+'px，20%／350px上限；400ms＋350ms等待。'+
+   status('掃描中：已讀 '+collected.length+' 則（只計完整界線），步數 '+stepCount+
+    '。\n已找到世界觀標頭 '+(shot.boundaryDebug?.headers??0)+' 個、👍操作列 '+(shot.boundaryDebug?.reactionBars??0)+' 組、完整 Gal AI 回覆 '+(shot.boundaryDebug?.completeAI??0)+' 則。'+
+    '\n目前步距 '+stepPx+'px，20%／350px上限；400ms＋350ms等待。'+
     '\n'+(info.added?'新增 '+info.added+' 則':'前後畫面重疊')+'；尚未匯出或覆蓋。');
    if(isBottom(root)){bottomFrames++;if(bottomFrames>=3)break}else bottomFrames=0;
    if(info.added&&stepPx<nominal)stepPx=Math.min(nominal,Math.max(stepPx+12,Math.floor(stepPx*1.2)));
