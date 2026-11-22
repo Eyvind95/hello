@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.7.3",
-  "description": "Gal AI 原生掃描 V0.7.3：以當前世界觀名稱為 Gal AI 回覆起點、👍操作列為終點，分層保留完整回合；ChatGPT 掃描器不變。",
+  "version": "0.7.4",
+  "description": "V0.7.4：修正 Gal AI 0.7.3 掃描結果從4則退成0則，恢復原泡泡掃描備援，另保留世界觀／👍辨識；ChatGPT 原掃描不變。",
   "permissions": [
     "storage",
     "activeTab",
