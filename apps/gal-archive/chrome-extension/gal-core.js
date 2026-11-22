@@ -113,5 +113,5 @@ function markdownFromDom(node){
  };
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
 }
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.2'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.3'};
 })();
