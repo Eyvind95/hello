@@ -68,3 +68,13 @@ firebase deploy --only functions:gal-archive --project eyvind95-182f0
 - 只做**唯讀辨識與提示**；不更動原始訊息、ChatGPT 發言時間、sourceId、上傳 API 或 Firebase 寫入金鑰，不會自行推算漏掉多少則。
 - 網站 V5.31 負責對已正式分類的「我／他」完整對話套用 Gal AI 劇情時間；兩套時間軸不混用。助手 V0.6.6 不能自動修復過去已錯分的輪迴或從未擷取的片段。
 - 擴充功能原始碼及可安裝 ZIP 已一併放進 `apps/gal-archive/chrome-extension/`，以後可以直接從版本庫取得並追蹤變更。
+
+
+## 2026/11/22｜V5.35 網站 × V0.7.0 ChatGPT／Gal AI 雙掃描助手
+
+- 新版 Chrome 擴充功能新增完全獨立的 Gal AI 頁面掃描器。舊版 ChatGPT 監看／27%慢掃仍保留，且不會因為 Gal AI 來源覆蓋而影響副駕駛聊天。
+- Gal AI 使用 activeTab 權限，只在使用者點選的 Gal AI 分頁注入；先在原頁面定位輪迴開場，再執行20%捲動（最多350px）、400ms等待加350ms穩定時間。不點開時間選單或隱藏的展開介面。
+- 第一則左側無時間的訊息進 `opening`，後續的玩家、Gal AI 角色互動進 `messages`，世界事件另進 `events`；遊戲日期時間只從 Gal AI 回覆讀取，同回合玩家與 Gal AI 共用。藍色引用框、斜體等格式盡量轉為 Markdown 保留。
+- 掃描只產生 `gal-ai-authoritative-scan` JSON；遇到開場、訊息身份、時間、回合連續性、世界觀或 DOM 偵測失敗會停止，不會寫入半份正史。
+- 網站首頁「🌐 Gal AI 原生正史覆蓋」必須先選擇目標輪迴、匯入掃描 JSON、預覽並下載原輪迴備份；正式套用只取代該輪 `opening`、`messages`、`events`，其他分頁與其他輪迴不改。匹配到舊事件時保留接取狀態；若舊已接事件無法匹配，須額外確認。
+- 本版本初次整合仍需實際 Gal AI 網頁 DOM 驗收；不應宣稱已在使用者真實帳號執行。官方 Firebase 仍使用原有手動同步流程，新掃描資料不會自動傳上雲端。
