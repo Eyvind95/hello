@@ -2161,12 +2161,41 @@ function sortArchivedPilotMessages(items,section='pilotMessages'){
   const gal=section==='messages'?archiveGalTimeContext(items):null;
   const manualTimed=items.filter(archiveHasManualSortTime).length;
   const galCount=gal?items.filter(m=>gal.has(m)).length:0;
-  const pairs=gal?[...gal.entries()].filter(([m,c])=>c.basis==='gal-paired'&&c.pairedWith):[];
   const positions=new Map(items.map((m,i)=>[m,i]));
-  const separatedPairs=pairs.filter(([m,c])=>positions.get(c.pairedWith)!==positions.get(m)+1);
-  if(separatedPairs.length)return {
+  const separated=new Set();
+  // Cross-check *all* verifiable turns, not only AI replies with a parsed
+  // status clock. A source with an unreadable clock can still have a trusted
+  // player / AI relationship that must never be split by a sort.
+  if(gal){
+    const players=items.filter(m=>m.role==='me');
+    const bySource=new Map(),byChat=new Map();
+    for(const me of players){
+      if(me.sourceEventId&&Number.isInteger(me.sourcePartIndex)){
+        const key=me.sourceEventId+'|'+me.sourcePartIndex;
+        const list=bySource.get(key)||[];list.push(me);bySource.set(key,list);
+      }
+      if(me.chatKey&&Number.isInteger(me.messageOrder)){
+        const key=me.chatKey+'|'+me.messageOrder;
+        const list=byChat.get(key)||[];list.push(me);byChat.set(key,list);
+      }
+    }
+    for(const ai of items.filter(m=>m.role==='ai')){
+      let candidates=[];
+      if(ai.sourceEventId&&Number.isInteger(ai.sourcePartIndex))
+        candidates=bySource.get(ai.sourceEventId+'|'+(ai.sourcePartIndex-1))||[];
+      if(candidates.length!==1&&ai.chatKey&&Number.isInteger(ai.messageOrder))
+        candidates=byChat.get(ai.chatKey+'|'+(ai.messageOrder-1))||[];
+      if(candidates.length!==1){
+        candidates=players.filter(me=>gal.get(me)?.pairedWith===ai);
+      }
+      if(candidates.length===1&&positions.get(ai)!==positions.get(candidates[0])+1)
+        separated.add(candidates[0]);
+    }
+  }
+  const separatedPairs=separated.size;
+  if(separatedPairs)return {
     items,changed:0,orderable:0,manualTimed,galCount,
-    separatedPairs:separatedPairs.length,reason:'已配對的我／他不相鄰，停止自動重排'
+    separatedPairs,reason:'已配對的我／他不相鄰，停止自動重排'
   };
   const units=[];
   for(let i=0;i<items.length;){
