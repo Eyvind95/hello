@@ -86,69 +86,67 @@ function validate(rows,expectedWorld){
   worldNames:sourceNames,scannedRows:rows.length};
 }
 function markdownFromDom(node,options={}){
- // Player-side blue quote cards must become 「...」, not ordinary > blockquotes.
- // Preserve italic as *...* (bold remains **...**) even when formatting is CSS,
- // rather than semantic <em>. Leave AI-side quote styling untouched.
+ // Only the real Gal AI purple #250C57 segment is a 「quoted player card」.
+ // Plain user text and italic-only text do NOT receive Japanese quotes.
  if(!node)return '';
- const T=Node.TEXT_NODE,E=Node.ELEMENT_NODE;
- const player=options.role==='me';
+ const T=Node.TEXT_NODE,E=Node.ELEMENT_NODE,player=options.role==='me';
  const skip=/^(BUTTON|SVG|PATH|SCRIPT|STYLE|NOSCRIPT|INPUT|TEXTAREA|SELECT)$/i;
+ const source=(n,key,fallback='')=>n?.getAttribute?.('data-gal-source-'+key)||fallback;
  const css=n=>typeof getComputedStyle==='function'?getComputedStyle(n):null;
- const rgb=str=>{const m=String(str||'').match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/i);
-   return m?{r:+m[1],g:+m[2],b:+m[3],a:m[4]===undefined?1:+m[4]}:null};
- const blueBox=n=>{
-  if(!player||n===node||!['DIV','SECTION','ASIDE','BLOCKQUOTE','P'].includes(n.tagName))return false;
-  const st=css(n),p=css(n.parentElement),b=rgb(st?.backgroundColor);
-  const explicit=/(?:quoted?|quote-card|citation|reference|引用|引述|原文)/i.test(String(n.className||''));
-  if(explicit)return true;
-  if(!b||b.a<0.08||b.b-b.r<17||b.b-b.g<6||b.b<70)return false;
-  if(st?.backgroundColor===p?.backgroundColor)return false;
-  // A bubble's own blue surface should not turn the entire player turn into a quote.
-  const pText=clean(n.parentElement?.innerText||'');
-  const selfText=clean(n.innerText||'');
-  if(pText.length&&selfText.length>=pText.length*.94)return false;
-  const radius=parseFloat(st?.borderTopLeftRadius||st?.borderRadius||'0');
-  return radius>=3||parseFloat(st?.borderLeftWidth||0)>=2;
+ const color=n=>source(n,'bg',css(n)?.backgroundColor||n?.style?.backgroundColor||'');
+ const italicStyle=n=>source(n,'italic',css(n)?.fontStyle||n?.style?.fontStyle||'normal');
+ const display=n=>source(n,'display',css(n)?.display||'');
+ const radius=n=>source(n,'radius',css(n)?.borderTopLeftRadius||'0');
+ const borderWidth=n=>source(n,'border-width',css(n)?.borderLeftWidth||'0');
+ const borderStyle=n=>source(n,'border-style',css(n)?.borderLeftStyle||'');
+ const borderColor=n=>source(n,'border-color',css(n)?.borderLeftColor||'');
+ function purple(src){
+  const s=String(src||'').trim().toLowerCase().replace(/\s+/g,'');
+  if(s==='#250c57'||s==='#250c57ff')return true;
+  const match=s.match(/^rgba?\((\d+),(\d+),(\d+)(?:[,/]([\d.]+))?\)$/);
+  return !!match&&+match[1]===37&&+match[2]===12&&+match[3]===87
+    &&(match[4]===undefined||+match[4]>.95);
+ }
+ const quoteCard=n=>player&&n!==node&&purple(color(n))&&!purple(color(n.parentElement));
+ const quoteText=value=>{
+  const t=clean(value);
+  if(!t)return '';
+  // One quote card = one pair of 「」 and a line break before/after it.
+  return '\n「'+t+'」\n';
  };
- const wrapQuote=t=>{
-  const content=clean(t);
-  return content?'\n「'+content.replace(/^「|」$/g,'')+'」\n':'';
- };
- const walk=(n,depth=0,insideQuote=false)=>{
+ const walk=(n,inQuote=false,inItalic=false)=>{
   if(n.nodeType===T)return n.nodeValue||'';
   if(n.nodeType!==E||skip.test(n.tagName))return '';
   if(n!==node&&n.matches?.('[role="toolbar"],[aria-label*="操作"],[data-role="toolbar"],[contenteditable="true"]'))return '';
   const tag=n.tagName.toLowerCase();
   if(tag==='br')return '\n';
-  const quote=player&&!insideQuote&&(tag==='blockquote'||blueBox(n));
-  const inner=[...n.childNodes].map(c=>walk(c,depth+1,insideQuote||quote)).join('');
-  if(quote)return wrapQuote(inner);
+  const quoted=!inQuote&&quoteCard(n);
+  const italicNow=(tag==='em'||tag==='i'||italicStyle(n)==='italic')
+    &&!inItalic&&(n===node||italicStyle(n.parentElement)!=='italic');
+  const nextItalic=inItalic||italicNow||italicStyle(n)==='italic';
+  const inner=[...n.childNodes].map(child=>walk(child,inQuote||quoted,nextItalic)).join('');
+  if(quoted)return quoteText(inner);
   if(tag==='blockquote'){
-    const t=clean(inner);
-    return '\n'+t.split('\n').map(x=>'> '+x).join('\n')+'\n';
+   const t=clean(inner);
+   return '\n'+t.split('\n').map(line=>'> '+line).join('\n')+'\n';
   }
-  const st=css(n);
-  const italic=(tag==='em'||tag==='i'||(n!==node&&st?.fontStyle==='italic'
-    &&css(n.parentElement)?.fontStyle!=='italic'));
-  if(italic&&inner.trim())return '*'+inner.trim()+'*';
-  if((tag==='strong'||tag==='b')&&inner.trim())return '**'+inner.trim()+'**';
-  if(tag==='code'&&n.parentElement?.tagName!=='PRE')return String.fromCharCode(96)+inner+String.fromCharCode(96);
-  if(tag==='pre')return '\n'+String.fromCharCode(96).repeat(3)+'\n'+inner+'\n'+String.fromCharCode(96).repeat(3)+'\n';
-  if(tag==='li')return '\n- '+inner;
-  if(/^h[1-6]$/.test(tag))return '\n'+'#'.repeat(+tag[1])+' '+inner+'\n';
-  if(tag==='p'||tag==='article')return inner+'\n';
+  let out=inner;
+  if(italicNow&&out.trim())out='*'+out.trim()+'*';
+  if((tag==='strong'||tag==='b')&&out.trim())out='**'+out.trim()+'**';
+  if(tag==='code'&&n.parentElement?.tagName!=='PRE')return String.fromCharCode(96)+out+String.fromCharCode(96);
+  if(tag==='pre')return '\n'+String.fromCharCode(96).repeat(3)+'\n'+out+'\n'+String.fromCharCode(96).repeat(3)+'\n';
+  if(tag==='li')return '\n- '+out;
+  if(/^h[1-6]$/.test(tag))return '\n'+'#'.repeat(+tag[1])+' '+out+'\n';
+  if(tag==='p'||tag==='article')return out+'\n';
   if((tag==='div'||tag==='section')&&n!==node){
-    const border=parseFloat(st?.borderLeftWidth||'0');
-    if(border>=3&&st?.borderLeftStyle==='solid'&&st?.borderLeftColor!=='transparent'){
-      const t=clean(inner);
-      if(t)return '\n'+t.split('\n').map(x=>'> '+x).join('\n')+'\n';
-    }
-    // Gal AI uses nested <div> lines in both dialogue and status tables.
-    if(st?.display==='block'&&n.parentElement?.children?.length>1&&clean(inner))return inner+'\n';
+   if(parseFloat(borderWidth(n))>=3&&borderStyle(n)==='solid'&&borderColor(n)!=='transparent'){
+    const t=clean(out);if(t)return '\n'+t.split('\n').map(line=>'> '+line).join('\n')+'\n';
+   }
+   if(display(n)==='block'&&n.parentElement?.children?.length>1&&clean(out))return out+'\n';
   }
-  return inner;
+  return out;
  };
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
 }
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.6'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,markdownFromDom,version:'0.7.7'};
 })();
