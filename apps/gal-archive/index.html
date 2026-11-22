@@ -906,9 +906,9 @@ function archiveStoryBubble(row,i,record,galContext=null){
 
 
 let archiveAuditOpen=false,archivePilotTimeOpen=false,archiveAuditAbort=null;
-// Compare ONLY real original-message times, never crawl/capture/Firestore timestamps.
-// Menu, reply-inferred and manually entered timestamps are all usable;
-// minute precision avoids fabricated second-by-second ordering.
+// V5.31: Gal AI header time is primary for canonical story/player pairs.
+// GPT/menu and manual real times rank next, then first capture, then cloud receipt.
+// Story and real dates are never compared directly; real fallback is minute-granular.
 function archiveCheckChronologicalOrder(timeline,useGalAI=false){
   const gal=useGalAI?archiveGalTimeContext(timeline.filter(x=>x.type==='message').map(x=>x.entry)):null;
   let previous=null,checked=0,unknown=0,storyCount=0,pairedCount=0;
@@ -1356,6 +1356,7 @@ if(b.id==='archiveSortCurrentChat'){
   const lines=[
     '依原始發言時間校正「'+r.title+'」的完整對話與已接事件。',
     '一般對話重排 '+preview.messageMoved+' 則；已接事件移動 '+preview.movedEvents+' 件；合計位置異動 '+preview.changed+' 個。',
+    '其中 '+preview.galTimed+' 則將優先採用 Gal AI 劇情時間（含同回合玩家配對）。',
     preview.resetPlacements?'已手動移動的事件 '+preview.resetPlacements+' 件會解除手動定位，重新依時間定位。':'',
     fixed?'沒有原始時間的手動對話 '+fixed+' 則仍固定在其原槽位。':'',
     '未接事件仍只在事件簿。內容、圖片、接取狀態和原始時間不變。操作前先下載本輪 JSON 備份。',
@@ -1827,8 +1828,9 @@ function archiveReceivedMillis(v){
 function archiveParseGalAIClock(m){
   if(m?.role!=='ai'||typeof m.text!=='string')return null;
   const head=m.text.replace(/\r\n?/g,'\n').split('\n').slice(0,12).join('\n').slice(0,950);
-  const date=head.match(/(?:^|\n)\s*[｜|│]?\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u);
-  const time=head.match(/(?:^|\n)\s*[｜|│]?\s*(?:⏰|⌚|🕒|[\u{1F550}-\u{1F567}]|時間\s*[：:]?)\s*(\d{1,2})\s*[：:]\s*(\d{2})(?:[.:](\d{1,2}))?/u);
+  const date=head.match(/(?:^|\n)\s*[｜|│]?\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u)
+    ||head.match(/(?:^|\n)\s*[｜|│]?\s*(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?=\D|$)/u);
+  const time=head.match(/(?:^|\n)\s*[｜|│]?\s*(?:⏰|⌚|🕒|[\u{1F550}-\u{1F567}]|時間\s*[：:]?)\s*(\d{1,2})\s*[：:]\s*(\d{2})(?:[.:：](\d{1,2}))?/u);
   if(!date||!time)return null;
   const [year,month,day]=date.slice(1).map(Number);
   const hour=+time[1],minute=+time[2],second=+(time[3]||0);
@@ -2019,7 +2021,8 @@ function archivePreviewCombinedStorySort(record){
   const changed=newOrder.filter((id,i)=>id!==oldOrder[i]).length;
   const eventPositions=new Map(before.flatMap((x,i)=>x.type==='event'?[[x.entry.id,i]]:[]));
   const movedEvents=after.filter((x,i)=>x.type==='event'&&eventPositions.get(x.entry.id)!==i).length;
-  return {updated,changed,movedEvents,resetPlacements,messageMoved:sorted.changed,manualTimed:sorted.manualTimed};
+  return {updated,changed,movedEvents,resetPlacements,messageMoved:sorted.changed,manualTimed:sorted.manualTimed,
+    galTimed:sorted.galCount||0};
 }
 
 function classifyArchiveChat(item,eventId){
