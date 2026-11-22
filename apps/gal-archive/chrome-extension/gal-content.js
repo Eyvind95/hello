@@ -427,7 +427,8 @@ function canonical(rows,valid){
   id:'galnative-'+hash(path+'|'+i+'|'+kind+'|'+entry.text),
   role:entry.role,text:entry.text,gameTime:entry.gameTime||null,
   sourceEventId:'galnative-'+hash(path+'|'+i+'|'+kind),
-  sourcePartIndex:0,chatKey,messageOrder:i,
+  sourcePartIndex:0,chatKey,messageOrder:Number.isInteger(entry.scanIndex)?entry.scanIndex:i,
+  scanIndex:Number.isInteger(entry.scanIndex)?entry.scanIndex:null,
   sourceKind:'gal-ai-native',sourceSite:location.origin
  });
  const messages=valid.messages.map((m,i)=>build(m,i,'message'));
