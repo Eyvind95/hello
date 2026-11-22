@@ -39,7 +39,7 @@ function scroller(){
  const el=[...document.querySelectorAll('main,section,article,div,[role="log"]')].filter(x=>{
   if(x.closest('#'+PANEL))return false;
   const st=getComputedStyle(x),r=x.getBoundingClientRect();
-  return r.height>220&&r.width>250&&r.bottom>30&&r.top<innerHeight
+  return r.height>220&&r.width>=Math.max(320,innerWidth*.46)&&r.bottom>30&&r.top<innerHeight
     &&x.scrollHeight-x.clientHeight>180&&/auto|scroll/.test(st.overflowY);
  }).sort((a,b)=>(b.clientHeight-b.scrollHeight*.03)-(a.clientHeight-a.scrollHeight*.03))[0];
  return el||document.scrollingElement||document.documentElement;
@@ -65,9 +65,12 @@ function roleOf(node,root){
  return null;
 }
 function candidateRows(root){
+ const rootRect=(root===document.scrollingElement||root===document.documentElement)
+   ?{top:0,bottom:innerHeight}:root.getBoundingClientRect();
  const candidates=[...root.querySelectorAll(rowSelectors.join(','))].filter(n=>{
   const r=n.getBoundingClientRect();
   if(!r.width||!r.height||r.height<18||n.closest('#'+PANEL))return false;
+  if(r.bottom<rootRect.top-90||r.top>rootRect.bottom+90)return false;
   if(n.matches('button,[role="toolbar"],textarea,input'))return false;
   const content=core.clean(n.innerText||'');
   return content.length>=8&&content.length<=35000;
