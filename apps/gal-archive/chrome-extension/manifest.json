@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.7.0",
-  "description": "雙掃描工具：原 ChatGPT 監看27%/477ms與獨立 Gal AI 原生正史掃描20%/400ms/350固定，Gal AI 僅輸出待核對 JSON。",
+  "version": "0.7.1",
+  "description": "V0.7.1：Gal AI 原生掃描新增通用泡泡辨識、點選開場校準及版面診斷；ChatGPT 舊掃描器保留。",
   "permissions": [
     "storage",
     "activeTab",
