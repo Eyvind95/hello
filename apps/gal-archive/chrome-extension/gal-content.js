@@ -1,4 +1,4 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.4 */
+/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.5 */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
@@ -17,7 +17,7 @@ function mount(){
   '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.4</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.5</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button></div>'+
@@ -161,7 +161,7 @@ function inspect(){
  const candidates=scrollCandidates();
  const common=[...root.querySelectorAll(rowSelectors.join(','))];
  return {
-  version:'0.7.4',pageOrigin:location.origin,
+  version:'0.7.5',pageOrigin:location.origin,
   root:{tag:root.tagName,className:String(root.className||'').slice(0,150),
     scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
     width:Math.round(r.width),height:Math.round(r.height)},
@@ -171,8 +171,10 @@ function inspect(){
   knownSelectors:common.length,
   genericCandidates:genericRows(root).length,
   worldHeaderMarkers:boundaryTitles(root).length,
+  eventHeaderMarkers:boundaryHeaders(root).filter(x=>x.kind==='event').length,
   reactionBarMarkers:boundaryToolbars(root).length,
   boundedReplies:boundaryRead(root).debug.completeAI,
+  boundedEvents:boundaryRead(root).debug.completeEvents,
   recognizedRows:target?.worldName?boundaryRead(root).rows.length:candidateRows(root).length,
   calibrated:!!calibration?.node?.isConnected,
   iframeCount:document.querySelectorAll('iframe').length
@@ -221,7 +223,7 @@ function chooseOpening(){
  document.addEventListener('click',listener,true);
 }
 
-/* V0.7.4: Gal AI message boundaries.
+/* V0.7.5: Gal AI message boundaries.
  * Header "《current world》" begins an AI message; the message's like/reaction
  * bar ends it. Neither header nor button row is archived as story prose.
  * This is deliberately separate from the ChatGPT assistant extractor.
@@ -236,23 +238,31 @@ function boundaryDirectText(n){
  return [...(n.childNodes||[])].filter(x=>x.nodeType===Node.TEXT_NODE)
    .map(x=>x.nodeValue||'').join('').replace(/\s+/g,' ').trim();
 }
-function boundaryTitles(root){
+function boundaryHeaders(root){
  const name=core.normalizedWorld(target?.worldName||'');
  if(!name)return [];
  const elements=[...root.querySelectorAll('span,strong,b,p,h1,h2,h3,h4,label,div')];
- const matches=elements.filter(n=>{
-  if(n.closest('#'+PANEL)||n.closest('button,[role="button"],nav'))return false;
-  const t=boundaryDirectText(n);
-  if(!t||t.length>name.length+25)return false;
-  const normalized=core.normalizedWorld(t);
-  // Gal AI sometimes prefixes its author heading with 「與」.
-  if(normalized!==name&&normalized!=='與'+name)return false;
-  const st=getComputedStyle(n);
-  return st.display!=='none'&&st.visibility!=='hidden';
- });
- // Avoid matching the exact same heading again through a containing parent.
- return matches.filter(n=>!matches.some(ch=>ch!==n&&n.contains(ch))).sort(boundaryOrder);
+ const candidates=[];
+ for(const n of elements){
+  if(n.closest('#'+PANEL+',button,[role="button"],nav,[role="navigation"]'))continue;
+  // The event author heading is "與《世界觀》的事件"; ordinary AI replies
+  // have just "《世界觀》". Keep BOTH as explicit, distinct boundaries.
+  const direct=boundaryDirectText(n);
+  const shown=core.clean(n.innerText||'');
+  const raw=direct&&direct.length>=4?direct:shown;
+  const text=core.normalizedWorld(raw);
+  const kind=text===name||text==='與'+name?'reply':
+   text==='與'+name+'的事件'||text===name+'的事件'?'event':null;
+  if(!kind||raw.length>name.length+22)continue;
+  const style=getComputedStyle(n);
+  if(style.display==='none'||style.visibility==='hidden')continue;
+  candidates.push({node:n,kind});
+ }
+ // Prefer the smallest heading element, not an entire parent chat bubble.
+ const minimal=candidates.filter(a=>!candidates.some(b=>b.node!==a.node&&a.node.contains(b.node)));
+ return minimal.sort((a,b)=>boundaryOrder(a.node,b.node));
 }
+function boundaryTitles(root){return boundaryHeaders(root).filter(h=>h.kind==='reply').map(h=>h.node)}
 function boundaryIconTag(n){
  const icon=n.querySelector?.('svg,use,img')||n;
  const attrs=['aria-label','title','data-testid','data-icon','class','href','alt','data-lucide','name'];
@@ -297,33 +307,38 @@ function boundaryFragmentText(start,end){
  return core.markdownFromDom(holder).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
 }
 function boundaryRead(root){
- const headers=boundaryTitles(root),tools=boundaryToolbars(root);
- const rows=[],debug={headers:headers.length,reactionBars:tools.length,completeAI:0,playerGaps:0,
-  incompleteAI:0,mode:'header-and-thumbs'};
- if(!headers.length)return {rows,debug};
+ const headings=boundaryHeaders(root),tools=boundaryToolbars(root);
+ const rows=[],debug={headers:headings.filter(h=>h.kind==='reply').length,
+  eventHeaders:headings.filter(h=>h.kind==='event').length,
+  reactionBars:tools.length,completeAI:0,completeEvents:0,playerGaps:0,
+  incompleteAI:0,mode:'world-heading-and-action-toolbar'};
+ if(!headings.length)return {rows,debug};
  const pairs=[];
- for(let i=0;i<headers.length;i++){
-  const start=headers[i],next=headers[i+1]||null;
-  const buttons=tools.filter(t=>boundaryFollows(start,t)&&(!next||boundaryFollows(t,next)));
-  if(!buttons.length){debug.incompleteAI++;break}
-  const end=buttons[0];
-  const text=boundaryFragmentText(start,end);
+ for(let i=0;i<headings.length;i++){
+  const heading=headings[i],start=heading.node,next=headings[i+1]?.node||null;
+  // Both "👍 👎 複製" and "✎ 👍 👎 書籤 更多" end a Gal AI item.
+  const strips=tools.filter(t=>boundaryFollows(start,t)&&(!next||boundaryFollows(t,next)));
+  if(!strips.length){debug.incompleteAI++;break}
+  const end=strips[0],text=boundaryFragmentText(start,end);
   if(text.length<8||text.length>25000){debug.incompleteAI++;break}
-  pairs.push({start,end,text});
+  pairs.push({start,end,text,kind:heading.kind});
  }
  for(let i=0;i<pairs.length;i++){
   const item=pairs[i];
   if(i){
    const gap=boundaryFragmentText(pairs[i-1].end,item.start);
-   // Between AI messages is where the user's right-hand turn lives. If there
-   // is no gap, this may be an AI-only event; the final validator decides.
+   // A complete AI event is not itself a user turn.
    if(gap.length>=2){
     rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1});
     debug.playerGaps++;
    }
   }
-  rows.push({role:'ai',text:item.text,id:'',top:item.start.getBoundingClientRect().top});
-  debug.completeAI++;
+  const row={role:'ai',text:item.text,id:'',top:item.start.getBoundingClientRect().top};
+  if(item.kind==='event'){
+   row.eventType='event';row.worldName=target?.worldName||'';
+   debug.completeEvents++;
+  }else debug.completeAI++;
+  rows.push(row);
  }
  return {rows,debug};
 }
@@ -473,7 +488,9 @@ async function scan(profile){
    if(noProgress>180)throw Error('連續180次沒有新訊息，可能捲動區錯誤');
    status('掃描中：已讀 '+collected.length+' 則，步數 '+stepCount+
     '；辨識方式 '+(scanMode==='bounded'?'世界觀＋👍界線':'原泡泡辨識（備援）')+
-    '。\n已找到世界觀標頭 '+(shot.boundaryDebug?.headers??0)+' 個、👍操作列 '+(shot.boundaryDebug?.reactionBars??0)+' 組、完整 Gal AI 回覆 '+(shot.boundaryDebug?.completeAI??0)+' 則。'+
+    '。\n世界觀標頭 '+(shot.boundaryDebug?.headers??0)+'、事件標頭 '+(shot.boundaryDebug?.eventHeaders??0)+
+    '、操作列（👍或✎開頭）'+(shot.boundaryDebug?.reactionBars??0)+
+    '、普通回覆 '+(shot.boundaryDebug?.completeAI??0)+'、事件 '+(shot.boundaryDebug?.completeEvents??0)+'。'+
     '\n目前步距 '+stepPx+'px，20%／350px上限；400ms＋350ms等待。'+
     '\n'+(info.added?'新增 '+info.added+' 則':'前後畫面重疊')+'；尚未匯出或覆蓋。');
    if(isBottom(root)){bottomFrames++;if(bottomFrames>=3)break}else bottomFrames=0;
@@ -504,7 +521,7 @@ async function scan(profile){
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.4',busy,hasResult:!!lastResult});return false}
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.5',busy,hasResult:!!lastResult});return false}
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
   const p=msg.profile||{};
@@ -517,5 +534,5 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:'0.7.4'};
+globalThis.GalArchivePageScanner={scan,version:'0.7.5'};
 })();
