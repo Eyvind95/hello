@@ -85,11 +85,11 @@ function validate(rows,expectedWorld){
  return {ok:errors.length===0,errors,warnings,opening,messages:canon,events,pairs,
   worldNames:sourceNames,scannedRows:rows.length};
 }
-function copyRangeWithLiveStyles(range){
+function copyRangeWithLiveStyles(range,trace){
  const root=range.commonAncestorContainer;
  const base=root.nodeType===Node.ELEMENT_NODE?root:root.parentElement;
  const props=[
-  ['bg','backgroundColor'],['italic','fontStyle'],['display','display'],
+  ['bg','backgroundColor'],['italic','fontStyle'],['display','display'],['white-space','whiteSpace'],
   ['border-width','borderLeftWidth'],['border-style','borderLeftStyle'],['border-color','borderLeftColor']
  ];
  const originals=[...(base?.querySelectorAll('*')||[])].filter(el=>range.intersectsNode(el));
@@ -101,13 +101,26 @@ function copyRangeWithLiveStyles(range){
  });
  const fragment=range.cloneContents();
  const copies=[...fragment.querySelectorAll('*')];
+ if(trace){
+  trace.liveGray=originals.flatMap((el,i)=>{
+   const bg=snapshots[i][0][1];
+   return grayBackground(bg)?[{tag:el.localName,classes:el.getAttribute('class'),parent:el.parentElement.getAttribute('class')}]:[];
+  }).slice(0,20);
+  const blankLines=text=>(text.replace(/\r\n?/g,'\n').match(/\n[ \t]*\n/g)||[]).length;
+  trace.range={originals:originals.length,copies:copies.length,mapped:false,
+   liveTextBlankLines:blankLines(range.toString()),clonedTextBlankLines:blankLines(fragment.textContent)};
+ }
  if(originals.length!==copies.length||originals.some((el,i)=>el.tagName!==copies[i].tagName)){
   return {fragment,mapped:false,reason:'range-structure-diff',originals:originals.length,copies:copies.length};
  }
  for(let i=0;i<copies.length;i++){
   for(const [name,value] of snapshots[i])copies[i].setAttribute('data-gal-source-'+name,value);
  }
+ if(trace)trace.range.mapped=true;
  return {fragment,mapped:true,sourceElements:originals.length};
+}
+function grayBackground(value){
+ return /^(?:#2a2a34(?:ff)?|rgba?\(42,42,52(?:,1)?\))$/i.test(String(value||'').replace(/\s+/g,''));
 }
 function markdownFromDom(node,options={}){
  if(!node)return '';
@@ -118,49 +131,117 @@ function markdownFromDom(node,options={}){
  const color=n=>style(n,'bg','backgroundColor');
  const italicStyle=n=>style(n,'italic','fontStyle');
  const display=n=>style(n,'display','display');
+ const whiteSpace=n=>style(n,'white-space','whiteSpace');
  const borderWidth=n=>style(n,'border-width','borderLeftWidth');
  const borderStyle=n=>style(n,'border-style','borderLeftStyle');
  const borderColor=n=>style(n,'border-color','borderLeftColor');
  function quoteColor(src){
   const s=String(src||'').trim().toLowerCase().replace(/\s+/g,'');
   if(/^#250c57(?:ff)?$/.test(s)||/^rgba?\(37,12,87(?:,1)?\)$/.test(s))return 'me';
-  if(/^#2a2a34(?:ff)?$/.test(s)||/^rgba?\(42,42,52(?:,1)?\)$/.test(s))return 'ai';
+  if(grayBackground(s))return 'ai';
   return null;
  }
  const bubble='span.message-bubble-text';
  const body='[data-message-content],[data-testid*="message-content"],.markdown,.prose,.message-content,.bubble-content';
- function quoteCard(n,inQuote){
+ function quoteCard(n,inQuote,nativeQuote=false){
   if(inQuote||n===node||source(n,'complete')==='no'||quoteColor(color(n))!==(player?'me':'ai'))return false;
   if(quoteColor(source(n,'parent-bg')||color(n.parentElement))===(player?'me':'ai'))return false;
   if(player)return true;
   // A gray message surface can use the same color as an embedded quote.
   // Require an observed bubble-text element within a body with sibling content.
   return n.matches(bubble)&&!n.matches(body)&&!n.querySelector(bubble)&&
-   [...n.parentElement.childNodes].some(peer=>peer!==n&&clean(peer.textContent)&&
-    (peer.nodeType===T||(peer.nodeType===E&&!skip.test(peer.tagName)&&!peer.matches('[role="button"],[role="toolbar"]'))));
+   (nativeQuote||[...n.parentElement.childNodes].some(peer=>peer!==n&&clean(peer.textContent)&&
+    (peer.nodeType===T||(peer.nodeType===E&&!skip.test(peer.tagName)&&!peer.matches('[role="button"],[role="toolbar"]')))));
  }
  const quoteText=value=>{
   const t=clean(value);
   if(!t||t.startsWith('「')&&t.endsWith('」'))return t;
   return '「'+t+'」';
  };
- const walk=(n,inQuote=false,inItalic=false)=>{
+ const blockDisplay=/^(?:block|flow-root|flex|grid|list-item|table)$/;
+ const paragraph='p,[role="paragraph"]';
+ const templated='span.message-bubble-text.TemplatedText';
+ const status=templated+'.font-mono.text-xs';
+ const narration=templated+'.text-text-neutral-subtle';
+ const grayCard=templated+'.bg-bg-neutral-subtle.rounded-lg.p-3.rounded-es-none';
+ function templateLeaf(n){
+  // Gal AI puts a single text fragment inside layout wrappers. Keep the
+  // wrapper intact if unwrapping would discard any sibling content.
+  while(n?.matches('div,span')&&!n.matches(templated)&&n.children.length===1&&
+   [...n.childNodes].every(child=>child===n.firstElementChild||
+    child.nodeType===Node.COMMENT_NODE||child.nodeType===T&&!clean(child.nodeValue))){
+   n=n.firstElementChild;
+  }
+  return n?.matches(templated)?n:null;
+ }
+ const trace=options.trace;
+ if(trace)trace.serialized={graySeen:0,grayQuoted:0,nativeTemplates:0};
+ const walk=(n,inQuote=false,inItalic=false,fragmentLeaf=null)=>{
   if(n.nodeType===T)return n.nodeValue||'';
   if(n.nodeType!==E||skip.test(n.tagName))return '';
   if(n!==node&&n.matches?.('[role="toolbar"],[aria-label*="操作"],[data-role="toolbar"],[contenteditable="true"]'))return '';
   const tag=n.tagName.toLowerCase();
   if(tag==='br')return '\n';
-  const quoted=quoteCard(n,inQuote);
+  const quoted=quoteCard(n,inQuote,n===fragmentLeaf&&n.matches(grayCard));
+  if(trace&&grayBackground(color(n))){
+   trace.serialized.graySeen++;
+   if(quoted)trace.serialized.grayQuoted++;
+  }
   const italicNow=(tag==='em'||tag==='i'||italicStyle(n)==='italic')
     &&!inItalic&&(n===node||italicStyle(n.parentElement)!=='italic');
   const nextItalic=inItalic||italicNow||italicStyle(n)==='italic';
+  if(options.metadata&&n.matches(status)&&/^(?:pre|pre-wrap)$/.test(whiteSpace(n))){
+   (options.metadata.codeBlocks??=[]).push(n.textContent);
+  }
+  // The native template lays out the status and each text fragment as a
+  // separate visual box. Paragraph breaks in its prose come from the text.
+  const header=n.firstElementChild;
+  const nativeLayout=!player&&n.matches('div.w-full.space-y-2');
+  const statusLeaf=nativeLayout?(options.event
+   ?[...n.children].map(templateLeaf).find(leaf=>leaf?.matches(status))
+   :templateLeaf(header)):null;
+  const nativeTemplate=statusLeaf?.matches(status)&&
+   /^(?:rgb\(28,\s*28,\s*39\)|#1c1c27)$/i.test(color(statusLeaf))&&whiteSpace(statusLeaf)==='pre-wrap';
+  const nativeReply=nativeTemplate&&!options.event;
+  if(options.metadata&&nativeTemplate)options.metadata.statusText||=statusLeaf.textContent;
+  if(trace&&nativeLayout&&header&&!trace.templateHeader)
+   trace.templateHeader={tag:header.localName,classes:header.getAttribute('class'),background:color(header),whiteSpace:whiteSpace(header)};
+  if(trace&&nativeReply)trace.serialized.nativeTemplates++;
+  const leaves=nativeTemplate?new Map([...n.children].map(child=>[child,templateLeaf(child)])):null;
+  const proseLeaf=leaf=>leaf?.matches(narration)&&whiteSpace(leaf)==='pre-wrap'&&color(leaf)==='rgba(0, 0, 0, 0)';
+  const cardLeaf=leaf=>leaf?.matches(grayCard)&&whiteSpace(leaf)==='pre-wrap'&&quoteCard(leaf,inQuote||quoted,true);
+  const eventNarration=child=>{
+   const leaf=leaves?.get(child);
+   return proseLeaf(leaf)&&!/^[｜|│][\s\S]*[｜|│]$/.test(clean(leaf.textContent));
+  };
+  // Event status rows always keep their block boundaries. In the native
+  // layout, a gray card between two narration fragments is an inline quote.
+  const eventInlineCard=child=>Boolean(options.event&&cardLeaf(leaves?.get(child))&&
+   eventNarration(child.previousElementSibling)&&eventNarration(child.nextElementSibling));
   let inner='';
+  let previousParagraph=false;
   for(const child of n.childNodes){
-   const part=walk(child,inQuote||quoted,nextItalic);
-   const block=child.nodeType===E&&/^(?:block|flow-root|flex|grid|list-item|table)$/.test(display(child));
-   if(block&&part.trim()&&inner&&!inner.endsWith('\n')&&!part.startsWith('\n'))inner+='\n';
+   const leaf=leaves?.get(child);
+   const nativeCard=cardLeaf(leaf);
+   const nativeProse=nativeReply&&proseLeaf(leaf);
+   const joinBefore=child.nodeType===E&&options.event&&leaves&&
+    (eventInlineCard(child)||eventNarration(child)&&eventInlineCard(child.previousElementSibling));
+   const joinAfter=child.nodeType===E&&options.event&&leaves&&
+    (eventInlineCard(child)||eventNarration(child)&&eventInlineCard(child.nextElementSibling));
+   const eventFragment=options.event&&(nativeCard||joinBefore||joinAfter);
+   const childFragment=fragmentLeaf&&n!==fragmentLeaf&&child===n.firstElementChild
+    ?fragmentLeaf:(nativeCard||nativeProse||eventFragment?leaf:null);
+   const part=walk(child,inQuote||quoted,nextItalic,childFragment);
+   const block=child.nodeType===E&&(!childFragment||eventFragment)&&blockDisplay.test(display(child));
+   // A recognized AI quote inside an explicit paragraph can be visually
+   // block-level while still belonging to the paragraph's source text.
+   const inlineQuote=block&&!player&&n.matches(paragraph)&&quoteCard(child,inQuote||quoted);
+   const startsParagraph=block&&child.matches(paragraph)&&!!part.trim();
+   if(previousParagraph&&startsParagraph&&!/\n[ \t]*\n[ \t]*$/.test(inner)&&!/^\s*\n/.test(part))inner+='\n';
+   if(block&&!inlineQuote&&!joinBefore&&part.trim()&&inner&&!inner.endsWith('\n')&&!part.startsWith('\n'))inner+='\n';
    inner+=part;
-   if(block&&part.trim()&&!inner.endsWith('\n'))inner+='\n';
+   if(block&&!inlineQuote&&!joinAfter&&part.trim()&&!inner.endsWith('\n'))inner+='\n';
+   if(part.trim()||child.tagName==='BR')previousParagraph=startsParagraph;
   }
   if(quoted)return quoteText(inner);
   if(tag==='blockquote'){
@@ -183,5 +264,221 @@ function markdownFromDom(node,options={}){
  };
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
 }
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,version:'0.7.9'};
+function compareNativeParagraphs(scanned,nativeCopy,options={}){
+ const statusFence=/^[ \t]*\x60{3}[ \t]*(?:[a-z][\w+-]*)?[ \t]*\n([\s\S]+?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/i;
+ const imageMarker=/(?:[ \t]*\n)?\{\{(?:img|image):+[^{}\n]+\}\}[ \t]*$/i;
+ const preamble=/^\{\{([^{}\n]{1,200})\}\}[ \t]*\n(?:[ \t]*\n)*/u;
+ let text=clean(nativeCopy);
+ const original=text;
+ const unspaced=value=>value.replace(/\s/g,'');
+ const count=value=>[...unspaced(value)].length;
+ const markers=[];
+ const record=(kind,tokens,before,after)=>markers.push({kind,tokens,nonWhitespaceChars:count(before)-count(after)});
+ const visibleTitle=options.event?clean(options.eventTitle):'';
+ const titleKey=unspaced(visibleTitle);
+ let statusText=options.statusText||'';
+ if(options.event&&visibleTitle){
+  const lines=scanned.split('\n');
+  if(clean(lines[0])===visibleTitle){
+   const rows=[];
+   for(const line of lines.slice(1)){
+    if(!/^[｜|│][\s\S]*[｜|│]$/.test(clean(line)))break;
+    rows.push(line);
+   }
+   const joined=rows.join('\n');
+   if(parseGameTime(joined))statusText=joined;
+  }
+ }
+ const statusKey=unspaced(statusText);
+ const leading=text.match(preamble);
+ let preambleMetadata='not-present';
+ if(options.source==='whif-message-content'&&leading&&!preamble.test(scanned)){
+  const label=leading[1].trim();
+  const after=text.slice(leading[0].length);
+  const header=after.match(statusFence)?.[1]??after;
+  preambleMetadata=options.chapterTitle
+   ?(clean(options.chapterTitle)===label?'title-matched':'title-differs'):'title-unavailable';
+  // The site hides a standalone leading template before the rendered
+  // status. Keep placeholders, attachments, and the message body intact.
+  if(label&&!/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(label)&&
+   preambleMetadata!=='title-differs'&&statusKey&&unspaced(header).startsWith(statusKey)){
+   record('leading-whif-template',1,text,after);
+   text=after;
+  }
+ }
+ // Event wrappers are distinct from ordinary reply preambles. A leading
+ // template is eligible only if followed by the already visible event title.
+ if(options.source==='whif-event-content'&&titleKey&&statusKey&&unspaced(scanned).startsWith(titleKey+statusKey)){
+  // A WHIF context wrapper and its companion can share the event title
+  // line. Work only before the independently verified status fence.
+  const openingFence=/^[ \t]*\x60{3}[^\n]*\n/m.exec(text);
+  if(openingFence){
+   const fencedStatus=text.slice(openingFence.index).match(statusFence);
+   const prefix=text.slice(0,openingFence.index);
+   const pattern=/\{\{([^{}]+)\}\}/g;
+   const templates=[...prefix.matchAll(pattern)];
+   if(fencedStatus&&unspaced(fencedStatus[1])===statusKey&&templates.length===2&&
+    !prefix.slice(0,templates[0].index).trim()&&/^\s*below context is\b/i.test(templates[0][1])&&
+    !/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(templates[1][1].trim())){
+    const visibleLines=prefix.replace(pattern,'').split('\n').filter(line=>line.trim());
+    const visiblePrefix=visibleLines[0]?.trimStart()||'';
+    const rest=text.slice(openingFence.index+fencedStatus[0].length);
+    if(visibleLines.length===1&&unspaced(visiblePrefix)===titleKey&&
+     unspaced(visiblePrefix+fencedStatus[1]+rest)===unspaced(scanned)){
+     const withoutContext=text.slice(templates[0][0].length);
+     const candidate=visiblePrefix+'\n'+text.slice(openingFence.index);
+     record('leading-whif-event-context',1,text,withoutContext);
+     record('whif-event-title-companion-template',1,withoutContext,candidate);
+     text=candidate;
+    }
+   }
+  }
+  const eventTemplate=/^\{\{([^{}]+)\}\}[ \t]*\n(?:[ \t]*\n)*/u;
+  let candidate=text,templates=0;
+  while(templates<2){
+   const template=candidate.match(eventTemplate);
+   if(!template||/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(template[1].trim()))break;
+   candidate=candidate.slice(template[0].length);
+   templates++;
+  }
+  const candidateHead=candidate.match(statusFence)?.[1]??candidate.split('\n')[0];
+  if(templates&&unspaced(candidateHead)===titleKey){
+   record('leading-whif-event-template',templates,text,candidate);
+   text=candidate;
+  }
+ }
+ const fencedTitle=options.event&&titleKey?text.match(statusFence):null;
+ if(fencedTitle&&unspaced(fencedTitle[1])===titleKey&&statusKey&&
+  unspaced(scanned).startsWith(titleKey+statusKey)&&
+  unspaced(text.slice(fencedTitle[0].length)).startsWith(statusKey)){
+  const after=fencedTitle[1]+text.slice(fencedTitle[0].length);
+  record('event-title-code-fence',2,text,after);
+  text=after;
+ }
+ const eventFenceStart=options.event&&!statusFence.test(text)
+  ?text.indexOf('\n'+String.fromCharCode(96).repeat(3))+1:0;
+ const unfenced=text.slice(eventFenceStart).match(statusFence);
+ if(unfenced&&!statusFence.test(scanned.slice(eventFenceStart))&&parseGameTime(unfenced[1])&&
+  (!options.event||statusKey===unspaced(unfenced[1]))){
+  const rest=text.slice(eventFenceStart+unfenced[0].length);
+  // The closing fence makes the status a distinct block even if the
+  // source uses a single newline before the next paragraph.
+  const after=text.slice(0,eventFenceStart)+unfenced[1]+rest.replace(/^\n(?![ \t]*\n)(?=[\s\S]*\S)/,'\n\n');
+  record('status-code-fence',2,text,after);
+  statusText=unfenced[1];
+  text=after;
+ }
+ if(imageMarker.test(text)&&!imageMarker.test(scanned)){
+  const after=text.replace(imageMarker,'').trimEnd();
+  record('terminal-image-marker',1,text,after);
+  text=after;
+ }
+ // Project only balanced fences for code blocks actually rendered without
+ // literal fences, at the aligned location, and only if the entire reply matches.
+ const scannedKey=unspaced(scanned);
+ const codeKeys=new Set((options.codeBlocks||[]).map(unspaced).filter(Boolean));
+ if(!options.event&&codeKeys.size&&scannedKey!==unspaced(text)){
+  const bodyFence=/^[ \t]*\x60{3}[ \t]*(?:[a-z][\w+-]*)?[ \t]*\n([\s\S]+?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gim;
+  let removed=0,blocks=0;
+  const projected=text.replace(bodyFence,(match,body,offset)=>{
+   const key=unspaced(body);
+   if(!codeKeys.has(key)||!scannedKey.startsWith(key,unspaced(text.slice(0,offset)).length-removed))
+    return match;
+   removed+=unspaced(match).length-key.length;
+   blocks++;
+   return body;
+  });
+  if(blocks&&scannedKey===unspaced(projected)){
+   record('rendered-body-code-fence',blocks*2,text,projected);
+   text=projected;
+  }
+ }
+ const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(text)];
+ const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
+ const contentEqual=scanChars.join('')===nativeChars.join('');
+ const clock=parseGameTime(scanned)?.iso;
+ const clockEqual=Boolean(clock&&clock===parseGameTime(text)?.iso);
+ const statusCompact=unspaced(statusText);
+ const positions=[...text.matchAll(/(\S)(\s*)/gu)];
+ const statusPrefix=options.event&&titleKey&&unspaced(text).startsWith(titleKey+statusCompact)
+  ?titleKey+statusCompact:statusCompact;
+ const bodyStart=statusCompact&&unspaced(text).startsWith(statusPrefix)?count(statusPrefix):0;
+ const bodyOffset=bodyStart?positions[bodyStart]?.index:undefined;
+ const comparison={scannedLength:[...scanned].length,nativeLength:[...nativeCopy].length,
+  scannedNonWhitespace:scanChars.length,nativeNonWhitespace:count(original),
+  comparableNativeNonWhitespace:nativeChars.length,whitespaceOnlyEqual,contentEqual,clockEqual,
+  preambleMetadata,formatMarkers:markers,formatMarkerCount:markers.reduce((sum,m)=>sum+m.tokens,0),
+  explainedNonWhitespace:markers.reduce((sum,m)=>sum+m.nonWhitespaceChars,0),
+  remainingUnexplained:{scanned:0,native:0},
+  nativeBodyParagraphs:bodyOffset===undefined?null:text.slice(bodyOffset).split(/\n(?:[ \t]*\n)+/).length,
+  nativeStatusBlankLines:bodyStart?(positions[bodyStart-1][2].match(/\n[ \t]*\n/g)||[]).length:null,
+  ignoredDifferences:[...markers.map(marker=>marker.kind),...(scanned!==text&&contentEqual?['whitespace']:[])]};
+ if(options.event){
+  const findStatus=value=>statusKey?unspaced(value).indexOf(statusKey):-1;
+  const nativeStatus=findStatus(original),scannedStatus=findStatus(scanned);
+  const nativeStatusOffset=nativeStatus<0?undefined:
+   [...original.matchAll(/\S/gu)][[...unspaced(original).slice(0,nativeStatus)].length]?.index;
+  const fenceOffset=original.indexOf(String.fromCharCode(96).repeat(3));
+  const prefix=original.slice(0,nativeStatusOffset??(fenceOffset<0?0:fenceOffset));
+  const eventTitle=unspaced(options.eventTitle||'');
+  comparison.eventStructure={
+   renderedCodeBlocks:codeKeys.size,visibleStatusMatched:nativeStatus>=0&&scannedStatus>=0,
+   scannedPrefixLength:scannedStatus<0?null:[...unspaced(scanned).slice(0,scannedStatus)].length,
+   nativePrefixLength:nativeStatus<0?null:[...unspaced(original).slice(0,nativeStatus)].length,
+   nativeLeadingTemplate:original.startsWith('{{'),
+   nativePrefixTemplates:[...prefix.matchAll(/\{\{([^{}]*)\}\}/g)].map(match=>({
+    kind:/^\s*below context is\b/i.test(match[1])?'whif-leading-context':
+     eventTitle&&unspaced(match[1])===eventTitle?'visible-title':'unclassified-template',
+    characters:count(match[0]),lines:match[0].split('\n').length
+   })),
+   visibleTitleInNativePrefix:Boolean(eventTitle&&unspaced(prefix).includes(eventTitle))
+  };
+ }
+ if(!contentEqual){
+  const features=value=>({
+   markdownHeadings:(value.match(/^\s*#{1,6}[ \t]/gm)||[]).length,
+   markdownEmphasis:(value.match(/\*{1,3}[^*\n]+\*{1,3}/g)||[]).length,
+   codeFences:(value.match(/^\s*(?:\x60{3,}|~{3,})/gm)||[]).length,
+   inlineCode:(value.match(/(?<!\x60)\x60[^\x60\n]+\x60(?!\x60)/g)||[]).length,
+   templateMarkers:(value.match(/\{\{[^{}]*\}\}/g)||[]).length,
+   imageMarkers:(value.match(/\{\{(?:img|image):+[^{}]*\}\}/gi)||[]).length,
+   quoteOpeners:(value.match(/[「『“«]/g)||[]).length,
+   newlineCount:(value.match(/\n/g)||[]).length,
+   labels:{terminal:/戰術終端/u.test(value),trending:/熱搜/u.test(value),
+    groupMessage:/群組|群聊|群訊/u.test(value),taskNotification:/任務通知/u.test(value)}
+  });
+  comparison.features={scanned:features(scanned),native:features(original)};
+  let index=0;
+  while(index<scanChars.length&&index<nativeChars.length&&scanChars[index]===nativeChars[index])index++;
+  let suffix=0;
+  while(suffix<scanChars.length-index&&suffix<nativeChars.length-index&&
+   scanChars[scanChars.length-1-suffix]===nativeChars[nativeChars.length-1-suffix])suffix++;
+  comparison.remainingUnexplained={scanned:scanChars.length-index-suffix,native:nativeChars.length-index-suffix};
+  const a=scanChars[index],b=nativeChars[index],pair=(a||'')+(b||'');
+  const kind=scanChars.join('').normalize('NFC')===nativeChars.join('').normalize('NFC')?'unicode-normalization':
+   /[「」『』“”‘’"'«»]/u.test(pair)?'quote-symbol':
+   pair.includes(String.fromCharCode(96))?'code-fence-or-inline-code':
+   /[*_~#{}\[\]\\]/u.test(pair)?'format-marker':
+   /[\p{Cf}\p{M}\uFFFD]/u.test(pair)?'special-unicode':'text';
+  const codePoint=c=>c?'U+'+c.codePointAt(0).toString(16).toUpperCase().padStart(4,'0'):null;
+  comparison.firstDifference={nonWhitespaceIndex:index+1,kind,scannedCodePoint:codePoint(a),nativeCodePoint:codePoint(b)};
+  const context=chars=>chars.slice(Math.max(0,index-6),index+7).join('');
+  return {text:null,comparison,localContext:{scanned:context(scanChars),native:context(nativeChars)}};
+ }
+ if(!text||!clockEqual)return {text:null,comparison};
+ // Content and time match. Only move line boundaries at corresponding
+ // character positions; keep all scanned characters and other whitespace.
+ let index=0;
+ const restored=scanned.replace(/(\S)(\s*)/gu,(_match,char,space)=>{
+  const nativeGap=positions[index++][2];
+  return char+(/\n/.test(nativeGap)||/\n/.test(space)?nativeGap:space);
+ });
+ if(parseGameTime(restored)?.iso!==clock){
+  comparison.clockEqual=false;
+  return {text:null,comparison};
+ }
+ return {text:restored,comparison};
+}
+function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.0'};
 })();

@@ -1,12 +1,13 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.9 */
+/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.8.0 */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
+const SCANNER_VERSION='0.8.0';
 const core=globalThis.GalArchiveCore;
-if(!core)throw Error('Gal AI scanner requires gal-core.js');
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
-const SCROLL_RATIO=.20,MAX_SCROLL_PX=350,WAIT_MS=400,STABLE_MS=350;
+const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350;
 let busy=false,cancelled=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
+const localDifferences=new Map();
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const $=id=>document.getElementById(id);
 function mount(){
@@ -14,30 +15,49 @@ function mount(){
  const css=document.createElement('style');css.id=STYLE;css.textContent=
   '#'+PANEL+'{position:fixed!important;z-index:2147483646!important;right:12px!important;top:12px!important;width:min(390px,calc(100vw - 24px))!important;max-height:75vh!important;overflow:auto!important;padding:14px!important;border-radius:13px!important;background:#132039!important;color:#f7eaff!important;font:13px/1.5 system-ui!important;box-shadow:0 10px 50px #000a!important;border:1px solid #9574d2!important;text-align:left!important}'+
   '#'+PANEL+' button{font:inherit;padding:7px 9px;margin:4px;border:1px solid #a28adf;background:#5a468c;color:white;border-radius:7px;cursor:pointer}'+
-  '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
+  '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' textarea{box-sizing:border-box;width:100%;resize:vertical}'+
+  '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.9</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.0</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
- '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button></div>'+
- '<div><button id="gal-scan-diagnostics">📋 複製版面診斷</button><button id="gal-scan-cancel">停止掃描</button><button id="gal-scan-close">關閉</button></div>';
+ '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button>'+
+ '<button id="gal-scan-preview">掃 3 則停下（測試）</button></div>'+
+ '<details open><summary>首則 AI 回覆的段落驗收</summary>'+
+ '<label for="gal-scan-native-copy">無法自動讀取時，可貼上 Gal AI「複製」的完整首則 AI 回覆</label>'+
+ '<textarea id="gal-scan-native-copy" rows="3" maxlength="30000" spellcheck="false"></textarea>'+
+ '<button id="gal-scan-paragraph-preview">用原生來源驗收三則</button></details>'+
+ '<div><button id="gal-scan-diagnostics">📋 複製版面診斷</button>'+
+ '<label id="gal-scan-difference-label" hidden>差異位置 <select id="gal-scan-difference-row"></select></label>'+
+ '<button id="gal-scan-difference" hidden>在本機查看字元差異</button>'+
+ '<button id="gal-scan-cancel">停止掃描</button><button id="gal-scan-close">關閉</button></div>';
  document.documentElement.append(p);
  $('gal-scan-cancel').onclick=()=>{cancelled=true;status('已要求停止。未下載、未修改任何歸檔資料。')};
  $('gal-scan-pick').onclick=()=>chooseOpening();
  $('gal-scan-retry').onclick=()=>{if(!busy&&target)scan(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
+ $('gal-scan-preview').onclick=()=>{if(!busy&&target)scan(target,true);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
+ $('gal-scan-paragraph-preview').onclick=()=>{if(!busy&&target)scan(target,true,true);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
  $('gal-scan-diagnostics').onclick=()=>{const report=diagnostic||inspect();
    const sanitized=JSON.stringify(report,null,2);
    if(navigator.clipboard?.writeText){navigator.clipboard.writeText(sanitized).then(()=>status('已複製版面診斷（僅 DOM 類別／數量，不包含對話原文）：\n'+sanitized)).catch(()=>status(sanitized))}
    else status(sanitized)};
+ $('gal-scan-difference').onclick=()=>{
+  const select=$('gal-scan-difference-row');
+  const index=Number(select.value);
+  const difference=localDifferences.get(index);
+  if(difference)status(select.selectedOptions[0].textContent+'\n首個字元差異（只顯示在本頁）\n掃描：'+
+   difference.scanned+'\n候選：'+difference.native);
+ };
  $('gal-scan-close').onclick=()=>{if(busy)cancelled=true;p.remove();css.remove()};
  $('gal-scan-export').onclick=()=>{if(!lastResult||!lastResult.validation?.ok)return;
    const a=document.createElement('a');
    const blob=new Blob([JSON.stringify(lastResult,null,2)],{type:'application/json;charset=utf-8'});
    a.href=URL.createObjectURL(blob);
-   a.download='Gal_AI_原生正史_'+(target?.cycleTitle||'輪迴').replace(/[\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.json';
+   const preview=lastResult.scope==='opening-first-pair-preview';
+   a.download=(preview?'Gal_AI_三則測試_':'Gal_AI_原生正史_')+(target?.cycleTitle||'輪迴').replace(/[\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.json';
    document.documentElement.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
-   status('已請瀏覽器下載原生正史 JSON。這一步不會修改檔案館或 Firebase；請到輪迴檔案館「Gal AI 原生匯入」核對後套用。');
+   status(preview?'已下載三則測試 JSON，供格式驗收。':'已請瀏覽器下載原生正史 JSON。這一步不會修改檔案館或 Firebase；請到輪迴檔案館「Gal AI 原生匯入」核對後套用。');
  };
  return p;
 }
@@ -161,7 +181,7 @@ function inspect(){
  const candidates=scrollCandidates();
  const common=[...root.querySelectorAll(rowSelectors.join(','))];
  return {
-  version:'0.7.9',pageOrigin:location.origin,
+  version:'0.8.0',pageOrigin:location.origin,
   root:{tag:root.tagName,className:String(root.className||'').slice(0,150),
     scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
     width:Math.round(r.width),height:Math.round(r.height)},
@@ -302,11 +322,34 @@ function boundaryToolbars(root){
  return [...matched].filter(x=>![...matched].some(y=>y!==x&&x.contains(y))).sort(boundaryOrder);
 }
 
-function boundaryFragmentText(start,end,role='ai'){
+const nativeMessageSelector='[data-selection-copy-message-id]';
+function nativeReplySource(nodes){
+ const distinct=new Map([...nodes].map(node=>[node.getAttribute('data-selection-copy-message-id'),node]));
+ distinct.delete('');
+ const markerCount=distinct.size;
+ if(!markerCount)return {reason:'message-marker-unavailable',markerCount};
+ if(markerCount!==1)return {reason:'ambiguous-message-markers',markerCount};
+ const node=distinct.values().next().value;
+ const response='gal-archive-native-reply-response-v1';
+ let source={reason:'native-reader-unavailable'};
+ const receive=event=>{
+  if(event.target!==node||typeof event.detail!=='string')return;
+  try{
+   const data=JSON.parse(event.detail);
+   if(data?.reason==='available'&&typeof data.text==='string'&&data.text.length<=30000)source=data;
+   else if(data?.reason==='message-content-unavailable')source={reason:data.reason};
+  }catch{ /* An unreadable bridge response leaves the source unavailable. */ }
+ };
+ node.addEventListener(response,receive);
+ try{node.dispatchEvent(new CustomEvent('gal-archive-native-reply-request-v1',{bubbles:true}))}
+ finally{node.removeEventListener(response,receive)}
+ return {...source,markerCount,messageId:node.getAttribute('data-selection-copy-message-id')};
+}
+function boundaryFragmentText(start,end,role='ai',trace,metadata,event=false){
  if(!boundaryFollows(start,end))return '';
  const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
  const holder=document.createElement('div');
- const live=core.copyRangeWithLiveStyles(range);
+ const live=core.copyRangeWithLiveStyles(range,trace);
  holder.appendChild(live.fragment);
  if(diagnostic){
   diagnostic.styleSnapshots=(diagnostic.styleSnapshots||0)+1;
@@ -314,9 +357,17 @@ function boundaryFragmentText(start,end,role='ai'){
  }
  // Controls embedded in an incomplete DOM fragment are not game narration.
  holder.querySelectorAll('button,[role="button"],[role="toolbar"],svg,style,script,textarea,input').forEach(n=>n.remove());
- return core.markdownFromDom(holder,{role}).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
+ const text=core.markdownFromDom(holder,{role,trace,metadata,event}).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
+ if(metadata&&(event||core.parseGameTime(text))){
+  const base=range.commonAncestorContainer;
+  const markers=[...(base.querySelectorAll?.(nativeMessageSelector)||[])].filter(node=>range.intersectsNode(node));
+  if(base.matches?.(nativeMessageSelector))markers.unshift(base);
+  metadata.nativeReply=nativeReplySource(markers);
+  metadata.nativeReply.scannedText=text;
+ }
+ return text;
 }
-function boundaryRead(root){
+function boundaryRead(root,traceFirst=false,captureNative=false){
  const headings=boundaryHeaders(root),tools=boundaryToolbars(root);
  const rows=[],debug={headers:headings.filter(h=>h.kind==='reply').length,
   eventHeaders:headings.filter(h=>h.kind==='event').length,
@@ -324,14 +375,18 @@ function boundaryRead(root){
   incompleteAI:0,mode:'world-heading-and-action-toolbar'};
  if(!headings.length)return {rows,debug};
  const pairs=[];
+ let firstTimedTrace=null;
  for(let i=0;i<headings.length;i++){
   const heading=headings[i],start=heading.node,next=headings[i+1]?.node||null;
   // Both "👍 👎 複製" and "✎ 👍 👎 書籤 更多" end a Gal AI item.
   const strips=tools.filter(t=>boundaryFollows(start,t)&&(!next||boundaryFollows(t,next)));
   if(!strips.length){debug.incompleteAI++;break}
-  const end=strips[0],text=boundaryFragmentText(start,end);
+  const trace=traceFirst&&!firstTimedTrace&&heading.kind==='reply'?{}:undefined;
+  const metadata=captureNative?{}:undefined;
+  const end=strips[0],text=boundaryFragmentText(start,end,'ai',trace,metadata,heading.kind==='event');
+  if(trace&&core.parseGameTime(text)&&!core.isEvent(text))firstTimedTrace=trace;
   if(text.length<8||text.length>25000){debug.incompleteAI++;break}
-  pairs.push({start,end,text,kind:heading.kind});
+  pairs.push({start,end,text,kind:heading.kind,metadata});
  }
  for(let i=0;i<pairs.length;i++){
   const item=pairs[i];
@@ -343,44 +398,57 @@ function boundaryRead(root){
     debug.playerGaps++;
    }
   }
-  const row={role:'ai',text:item.text,id:'',top:item.start.getBoundingClientRect().top};
+  const row={role:'ai',text:item.text,id:'',top:item.start.getBoundingClientRect().top,formatSource:item.metadata};
   if(item.kind==='event'){
    row.eventType='event';row.worldName=target?.worldName||'';
    debug.completeEvents++;
   }else debug.completeAI++;
   rows.push(row);
  }
- return {rows,debug};
+ return {rows,debug,firstTimedTrace};
 }
 
-function messageText(node,role='ai'){
+function messageText(node,role='ai',trace,metadata){
  // Prefer the rendered message body; remove menu/action chrome from copy.
  const body=node.querySelector('[data-message-content],[data-testid*="message-content"],.markdown,.prose,.message-content,.bubble-content')
   ||node;
- return core.markdownFromDom(body,{role}).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
+ const event=role==='ai'&&core.isEvent(body.innerText||'');
+ const text=core.markdownFromDom(body,{role,trace,metadata,event}).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
+ if(metadata&&(event||core.parseGameTime(text))){
+  const markers=[...node.querySelectorAll(nativeMessageSelector)];
+  if(node.matches(nativeMessageSelector))markers.unshift(node);
+  metadata.nativeReply=nativeReplySource(markers);
+  metadata.nativeReply.scannedText=text;
+ }
+ return text;
 }
-function snapshot(fixedRoot=null,preferredMode='auto'){
+function snapshot(fixedRoot=null,preferredMode='auto',traceFirst=false,captureNative=false){
  const root=fixedRoot?.isConnected?fixedRoot:scroller();
- const anchored=target?.worldName?boundaryRead(root):{rows:[],debug:{headers:0,reactionBars:0,completeAI:0}};
+ const anchored=target?.worldName?boundaryRead(root,traceFirst&&preferredMode!=='legacy',captureNative&&preferredMode!=='legacy'):
+  {rows:[],debug:{headers:0,reactionBars:0,completeAI:0}};
  diagnostic={...(diagnostic||{}),...anchored.debug};
  // Regression fix: v0.7.3 ALWAYS returned empty when two markers were not
  // simultaneously recognized, disabling the 0.7.2 scanner that read 4 turns.
  // Keep that parser as a live fallback; freeze mode per scan to avoid mixing
  // two incompatible message segmentation systems midway through the timeline.
  if(preferredMode==='bounded'||(preferredMode==='auto'&&anchored.rows.length)){
-  return {root,rows:anchored.rows,method:'world-header-reaction-bar',boundaryDebug:anchored.debug};
+  return {root,rows:anchored.rows,method:'world-header-reaction-bar',boundaryDebug:anchored.debug,firstTimedTrace:anchored.firstTimedTrace};
  }
  const rs=candidateRows(root);
+ let firstTimedTrace=null;
  const rows=rs.map(({node,role,rect})=>{
-  const text=messageText(node,role);
+  const trace=traceFirst&&!firstTimedTrace&&role==='ai'?{}:undefined;
+  const metadata=captureNative&&role==='ai'?{}:undefined;
+  const text=messageText(node,role,trace,metadata);
+  if(trace&&core.parseGameTime(text)&&!core.isEvent(text))firstTimedTrace=trace;
   // data-testid is usually shared by EVERY bubble (e.g. "message"), not a unique ID.
   // Comparing it as identity could silently skip a different message of the same role.
   const id=node.getAttribute('data-message-id')||node.getAttribute('data-id')||'';
-  return {role,text,id,top:rect.top,node};
+  return {role,text,id,top:rect.top,node,formatSource:metadata};
  }).filter(r=>r.text.length>5);
  const start=calibration?.node?.isConnected?rows.findIndex(r=>r.node===calibration.node):-1;
  return {root,rows:(start>=0?rows.slice(start):rows).map(({node,...rest})=>rest),
-   method:'legacy-dom',boundaryDebug:anchored.debug};
+   method:'legacy-dom',boundaryDebug:anchored.debug,firstTimedTrace};
 }
 /* Repeated literal text is common ("嗯", "..."). Never globally deduplicate
  * by text: merge overlapping windows as an ORDERED sequence instead. */
@@ -388,7 +456,7 @@ function sameRow(a,b){return a.role===b.role&&(a.eventType||null)===(b.eventType
   &&(a.id&&b.id&&a.id===b.id||a.text===b.text)}
 function appendSample(sample,all){
  const incoming=sample.rows.map(r=>({role:r.role,text:r.text,domId:r.id||null,id:r.id||null,
-   eventType:r.eventType||null,worldName:r.worldName||null}));
+   eventType:r.eventType||null,worldName:r.worldName||null,formatSource:r.formatSource}));
  if(!incoming.length)throw Error('當前視窗沒有可比對的訊息');
  if(all.length===0){all.push(...incoming.map(({id,...rest})=>rest));return {repeated:0,added:incoming.length}}
  // The next viewport may still contain the ENTIRE last viewport, including
@@ -415,6 +483,12 @@ function appendSample(sample,all){
  const start=matches[0];
  if(size===1&&!incoming[start].id&&all.filter(x=>sameRow(x,incoming[start])).length>1)
   throw Error('重複短句錨點不唯一，已安全停止');
+ for(let i=0;i<size;i++){
+  const old=all[all.length-size+i],next=incoming[start+i];
+  const oldSource=old.formatSource?.nativeReply,nextSource=next.formatSource?.nativeReply;
+  if(old.text===next.text&&oldSource?.reason!=='available'&&nextSource?.reason==='available'&&
+   (!oldSource?.messageId||oldSource.messageId===nextSource.messageId))old.formatSource=next.formatSource;
+ }
  const extra=incoming.slice(start+size).map(({id,...rest})=>rest);
  all.push(...extra);
  return {repeated:size,added:extra.length,anchorPosition:start};
@@ -426,37 +500,117 @@ function isBottom(root){
 function hash(str){let h1=2166136261,h2=0x811c9dc5;for(let i=0;i<str.length;i++){
  h1=Math.imul(h1^str.charCodeAt(i),16777619)>>>0;h2=Math.imul(h2^str.charCodeAt(i),2246822519)>>>0;
  }return h1.toString(16).padStart(8,'0')+h2.toString(16).padStart(8,'0');}
-function canonical(rows,valid){
+function canonical(rows,valid,preview){
  const path=location.origin+location.pathname;
  const chatKey=(hash(path)+hash(path+'|Gal AI')).slice(0,32);
- const build=(entry,i,kind)=>({
-  id:'galnative-'+hash(path+'|'+i+'|'+kind+'|'+entry.text),
+ const build=(entry,i,kind)=>{
+  const sourceEventId='galnative-'+hash(path+'|'+i+'|'+kind);
+  return {
+  id:sourceEventId,
   role:entry.role,text:entry.text,gameTime:entry.gameTime||null,
-  sourceEventId:'galnative-'+hash(path+'|'+i+'|'+kind),
+  sourceEventId,
   sourcePartIndex:0,chatKey,messageOrder:Number.isInteger(entry.scanIndex)?entry.scanIndex:i,
   scanIndex:Number.isInteger(entry.scanIndex)?entry.scanIndex:null,
   sourceKind:'gal-ai-native',sourceSite:location.origin
- });
+  };
+ };
  const messages=valid.messages.map((m,i)=>build(m,i,'message'));
  const events=valid.events.map((e,i)=>({...build(e,e.scanIndex,'event'),role:'ai',
   status:'accepted',title:e.title,worldName:e.worldName||null,scanIndex:e.scanIndex}));
  return {
   format:'gal-ai-authoritative-scan',version:1,generatedAt:new Date().toISOString(),
-  scope:'entire-opening-to-bottom',source:{url:location.origin+location.pathname,origin:location.origin,
+  scope:preview?'opening-first-pair-preview':'entire-opening-to-bottom',source:{url:location.origin+location.pathname,origin:location.origin,
     path:location.pathname,gameClockOnly:true},target:{cycleId:target.cycleId,worldName:target.worldName,
     cycleTitle:target.cycleTitle,uid:target.uid||'',manager:target.manager||''},
   opening:valid.opening,messages,events,validation:{ok:valid.ok,pairs:valid.pairs,events:events.length,
     openingChars:valid.opening.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,
     warnings:valid.warnings,errors:valid.errors},rawRows:rows.length,
-  readOnlyUntilImported:true,note:'原生來源對完整對話及事件具有優先權；不會更動副駕駛聊天、世界觀或補充筆記。覆蓋前需在檔案館確認備份。'
+  readOnlyUntilImported:!preview,note:preview?'僅供三則測試驗收。':'原生來源對完整對話及事件具有優先權；不會更動副駕駛聊天、世界觀或補充筆記。覆蓋前需在檔案館確認備份。'
  };
 }
-async function scan(profile){
+function applyNativeFormat(entry,rows,sourceCounts,scanMode,nativeCopy='',event=false){
+ const metadata=rows[entry.scanIndex]?.formatSource;
+ const source=metadata?.nativeReply;
+ const matchedRow=source?.scannedText===entry.text;
+ const uniqueSource=Boolean(source?.messageId&&sourceCounts.get(source.messageId)===1);
+ const nativeText=nativeCopy||(matchedRow&&uniqueSource&&source?.reason==='available'?source.text:'');
+ const check={scannerVersion:SCANNER_VERSION,coreVersion:core.version,scanIndex:entry.scanIndex,
+  gameTime:entry.gameTime,
+  source:'rendered-dom',reason:source?.reason||'native-source-unavailable',
+  domNewlines:(entry.text.match(/\n/g)||[]).length,
+  domBlankLines:(entry.text.match(/\n[ \t]*\n/g)||[]).length,
+  candidate:{type:nativeCopy?'clipboard-paste':'whif-message-content',
+   path:nativeCopy?'panel-textarea':scanMode+' / data-selection-copy-message-id / React message.content',
+   firstReplyScanIndex:entry.scanIndex,markerCount:source?.markerCount??0,
+   matchedVisibleMessageId:!nativeCopy&&source?.reason==='available',matchedFirstReplyRow:matchedRow,uniqueSource}};
+ if(!nativeCopy&&source?.reason==='available'){
+  if(!matchedRow)check.reason='first-reply-row-mismatch';
+  else if(!uniqueSource)check.reason='duplicate-native-source-id';
+ }
+ let localContext=null;
+ if(nativeText){
+  const result=core.compareNativeParagraphs(entry.text,nativeText,{
+   source:nativeCopy?'native-copy':event?'whif-event-content':'whif-message-content',
+   statusText:metadata?.statusText,codeBlocks:metadata?.codeBlocks,
+   chapterTitle:nativeCopy?undefined:source?.chapterTitle,event,eventTitle:event?entry.title:undefined
+  });
+  check.comparison=result.comparison;
+  if(result.text!==null){
+   check.reason=result.text===entry.text?'source-matched-no-change':'applied';
+   entry.text=result.text;
+   check.source=nativeCopy?'native-copy':'whif-message-content';
+  }else{
+   check.reason=result.comparison.contentEqual?'story-time-mismatch':'content-mismatch';
+   localContext=result.localContext||null;
+  }
+ }
+ check.exportedBlankLines=(entry.text.match(/\n[ \t]*\n/g)||[]).length;
+ check.exportedNewlines=(entry.text.match(/\n/g)||[]).length;
+ return {check,localContext};
+}
+function summarizeNativeFormats(results,includeComparison=false){
+ const rows=results.map(({check})=>({scanIndex:check.scanIndex,gameTime:check.gameTime,reason:check.reason,source:check.source,
+  sourceIdMatched:check.candidate.matchedVisibleMessageId&&check.candidate.uniqueSource,
+  domNewlines:check.domNewlines,exportedNewlines:check.exportedNewlines,
+  domBlankLines:check.domBlankLines,exportedBlankLines:check.exportedBlankLines,
+  ...(includeComparison||check.source==='rendered-dom'?{candidate:check.candidate,comparison:check.comparison}:{})}));
+ return {total:rows.length,applied:rows.filter(row=>row.reason==='applied').length,
+  matchedWithoutChange:rows.filter(row=>row.reason==='source-matched-no-change').length,
+  fallback:rows.filter(row=>row.source==='rendered-dom').length,rows};
+}
+function showLocalDifferences(results){
+ const select=$('gal-scan-difference-row');
+ select.replaceChildren();
+ for(const {check,localContext} of results){
+  if(!localContext)continue;
+  localDifferences.set(check.scanIndex,localContext);
+  const option=document.createElement('option');
+  option.value=String(check.scanIndex);
+  const gameClock=check.gameTime?new Intl.DateTimeFormat('zh-TW',{
+   timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+  }).format(new Date(check.gameTime)):'時間無法核對';
+  option.textContent='位置 '+check.scanIndex+' · 遊戲時間 '+gameClock;
+  select.append(option);
+ }
+ const hidden=localDifferences.size===0;
+ $('gal-scan-difference').hidden=hidden;
+ $('gal-scan-difference-label').hidden=hidden;
+}
+async function scan(profile,preview=false,requireNative=false){
  if(busy)return {ok:false,error:'正在掃描中'};
- busy=true;cancelled=false;lastResult=null;target=profile;mount();
- if($('gal-scan-export'))$('gal-scan-export').disabled=true;
+ if(core?.version!==SCANNER_VERSION)return {ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'};
+ busy=true;cancelled=false;lastResult=null;diagnostic=null;localDifferences.clear();target=profile;mount();
+ $('gal-scan-difference').hidden=true;
+ $('gal-scan-difference-label').hidden=true;
+ const nativeCopy=$('gal-scan-native-copy').value.trim();
+ const exportButton=$('gal-scan-export');
+ exportButton.disabled=true;
+ exportButton.textContent=preview?'下載三則測試 JSON':'下載原生正史 JSON';
  const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,scanMode='auto';
  const recoveryLog=[];
+ let firstTimedTrace=null;
+ let paragraphCheck={scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+  source:'rendered-dom',reason:'first-reply-not-validated'};
  try{
   const first=snapshot();diagnostic=inspect();
   if(!first.rows.length)throw Error('找不到完整訊息。世界觀界線與舊版泡泡辨識都沒有結果；請複製版面診斷。');
@@ -468,7 +622,8 @@ async function scan(profile){
   stepPx=nominal;
   while(!cancelled&&stepCount<12000){
    if(!root.isConnected)throw Error('頁面替換了原捲動容器，為避免漏掃已停止');
-   const shot=snapshot(root,scanMode);
+   const shot=snapshot(root,scanMode,!firstTimedTrace,true);
+   firstTimedTrace||=shot.firstTimedTrace;
    let info;
    try{info=appendSample(shot,collected)}
    catch(err){
@@ -496,6 +651,7 @@ async function scan(profile){
    }
    recovery=0;lastGoodY=root.scrollTop;
    if(shot.rows.some(x=>x.text.length>25000))throw Error('訊息超長，禁止存入截斷正史');
+   if(preview&&collected.length>=3){collected.length=3;break}
    if(collected.length>20000)throw Error('已達20,000則安全上限');
    noProgress=info.added?0:noProgress+1;
    if(noProgress>180)throw Error('連續180次沒有新訊息，可能捲動區錯誤');
@@ -504,7 +660,8 @@ async function scan(profile){
     '。\n世界觀標頭 '+(shot.boundaryDebug?.headers??0)+'、事件標頭 '+(shot.boundaryDebug?.eventHeaders??0)+
     '、操作列（👍或✎開頭）'+(shot.boundaryDebug?.reactionBars??0)+
     '、普通回覆 '+(shot.boundaryDebug?.completeAI??0)+'、事件 '+(shot.boundaryDebug?.completeEvents??0)+'。'+
-    '\n目前步距 '+stepPx+'px，20%／350px上限；400ms＋350ms等待。'+
+    '\n目前步距 '+stepPx+'px，'+Math.round(SCROLL_RATIO*100)+'%／'+MAX_SCROLL_PX+
+    'px 上限；'+WAIT_MS+'ms＋'+STABLE_MS+'ms 等待。'+
     '\n'+(info.added?'新增 '+info.added+' 則':'前後畫面重疊')+'；尚未匯出或覆蓋。');
    if(isBottom(root)){bottomFrames++;if(bottomFrames>=3)break}else bottomFrames=0;
    if(info.added&&stepPx<nominal)stepPx=Math.min(nominal,Math.max(stepPx+12,Math.floor(stepPx*1.2)));
@@ -517,16 +674,51 @@ async function scan(profile){
   if(cancelled)throw Error('使用者停止掃描');
   if(stepCount>=12000)throw Error('未確認掃描到底，達到安全上限');
   const validation=core.validate(collected,target.worldName);
+  if(preview&&(collected.length!==3||validation.pairs!==1||validation.events.length))
+   throw Error('三則測試需要從世界觀開場開始，接著是第一組「我／他」');
   if(!validation.ok)throw Error('完整性檢查失敗：\n'+validation.errors.slice(0,12).join('\n'));
-  lastResult=canonical(collected,validation);
+  const sourceCounts=new Map();
+  for(const row of collected){
+   const id=row.formatSource?.nativeReply?.messageId;
+   if(id)sourceCounts.set(id,(sourceCounts.get(id)||0)+1);
+  }
+  const replies=validation.messages.filter(row=>row.role==='ai').map((row,i)=>
+   applyNativeFormat(row,collected,sourceCounts,scanMode,i===0?nativeCopy:''));
+  paragraphCheck=replies[0].check;
+  const events=validation.events.map(row=>applyNativeFormat(row,collected,sourceCounts,scanMode,'',true));
+  showLocalDifferences([...replies,...events]);
+  const nativeApplied=paragraphCheck.reason==='applied';
+  const nativeConfirmed=nativeApplied||paragraphCheck.reason==='source-matched-no-change';
+  if(!nativeConfirmed&&(requireNative||nativeCopy)){
+   $('gal-scan-native-copy').focus();
+   throw Error(['content-mismatch','story-time-mismatch','first-reply-row-mismatch'].includes(paragraphCheck.reason)
+    ?'原生文字與掃描到的首則 AI 回覆不一致，請核對或貼上完整回覆'
+    :'無法讀取原生段落來源，請貼上完整首則 AI 回覆的原生複製文字');
+  }
+  const paragraphAudit={ai:summarizeNativeFormats(replies),events:summarizeNativeFormats(events,true)};
+  lastResult=canonical(collected,validation,preview);
+  if(!preview)lastResult.paragraphAudit=paragraphAudit;
+  const firstReply=lastResult.messages.find(row=>row.role==='ai');
+  paragraphCheck.exportedBlankLines=(firstReply?.text.match(/\n[ \t]*\n/g)||[]).length;
+  if(preview)lastResult.paragraphCheck=paragraphCheck;
+  diagnostic={...diagnostic,scanMode,scannerVersion:SCANNER_VERSION,coreVersion:core.version,nativeParagraphsApplied:nativeApplied,
+   firstTimedReply:firstTimedTrace,export:{generatedAt:lastResult.generatedAt,
+    firstReplyScanIndex:firstReply?.scanIndex,
+    firstReplyQuotes:(firstReply?.text.match(/「/g)||[]).length,
+    firstReplyBlankLines:paragraphCheck.exportedBlankLines},paragraphCheck,paragraphAudit};
   if($('gal-scan-export'))$('gal-scan-export').disabled=false;
-  status('✅ 已掃描完畢，未修改正史。\n開場：'+validation.opening.length+'字，完整回合：'+validation.pairs+
+  status(preview?'✅ 三則測試完成：世界觀開場 × 1、我 × 1、他 × 1。\n'+
+   (nativeApplied?'已採用原生文字的分段。':nativeConfirmed?'分段與原生來源相同。':'本次僅使用頁面 DOM。段落驗收請用「用原生來源驗收三則」。')+
+   '\n首則 AI 回覆的段落空行：'+paragraphCheck.exportedBlankLines+'。可下載測試 JSON。':
+   '✅ 已掃描完畢，未修改正史。\n開場：'+validation.opening.length+'字，完整回合：'+validation.pairs+
    '組，事件：'+validation.events.length+'件。'+(recoveryLog.length?'\n曾縮小步距修復 '+recoveryLog.length+' 次。':'')+
+   '\nAI 原生分段套用 '+paragraphAudit.ai.applied+'／'+paragraphAudit.ai.total+
+   '，與來源相同 '+paragraphAudit.ai.matchedWithoutChange+'，保留 DOM '+paragraphAudit.ai.fallback+'。'+
    '\n請下載 JSON 後到檔案館核對並備份。');
  }catch(err){
   failure=String(err?.message||err);
   if(root?.isConnected)root.scrollTop=lastGoodY;
-  diagnostic={...(diagnostic||inspect()),scanMode,error:failure,trustedCount:collected.length,
+  diagnostic={...(diagnostic||inspect()),scanMode,error:failure,trustedCount:collected.length,paragraphCheck,
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
   status('⛔ 安全停止：'+failure+'\n可信訊息 '+collected.length+
    ' 則，未輸出半份正史；可按「📋 複製版面診斷」。');
@@ -534,18 +726,19 @@ async function scan(profile){
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.9',busy,hasResult:!!lastResult});return false}
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:SCANNER_VERSION,coreVersion:core?.version,busy,hasResult:!!lastResult});return false}
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
+  if(core?.version!==SCANNER_VERSION){respond({ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'});return false}
   const p=msg.profile||{};
   if(typeof p.cycleId!=='string'||!p.cycleId||typeof p.worldName!=='string'||!p.worldName){
    respond({ok:false,error:'必須先選擇目標輪迴與世界觀'});return false;
   }
   scan({uid:String(p.uid||''),worldName:p.worldName,cycleId:p.cycleId,
-    cycleTitle:String(p.cycleTitle||''),manager:String(p.manager||'')});
+    cycleTitle:String(p.cycleTitle||''),manager:String(p.manager||'')},msg.preview===true);
   respond({ok:true,started:true});return false;
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:'0.7.9'};
+globalThis.GalArchivePageScanner={scan,version:SCANNER_VERSION};
 })();

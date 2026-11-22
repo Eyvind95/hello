@@ -14,7 +14,7 @@ async function state(){
  try{const u=new URL(tab.url);if(!/^https?:$/.test(u.protocol)||['chatgpt.com','eyvind95.github.io'].includes(u.hostname))throw Error();
  scope=u.origin+u.pathname.replace(/\/$/,'');
  $('pageStatus').textContent='已選擇 Gal AI 原始頁面：\n'+scope;
- }catch(err){scope=null;$('pageStatus').textContent='請先開啟 Gal AI 原始對話分頁；不能在 ChatGPT 或檔案館內執行 Gal AI 掃描。';$('start').disabled=true;return}
+ }catch(err){scope=null;$('pageStatus').textContent='請先開啟 Gal AI 原始對話分頁；不能在 ChatGPT 或檔案館內執行 Gal AI 掃描。';$('start').disabled=$('preview').disabled=true;return}
  const data=await storageGet(['galProfilesByPage','profilesByChat','profile']);
  const pmap=data.galProfilesByPage||{},old=data.profilesByChat||{};
  profile=pmap[scope]||null;
@@ -34,20 +34,31 @@ $('save').onclick=async()=>{
   &&!confirm('此 Gal AI 頁面之前綁定不同輪迴／世界觀！\n已匯出的 JSON 不會自動移動，確定變更之後的掃描目標嗎？'))return;
  map[scope]=p;await storageSet({galProfilesByPage:map});profile=p;write('已儲存：'+label(p));
 };
-$('start').onclick=async()=>{
+async function start(preview){
  if(!scope||!tab)return;
  const d=await storageGet(['galProfilesByPage']),p=d.galProfilesByPage?.[scope];
  if(!p?.cycleId||!p?.worldName){write('請先儲存這個 Gal AI 對話的輪迴綁定',true);return}
- if(!confirm('即將從 Gal AI 目前畫面向下掃描到結尾。\n目標：'+label(p)
+ if(!confirm((preview?'即將從世界觀開場掃描 3 則，供格式驗收。':'即將從 Gal AI 目前畫面向下掃描到結尾。')+'\n目標：'+label(p)
   +'\n請確認當前第一則為「左側無時間的輪迴開場」。\n這次不會自動上傳，也不會刪改資料；掃描完成後需要手動下載 JSON 並在網站確認覆蓋。開始？'))return;
  try {
-  $('start').disabled=true;
+  $('start').disabled=$('preview').disabled=true;
   // User-initiated activeTab injection, no <all_urls> access and no guessing the site's hostname.
+  if(['www.whif.io','whif.io'].includes(new URL(tab.url).hostname)){
+   try { await chrome.scripting.executeScript({target:{tabId:tab.id},world:'MAIN',files:['gal-native-source.js']}); }
+   catch { /* The scanner reports unavailable native source and supports pasted text. */ }
+  }
   await chrome.scripting.executeScript({target:{tabId:tab.id},files:['gal-core.js','gal-content.js']});
-  const resp=await chrome.tabs.sendMessage(tab.id,{type:'gal-scan-start',profile:p});
+  const expected=chrome.runtime.getManifest().version;
+  const loaded=await chrome.tabs.sendMessage(tab.id,{type:'gal-scan-ping'});
+  if(loaded?.version!==expected||loaded?.coreVersion!==expected)
+   throw Error('分頁的掃描器或核心版本與已安裝版本不一致');
+  const resp=await chrome.tabs.sendMessage(tab.id,{type:'gal-scan-start',profile:p,preview});
   if(!resp?.ok)throw Error(resp?.error||'頁面沒有接收到啟動訊號');
-  write('已啟動 Gal AI 原生掃描。\n切回 Gal AI 頁面，右上角會有獨立進度面板。\n掃描完成後在面板按「下載原生正史 JSON」。');
+  write(preview?'已啟動三則測試。完成後可從頁面面板下載測試 JSON。':
+   '已啟動 Gal AI 原生掃描。\n切回 Gal AI 頁面，右上角會有獨立進度面板。\n掃描完成後在面板按「下載原生正史 JSON」。');
  }catch(e){write('啟動失敗：'+String(e?.message||e)+'\n請重新整理 Gal AI 頁面再試。',true)}
- finally{$('start').disabled=false}
-};
+ finally{$('start').disabled=$('preview').disabled=false}
+}
+$('start').onclick=()=>start(false);
+$('preview').onclick=()=>start(true);
 state();

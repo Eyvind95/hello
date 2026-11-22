@@ -1,0 +1,323 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gal AI scan-to-download regression</title>
+<style>
+  .feed .TemplatedText { display: block; white-space: pre-wrap; }
+  .feed .font-mono.text-xs { background: #1C1C27; }
+  .feed .bg-bg-neutral-subtle { background: #2A2A34; }
+  .feed .player { background: #250C57; }
+  .feed .flex { display: flex; flex-direction: column; }
+  .feed .inline-flex { display: inline-flex; }
+  .toolbar { display: flex; gap: 20px; width: 180px; }
+  .toolbar svg { width: 16px; height: 16px; }
+</style>
+<main class="feed"></main>
+<pre id="result">RUNNING</pre>
+<script>
+let receive, blob, diagnostic;
+let observeDelay;
+const schedule=globalThis.setTimeout.bind(globalThis);
+globalThis.setTimeout=(task,delay,...args)=>{
+  observeDelay?.(delay);
+  return schedule(task,delay,...args);
+};
+globalThis.chrome = { runtime: { onMessage: { addListener(fn) { receive = fn; } } } };
+Object.defineProperty(navigator, 'clipboard', { value: { async writeText(text) { diagnostic = JSON.parse(text); } } });
+const objectUrl = URL.createObjectURL.bind(URL);
+URL.createObjectURL = value => { blob = value; return objectUrl(value); };
+HTMLAnchorElement.prototype.click = function () {};
+</script>
+<script src="gal-core.js"></script>
+<script src="gal-native-source.js"></script>
+<script src="gal-content.js"></script>
+<script>
+(async () => {
+  const feed = document.querySelector('.feed');
+  const output = document.querySelector('#result');
+  const toolbar = '<div class="toolbar" role="toolbar">' + '<svg></svg>'.repeat(4) + '</div>';
+  const heading = '<div class="heading"><span>《測試世界》</span></div>';
+  const eventHeading = '<div class="heading"><span>與《測試世界》的事件</span></div>';
+  const common = 'message-bubble-text TemplatedText';
+  const prose = 'text-text-neutral-subtle';
+  const gray = 'bg-bg-neutral-subtle rounded-lg p-3 rounded-es-none';
+  const span = (classes, text) => {
+    const leaf = document.createElement('span');
+    leaf.className = common + ' ' + classes;
+    leaf.textContent = text;
+    const fragment = classes === gray
+      ? '<span class="inline-flex items-baseline">' + leaf.outerHTML + '</span>' : leaf.outerHTML;
+    return '<div class="flex w-full flex-col justify-start">' + fragment + '</div>';
+  };
+  const [header, body] = globalThis.cycle17NativeCopy
+    ? cycle17NativeCopy.match(/^\x60{3}\n([\s\S]+?)\n\x60{3}\n([\s\S]+)\n\{\{img::[^}]+\}\}$/).slice(1)
+    : ['｜2026年8月22日｜09:30｜', [
+       '隨著右側房門「喀噠」一聲合上。',
+       '「二。」有人說「三。」',
+       '「四。」有人說「五。」',
+       '「六。」', '「七。」', '「八。」', '「九。」'
+      ].join('\n\n')];
+  let offset = 0;
+  let fragments = span('font-mono text-xs', header);
+  for (const quote of body.matchAll(/「([^」]*)」/g)) {
+    if (offset < quote.index) fragments += span(prose, body.slice(offset, quote.index));
+    fragments += span(gray, quote[1]);
+    offset = quote.index + quote[0].length;
+  }
+  if (offset < body.length) fragments += span(prose, body.slice(offset));
+  const firstReply = '<div data-selection-copy-message-id="visible-reply"><div class="w-full space-y-2">' + fragments + '</div></div>';
+  const gameTime = globalThis.cycle17NativeCopy ? '2026-08-22T10:45:00.000Z' : '2026-08-22T01:30:00.000Z';
+  const turn = (h, body) => '<article>' + h + body + toolbar + '</article>';
+  feed.innerHTML = turn(heading, '<div>這是完整的輪迴開場。</div>') +
+    '<div>玩家<span class="player">先說。</span><i>低聲。</i></div>' +
+    turn(heading, firstReply) +
+    turn(eventHeading, '<div>事件通知｜2026年8月22日｜09:35｜</div>');
+
+  const profile = { cycleId: 'test-cycle', worldName: '測試世界', cycleTitle: '測試輪迴' };
+  function message(payload) {
+    let response;
+    receive(payload, {}, value => { response = value; });
+    return response;
+  }
+  async function scanAndDownload(preview = false, fromPanel = '') {
+    if (fromPanel) document.querySelector(fromPanel).click();
+    else if (!message({type:'gal-scan-start', profile, preview})?.ok) throw Error('Start failed');
+    const pending = message({type:'gal-scan-ping'});
+    if (!preview && (!pending.busy || pending.hasResult)) throw Error('Previous result carried into the scan');
+    while (message({type:'gal-scan-ping'}).busy) {
+      await new Promise(ok => setTimeout(ok, 100));
+    }
+    const button = document.querySelector('#gal-scan-export');
+    if (button.disabled) throw Error(document.querySelector('#gal-scan-info').textContent);
+    blob = null;
+    button.click();
+    if (!blob) throw Error('No download Blob');
+    return JSON.parse(await blob.text());
+  }
+  function check(json, expected, preview = false) {
+    const actual = json.messages[1]?.text;
+    const blankLines = (expected.match(/\n[ \t]*\n/g) || []).length;
+    if (actual !== expected) throw Error('AI reply: ' + JSON.stringify(actual));
+    if ((actual.match(/「/g) || []).length !== 9 || (actual.match(/」/g) || []).length !== 9)
+      throw Error('Expected exactly nine complete quote pairs');
+    if (json.messages[0].text !== '玩家「先說。」*低聲。*' ||
+        json.messages[1].gameTime !== gameTime || json.messages.length !== 2 ||
+        json.validation.pairs !== 1) throw Error('Unexpected scan metadata');
+    if (preview) {
+      if (json.events.length || json.rawRows !== 3 || json.readOnlyUntilImported ||
+          json.scope !== 'opening-first-pair-preview') throw Error('Preview treated as full scan');
+      if (json.paragraphCheck.scannerVersion !== GalArchivePageScanner.version ||
+          json.paragraphCheck.coreVersion !== GalArchiveCore.version ||
+          json.paragraphCheck.exportedBlankLines !== blankLines) throw Error('Preview diagnostic mismatch');
+    } else if (json.events[0]?.scanIndex !== 3 || json.events[0].status !== 'accepted' ||
+        json.rawRows !== 4 || json.scope !== 'entire-opening-to-bottom') throw Error('Unexpected full scan metadata');
+    document.querySelector('#gal-scan-diagnostics').click();
+    const trace = diagnostic.firstTimedReply;
+    if (diagnostic.scanMode !== 'bounded' || diagnostic.export.generatedAt !== json.generatedAt ||
+        diagnostic.export.firstReplyQuotes !== 9 || diagnostic.export.firstReplyBlankLines !== blankLines ||
+        trace.liveGray.length !== 9 || !trace.range.mapped ||
+        trace.serialized.graySeen !== 9 || trace.serialized.grayQuoted !== 9 ||
+        trace.serialized.nativeTemplates !== 1) throw Error('Unexpected formatting diagnostic');
+  }
+  try {
+    const version = GalArchiveCore.version;
+    GalArchiveCore.version = '0.0.1';
+    if (message({type:'gal-scan-start', profile})?.ok) throw Error('Mismatched core accepted');
+    GalArchiveCore.version = version;
+    const expected = header + '\n' + body;
+    const full = await scanAndDownload();
+    check(full, expected);
+    if (!full.messages[1].text.includes('隨著右側房門「喀噠」一聲合上')) throw Error('Missing inline sound quote');
+    const preview = await scanAndDownload(true, '#gal-scan-preview');
+    check(preview, expected, true);
+    feed.querySelector('.bg-bg-neutral-subtle').textContent = '更新音效';
+    check(await scanAndDownload(), expected.replace('「喀噠」', '「更新音效」'));
+    feed.querySelector('.bg-bg-neutral-subtle').textContent = '喀噠';
+    for (const segment of feed.querySelectorAll('.text-text-neutral-subtle')) {
+      segment.textContent = segment.textContent.replace(/\n[ \t]*\n/g, '');
+    }
+    const domOnly = await scanAndDownload(true, '#gal-scan-preview');
+    check(domOnly, expected.replace(/\n[ \t]*\n/g, ''), true);
+    if (domOnly.paragraphCheck.source !== 'rendered-dom' ||
+        diagnostic.firstTimedReply.range.liveTextBlankLines !== 0 ||
+        diagnostic.firstTimedReply.range.clonedTextBlankLines !== 0)
+      throw Error('DOM-only scan must report no paragraph source');
+    const paragraphButton = document.querySelector('#gal-scan-paragraph-preview');
+    paragraphButton.click();
+    document.querySelector('#gal-scan-diagnostics').click();
+    if (!document.querySelector('#gal-scan-export').disabled ||
+        message({type:'gal-scan-ping'}).hasResult ||
+        diagnostic.paragraphCheck.source !== 'rendered-dom' ||
+        diagnostic.paragraphCheck.reason !== 'message-content-unavailable')
+      throw Error('Paragraph test accepted missing native copy or reused an older export');
+    const input = document.querySelector('#gal-scan-native-copy');
+    const fence = String.fromCharCode(96).repeat(3);
+    const original = [fence, header, fence, '', body, '{{img::example}}'].join('\n');
+    const restoredExpected = header + '\n\n' + body;
+    input.value = original;
+    const restored = await scanAndDownload(true, '#gal-scan-paragraph-preview');
+    check(restored, restoredExpected, true);
+    if (!diagnostic.nativeParagraphsApplied || restored.paragraphCheck.source !== 'native-copy' ||
+        restored.paragraphCheck.domBlankLines !== 0 || restored.paragraphCheck.exportedBlankLines !== 7 ||
+        restored.messages[1].text.slice(header.length+2).split(/\n[ \t]*\n/).length !== 7 ||
+        (globalThis.cycle17NativeCopy && [...restored.messages[1].text.replace(/\s/g,'')].length !== 629) ||
+        !restored.messages[1].text.includes('隨著右側房門「喀噠」一聲合上'))
+      throw Error('Expected seven native paragraphs and inline sound quote');
+    check(await scanAndDownload(), restoredExpected);
+    input.value = input.value.replace('喀噠', '不同內容');
+    paragraphButton.click();
+    if (!document.querySelector('#gal-scan-export').disabled ||
+        message({type:'gal-scan-ping'}).hasResult ||
+        !document.querySelector('#gal-scan-info').textContent.includes('不一致'))
+      throw Error('Mismatched native copy was accepted or reused an older export');
+    document.querySelector('#gal-scan-diagnostics').click();
+    const mismatch = diagnostic.paragraphCheck;
+    if (mismatch.reason !== 'content-mismatch' || mismatch.candidate.type !== 'clipboard-paste' ||
+        mismatch.comparison.firstDifference.kind !== 'text' ||
+        mismatch.comparison.whitespaceOnlyEqual || JSON.stringify(diagnostic).includes('不同內容'))
+      throw Error('Mismatch reason not reported or context leaked');
+    const differenceButton = document.querySelector('#gal-scan-difference');
+    if (differenceButton.hidden) throw Error('Local mismatch detail unavailable');
+    differenceButton.click();
+    if (!document.querySelector('#gal-scan-info').textContent.includes('不同內容'))
+      throw Error('Local mismatch detail absent');
+    input.value = '';
+    const marker = feed.querySelector('[data-selection-copy-message-id]');
+    const title = '初次入住基地';
+    const rawText = '{{'+title+'}}\n'+(globalThis.cycle17NativeCopy ||
+      [fence, header, fence, body, '{{img::example}}'].join('\n'));
+    const component = {memoizedProps:{message:{id:'visible-reply',content:rawText,
+      metadata:{chapter_title:title}}}};
+    marker.__reactFiber$fixture = {return:{memoizedProps:{message:{id:'wrong-id',content:'Wrong reply'}},return:component}};
+    const automaticallyRestored = await scanAndDownload(true, '#gal-scan-paragraph-preview');
+    check(automaticallyRestored, restoredExpected, true);
+    const comparison = automaticallyRestored.paragraphCheck.comparison;
+    if (automaticallyRestored.paragraphCheck.source !== 'whif-message-content' ||
+        automaticallyRestored.paragraphCheck.reason !== 'applied' ||
+        automaticallyRestored.paragraphCheck.exportedBlankLines !== 7 ||
+        !automaticallyRestored.paragraphCheck.candidate.matchedFirstReplyRow ||
+        !comparison.contentEqual || comparison.whitespaceOnlyEqual ||
+        comparison.preambleMetadata !== 'title-matched' ||
+        comparison.nativeBodyParagraphs !== 7 || comparison.nativeStatusBlankLines !== 1 ||
+        comparison.formatMarkerCount !== 4 ||
+        comparison.remainingUnexplained.scanned !== 0 || comparison.remainingUnexplained.native !== 0 ||
+        (globalThis.cycle17NativeCopy &&
+          (comparison.nativeLength !== 685 || comparison.nativeNonWhitespace !== 660 ||
+           comparison.explainedNonWhitespace !== 31 ||
+           comparison.formatMarkers.map(marker => marker.nonWhitespaceChars).join(',') !== '10,6,15')) ||
+        JSON.stringify(diagnostic).includes(title) ||
+        JSON.stringify(diagnostic).includes('喀噠')) throw Error('Automatic source or diagnostic incorrect');
+    // Replay a complete 35-pair conversation with the real event positions.
+    input.value = '';
+    const timeline = [turn(heading, '<div>這是完整的輪迴開場。</div>')];
+    const messageObjects = [];
+    const markerMarkup = (content, id, raw) => {
+      messageObjects.push({id,content:raw});
+      return '<div data-selection-copy-message-id="'+id+'"><div class="w-full space-y-2">'+content+'</div></div>';
+    };
+    const date = '｜2026年8月22日｜';
+    const location = '｜📍基地｜';
+    const eventTexts = new Map();
+    for (let i=0;i<35;i++) {
+      if ([11,46].includes(timeline.length)) {
+        const index=timeline.length;
+        const status=date+'\n｜🕒01:00｜';
+        const title=index===11?'測試事件效果':'《測試世界》:';
+        const body=index===11?'傳送梯「叮」一聲開啟。\n\n他說「……怎麼回事。」接著查看。':
+          '事件正文。\n\n事件的下一段。';
+        const expectedEvent=title+'\n'+status+'\n'+location+'\n\n'+body;
+        const templateMarkup=index===11
+          ?span('font-mono text-xs',status)+span(prose,location)+span(prose,'傳送梯')+
+            span(gray,'叮')+span(prose,'一聲開啟。')+span(prose,'他說')+
+            span(gray,'……怎麼回事。')+span(prose,'接著查看。')
+          :span('font-mono text-xs',status+'\n'+location+'\n\n'+body);
+        const rawEvent=index===11
+          ?['{{測試前置模板}}',fence,title,fence,status,location,'',body].join('\n')
+          :['{{below context is a template}}',title+'{{補充模板}}',fence,status,location,fence,'',body].join('\n');
+        timeline.push(turn(eventHeading,markerMarkup('<div>'+title+'</div>'+templateMarkup,'event-'+index,rawEvent)));
+        eventTexts.set(index,expectedEvent);
+      }
+      timeline.push('<div>玩家說第 '+i+' 則。<i>低聲。</i></div>');
+      const status=date+'\n｜🕒01:'+String(i).padStart(2,'0')+'｜';
+      const special={
+        2:'【終端】\n戰術終端群組訊息',
+        3:'【基甫納熱搜】\n今日排行榜',
+        33:'【終端】\n戰術終端任務通知'
+      }[i];
+      const one=special??'第 '+i+' 則 AI 敘事。',two='下一段。';
+      const id='reply-'+i;
+      const raw=status+'\n'+(special?fence+'\n'+one+'\n'+fence:one)+'\n\n'+two;
+      timeline.push(turn(heading,markerMarkup(
+        span('font-mono text-xs',status)+span(special?'font-mono text-xs':prose,one)+span(prose,two),id,raw)));
+    }
+    feed.innerHTML=timeline.join('');
+    for (const child of feed.children) child.style.cssText='position:absolute;top:0';
+    [...feed.querySelectorAll('[data-selection-copy-message-id]')].forEach((node,i)=>{
+      node.__reactFiber$fixture={memoizedProps:{message:messageObjects[i]}};
+    });
+    const whole=await scanAndDownload();
+    if(whole.messages.length!==70||whole.rawRows!==73||whole.validation.pairs!==35||
+       whole.events.map(ev=>ev.scanIndex).join(',')!=='11,46'||
+       whole.events.some(ev=>ev.status!=='accepted'||ev.text!==eventTexts.get(ev.scanIndex)||
+        ev.gameTime!=='2026-08-21T17:00:00.000Z')||
+       new Set([...whole.messages,...whole.events].map(row=>row.id)).size!==72)
+      throw Error('Complete scan counts, identities, or event formatting regressed');
+    const audit=whole.paragraphAudit;
+    if(audit.ai.total!==35||audit.ai.applied!==35||audit.ai.fallback!==0||
+       whole.messages.filter(row=>[6,8,70].includes(row.scanIndex)).some(row=>row.text.includes(fence))||
+       audit.events.total!==2||audit.events.applied!==1||audit.events.matchedWithoutChange!==1||
+       !audit.events.rows[1].comparison.formatMarkers.some(marker=>marker.kind==='whif-event-title-companion-template')||
+       whole.messages[0].text!=='玩家說第 0 則。*低聲。*')throw Error('Per-row native-source audit failed');
+    // Only change original whitespace in the first reply, then rescan.
+    messageObjects.find(msg=>msg.id==='reply-0').content=messageObjects.find(msg=>msg.id==='reply-0').content.replace('\n\n','');
+    const duplicate=feed.querySelector('[data-selection-copy-message-id="reply-4"]');
+    duplicate.setAttribute('data-selection-copy-message-id','reply-5');
+    duplicate.__reactFiber$fixture.memoizedProps.message.id='reply-5';
+    for(const i of [2,3,33])messageObjects.find(msg=>msg.id==='reply-'+i).content += '只有原生候選才有的文字。';
+    delete feed.querySelector('[data-selection-copy-message-id="event-11"]').__reactFiber$fixture;
+    messageObjects.find(msg=>msg.id==='event-46').content='{{待核對模板}}\n'+eventTexts.get(46)+'候選另有文字。';
+    const rescanned=await scanAndDownload();
+    if(rescanned.messages[1].text===whole.messages[1].text||
+       rescanned.messages.map(row=>row.id).join(',')!==whole.messages.map(row=>row.id).join(',')||
+       rescanned.events.map(row=>row.id).join(',')!==whole.events.map(row=>row.id).join(','))
+      throw Error('Formatting-only update changed exported identity');
+    if(!rescanned.events[0].text.includes(date+'\n｜🕒01:00｜\n'+location)||
+       !rescanned.events[0].text.includes('傳送梯「叮」一聲開啟')||
+       !rescanned.events[0].text.includes('「……怎麼回事。」')||
+       rescanned.paragraphAudit.events.rows[0].reason!=='message-content-unavailable'||
+       rescanned.events[1].text!==eventTexts.get(46)||
+       rescanned.paragraphAudit.events.rows[1].comparison.eventStructure.nativePrefixTemplates[0]?.kind!=='unclassified-template')
+      throw Error('Event fallback regressed: '+JSON.stringify({
+        first:rescanned.events[0].text,audit:rescanned.paragraphAudit.events.rows,
+        secondUnchanged:rescanned.events[1].text===eventTexts.get(46)
+      }));
+    const failed=rescanned.paragraphAudit.ai.rows.filter(row=>row.reason==='content-mismatch');
+    if(failed.length!==3||failed.some(row=>!row.sourceIdMatched||!row.candidate.matchedVisibleMessageId||
+       !row.comparison.firstDifference||!row.comparison.features)||
+       !failed[0].comparison.features.native.labels.groupMessage||
+       !failed[1].comparison.features.native.labels.trending||
+       !failed[2].comparison.features.native.labels.taskNotification||
+       rescanned.paragraphAudit.ai.rows.filter(row=>row.reason==='duplicate-native-source-id').length!==2)
+      throw Error('Full scan did not retain per-row mismatch details');
+    const options=[...document.querySelector('#gal-scan-difference-row').options];
+    if(!options.find(option=>option.value==='46')?.textContent.includes('01:00:00'))
+      throw Error('Difference picker missing local game time with seconds');
+    // Put the complete fixture in a scrollable viewport so the next scan
+    // exercises the configured step and the real scanner wait.
+    feed.style.cssText='position:relative;width:820px;height:400px;overflow:auto';
+    const spacer=document.createElement('div');
+    spacer.style.height='670px';
+    feed.append(spacer);
+    let firstStep;
+    observeDelay=delay=>{
+      if(!firstStep&&delay>=700&&delay<1000)firstStep={delay,top:feed.scrollTop};
+    };
+    const timed=await scanAndDownload();
+    observeDelay=undefined;
+    if(firstStep?.delay!==770||firstStep.top!==124||timed.rawRows!==73)
+      throw Error('Expected 31% scroll step and 420ms + 350ms waits: '+JSON.stringify(firstStep));
+    output.textContent = 'PASS 35 pairs, events 11/46, stable IDs, preview safeguards and 31% / 420ms + 350ms';
+  } catch (error) {
+    output.textContent = 'FAIL ' + error.message;
+  }
+})();
+</script>

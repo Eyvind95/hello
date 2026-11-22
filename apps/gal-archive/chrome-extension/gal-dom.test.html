@@ -9,6 +9,9 @@
   .status { display: table; }
   .name { display: inline-block; color: purple; }
   .italic { font-style: italic; }
+  .TemplatedText { display: block; white-space: pre-wrap; }
+  .font-mono.text-xs { background: #1C1C27; }
+  .bg-bg-neutral-subtle { background: #2A2A34; }
 </style>
 <main id="fixture"></main>
 <pre id="result">RUNNING</pre>
@@ -61,6 +64,17 @@ verify('alternating content', 'ai',
   '<p>普通敘述</p><span class="message-bubble-text gray block">第一段對話</span>' +
   '<p>普通敘述</p><span class="message-bubble-text gray block">第二段對話</span>',
   '普通敘述\n「第一段對話」\n普通敘述\n「第二段對話」');
+// Synthetic markup for the reported copy-text excerpt. The live DOM
+// of cycle 17 is a separate acceptance check.
+verify('visually block gray quote in a source paragraph', 'ai',
+  '<p>隨著右側房門<span class="message-bubble-text gray block">喀噠</span>一聲合上</p><p>下一段。</p>',
+  '隨著右側房門「喀噠」一聲合上\n\n下一段。');
+verify('paragraph quote with native punctuation', 'ai',
+  '<p>他說：<span class="message-bubble-text gray block">「原文。」</span>然後離開。</p>',
+  '他說：「原文。」然後離開。');
+verify('player block quote retains visual separation', 'me',
+  '<p>玩家敘述<span class="player block">玩家引文。</span>玩家繼續。</p>',
+  '玩家敘述\n「玩家引文。」\n玩家繼續。');
 verify('explicit blank line preserved', 'ai',
   '敘述<br><br><span class="message-bubble-text gray block">對話</span>', '敘述\n\n「對話」');
 verify('inline styled names and ordinary span', 'ai',
@@ -97,5 +111,46 @@ equal('game time', validated.messages[0].gameTime, '2026-08-22T01:30:00.000Z');
 equal('event role, acceptance and time', validated.events.map(row =>
   [row.role, row.scanIndex, row.status, row.gameTime].join()).join(), 'ai,3,accepted,2026-08-22T01:35:00.000Z');
 equal('out-of-order time warns without reordering', validated.warnings.length, 1);
+
+// Rebuild the reported DOM structure. Exact fragment text and whitespace
+// for the full case come from the native copy, not a saved DOM snapshot.
+function nativeTemplate(status, prose, dropBlankLines = false) {
+  const root = document.createElement('div');
+  root.className = 'w-full space-y-2';
+  function append(classes, value) {
+    if (!value) return;
+    const child = document.createElement('span');
+    child.className = 'message-bubble-text TemplatedText ' + classes;
+    child.textContent = value;
+    root.append(child);
+  }
+  append('font-mono text-xs', status);
+  let offset = 0;
+  const narration = value => append('text-text-neutral-subtle',
+    dropBlankLines ? value.replace(/\n{2,}/g, '') : value);
+  for (const quote of prose.matchAll(/「([^」]*)」/g)) {
+    narration(prose.slice(offset, quote.index));
+    append('bg-bg-neutral-subtle rounded-lg p-3 rounded-es-none', quote[1]);
+    offset = quote.index + quote[0].length;
+  }
+  narration(prose.slice(offset));
+  return root;
+}
+const nativeStatus = '｜2026年8月22日｜09:30｜';
+const nativeProse = '隨著右側房門「喀噠」一聲合上。\n\n「另一句。」';
+const template = nativeTemplate(nativeStatus, nativeProse);
+verify('reported visual template', 'ai', template.outerHTML, nativeStatus + '\n' + nativeProse);
+verify('missing text-node breaks cannot be reconstructed', 'ai',
+  nativeTemplate(nativeStatus, nativeProse, true).outerHTML,
+  nativeStatus + '\n' + nativeProse.replace('\n\n', ''));
+if (globalThis.cycle17NativeCopy) {
+  const [status, prose] = cycle17NativeCopy
+    .match(/^\x60{3}\n([\s\S]+?)\n\x60{3}\n([\s\S]+)\n\{\{img::[^}]+\}\}$/).slice(1);
+  const cycle17 = nativeTemplate(status, prose);
+  equal('cycle 17 direct elements', cycle17.children.length, 19);
+  equal('cycle 17 narration fragments', cycle17.querySelectorAll('.text-text-neutral-subtle').length, 9);
+  equal('cycle 17 gray cards', cycle17.querySelectorAll('.bg-bg-neutral-subtle').length, 9);
+  verify('cycle 17 reported template, exact status and prose', 'ai', cycle17.outerHTML, status + '\n' + prose);
+}
 result.textContent = failures.length ? failures.join('\n') : 'PASS ' + checks + ' DOM assertions';
 </script>

@@ -111,7 +111,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.39</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.7.9.zip" download title="下載雙掃描助手 V0.7.9：辨識 Gal AI 灰底與玩家紫底引用框，保留區塊與行內排版">🧩 雙掃描助手 V0.7.9</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.39</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.0.zip" download title="下載雙掃描助手 V0.8.0：辨識 Gal AI 灰底與玩家紫底引用框，保留區塊與行內排版">🧩 雙掃描助手 V0.8.0</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">匯出備份</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><div id="cycles"></div></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -477,33 +477,90 @@ function galNativeBuildPlan(obj,r){
  const v=galNativeVerify(obj,r);
  if(v.fail.length)return {...v,ok:false};
  const updated=structuredClone(r);
+ const sourceKey=(row,event=false)=>row.sourceKind==='gal-ai-native'&&row.chatKey&&row.sourceEventId
+  ?JSON.stringify([row.chatKey,row.sourceEventId,row.sourcePartIndex??0,event?'event':row.role]):null;
+ const bySource=(rows,event=false)=>{
+  const index=new Map();
+  for(const row of rows){
+   const key=sourceKey(row,event);
+   if(key)index.set(key,index.has(key)?null:row);
+  }
+  return index;
+ };
+ if([bySource(v.messages),bySource(v.events,true)].some(index=>[...index.values()].includes(null))){
+  v.fail.push('原生來源識別重複，拒絕覆蓋');
+  return {...v,ok:false};
+ }
+ const contentKey=row=>galNativeText(row.text).replace(/[\s「」]/g,'');
+ const sameLegacySource=(a,b)=>a?.id&&a.gameTime===b.gameTime&&contentKey(a)===contentKey(b);
+ const mergeSource=(old,row)=>{
+  const merged={...old,...row,id:old.id};
+  // Source content is refreshed, while archive corrections and metadata
+  // belong to the existing record.
+  for(const key of ['sourceCreatedAt','sourceTimeOrigin','sourceTimePrecision',
+   'capturedAt','receivedAt','messageOrder','storyPlacement','images','manager']){
+   if(Object.hasOwn(old,key))merged[key]=old[key];
+  }
+  return merged;
+ };
+ const oldMessages=bySource(r.messages||[]);
+ let preservedMessages=0;
+ const messages=v.messages.map(row=>{
+  const old=oldMessages.get(sourceKey(row));
+  if(!sameLegacySource(old,row))return row;
+  preservedMessages++;
+  return mergeSource(old,row);
+ });
+ if(preservedMessages===messages.length&&messages.length===r.messages?.length){
+  const order=new Map(r.messages.map((row,index)=>[row.id,index]));
+  messages.sort((a,b)=>order.get(a.id)-order.get(b.id));
+ }
  // Gal AI source wins over formerly edited ChatGPT-transcribed story text.
  // Keep non-authoritative tabs untouched; carry over user-chosen accepted status on a unique event match.
  const used=new Set(),oldEvents=r.events||[];
+ const oldEventSources=bySource(oldEvents,true);
  let matched=0,acceptedUnmatched=0;
  const normalized=x=>galNativeText(x).replace(/\s+/g,'').replace(/[：:;；，,。!！]/g,'');
  const mapped=v.events.map(ev=>{
-  const candidates=oldEvents.filter(o=>!used.has(o.id)&&
+  const prior=oldEventSources.get(sourceKey(ev,true));
+  const candidates=sameLegacySource(prior,ev)&&!used.has(prior.id)?[prior]:oldEvents.filter(o=>!used.has(o.id)&&!sourceKey(o,true)&&
     (normalized(o.text)===normalized(ev.text)||
      (normalized(o.title).length>12&&normalized(o.title)===normalized(ev.title))));
   if(candidates.length!==1)return ev;
   const old=candidates[0];used.add(old.id);matched++;
-  return {...ev,id:old.id,role:'ai',status:'accepted',
-    receivedAt:null}; // original Gal AI source replaces GPT status/time guesses
+  return {...mergeSource(old,ev),title:old.title||ev.title,role:'ai',status:'accepted'};
  });
  acceptedUnmatched=oldEvents.filter(e=>e.status==='accepted'&&!used.has(e.id)).length;
+ if(matched===mapped.length&&mapped.length===oldEvents.length){
+  const order=new Map(oldEvents.map((row,index)=>[row.id,index]));
+  mapped.sort((a,b)=>order.get(a.id)-order.get(b.id));
+ }
+ const ids=[...messages,...mapped].map(row=>row.id);
+ if(new Set(ids).size!==ids.length){
+  v.fail.push('沿用舊識別後出現重複 ID，拒絕覆蓋');
+  return {...v,ok:false};
+ }
  // Preserve original native sequence independently of overlapping messageOrder.
  // Pin each event before the next scanned conversation bubble.
  const slots=new Map();
+ const messageIds=new Set(messages.map(row=>row.id));
  for(const ev of mapped){
+  const slot=ev.storyPlacement;
+  if(slot&&(slot.beforeId===null||messageIds.has(slot.beforeId)))
+   slots.set(slot.beforeId,Math.max(slots.get(slot.beforeId)||0,(Number.isInteger(slot.sequence)?slot.sequence:0)+1));
+ }
+ for(const ev of mapped){
+   const slot=ev.storyPlacement;
+   if(slot&&(slot.beforeId===null||messageIds.has(slot.beforeId)))continue;
    if(!Number.isInteger(ev.scanIndex))continue;
-   const next=v.messages.find(m=>Number.isInteger(m.scanIndex)&&m.scanIndex>ev.scanIndex);
+   const next=messages.reduce((best,m)=>Number.isInteger(m.scanIndex)&&m.scanIndex>ev.scanIndex&&
+    (!best||m.scanIndex<best.scanIndex)?m:best,null);
    const beforeId=next?.id||null,sequence=slots.get(beforeId)||0;
    ev.storyPlacement={beforeId,sequence};
    slots.set(beforeId,sequence+1);
  }
  updated.opening=v.opening;
- updated.messages=v.messages;
+ updated.messages=messages;
  updated.events=mapped;
  // The only fields permitted to change are exactly the three user-authorized sections.
  const untouched=Object.keys(r).every(k=>['opening','messages','events'].includes(k)
@@ -1872,6 +1929,15 @@ function normalizeBackupCycle(source){
   return {item};
 }
 function analyzeBackup(data){
+  if(data?.format==='gal-ai-restore-backup'){
+    const cycle=data.cycle;
+    if(data.version!==1||typeof cycle?.id!=='string'||!cycle.id.trim())
+      throw Error('Gal AI 覆蓋前備份缺少有效輪迴 ID 或版本');
+    const {error}=normalizeBackupCycle(cycle);
+    if(error)throw Error(error);
+    // Restore the original record, including event roles and stable IDs.
+    return {valid:[structuredClone(cycle)],worlds:[],errors:[]};
+  }
   if(!data||data.format!=='gal-ai-archive'||!Array.isArray(data.cycles))throw Error('檔案格式不符合輪迴檔案館 JSON 備份');
   const valid=[],errors=[];
   data.cycles.forEach((raw,i)=>{const result=normalizeBackupCycle(raw);if(result.error)errors.push(`第 ${i+1} 筆：${result.error}`);else valid.push(result.item)});
