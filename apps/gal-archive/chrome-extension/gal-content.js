@@ -1,4 +1,4 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.0 */
+/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.7.1 */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
@@ -6,7 +6,7 @@ const core=globalThis.GalArchiveCore;
 if(!core)throw Error('Gal AI scanner requires gal-core.js');
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.20,MAX_SCROLL_PX=350,WAIT_MS=400,STABLE_MS=350;
-let busy=false,cancelled=false,lastResult=null,target=null,selectedRoots=null;
+let busy=false,cancelled=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const $=id=>document.getElementById(id);
 function mount(){
@@ -17,12 +17,19 @@ function mount(){
   '#'+PANEL+' button:disabled{opacity:.5}#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.0</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.7.1</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
- '<button id="gal-scan-cancel">停止掃描</button><button id="gal-scan-close">關閉</button></div>';
+ '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button></div>'+
+ '<div><button id="gal-scan-diagnostics">📋 複製版面診斷</button><button id="gal-scan-cancel">停止掃描</button><button id="gal-scan-close">關閉</button></div>';
  document.documentElement.append(p);
  $('gal-scan-cancel').onclick=()=>{cancelled=true;status('已要求停止。未下載、未修改任何歸檔資料。')};
+ $('gal-scan-pick').onclick=()=>chooseOpening();
+ $('gal-scan-retry').onclick=()=>{if(!busy&&target)scan(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
+ $('gal-scan-diagnostics').onclick=()=>{const report=diagnostic||inspect();
+   const sanitized=JSON.stringify(report,null,2);
+   if(navigator.clipboard?.writeText){navigator.clipboard.writeText(sanitized).then(()=>status('已複製版面診斷（僅 DOM 類別／數量，不包含對話原文）：\n'+sanitized)).catch(()=>status(sanitized))}
+   else status(sanitized)};
  $('gal-scan-close').onclick=()=>{if(busy)cancelled=true;p.remove();css.remove()};
  $('gal-scan-export').onclick=()=>{if(!lastResult||!lastResult.validation?.ok)return;
    const a=document.createElement('a');
@@ -35,53 +42,167 @@ function mount(){
  return p;
 }
 function status(msg){const n=$('gal-scan-info');if(n)n.textContent=String(msg);}
+
+function isDocumentRoot(el){return el===document.scrollingElement||el===document.documentElement||el===document.body}
+function scrollCandidates(){
+ const list=[...document.querySelectorAll('main,[role="main"],[role="log"],[role="feed"],section,article,div')];
+ const roots=list.filter(el=>{
+  if(el.closest('#'+PANEL))return false;
+  const r=el.getBoundingClientRect(),st=getComputedStyle(el);
+  return r.height>220&&r.width>250&&r.bottom>40&&r.top<innerHeight
+    &&el.scrollHeight-el.clientHeight>130&&/(?:auto|scroll|overlay)/.test(st.overflowY);
+ });
+ roots.sort((a,b)=>{
+  const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
+  return (br.width>=innerWidth*.55?100:0)-(ar.width>=innerWidth*.55?100:0)
+   +(br.height-ar.height)*.5
+   +(b.scrollHeight-b.clientHeight-a.scrollHeight+a.clientHeight)*.001;
+ });
+ return roots;
+}
 function scroller(){
- const el=[...document.querySelectorAll('main,section,article,div,[role="log"]')].filter(x=>{
-  if(x.closest('#'+PANEL))return false;
-  const st=getComputedStyle(x),r=x.getBoundingClientRect();
-  return r.height>220&&r.width>=Math.max(320,innerWidth*.46)&&r.bottom>30&&r.top<innerHeight
-    &&x.scrollHeight-x.clientHeight>180&&/auto|scroll/.test(st.overflowY);
- }).sort((a,b)=>(b.clientHeight-b.scrollHeight*.03)-(a.clientHeight-a.scrollHeight*.03))[0];
- return el||document.scrollingElement||document.documentElement;
+ if(calibration?.root?.isConnected)return calibration.root;
+ return scrollCandidates()[0]||document.scrollingElement||document.documentElement;
 }
 const rowSelectors=[
- '[data-message-id]','[data-testid="message"]','[data-testid*="message-row"]',
+ '[data-message-id]','[data-testid="message"]','[data-testid*="message"]',
  '[data-message-role]','[data-role="user"]','[data-role="assistant"]',
+ '[role="article"]','[role="listitem"]',
  '.chat-message','.message-item','.message-row','.chat-item','.chat-bubble-row',
- '[class*="message-wrapper"]','[class*="message-container"]','[class*="chat-message"]'
+ '[class*="message"]','[class*="Message"]','[class*="bubble"]','[class*="Bubble"]',
+ '[class*="reply"]','[class*="Reply"]','[class*="response"]','[class*="Response"]',
+ '[class*="chat-item"]','[class*="chatItem"]','[class*="turn-item"]'
 ];
+function isVisible(node,root){
+ if(!node||!node.isConnected||node.closest('#'+PANEL))return false;
+ const r=node.getBoundingClientRect(),container=isDocumentRoot(root)?
+  {top:0,bottom:innerHeight,left:0,right:innerWidth}:root.getBoundingClientRect();
+ if(r.width<35||r.height<10||r.bottom<container.top-50||r.top>container.bottom+50
+   ||r.right<container.left||r.left>container.right)return false;
+ const st=getComputedStyle(node);
+ return st.display!=='none'&&st.visibility!=='hidden'&&st.opacity!=='0';
+}
 function roleOf(node,root){
- const str=[node.getAttribute('data-role'),node.getAttribute('data-message-role'),
-   node.getAttribute('data-testid'),node.className?.baseVal||node.className||''].join(' ').toLowerCase();
- if(/(^|[\s_-])(user|human|player|self|outgoing|mine|my-message)([\s_-]|$)/.test(str))return 'me';
- if(/(^|[\s_-])(assistant|incoming|bot|ai-message)([\s_-]|$)/.test(str))return 'ai';
- const st=getComputedStyle(node),bg=st.backgroundColor||'';
- const rgb=bg.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
- if(rgb){const [red,green,blue]=rgb.slice(1).map(Number);
-  if(red>55&&blue>red*1.20&&blue>green*1.18)return 'me';}
- const r=node.getBoundingClientRect(),area=root.getBoundingClientRect(),mid=area.left+area.width/2;
- if(r.width<area.width*.73&&r.left>mid-area.width*.03)return 'me';
- if(r.left<mid&&r.right<mid+area.width*.39)return 'ai';
+ const classes=[node.getAttribute('data-role'),node.getAttribute('data-message-role'),node.getAttribute('data-testid'),
+  node.className?.baseVal||node.className||'',node.getAttribute('style')||''].join(' ').toLowerCase();
+ if(/\b(user|human|player|outgoing|mine|my-message|is-user|from-user)\b/.test(classes))return 'me';
+ if(/\b(assistant|incoming|bot|ai-message|is-bot|from-ai)\b/.test(classes))return 'ai';
+ const style=getComputedStyle(node),bg=style.backgroundColor||'';
+ const color=bg.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+ if(color){const [r,g,b]=color.slice(1).map(Number);
+  if(r>45&&b>r*1.15&&b>g*1.15)return 'me'}
+ const rect=node.getBoundingClientRect();
+ const container=isDocumentRoot(root)?{left:0,right:innerWidth,width:innerWidth}:root.getBoundingClientRect();
+ const relativeLeft=(rect.left-container.left)/(container.width||1);
+ if(relativeLeft>.52&&rect.width<container.width*.81)return 'me';
+ if(relativeLeft<.33)return 'ai';
+ const align=style.alignSelf||style.justifySelf||'';
+ if(/end|right/.test(align))return 'me';
+ if(/start|left/.test(align))return 'ai';
  return null;
 }
-function candidateRows(root){
- const rootRect=(root===document.scrollingElement||root===document.documentElement)
-   ?{top:0,bottom:innerHeight}:root.getBoundingClientRect();
- const candidates=[...root.querySelectorAll(rowSelectors.join(','))].filter(n=>{
-  const r=n.getBoundingClientRect();
-  if(!r.width||!r.height||r.height<18||n.closest('#'+PANEL))return false;
-  if(r.bottom<rootRect.top-90||r.top>rootRect.bottom+90)return false;
-  if(n.matches('button,[role="toolbar"],textarea,input'))return false;
-  const content=core.clean(n.innerText||'');
-  return content.length>=8&&content.length<=35000;
+function genericRows(root){
+ // Scan generic *blocks* rather than the old site-specific message classes.
+ // Select block containers with enough readable text; choose leaf-ish message wrappers.
+ const all=[...root.querySelectorAll('article,li,[role="listitem"],[role="article"],[class*="bubble"],[class*="Bubble"],p,div,section')];
+ const pool=all.filter(node=>{
+  if(!isVisible(node,root)||node.matches('button,input,textarea,[role="toolbar"],nav,header,footer'))return false;
+  const text=core.clean(node.innerText||'');
+  if(text.length<8||text.length>25000)return false;
+  if(!roleOf(node,root))return false;
+  const bigChildren=[...node.children].filter(c=>core.clean(c.innerText||'').length>8&&isVisible(c,root));
+  // Reject parents that clearly contain several independent conversation bubbles.
+  return bigChildren.length<3||node.matches('article,li,[role="article"],[role="listitem"]');
  });
- // Trim nested wrappers; choose the deepest actual message element, not a parent containing 2 bubbles.
- const dedup=candidates.filter(n=>!candidates.some(ch=>ch!==n&&n.contains(ch)));
- const pool=dedup.length?dedup:candidates;
- const out=pool.map(node=>({node,role:roleOf(node,root),rect:node.getBoundingClientRect()}))
-   .filter(x=>x.role!==null);
- out.sort((a,b)=>a.rect.top-b.rect.top||a.rect.left-b.rect.left);
- return out;
+ return pool.filter(node=>!pool.some(child=>child!==node&&node.contains(child)));
+}
+function calibratedRows(root){
+ if(!calibration?.node?.isConnected)return [];
+ const parent=calibration.node.parentElement;
+ if(!parent)return [];
+ const candidates=[...parent.children].filter(node=>isVisible(node,root)&&node.tagName===calibration.node.tagName
+  &&core.clean(node.innerText||'').length>=8);
+ return candidates.length?[...candidates]:[calibration.node];
+}
+function candidateRows(root){
+ const raw=[...root.querySelectorAll(rowSelectors.join(','))].filter(n=>{
+  if(!isVisible(n,root)||n.matches('button,[role="toolbar"],textarea,input'))return false;
+  const text=core.clean(n.innerText||'');
+  return text.length>=8&&text.length<=25000;
+ });
+ const byRole=raw.filter(n=>roleOf(n,root));
+ let out=byRole.filter(n=>!byRole.some(ch=>ch!==n&&n.contains(ch)));
+ if(!out.length)out=genericRows(root);
+ if(calibration?.node?.isConnected){
+  const picked=calibratedRows(root);
+  const merged=new Set([...picked,...out]);
+  out=[...merged].filter(n=>!out.some(ch=>ch!==n&&n.contains(ch)&&ch!==calibration.node));
+ }
+ // Reject UI controls and rows whose text is mostly tab/tool chrome.
+ out=out.filter(n=>!n.closest('nav,header,footer,[role="toolbar"]')&&
+  !/^(?:複製|設定|BL故事|發送|新增書籤|前往最新)/.test(core.clean(n.innerText||'')));
+ return out.map(node=>({node,role:node===calibration?.node?'ai':roleOf(node,root),rect:node.getBoundingClientRect()}))
+  .filter(x=>x.role).sort((a,b)=>a.rect.top-b.rect.top||a.rect.left-b.rect.left);
+}
+function inspect(){
+ const root=scroller(),r=root.getBoundingClientRect();
+ const candidates=scrollCandidates();
+ const common=[...root.querySelectorAll(rowSelectors.join(','))];
+ return {
+  version:'0.7.1',pageOrigin:location.origin,
+  root:{tag:root.tagName,className:String(root.className||'').slice(0,150),
+    scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
+    width:Math.round(r.width),height:Math.round(r.height)},
+  scrollableCount:candidates.length,
+  scrollableSample:candidates.slice(0,5).map(n=>({tag:n.tagName,cls:String(n.className||'').slice(0,90),
+    sh:n.scrollHeight,ch:n.clientHeight,w:Math.round(n.getBoundingClientRect().width)})),
+  knownSelectors:common.length,
+  genericCandidates:genericRows(root).length,
+  recognizedRows:candidateRows(root).length,
+  calibrated:!!calibration?.node?.isConnected,
+  iframeCount:document.querySelectorAll('iframe').length
+ };
+}
+function openingNode(target,root){
+ // Select an ancestor that looks like one message, preferring containers
+ // with comparable sibling messages, not a single paragraph.
+ const ancestors=[];
+ for(let n=target;n&&n!==root&&n!==document.body&&ancestors.length<12;n=n.parentElement){
+  if(!isVisible(n,root))continue;
+  const t=core.clean(n.innerText||''),r=n.getBoundingClientRect();
+  if(t.length<8||t.length>25000||r.width<110)continue;
+  const parent=n.parentElement;
+  const siblings=parent?[...parent.children].filter(x=>x!==n&&x.tagName===n.tagName
+    &&core.clean(x.innerText||'').length>=8):[];
+  const semantic=/message|bubble|reply|chat|turn|response/i.test(String(n.className||''));
+  const score=(siblings.length?28:0)+(semantic?14:0)+(r.width>250?3:0)
+    +(r.height>55?5:0)+Math.min(t.length/1000,6)
+    -(parent===document.body?60:0);
+  ancestors.push({node:n,score,siblings:siblings.length});
+ }
+ ancestors.sort((a,b)=>b.score-a.score);
+ return ancestors[0]?.node||null;
+}
+function chooseOpening(){
+ if(busy){status('先停止正在執行的掃描，才能校準');return}
+ if(picking){status('目前正在等待你點選左側開場訊息');return}
+ picking=true;status('🎯 請在 Gal AI 頁面直接點選第一則「左側、沒有時間的輪迴開場」文字。\\n不會送出訊息，也不會立即覆蓋資料。');
+ const listener=ev=>{
+  if(ev.target.closest('#'+PANEL))return;
+  ev.preventDefault();ev.stopPropagation();ev.stopImmediatePropagation();
+  document.removeEventListener('click',listener,true);picking=false;
+  const nearest=ev.target.closest('main,article,[role="log"],div,section,p')||ev.target;
+  const root=(()=>{let n=nearest;while(n&&n!==document.body){const st=getComputedStyle(n);
+   if(n.scrollHeight-n.clientHeight>140&&/auto|scroll|overlay/.test(st.overflowY))return n;
+   n=n.parentElement}return scroller()})();
+  const node=openingNode(ev.target,root);
+  if(!node){status('這個位置無法識別訊息文字，請改點左側開場的正文');return}
+  calibration={node,root};
+  diagnostic=inspect();
+  status('已校準開場候選：'+node.tagName+'，文字 '+core.clean(node.innerText||'').length+
+   ' 字；可見同層候選 '+calibratedRows(root).length+' 則。\\n按「🔁 重新掃描」測試；若仍失敗，按「複製版面診斷」。');
+ };
+ document.addEventListener('click',listener,true);
 }
 function messageText(node){
  // Prefer the rendered message body; remove menu/action chrome from copy.
@@ -157,7 +278,8 @@ async function scan(profile){
  let bottomFrames=0,stepCount=0,failure='';
  try {
   const first=snapshot();
-  if(!first.rows.length)throw Error('目前頁面沒有找到可靠的訊息容器。此版本不猜測訊息，以免覆蓋正史；請保留此畫面供辨識版面。');
+  diagnostic=inspect();
+  if(!first.rows.length){diagnostic=inspect();throw Error('目前找不到可辨識的訊息泡泡。請按「🎯 點選開場校準」選取左側第一則正文，再按「🔁 重新掃描」；若仍失敗，按「📋 複製版面診斷」。已辨識候選：'+diagnostic.recognizedRows+'。')}
   if(first.rows[0].role!=='ai'||core.parseGameTime(first.rows[0].text))
    throw Error('目前畫面第一則不是「左側無時間的開場」。請先捲到輪迴開場，從那裡開始，不能用中途片段覆蓋全部正史。');
   while(!cancelled&&stepCount<5000){
@@ -198,7 +320,7 @@ async function scan(profile){
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:core.version,busy,hasResult:!!lastResult});return false}
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:'0.7.1',busy,hasResult:!!lastResult});return false}
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
   const p=msg.profile||{};
@@ -211,5 +333,5 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:core.version};
+globalThis.GalArchivePageScanner={scan,version:'0.7.1'};
 })();
