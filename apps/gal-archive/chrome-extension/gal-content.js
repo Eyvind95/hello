@@ -139,12 +139,16 @@ function candidateRows(root){
   return text.length>=8&&text.length<=25000;
  });
  const byRole=raw.filter(n=>roleOf(n,root));
- let out=byRole.filter(n=>!byRole.some(ch=>ch!==n&&n.contains(ch)));
+ const groupable=byRole.filter(n=>{
+  const role=roleOf(n,root);
+  return !byRole.some(ch=>ch!==n&&n.contains(ch)&&roleOf(ch,root)!==role);
+ });
+ let out=groupable.filter(n=>!groupable.some(parent=>parent!==n&&parent.contains(n)));
  if(!out.length)out=genericRows(root);
  if(calibration?.node?.isConnected){
   const picked=calibratedRows(root);
   const merged=new Set([...picked,...out]);
-  out=[...merged].filter(n=>!out.some(ch=>ch!==n&&n.contains(ch)&&ch!==calibration.node));
+  out=[...merged].filter(n=>!picked.some(p=>p!==n&&p.contains(n)));
  }
  // Reject UI controls and rows whose text is mostly tab/tool chrome.
  out=out.filter(n=>!n.closest('nav,header,footer,[role="toolbar"]')&&
@@ -221,11 +225,14 @@ function messageText(node){
 }
 function snapshot(){
  const root=scroller(),rs=candidateRows(root);
- return {root,rows:rs.map(({node,role,rect})=>{
+ const rows=rs.map(({node,role,rect})=>{
   const text=messageText(node);
   const id=node.getAttribute('data-message-id')||node.getAttribute('data-id')||node.getAttribute('data-testid')||'';
-  return {role,text,id,top:rect.top};
- }).filter(r=>r.text.length>5),method:rs.length?'message-dom':'no-message-container'};
+  return {role,text,id,top:rect.top,node};
+ }).filter(r=>r.text.length>5);
+ const start=calibration?.node?.isConnected?rows.findIndex(r=>r.node===calibration.node):-1;
+ return {root,rows:(start>=0?rows.slice(start):rows).map(({node,...rest})=>rest),
+   method:rs.length?'message-dom':'no-message-container'};
 }
 /* Repeated literal text is common ("嗯", "..."). Never globally deduplicate
  * by text: merge overlapping windows as an ORDERED sequence instead. */
