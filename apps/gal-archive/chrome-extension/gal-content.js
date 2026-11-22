@@ -227,7 +227,9 @@ function snapshot(fixedRoot=null){
  const root=fixedRoot?.isConnected?fixedRoot:scroller(),rs=candidateRows(root);
  const rows=rs.map(({node,role,rect})=>{
   const text=messageText(node);
-  const id=node.getAttribute('data-message-id')||node.getAttribute('data-id')||node.getAttribute('data-testid')||'';
+  // data-testid is usually shared by EVERY bubble (e.g. "message"), not a unique ID.
+  // Comparing it as identity could silently skip a different message of the same role.
+  const id=node.getAttribute('data-message-id')||node.getAttribute('data-id')||'';
   return {role,text,id,top:rect.top,node};
  }).filter(r=>r.text.length>5);
  const start=calibration?.node?.isConnected?rows.findIndex(r=>r.node===calibration.node):-1;
