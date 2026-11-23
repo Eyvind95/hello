@@ -85,7 +85,7 @@ function viewFooter(){
 }
 function contentHeader(thread){
  return '<div class="sectionhead"><div><div class="sub">交接稿・'+escapeHTML(worldName(thread.worldId))+'</div><h2>'+escapeHTML(thread.title)+'</h2>'+
- '<div class="stat">'+escapeHTML((thread.fileCount||0)+' 份檔案／'+(thread.noteCount||0)+' 則備註／'+(thread.reviewCount||0)+' 則他人評語'+(thread.selfReviewCount?'／已有自評':''))+'</div></div>'+
+ '<div class="stat">'+escapeHTML((thread.fileCount||0)+' 份檔案／'+(thread.noteCount||0)+' 則備註／'+(thread.reviewCount||0)+(thread.selfReviewCount?'／已有自評':''))+'</div></div>'+
  '<div class="actions"><button type="button" class="btn small" data-ha-action="rename">✎ 改名稱</button><button type="button" class="btn small" data-ha-action="edit-author">設定撰寫者</button>'+
  '<button type="button" class="btn small" data-ha-action="backup-thread">下載此對話備份</button>'+
  '<button type="button" class="btn small danger" data-ha-action="delete-thread">刪除對話</button></div></div>'+
@@ -158,18 +158,25 @@ function renderFilesSection(entries){
   '<div class="actions topsp"><button type="button" class="btn primary" data-ha-action="note">加入備註</button></div>';
 }
 async function renderActive(w){
- const thread=activeThread(w);if(!thread)return false;
- const token=++state.renderToken,host=$('content');if(!host)return true;
- host.innerHTML=contentHeader(thread)+'<p class="note">正在載入交接檔案…</p>';
+ const thread=activeThread(w),shared=isSharedView(w);
+ if(!thread&&!shared)return false;
+ const token=++state.renderToken,host=$('content');
+ if(!host)return true;
+ host.innerHTML=thread?contentHeader(thread)+'<p class="note">正在載入交接檔案…</p>':'<p class="note">正在讀取共用評語…</p>';
  try{
-  const entries=await listEntries(thread.id);
+  const entries=thread?await listEntries(thread.id):[];
+  const reviews=state.view==='reviews'?await listWorldReviews(w):null;
   if(token!==state.renderToken||!isActive(w))return true;
   entries.sort((a,b)=>(a.order||0)-(b.order||0)||String(a.createdAt).localeCompare(String(b.createdAt)));
-  const body=state.view==='reviews'?renderReviewSection(entries):state.view==='self'?renderSelfSection(entries,thread):renderFilesSection(entries);
-  host.innerHTML=contentHeader(thread)+handoverTabBar()+body+
+  const body=state.view==='reviews'?renderReviewSection(reviews):state.view==='self'?renderSelfSection(entries,thread):renderFilesSection(entries);
+  const commonHeader='<div class="sectionhead"><div><div class="sub">交接稿・'+escapeHTML(worldName(w))+'</div><h2>💬 大家的評語（共用）</h2></div></div>';
+  host.innerHTML=(thread?contentHeader(thread)+handoverTabBar():commonHeader)+body+
    '<div class="divider"></div><button type="button" class="btn" data-ha-action="back">返回輪迴列表</button>'+
    '<p class="note" id="handoverStatus" role="status"></p>'+viewFooter();
- }catch(err){if(token===state.renderToken)host.innerHTML=contentHeader(thread)+'<p class="note">⛔ 交接稿讀取失敗：'+escapeHTML(err?.message||err)+'</p>'}
+ }catch(err){
+  if(token===state.renderToken)host.innerHTML=(thread?contentHeader(thread):'<h2>大家的評語</h2>')+
+   '<p class="note">⛔ 交接稿讀取失敗：'+escapeHTML(err?.message||err)+'</p>';
+ }
  return true;
 }
 function openThread(id,scroll=true){
