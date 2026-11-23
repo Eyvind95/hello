@@ -380,8 +380,8 @@ function previewEntry(entry){
  * This avoids base64 (~33% expansion), FileReader data URLs, and JSON.stringify of binary.
  * Older V1/V2 .json backups remain importable (up to a conservative mobile-safe size).
  */
-async function backupPack(threads){
- const sourceWorld=threads[0]?.worldId||worldId();
+async function backupPack(threads,forcedWorld=null){
+ const sourceWorld=forcedWorld||threads[0]?.worldId||worldId();
  if(threads.some(t=>t.worldId!==sourceWorld))throw Error('不同世界觀的交接稿不能混合備份');
  let total=0;
  const pack=[],binaryParts=[];
@@ -445,8 +445,8 @@ async function readBackup(file){
  if(manifest?.format!=='gal-ai-handover-backup'||![1,2].includes(manifest.version))throw Error('不是有效的交接稿備份檔案');
  return {manifest,file,binary:false,dataStart:0};
 }
-async function importPack(file){
- const source=await readBackup(file),raw=source.manifest,w=worldId();
+async function importPack(file,forcedWorld=null){
+ const source=await readBackup(file),raw=source.manifest,w=forcedWorld||worldId();
  if(!Array.isArray(raw.conversations))throw Error('交接稿備份缺少對話清單');
  if(raw.worldId!==w)throw Error('交接稿屬於其他世界觀（'+String(raw.worldName||raw.worldId)+'），請先切換到正確的世界觀');
  if(raw.conversations.length>200)throw Error('備份對話數超出安全限制');
@@ -517,7 +517,7 @@ async function importPack(file){
   for(const review of newSharedReviews)tx.objectStore(ENTRIES).put(review);
  });
  await reloadThreads();
- if(restored.length)openThread(restored[0].thread.id,false);
+ if(restored.length&&w===worldId())openThread(restored[0].thread.id,false);
  message('✅ 已匯入 '+restored.length+' 個交接對話及 '+newSharedReviews.length+' 則新的共用評語（文字相同的評論不重複新增，沒有覆蓋正史）。');
 }
 async function doSafe(fn){
@@ -639,8 +639,32 @@ async function setup(){
  createModal();bindActions();
  try{await reloadThreads()}catch(err){state.loading=false;message('⛔ 無法初始化交接稿：'+String(err?.message||err))}
 }
+async function handoverAllWorldBundles(){
+ await reloadThreads();
+ const worlds=new Set(state.threads.map(t=>t.worldId));
+ const reviews=await transaction([ENTRIES],'readonly',tx=>tx.objectStore(ENTRIES).index('kind').getAll('review'));
+ for(const e of reviews){
+  if(e.threadId?.startsWith('__gal-handover-shared-reviews__:')){
+   const w=decodeURIComponent(e.threadId.slice('__gal-handover-shared-reviews__:'.length));
+   if(w)worlds.add(w);
+  }
+ }
+ const bundles=[];
+ for(const w of worlds){
+  const {blob,count,fileCount}=await backupPack(state.threads.filter(t=>t.worldId===w),w);
+  bundles.push({worldId:w,blob,count,fileCount});
+ }
+ return bundles;
+}
+async function handoverInspectBundle(file){
+ const source=await readBackup(file),raw=source.manifest;
+ if(!raw?.worldId||!Array.isArray(raw.conversations))throw Error('交接稿備份索引不完整');
+ return {worldId:raw.worldId,version:raw.version,threads:raw.conversations.length,
+  sharedReviews:Array.isArray(raw.worldReviews)?raw.worldReviews.length:0,bytes:file.size};
+}
 window.ArchiveHandover={renderList,isActive,renderActive,close,
- reload:async()=>{await reloadThreads();if(isActive(worldId()))await renderActive(worldId())}
+ reload:async()=>{await reloadThreads();if(isActive(worldId()))await renderActive(worldId())},
+ bundleAll:handoverAllWorldBundles,inspectBundle:handoverInspectBundle,importBundle:importPack
 };
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setup,{once:true});
 else setup();
