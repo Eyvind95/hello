@@ -29,6 +29,7 @@ const context = {
     return {
       display: node.style.display || 'inline',
       backgroundColor: 'transparent', fontStyle: 'normal',
+      fontWeight: node.style.fontWeight || '400',
       borderTopLeftRadius: '0', borderLeftWidth: '0',
       borderLeftStyle: 'none', borderLeftColor: 'transparent'
     };
@@ -129,6 +130,43 @@ test('projects only an aligned body code block and leaves literal code and real 
   const literal=header+'\n'+[fence,code,fence,'下一段。'].join('\n');
   assert.equal(compare(literal,raw,{statusText:header,codeBlocks:[code]}).text.replace(/\s/g,''),
     literal.replace(/\s/g,''));
+});
+
+test('serializes CSS font-weight as markdown bold without requiring a strong tag', () => {
+  const bold = element('span', 'inline', text('粗體。'));
+  bold.style.fontWeight = '700';
+  const normal = element('span', 'inline', text('普通。'));
+  const root = element('div', 'block', bold, normal);
+  assert.equal(markdownFromDom(root, { role: 'ai' }), '**粗體。**普通。');
+});
+
+test('restores an untimed WHIF event only after an exact hidden-context projection', () => {
+  const scanned = '突發事件\n「第一句。」\n「第二句。」';
+  const hidden = '{{below context is ' + 'x'.repeat(148) + '}}\n';
+  const compare = context.GalArchiveCore.compareNativeParagraphs;
+  const ok = compare(scanned, hidden + '突發事件\n\n「第一句。」\n\n「第二句。」', {
+    event: true,
+    eventTitle: '突發事件',
+    source: 'whif-event-content'
+  });
+  assert.equal(ok.comparison.contentEqual, true);
+  assert.equal(ok.comparison.clockEqual, true);
+  assert.equal(ok.comparison.formatMarkers[0].kind, 'leading-whif-event-hidden-template');
+  assert.equal(ok.text, '突發事件\n\n「第一句。」\n\n「第二句。」');
+
+  const changed = compare(scanned, hidden + '突發事件\n\n「第一句。」\n\n「不同內容。」', {
+    event: true,
+    eventTitle: '突發事件',
+    source: 'whif-event-content'
+  });
+  assert.equal(changed.text, null);
+
+  const placeholder = compare(scanned, '{{user}}\n' + scanned, {
+    event: true,
+    eventTitle: '突發事件',
+    source: 'whif-event-content'
+  });
+  assert.equal(placeholder.text, null);
 });
 
 if(process.env.GAL_ARCHIVE_FENCED_SCAN){
