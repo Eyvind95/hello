@@ -484,7 +484,8 @@ function archiveHasExplicitUnknownGalClock(row){
  const lines=row.text.replace(/\r\n?/g,'\n').trim().split('\n').slice(0,7).map(line=>line.trim());
  const date=/^[｜|│]\s*日期不詳\s*[｜|│]$/u;
  const time=/^[｜|│]\s*(?:🕒\s*)?時間不詳\s*[｜|│]/u;
- return lines.some((line,i)=>date.test(line)&&time.test(lines[i+1]||''));
+ const first=lines[0]?.startsWith('```')?1:0;
+ return date.test(lines[first]||'')&&time.test(lines[first+1]||'');
 }
 function galNativeVerify(obj,r){
  const fail=[],warn=[];
