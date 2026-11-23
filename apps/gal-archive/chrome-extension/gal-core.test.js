@@ -721,6 +721,8 @@ test('full scanner obtains opening native source even when it has no game clock'
  assert.match(source,/validation\.opening=openingEntry\.text/);
  assert.match(source,/paragraphAudit=\{opening:openingFormat\.check,/);
  assert.match(source,/openingCheck:openingFormat\.check/);
+ assert.match(source,/lastResult\.openingCheck=openingFormat\.check/);
+ assert.match(source,/lastResult\.paragraphAudit=paragraphAudit/);
  assert.match(source,/opening:valid\.opening,messages,events/);
  const app=fs.readFileSync(require.resolve('../index.html'),'utf8');
  assert.match(app,/updated\.opening=v\.opening/);
