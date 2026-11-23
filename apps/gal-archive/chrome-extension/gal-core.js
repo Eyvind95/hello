@@ -36,12 +36,20 @@ function isEvent(content){
    || /^.{0,45}(?:世界事件|緊急事件)\s*(?:到達|通知|觸發)/u.test(t);
 }
 function meaningful(str){return clean(str).replace(/\s+/g,' ')}
+// Only the first AI item may use this historical timed opener (2026/08/22 18:42 UTC+8).
+// Do not treat other timed AI replies as openings or change their game clocks.
+const LEGACY_OPENING_ISO='2026-08-22T10:42:00.000Z';
+function isAllowedOpeningRow(row){
+ if(row?.role!=='ai'||isEvent(row.text))return false;
+ const clock=parseGameTime(row.text);
+ return !clock||clock.iso===LEGACY_OPENING_ISO;
+}
 function validate(rows,expectedWorld){
  const errors=[],warnings=[],canon=[],events=[];
  if(!Array.isArray(rows)||!rows.length)return {ok:false,errors:['沒有掃到任何可辨識訊息'],warnings,opening:'',messages:[],events:[],pairs:0};
  const opener=rows[0];
- if(opener.role!=='ai'||parseGameTime(opener.text)||isEvent(opener.text))
-   errors.push('首則不是「左側、無劇情時間、非事件」的輪迴開場；請回到真正的開場重新掃描');
+ if(!isAllowedOpeningRow(opener))
+   errors.push('首則不是可辨識的輪迴開場（原則無劇情時間；僅允許 2026/08/22 18:42 的舊式開場）；請回到真正的開場重新掃描');
  const opening=opener.role==='ai'?clean(opener.text):'';
  if(opening.length<8)errors.push('輪迴開場過短，可能選到工具列或不完整訊息');
  let pending=null,pairs=0,previousMs=null,autoContinues=0;
@@ -596,5 +604,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.22'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.23'};
 })();
