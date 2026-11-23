@@ -152,3 +152,58 @@ if(process.env.GAL_ARCHIVE_OLDER_SCAN&&process.env.GAL_ARCHIVE_UPDATED_SCAN){
     await verifyImportAndRollback(older,newer);
   });
 }
+
+
+test('archive import accepts exactly paired original 日期不詳／時間不詳 replies with null clocks',()=>{
+ const scan=fixture();
+ const make=(scanIndex,role,text,id)=>({
+  id:'legacy-'+id,role,text,scanIndex,messageOrder:scanIndex,
+  gameTime:null,sourceEventId:id,sourcePartIndex:0,
+  sourceKind:'gal-ai-native',chatKey:'source-chat'
+ });
+ scan.messages.push(
+  make(4,'me','我詢問維度夾縫的狀況。','unknown-player-1'),
+  make(5,'ai','｜日期不詳｜\n｜🕒時間不詳｜🚨意識崩潰｜\n｜📍維度夾縫｜\n劇情第一段。','unknown-ai-1'),
+  make(6,'me','我要求繼續描述。','unknown-player-2'),
+  make(7,'ai','｜日期不詳｜\n｜🕒時間不詳｜🚨維度抹除｜\n｜📍虛無之海｜\n劇情第二段。','unknown-ai-2')
+ );
+ scan.validation.pairs=3;
+ scan.validation.gameTimeCount=2;
+ scan.validation.unknownGameTimeCount=4;
+ const {original,context}=archive(scan);
+ const verified=context.galNativeVerify(scan,original);
+ assert.deepEqual(asJSON(verified.fail),[]);
+ assert.equal(verified.pairs,3);
+ assert.equal(verified.unknownGameTimeCount,4);
+ const plan=context.galNativeBuildPlan(scan,original);
+ assert.equal(plan.ok,true,JSON.stringify(plan.fail));
+ assert.equal(plan.sourceCounts.unknownGameTimeCount,4);
+ assert.equal(plan.updated.messages.length,6);
+ assert.deepEqual(asJSON(plan.updated.messages.slice(-4).map(row=>row.gameTime)),[null,null,null,null]);
+ assert.deepEqual(asJSON(plan.updated.messages.slice(-4).map(row=>row.scanIndex)),[4,5,6,7]);
+ assert.equal(plan.updated.events.length,1);
+ assert.equal(plan.updated.notes,original.notes);
+
+ const wrongHeader=structuredClone(scan);
+ wrongHeader.messages[3].text='｜日期不詳｜\n｜🕒07:29｜\n狀態欄已經不是時間不詳。';
+ assert.equal(context.galNativeBuildPlan(wrongHeader,original).ok,false);
+ const forgedTime=structuredClone(scan);
+ forgedTime.messages[3].gameTime='2026-08-23T00:00:00.000Z';
+ assert.equal(context.galNativeBuildPlan(forgedTime,original).ok,false);
+ const badPair=structuredClone(scan);
+ badPair.messages[4].gameTime='2026-08-23T00:00:00.000Z';
+ assert.equal(context.galNativeBuildPlan(badPair,original).ok,false);
+ const badCount=structuredClone(scan);
+ badCount.validation.unknownGameTimeCount=3;
+ assert.equal(context.galNativeBuildPlan(badCount,original).ok,false);
+});
+
+test('an undated reply without an explicit leading status header still fails import',()=>{
+ const scan=fixture();
+ scan.messages[0].gameTime=null;
+ scan.messages[1].gameTime=null;
+ const {original,context}=archive(scan);
+ const plan=context.galNativeBuildPlan(scan,original);
+ assert.equal(plan.ok,false);
+ assert.match(plan.fail.join(' '),/沒有可靠的 Gal AI 劇情時間/);
+});
