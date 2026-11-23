@@ -10,9 +10,43 @@ button.textContent='🧭 開啟輪迴掃描助手';
 button.setAttribute('aria-label','開啟輪迴掃描助手');
 button.style.cssText='position:fixed;right:24px;bottom:96px;z-index:2147483645;min-width:220px;min-height:52px;padding:14px 20px;border:2px solid #bda7f4;border-radius:14px;background:#513b82;color:#fff;font:800 16px/1.25 system-ui,Microsoft JhengHei,sans-serif;letter-spacing:.02em;box-shadow:0 8px 28px #0009;cursor:pointer;touch-action:manipulation';
 
-const send=message=>new Promise(resolve=>chrome.runtime.sendMessage(message,response=>{
-  resolve(chrome.runtime.lastError?{ok:false,error:chrome.runtime.lastError.message}:response||{ok:false,error:'擴充功能沒有回應'});
-}));
+const CONTEXT_RELOAD_KEY='gal-archive-extension-context-reload-at';
+const isContextInvalidated=value=>/Extension context invalidated/i.test(String(value?.message||value||''));
+const recoverContext=()=>{
+  const now=Date.now();
+  let last=0;
+  try{last=Number(sessionStorage.getItem(CONTEXT_RELOAD_KEY)||0)}catch(_){}
+  if(now-last<15000){
+    button.disabled=false;
+    button.textContent='⛔ 擴充功能剛更新，請重新整理 WHIF';
+    return;
+  }
+  try{sessionStorage.setItem(CONTEXT_RELOAD_KEY,String(now))}catch(_){}
+  button.disabled=true;
+  button.textContent='♻️ 擴充功能已更新，正在重新整理 WHIF…';
+  setTimeout(()=>location.reload(),250);
+};
+const send=message=>new Promise(resolve=>{
+  try{
+    chrome.runtime.sendMessage(message,response=>{
+      let error='';
+      try{error=chrome.runtime.lastError?.message||''}catch(err){error=err?.message||String(err||'')}
+      if(isContextInvalidated(error)){
+        recoverContext();
+        resolve({ok:false,contextInvalidated:true,error:'擴充功能剛更新，WHIF 正在重新整理'});
+        return;
+      }
+      resolve(error?{ok:false,error}:response||{ok:false,error:'擴充功能沒有回應'});
+    });
+  }catch(error){
+    if(isContextInvalidated(error)){
+      recoverContext();
+      resolve({ok:false,contextInvalidated:true,error:'擴充功能剛更新，WHIF 正在重新整理'});
+      return;
+    }
+    resolve({ok:false,error:error?.message||String(error||'無法連接擴充功能')});
+  }
+});
 const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const managerList=p=>{
   const raw=Array.isArray(p?.managerNames)?p.managerNames:String(p?.manager||'').split(/[、，,;；\r\n]/u);
