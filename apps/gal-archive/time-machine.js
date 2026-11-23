@@ -19,23 +19,27 @@ function stats(c){const messages=Array.isArray(c?.messages)?c.messages:[],events
  events:events.length,acceptedEvents:events.filter(x=>x.status==='accepted').length,
  pilotMessages:(c?.pilotMessages||[]).length,quizLogs:(c?.quizLogs||[]).length,changeLogs:(c?.changeLogs||[]).length,
  totalStoryChars:messages.reduce((n,x)=>n+String(x.text||'').length,0)};}
-function textFeatures(raw){const text=String(raw||'').replace(/\r\n?/g,'\n');return {length:text.length,blankLines:(text.match(/\n[ \t]*\n/g)||[]).length,newlines:(text.match(/\n/g)||[]).length,quotes:(text.match(/「/g)||[]).length,codeFences:(text.match(/`/g)||[]).length,nonWhitespace:text.replace(/\s+/g,'').length};}
+function textFeatures(raw){const text=String(raw||'').replace(/\r\n?/g,'\n');return {length:text.length,blankLines:(text.match(/\n[ \t]*\n/g)||[]).length,newlines:(text.match(/\n/g)||[]).length,quotes:(text.match(/「/g)||[]).length,codeFences:(text.match(/\x60{3}/g)||[]).length,nonWhitespace:text.replace(/\s+/g,'').length};}
 function textKey(text){return String(text||'').replace(/\s+/g,'');}
 function comparePair(type,oldItem,newItem,indexOld,indexNew,key,issues,changes){
  const oldText=String(oldItem.text||''),newText=String(newItem.text||'');
  const fields=[...new Set([...Object.keys(oldItem),...Object.keys(newItem)])].filter(k=>k!=='text'&&k!=='images'&&k!=='updatedAt'&&JSON.stringify(oldItem[k])!==JSON.stringify(newItem[k]));
  const moved=indexOld!==indexNew;
- if(oldText!==newText||fields.length||moved){
+ const oldImages=Array.isArray(oldItem.images)?oldItem.images:[],newImages=Array.isArray(newItem.images)?newItem.images:[];
+ const imageChanged=oldImages.length!==newImages.length||oldImages.some((im,i)=>String(im?.data||'').length!==String(newImages[i]?.data||'').length||String(im?.name||'')!==String(newImages[i]?.name||''));
+ if(oldText!==newText||fields.length||moved||imageChanged){
   const before=textFeatures(oldText),after=textFeatures(newText);
   changes.push({type,key,change:'modified',oldPosition:indexOld+1,newPosition:indexNew+1,moved,changedFields:fields,
-   textChange:oldText!==newText,whitespaceOnly:textKey(oldText)===textKey(newText),before,after,oldText,newText,
+   textChange:oldText!==newText,whitespaceOnly:textKey(oldText)===textKey(newText),before,after,oldText,newText,imageChanged,oldImageCount:oldImages.length,newImageCount:newImages.length,
    oldMetadata:Object.fromEntries(fields.map(f=>[f,oldItem[f]??null])),newMetadata:Object.fromEntries(fields.map(f=>[f,newItem[f]??null]))});
   if(moved)issues.push({level:'check',type,key,reason:'排序位置改變',before:indexOld+1,after:indexNew+1});
+  if(imageChanged)issues.push({level:oldImages.length>newImages.length?'high':'check',type,key,reason:'圖片附件數量或內容尺寸變更',before:oldImages.length,after:newImages.length});
   if(oldText!==newText){
    if(textKey(oldText)!==textKey(newText))issues.push({level:'high',type,key,reason:'原文實質內容已變動',before:before.length,after:after.length});
    else issues.push({level:'info',type,key,reason:'僅空白或換行格式改變',before:before.blankLines,after:after.blankLines});
    if(before.blankLines>after.blankLines)issues.push({level:'check',type,key,reason:'空白段落減少',before:before.blankLines,after:after.blankLines});
    if(before.quotes>after.quotes)issues.push({level:'check',type,key,reason:'「」引用數下降',before:before.quotes,after:after.quotes});
+   if(before.codeFences>after.codeFences)issues.push({level:'check',type,key,reason:'Markdown 程式碼框數量下降',before:before.codeFences,after:after.codeFences});
   }
   if(fields.includes('role')||fields.includes('status')||fields.includes('gameTime'))
    issues.push({level:'high',type,key,reason:'身份／事件接取狀態／時間欄位變更',fields});
@@ -93,6 +97,7 @@ function reportText(report){
  report.changes.forEach((x,i)=>{
   lines.push('\n━━ 第 '+(i+1)+' 項｜'+x.type+'｜'+x.key+'｜'+x.change+' ━━');
   if(x.changedFields?.length)lines.push('變動欄位：'+x.changedFields.join('、'));
+  if(x.imageChanged)lines.push('圖片附件：'+x.oldImageCount+' → '+x.newImageCount+'（JSON 報告不附圖片原始位元，完整快照保留圖片）');
   if(x.oldText!==undefined)lines.push('【舊原文】\n'+x.oldText+'\n【新原文】\n'+x.newText);
   else if(x.change==='removed')lines.push('【消失紀錄】\n'+JSON.stringify(x.oldRecord,null,2));
   else if(x.change==='added')lines.push('【新增紀錄】\n'+JSON.stringify(x.newRecord,null,2));
