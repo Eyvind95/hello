@@ -309,6 +309,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const statusKey=unspaced(statusText);
  const leading=text.match(preamble);
  let preambleMetadata='not-present';
+ let eventQuoteProjection=null;
  // Untimed WHIF events can still carry one or two hidden leading templates.
  // Strip them only when the remaining native text becomes an exact full-text
  // match (ignoring whitespace), so a real content difference can never be
@@ -322,9 +323,22 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    if(/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(label))break;
    candidate=candidate.slice(template[0].length);
    removed++;
-   if(unspaced(candidate)===unspaced(scanned)){
+   const candidateKey=unspaced(candidate),scannedKey=unspaced(scanned);
+   if(candidateKey===scannedKey){
     record('leading-whif-event-hidden-template',removed,text,candidate);
     text=candidate;
+    break;
+   }
+   const openQuotes=(candidate.match(/「/g)||[]).length;
+   const closeQuotes=(candidate.match(/」/g)||[]).length;
+   const scannedQuotes=(scanned.match(/[「」]/g)||[]).length;
+   const withoutDialogueQuotes=candidate.replace(/[「」]/g,'');
+   if(scannedQuotes===0&&openQuotes>0&&openQuotes===closeQuotes&&
+      unspaced(withoutDialogueQuotes)===scannedKey){
+    record('leading-whif-event-hidden-template',removed,text,candidate);
+    record('native-event-dialogue-quotes',openQuotes*2,candidate,withoutDialogueQuotes);
+    text=candidate;
+    eventQuoteProjection={pairs:openQuotes};
     break;
    }
   }
@@ -472,7 +486,8 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
   }
  }
- const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(text)];
+ const comparableText=eventQuoteProjection?text.replace(/[「」]/g,''):text;
+ const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(comparableText)];
  const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
  const contentEqual=scanChars.join('')===nativeChars.join('');
  const clock=parseGameTime(scanned)?.iso;
@@ -548,6 +563,10 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   return {text:null,comparison,localContext:{scanned:context(scanChars),native:context(nativeChars)}};
  }
  if(!text||!clockEqual)return {text:null,comparison};
+ if(eventQuoteProjection){
+  comparison.eventQuoteProjection={pairs:eventQuoteProjection.pairs,restoredFromNative:true};
+  return {text,comparison};
+ }
  // Content and time match. Only move line boundaries at corresponding
  // character positions; keep all scanned characters and other whitespace.
  let index=0;
@@ -562,5 +581,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.19'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.20'};
 })();
