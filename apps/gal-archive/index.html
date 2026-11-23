@@ -4380,8 +4380,32 @@ async function pullCloud(){
   cloudStatus('合併完成：檢查 '+checked+' 個雲端項目、更新 '+worldsAdded+' 個世界觀、'+cyclesAdded+' 個輪迴。'
     +'舊版 users 僅補足新版不存在的輪迴；跳過可能覆蓋新版的舊項目 '+legacySkipped+' 筆。');
 }
-$('cloudPush').onclick=async()=>{const b=$('cloudPush');b.disabled=true;try{if(!confirm('確定將這個瀏覽器的世界觀與輪迴上傳至你的私人 Firestore？請先保留 JSON 備份。'))return;cloudStatus('正在上傳…');await pushCloud()}catch(e){cloudStatus('上傳失敗：'+e.message,true)}finally{b.disabled=false}};
-$('cloudPull').onclick=async()=>{const b=$('cloudPull');b.disabled=true;try{if(!confirm('確定下載雲端資料並與本機合併？相同 ID 中更新日期較新的版本會覆蓋舊版。'))return;cloudStatus('正在下載…');await pullCloud()}catch(e){cloudStatus('下載失敗：'+e.message,true)}finally{b.disabled=false}};
+$('cloudPush').onclick=async()=>{
+ const btn=$('cloudPush');btn.disabled=true;let canonDone=false;
+ try{
+  if(!confirm('確定將本機輪迴正史、交接稿、評語與完整附件一起上傳到私人 Firestore？大量附件會產生多筆讀寫，請先下載完整 .gab 備份。'))return;
+  if(!window.ArchiveHandoverCloud?.push)throw Error('交接稿同步程式尚未載入，為避免漏同步已停止');
+  cloudStatus('正在上傳輪迴正史…');await pushCloud();canonDone=true;
+  cloudStatus('正史已上傳，開始交接稿與 PDF 附件的同步…');
+  const result=await window.ArchiveHandoverCloud.push({db:cloudDb,user:await cloudSignedIn(),progress:cloudStatus});
+  cloudStatus('✅ 正史及交接稿全部上傳完成：交接對話 '+result.threads+'，文字／評語 '+result.text+'，附件 '+result.files+'，略過未變更 '+result.skipped+' 筆。');
+ }catch(e){
+  cloudStatus((canonDone?'⚠ 正史已上傳，交接稿同步未完成：':'⛔ 上傳中斷：')+String(e?.message||e)+'。請保留本機與完整備份。',true);
+ }finally{btn.disabled=false}
+};
+$('cloudPull').onclick=async()=>{
+ const btn=$('cloudPull');btn.disabled=true;let canonDone=false;
+ try{
+  if(!confirm('確定從私人 Firestore 合併下載輪迴正史、交接稿、評語及完整附件？只合併，不會因另一台裝置缺資料就刪除本機內容。'))return;
+  if(!window.ArchiveHandoverCloud?.pull)throw Error('交接稿同步程式尚未載入，為避免漏同步已停止');
+  cloudStatus('正在合併輪迴正史…');await pullCloud();canonDone=true;
+  cloudStatus('正史已合併，開始下載交接稿並逐段驗證附件…');
+  const result=await window.ArchiveHandoverCloud.pull({db:cloudDb,user:await cloudSignedIn(),progress:cloudStatus});
+  cloudStatus('✅ 正史及交接稿全部合併完成：交接對話 '+result.threads+'，文字／評語 '+result.text+'，附件 '+result.files+'，保留原有 '+result.skipped+' 筆。');
+ }catch(e){
+  cloudStatus((canonDone?'⚠ 正史已合併，但交接稿未完整下載：':'⛔ 下載中斷：')+String(e?.message||e)+'。未驗證的 PDF 不會匯入。',true);
+ }finally{btn.disabled=false}
+};
 </script><script>
 (function(){
   const button=document.getElementById('installApp');
