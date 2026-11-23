@@ -2,7 +2,7 @@
 'use strict';
 /* Handover conversations are intentionally separate from canon cycles and Firebase sync.
    Files are stored as Blobs in IndexedDB; never embedded in public GitHub pages. */
-const DATABASE='gal-archive-handovers-v1',THREADS='threads',ENTRIES='entries';
+const DATABASE='gal-archive-handovers-v1',THREADS='threads',ENTRIES='entries',DELETES='deletes';
 const FILE_LIMIT=50*1024*1024,BACKUP_LIMIT=150*1024*1024,IMPORT_LIMIT=210*1024*1024;
 const BUNDLE_MAGIC='GAL-ARCHIVE-HANDOVER-V3\n',BUNDLE_LENGTH_DIGITS=12,MAX_METADATA=10*1024*1024,LEGACY_JSON_LIMIT=24*1024*1024;
 const state={db:null,threads:[],activeId:null,sharedWorldId:null,view:'files',editingReviewId:null,renderToken:0,loading:true,busy:false,objectUrls:[]};
@@ -16,7 +16,7 @@ function fmtSize(n){const bytes=Number(n)||0;return bytes>=1048576?(bytes/104857
 function fileName(s){return String(s||'交接稿').replace(/[\\/:*?"<>|\r\n]/g,'_').slice(0,120)}
 function message(s){const target=$('handoverStatus');if(target){target.textContent=s;return}alert(s)}
 function getDb(){if(state.db)return Promise.resolve(state.db);return new Promise((resolve,reject)=>{
- const req=indexedDB.open(DATABASE,2);
+ const req=indexedDB.open(DATABASE,3);
  req.onupgradeneeded=()=>{
   const db=req.result;
   if(!db.objectStoreNames.contains(THREADS))db.createObjectStore(THREADS,{keyPath:'id'});
@@ -24,6 +24,7 @@ function getDb(){if(state.db)return Promise.resolve(state.db);return new Promise
    req.transaction.objectStore(ENTRIES):db.createObjectStore(ENTRIES,{keyPath:'id'});
   if(!es.indexNames.contains('threadId'))es.createIndex('threadId','threadId',{unique:false});
   if(!es.indexNames.contains('kind'))es.createIndex('kind','kind',{unique:false});
+  if(!db.objectStoreNames.contains(DELETES))db.createObjectStore(DELETES,{keyPath:'id'});
  };
  req.onsuccess=()=>{state.db=req.result;state.db.onversionchange=()=>{state.db.close();state.db=null};resolve(state.db)};
  req.onerror=()=>reject(req.error||Error('無法開啟交接稿資料庫'));
@@ -45,6 +46,10 @@ async function transaction(stores,mode,work){
 function listStore(name){return transaction([name],'readonly',tx=>tx.objectStore(name).getAll())}
 function listEntries(id){return transaction([ENTRIES],'readonly',tx=>tx.objectStore(ENTRIES).index('threadId').getAll(id))}
 function putThread(thread){return transaction([THREADS],'readwrite',tx=>tx.objectStore(THREADS).put(thread))}
+function deleteMarker(kind,id,worldId){
+ return {id:kind+':'+id,kind,targetId:id,worldId,
+   deletedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+}
 function useThread(id){return state.threads.find(t=>t.id===id)}
 function sharedReviewId(w){return '__gal-handover-shared-reviews__:'+encodeURIComponent(w)}
 function isSharedView(w){return state.sharedWorldId===w&&state.view==='reviews'&&!state.activeId}
@@ -269,8 +274,9 @@ async function removeEntry(t,entry){
   noteCount:Math.max(0,(t.noteCount||0)-(entry.kind==='note'?1:0)),
   reviewCount:Math.max(0,(t.reviewCount||0)-(entry.kind==='review'?1:0)),
   selfReviewCount:Math.max(0,(t.selfReviewCount||0)-(entry.kind==='self-review'?1:0))};
- await transaction([THREADS,ENTRIES],'readwrite',tx=>{
+ await transaction([THREADS,ENTRIES,DELETES],'readwrite',tx=>{
   tx.objectStore(ENTRIES).delete(entry.id);tx.objectStore(THREADS).put(next);
+  tx.objectStore(DELETES).put(deleteMarker('entry',entry.id,t.worldId));
  });
  await reloadThreads();renderActive(worldId());
 }
@@ -303,8 +309,9 @@ async function saveSharedReview(w,entry,overwrite){
 }
 async function deleteWorldReview(w,entry){
  const owner=state.threads.find(t=>t.id===entry.threadId&&t.worldId===w);
- await transaction(owner?[THREADS,ENTRIES]:[ENTRIES],'readwrite',tx=>{
+ await transaction(owner?[THREADS,ENTRIES,DELETES]:[ENTRIES,DELETES],'readwrite',tx=>{
   tx.objectStore(ENTRIES).delete(entry.id);
+  tx.objectStore(DELETES).put(deleteMarker('entry',entry.id,w));
   if(owner)tx.objectStore(THREADS).put({...owner,reviewCount:Math.max(0,(owner.reviewCount||0)-1)});
  });
  if(state.editingReviewId===entry.id)state.editingReviewId=null;
@@ -332,13 +339,15 @@ function downloadAllReviews(entries,thread){
  downloadBlob(new Blob([lines.join('\n')],{type:'text/plain;charset=utf-8'}),fileName(thread.title)+'_大家的評語.txt');
 }
 async function removeThread(t){
- // Legacy per-thread comments must survive deletion of their original handover thread.
+ // Legacy per-thread comments survive in the shared world review pool.
  const legacyPeers=(await listWorldReviews(t.worldId)).filter(e=>e.threadId===t.id);
- await transaction([THREADS,ENTRIES],'readwrite',tx=>{
+ const leftovers=(await listEntries(t.id)).filter(e=>!legacyPeers.some(r=>r.id===e.id));
+ await transaction([THREADS,ENTRIES,DELETES],'readwrite',tx=>{
   for(const e of legacyPeers)tx.objectStore(ENTRIES).put({...e,threadId:sharedReviewId(t.worldId)});
+  tx.objectStore(DELETES).put(deleteMarker('thread',t.id,t.worldId));
+  for(const e of leftovers)tx.objectStore(DELETES).put(deleteMarker('entry',e.id,t.worldId));
   tx.objectStore(THREADS).delete(t.id);
-  const store=tx.objectStore(ENTRIES),req=store.index('threadId').openKeyCursor(IDBKeyRange.only(t.id));
-  req.onsuccess=()=>{const cur=req.result;if(cur){store.delete(cur.primaryKey);cur.continue()}};
+  for(const e of leftovers)tx.objectStore(ENTRIES).delete(e.id);
  });
  close();await reloadThreads();window.ArchiveHandoverBridge?.rerender?.();
 }
