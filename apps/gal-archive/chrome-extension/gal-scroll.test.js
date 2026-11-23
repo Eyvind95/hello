@@ -86,12 +86,15 @@ test('an already reached bottom never qualifies as completion without later proo
  assert.equal(result.attempts.length,1);
 });
 
-test('scanner retains strict ordered overlap and 15-second bottom proof',()=>{
+test('scanner retains strict ordered overlap and 8-second bottom proof',()=>{
  assert.match(content,/const info=appendSample\(shot,collected\)|info=appendSample\(shot,collected\)/);
  assert.match(content,/const movement=await advanceScanScroll\(root,stepPx\)/);
  assert.match(content,/if\(!movement\.moved&&!movement\.atBottom\)/);
  assert.match(content,/scrollStall,scrollAtFailure,/);
- assert.match(content,/BOTTOM_CONFIRM_MS=15000/);
+ assert.match(content,/BOTTOM_CONFIRM_MS=8000/);
+ assert.match(content,/BOTTOM_POLL_MS=750/);
+ assert.match(content,/while\(Date\.now\(\)-proofStarted<BOTTOM_CONFIRM_MS\)/);
+ assert.match(content,/tailSignature\(probe\.rows\)!==proofSignature/);
  assert.match(content,/if\(root\.scrollHeight!==proofHeight\|\|!isBottom\(root\)\)/);
 });
 
