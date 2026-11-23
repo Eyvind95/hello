@@ -385,6 +385,20 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
   }
  }
+ // Opening text is a separate record, not an ordinary timed AI reply.
+ // Permit one hidden contextual prefix only if the FULL visible opening can
+ // be reconstructed after removing that prefix and a matching status fence.
+ if(options.opening&&options.source==='whif-message-content'&&leading&&!preamble.test(scanned)){
+  const label=leading[1].trim();
+  const after=text.slice(leading[0].length);
+  const fence=after.match(statusFence);
+  const projected=fence?fence[1]+after.slice(fence[0].length):after;
+  if(label&&!/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(label)&&
+     unspaced(projected)===unspaced(scanned)){
+   record('opening-leading-whif-template',1,text,after);
+   text=after;
+  }
+ }
  if(options.source==='whif-message-content'&&leading&&!preamble.test(scanned)){
   const label=leading[1].trim();
   const after=text.slice(leading[0].length);
@@ -451,7 +465,10 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const eventFenceStart=options.event&&!statusFence.test(text)
   ?text.indexOf('\n'+String.fromCharCode(96).repeat(3))+1:0;
  const unfenced=text.slice(eventFenceStart).match(statusFence);
- if(unfenced&&!statusFence.test(scanned.slice(eventFenceStart))&&parseGameTime(unfenced[1])&&
+ const openingStatusAligned=Boolean(options.opening&&unfenced&&
+  unspaced(scanned).startsWith(unspaced(unfenced[1])));
+ if(unfenced&&!statusFence.test(scanned.slice(eventFenceStart))&&
+  (parseGameTime(unfenced[1])||openingStatusAligned)&&
   (!options.event||statusKey===unspaced(unfenced[1]))){
   const rest=text.slice(eventFenceStart+unfenced[0].length);
   // The closing fence makes the status a distinct block even if the
@@ -634,9 +651,11 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  // no other missing-clock reply can pass the native paragraph audit.
  const explicitUnknownClock=!clock&&!nativeClock&&
   isExplicitUnknownGameTime(scanned)&&isExplicitUnknownGameTime(text);
- const clockEqual=options.event
-  ?(clock===nativeClock&&(Boolean(clock)||(!clock&&!nativeClock)))
-  :Boolean(clock&&clock===nativeClock)||explicitUnknownClock;
+ const clockEqual=options.opening
+  ?(isAllowedOpeningRow({role:'ai',text:scanned})&&clock===nativeClock)
+  :options.event
+   ?(clock===nativeClock&&(Boolean(clock)||(!clock&&!nativeClock)))
+   :Boolean(clock&&clock===nativeClock)||explicitUnknownClock;
  const statusCompact=unspaced(statusText);
  const positions=[...text.matchAll(/(\S)(\s*)/gu)];
  const statusPrefix=options.event&&titleKey&&unspaced(text).startsWith(titleKey+statusCompact)
@@ -732,5 +751,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.28'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.29'};
 })();
