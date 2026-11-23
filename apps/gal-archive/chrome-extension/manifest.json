@@ -3,7 +3,7 @@
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
   "version": "0.8.33",
   "version_name": "V0.8.33 測試版",
-  "description": "輪迴檔案館 V0.8.33：原生來源唯一、全文吻合且未標記時間時，保留早期 AI 回覆 gameTime:null；其他無證據缺時回覆一律拒絕。",
+  "description": "輪迴檔案館 V0.8.33：原生來源唯一、全文吻合且未標記時間時，保留早期 AI 回覆 gameTime:null；未通過原生比對的缺時回覆一律拒絕。",
   "permissions": [
     "storage",
     "activeTab",
