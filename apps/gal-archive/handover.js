@@ -310,6 +310,7 @@ async function deleteWorldReview(w,entry){
  if(state.editingReviewId===entry.id)state.editingReviewId=null;
  await reloadThreads();await renderActive(w);
 }
+function reviewSignature(e){return JSON.stringify([e.reviewer||'',e.subject||'',e.title||'',e.text||''])}
 function commonReviewContext(w){
  return {title:worldName(w)+'・共用評語',author:'世界觀共用，並非單一交接稿撰寫者'};
 }
@@ -402,8 +403,11 @@ async function backupPack(threads){
   }
   pack.push({thread:{...thread},entries:items});
  }
- const manifest={format:'gal-ai-handover-backup',version:3,worldId:sourceWorld,worldName:worldName(sourceWorld),
-  exportedAt:new Date().toISOString(),conversations:pack};
+ const sharedReviews=(await listWorldReviews(sourceWorld)).filter(e=>e.threadId===sharedReviewId(sourceWorld))
+  .map(e=>({id:e.id,kind:'review',reviewer:e.reviewer||'',subject:e.subject||'',title:e.title||'',text:e.text||'',
+    createdAt:e.createdAt,updatedAt:e.updatedAt||null,order:e.order||0}));
+ const manifest={format:'gal-ai-handover-backup',version:4,worldId:sourceWorld,worldName:worldName(sourceWorld),
+  exportedAt:new Date().toISOString(),conversations:pack,worldReviews:sharedReviews};
  const metadata=new TextEncoder().encode(JSON.stringify(manifest));
  if(metadata.byteLength>MAX_METADATA)throw Error('備份索引超過 10 MB，請改成分別下載單一交接對話');
  const blob=new Blob([BUNDLE_MAGIC,String(metadata.byteLength).padStart(BUNDLE_LENGTH_DIGITS,'0'),metadata,...binaryParts],
@@ -433,7 +437,7 @@ async function readBackup(file){
   const dataStart=BUNDLE_MAGIC.length+BUNDLE_LENGTH_DIGITS+metaLength;
   if(metaLength<=0||metaLength>MAX_METADATA||dataStart>file.size)throw Error('新版 .ghb 備份索引不完整');
   const manifest=JSON.parse(await file.slice(BUNDLE_MAGIC.length+BUNDLE_LENGTH_DIGITS,dataStart).text());
-  if(manifest?.version!==3||manifest?.format!=='gal-ai-handover-backup')throw Error('備份格式版本不正確');
+  if(![3,4].includes(manifest?.version)||manifest?.format!=='gal-ai-handover-backup')throw Error('備份格式版本不正確');
   return {manifest,file,dataStart,binary:true};
  }
  if(file.size>LEGACY_JSON_LIMIT)throw Error('舊版 JSON 備份超過 24 MB；為避免手機再次記憶體不足，請在電腦匯入並轉存新版 .ghb');
@@ -446,6 +450,20 @@ async function importPack(file){
  if(!Array.isArray(raw.conversations))throw Error('交接稿備份缺少對話清單');
  if(raw.worldId!==w)throw Error('交接稿屬於其他世界觀（'+String(raw.worldName||raw.worldId)+'），請先切換到正確的世界觀');
  if(raw.conversations.length>200)throw Error('備份對話數超出安全限制');
+ if(raw.worldReviews!==undefined&&(!Array.isArray(raw.worldReviews)||raw.worldReviews.length>2000))
+  throw Error('世界觀共用評語的備份資料不合法');
+ const previousReviews=await listWorldReviews(w),known=new Set(previousReviews.map(reviewSignature)),newSharedReviews=[];
+ function addSharedFromBackup(item){
+  if(!item||item.kind!=='review'||typeof item.reviewer!=='string'||!item.reviewer.trim()||
+   typeof item.text!=='string'||!item.text.trim()||item.text.length>100000)
+   throw Error('共用評語的備份資料不合法');
+  const entry={id:uuid(),threadId:sharedReviewId(w),kind:'review',reviewer:item.reviewer.trim().slice(0,180),
+   subject:String(item.subject||'').slice(0,250),title:String(item.title||'').slice(0,200),text:item.text,
+   createdAt:item.createdAt||new Date().toISOString(),updatedAt:item.updatedAt||null,order:Number(item.order)||Date.now()};
+  const key=reviewSignature(entry);
+  if(known.has(key))return;
+  known.add(key);newSharedReviews.push(entry);
+ }
  const restored=[];
  let expectedOffset=0;
  for(const group of raw.conversations){
@@ -481,13 +499,14 @@ async function importPack(file){
      throw Error('備份評語缺少署名或正文');
     e.reviewer=item.reviewer.trim().slice(0,180);e.subject=String(item.subject||'').slice(0,250);e.title=String(item.title||'').slice(0,200);
     e.text=item.text;e.updatedAt=item.updatedAt||now;
-    if(item.kind==='review')thread.reviewCount++;
+    if(item.kind==='review')addSharedFromBackup(e);
     else if(++thread.selfReviewCount>1)throw Error('同一交接對話的備份包含多份自評，請先整理');
    }
-   entries.push(e);
+   if(e.kind!=='review')entries.push(e);
   }
   restored.push({thread,entries});
  }
+ for(const item of raw.worldReviews||[])addSharedFromBackup(item);
  if(source.binary&&source.dataStart+expectedOffset!==file.size)throw Error('備份檔案長度與附件清單不符，已取消匯入');
  // Import as NEW conversations. No existing local records or canon cycles are overwritten.
  await transaction([THREADS,ENTRIES],'readwrite',tx=>{
@@ -495,10 +514,11 @@ async function importPack(file){
    tx.objectStore(THREADS).put(group.thread);
    for(const item of group.entries)tx.objectStore(ENTRIES).put(item);
   }
+  for(const review of newSharedReviews)tx.objectStore(ENTRIES).put(review);
  });
  await reloadThreads();
  if(restored.length)openThread(restored[0].thread.id,false);
- message('✅ 已匯入 '+restored.length+' 個交接對話（另建副本，未覆蓋舊對話或正史）。');
+ message('✅ 已匯入 '+restored.length+' 個交接對話及 '+newSharedReviews.length+' 則新的共用評語（文字相同的評論不重複新增，沒有覆蓋正史）。');
 }
 async function doSafe(fn){
  if(state.busy){message('上一項交接操作仍在執行');return}
