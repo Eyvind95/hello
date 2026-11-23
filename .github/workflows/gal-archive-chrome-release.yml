@@ -1,0 +1,66 @@
+name: Gal Archive Chrome Helper Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/gal-archive/chrome-extension/manifest.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gal-archive-chrome-release
+  cancel-in-progress: false
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify scanner tests and production JavaScript syntax
+        run: |
+          node --test apps/gal-archive/chrome-extension/gal-core.test.js apps/gal-archive/chrome-extension/gal-import.test.js
+          node --check apps/gal-archive/chrome-extension/gal-core.js
+          node --check apps/gal-archive/chrome-extension/gal-content.js
+          node --check apps/gal-archive/chrome-extension/content.js
+          node --check apps/gal-archive/chrome-extension/gal-launcher.js
+      - name: Build extension ZIP containing only production files
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          directory=Path("apps/gal-archive/chrome-extension")
+          version=json.loads((directory/"manifest.json").read_text(encoding="utf-8"))["version"]
+          target=directory/f"gal-archive-chrome-v{version}.zip"
+          selected=sorted(p for p in directory.iterdir()
+              if p.is_file() and p.suffix in {".js",".html",".json",".txt"}
+              and ".test." not in p.name and p.name!="verify-cycle17.js")
+          required={"manifest.json","background.js","content.js","gal-core.js",
+              "gal-content.js","gal-launcher.js","popup.html"}
+          assert required.issubset({p.name for p in selected}), "missing production file"
+          with ZipFile(target,"w",ZIP_DEFLATED,compresslevel=9) as archive:
+              for item in selected: archive.write(item,item.name)
+          with ZipFile(target) as archive:
+              assert archive.testzip() is None
+              assert required.issubset(set(archive.namelist()))
+              assert json.loads(archive.read("manifest.json"))["version"]==version
+          print(f"Built {target} with {len(selected)} files ({target.stat().st_size} bytes)")
+          PY
+      - name: Publish extension ZIP to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          VERSION=$(python -c 'import json; print(json.load(open("apps/gal-archive/chrome-extension/manifest.json"))["version"])')
+          FILE="apps/gal-archive/chrome-extension/gal-archive-chrome-v${VERSION}.zip"
+          git add "$FILE"
+          if ! git diff --cached --quiet; then
+            git commit -m "release(gal-archive): package Chrome helper V${VERSION}"
+            git push
+          fi
