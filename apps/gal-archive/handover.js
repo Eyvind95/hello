@@ -4,7 +4,7 @@
    Files are stored as Blobs in IndexedDB; never embedded in public GitHub pages. */
 const DATABASE='gal-archive-handovers-v1',THREADS='threads',ENTRIES='entries';
 const FILE_LIMIT=50*1024*1024,BACKUP_LIMIT=150*1024*1024,IMPORT_LIMIT=210*1024*1024;
-const state={db:null,threads:[],activeId:null,renderToken:0,loading:true,busy:false,objectUrls:[]};
+const state={db:null,threads:[],activeId:null,view:'files',renderToken:0,loading:true,busy:false,objectUrls:[]};
 const $=id=>document.getElementById(id);
 const worldId=()=>window.ArchiveHandoverBridge?.worldId?.()||'';
 const worldName=id=>window.ArchiveHandoverBridge?.worldName?.(id)||id;
@@ -59,7 +59,7 @@ function renderList(w){
  const threads=state.threads.filter(t=>t.worldId===w).sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
  host.innerHTML=threads.length?threads.map(t=>
   '<button type="button" class="cycle handover-thread'+(state.activeId===t.id?' active':'')+'" data-handover-id="'+escapeHTML(t.id)+'">'+
-  '<strong>'+escapeHTML(t.title)+'</strong><span>'+escapeHTML(String(t.fileCount||0)+' 份檔案・'+String(t.noteCount||0)+' 則備註')+'</span></button>'
+  '<strong>'+escapeHTML(t.title)+'</strong><span>'+escapeHTML(String(t.fileCount||0)+' 份檔案・'+String(t.noteCount||0)+' 則備註・'+String(t.reviewCount||0)+' 則評語'+(t.selfReviewCount?'・有自評':''))+'</span></button>'
  ).join(''):'<p class="note">這個世界觀還沒有交接對話。</p>';
 }
 function viewFooter(){
@@ -67,11 +67,11 @@ function viewFooter(){
 }
 function contentHeader(thread){
  return '<div class="sectionhead"><div><div class="sub">交接稿・'+escapeHTML(worldName(thread.worldId))+'</div><h2>'+escapeHTML(thread.title)+'</h2>'+
- '<div class="stat">'+escapeHTML((thread.fileCount||0)+' 份檔案／'+(thread.noteCount||0)+' 則備註')+'</div></div>'+
- '<div class="actions"><button type="button" class="btn small" data-ha-action="rename">✎ 改名稱</button>'+
+ '<div class="stat">'+escapeHTML((thread.fileCount||0)+' 份檔案／'+(thread.noteCount||0)+' 則備註／'+(thread.reviewCount||0)+' 則他人評語'+(thread.selfReviewCount?'／已有自評':''))+'</div></div>'+
+ '<div class="actions"><button type="button" class="btn small" data-ha-action="rename">✎ 改名稱</button><button type="button" class="btn small" data-ha-action="edit-author">設定撰寫者</button>'+
  '<button type="button" class="btn small" data-ha-action="backup-thread">下載此對話備份</button>'+
  '<button type="button" class="btn small danger" data-ha-action="delete-thread">刪除對話</button></div></div>'+
- (thread.description?'<p class="note">'+escapeHTML(thread.description)+'</p>':'');
+ (thread.author?'<p class="note">交接稿撰寫者：'+escapeHTML(thread.author)+'</p>':'')+(thread.description?'<p class="note">'+escapeHTML(thread.description)+'</p>':'');
 }
 function entryCard(e){
  const when='<span class="note">'+escapeHTML(fmtDate(e.createdAt))+'</span>';
@@ -87,6 +87,57 @@ function entryCard(e){
   '<div class="handover-note">'+escapeHTML(e.text||'')+'</div><div class="actions">'+
   '<button type="button" class="btn small danger" data-ha-action="delete-entry" data-ha-id="'+escapeHTML(e.id)+'">刪除此備註</button></div></div>';
 }
+function handoverTabBar(){
+ return '<div class="tabs" role="tablist" aria-label="交接對話分類">'+
+  [['files','📎 交接檔案'],['reviews','💬 大家的評語'],['self','🪞 對自己的自評']].map(([id,label])=>
+   '<button type="button" class="tab '+(state.view===id?'active':'')+'" data-ha-action="switch-view" data-ha-view="'+id+'" aria-selected="'+(state.view===id?'true':'false')+'">'+label+'</button>').join('')+
+  '</div>';
+}
+function reviewCard(entry){
+ const by=escapeHTML(entry.reviewer||'未署名'),subject=entry.subject?'・評價對象：'+escapeHTML(entry.subject):'';
+ return '<article class="handover-entry"><div class="sectionhead"><strong>💬 '+by+subject+'</strong><span class="note">'+escapeHTML(fmtDate(entry.createdAt))+'</span></div>'+
+  (entry.title?'<h3>'+escapeHTML(entry.title)+'</h3>':'')+
+  '<div class="handover-note">'+escapeHTML(entry.text||'')+'</div>'+
+  '<div class="actions"><button type="button" class="btn small" data-ha-action="download-review" data-ha-id="'+escapeHTML(entry.id)+'">下載這篇評語</button>'+
+  '<button type="button" class="btn small" data-ha-action="edit-review" data-ha-id="'+escapeHTML(entry.id)+'">編輯</button>'+
+  '<button type="button" class="btn small danger" data-ha-action="delete-entry" data-ha-id="'+escapeHTML(entry.id)+'">刪除</button></div></article>';
+}
+function renderReviewSection(entries){
+ const peer=entries.filter(e=>e.kind==='review').sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+ return '<h3>大家的評語</h3>'+
+  '<p class="note">同一份交接稿可以收到不同前輩的評價；可以貼入數千字的完整評論，保留原本的段落。評語者、評價對象與原文會獨立保存，不會混入正史。</p>'+
+  '<div class="actions"><button class="btn small" type="button" data-ha-action="download-reviews">下載全部評語 TXT</button></div>'+
+  (peer.length?peer.map(reviewCard).join(''):'<p class="note">目前還沒有其他人的評語。</p>')+
+  '<div class="divider"></div><h3>＋新增別人的評語</h3>'+
+  '<label for="handoverReviewer">評語者 *</label><input id="handoverReviewer" maxlength="180" placeholder="例如：暗夢後輩">'+
+  '<label for="handoverReviewSubject">評價對象／範圍（選填）</label><input id="handoverReviewSubject" maxlength="250" placeholder="例如：耀斑、赤紅、鐵墓、小貓與暗夢的五份交接稿">'+
+  '<label for="handoverReviewTitle">評語標題（選填）</label><input id="handoverReviewTitle" maxlength="200" placeholder="例如：五代交接稿總評">'+
+  '<label for="handoverReviewText">評語原文 *</label><textarea id="handoverReviewText" class="tall" maxlength="100000" placeholder="可一次貼入完整長篇評語，包含分段、換行、優缺點及總評。"></textarea>'+
+  '<div class="actions topsp"><button type="button" class="btn primary" data-ha-action="add-review">儲存評語</button></div>';
+}
+function renderSelfSection(entries,thread){
+ const existing=entries.find(e=>e.kind==='self-review');
+ return '<h3>對自己的自評</h3>'+
+  '<p class="note">這一區專門記錄交接稿撰寫者對自己作品的評價，與「大家的評語」分開。每個交接對話保留一份可編輯的自評；更新時保留原紀錄 ID。</p>'+
+  '<label for="handoverSelfAuthor">自評者 *</label><input id="handoverSelfAuthor" maxlength="180" value="'+escapeHTML(existing?.reviewer||thread.author||'')+'" placeholder="例如：耀斑前輩">'+
+  '<label for="handoverSelfText">自己的評價 *</label><textarea id="handoverSelfText" class="tall" maxlength="100000" placeholder="自己的優點、缺點、交接理念、反省與未完成部分…">'+escapeHTML(existing?.text||'')+'</textarea>'+
+  '<div class="actions topsp"><button class="btn primary" type="button" data-ha-action="save-self">'+(existing?'更新自評':'儲存自評')+'</button>'+
+  (existing?'<button class="btn small" type="button" data-ha-action="download-self">下載自評 TXT</button><button class="btn small danger" type="button" data-ha-action="delete-self">刪除自評</button>':'')+'</div>'+
+  (existing?'<p class="note">最初保存：'+escapeHTML(fmtDate(existing.createdAt))+'；最後修改：'+escapeHTML(fmtDate(existing.updatedAt||existing.createdAt))+'</p>':'');
+}
+function renderFilesSection(entries){
+ const docs=entries.filter(e=>e.kind==='file'||e.kind==='note');
+ return '<h3>交接對話內容</h3>'+
+  (docs.length?'<div id="handoverEntries">'+docs.map(entryCard).join('')+'</div>':'<p class="note">這份交接對話還沒有檔案或備註。可以一次上傳多份，例如 11 份交接稿。</p>')+
+  '<div class="divider"></div><h3>新增交接內容</h3>'+
+  '<label for="handoverFiles">上傳檔案（可一次選取多份）</label>'+
+  '<input type="file" id="handoverFiles" multiple accept=".pdf,.doc,.docx,.txt,.md,.json,.png,.jpg,.jpeg,.webp,.zip,.odt,.rtf" />'+
+  '<p class="note">支援 PDF、Word、文字、JSON、圖片、ZIP 等；單檔最多 50 MB。上傳後可查看 PDF／圖片，其他檔案可下載。上傳只會寫入本機，不會改動任何輪迴正史。</p>'+
+  '<button type="button" class="btn primary" data-ha-action="upload">上傳所選檔案</button>'+
+  '<label for="handoverNote">新增文字備註（選填）</label>'+
+  '<textarea id="handoverNote" placeholder="例如：第 1～11 份的整理順序、交接注意事項…"></textarea>'+
+  '<div class="actions topsp"><button type="button" class="btn primary" data-ha-action="note">加入備註</button></div>';
+}
 async function renderActive(w){
  const thread=activeThread(w);if(!thread)return false;
  const token=++state.renderToken,host=$('content');if(!host)return true;
@@ -95,18 +146,9 @@ async function renderActive(w){
   const entries=await listEntries(thread.id);
   if(token!==state.renderToken||!isActive(w))return true;
   entries.sort((a,b)=>(a.order||0)-(b.order||0)||String(a.createdAt).localeCompare(String(b.createdAt)));
-  host.innerHTML=contentHeader(thread)+
-   '<div class="divider"></div><h3>交接對話內容</h3>'+
-   (entries.length?'<div id="handoverEntries">'+entries.map(entryCard).join('')+'</div>':'<p class="note">這份交接對話還沒有檔案或備註。可以一次上傳多份，例如 11 份交接稿。</p>')+
-   '<div class="divider"></div><h3>新增交接內容</h3>'+
-   '<label for="handoverFiles">上傳檔案（可一次選取多份）</label>'+
-   '<input type="file" id="handoverFiles" multiple accept=".pdf,.doc,.docx,.txt,.md,.json,.png,.jpg,.jpeg,.webp,.zip,.odt,.rtf" />'+
-   '<p class="note">支援 PDF、Word、文字、JSON、圖片、ZIP 等；單檔最多 50 MB。上傳後可查看 PDF／圖片，其他檔案可下載。上傳只會寫入本機，不會改動任何輪迴正史。</p>'+
-   '<button type="button" class="btn primary" data-ha-action="upload">上傳所選檔案</button>'+
-   '<label for="handoverNote">新增文字備註（選填）</label>'+
-   '<textarea id="handoverNote" placeholder="例如：第 1～11 份的整理順序、交接注意事項…"></textarea>'+
-   '<div class="actions topsp"><button type="button" class="btn primary" data-ha-action="note">加入備註</button>'+
-   '<button type="button" class="btn" data-ha-action="back">返回輪迴列表</button></div>'+
+  const body=state.view==='reviews'?renderReviewSection(entries):state.view==='self'?renderSelfSection(entries,thread):renderFilesSection(entries);
+  host.innerHTML=contentHeader(thread)+handoverTabBar()+body+
+   '<div class="divider"></div><button type="button" class="btn" data-ha-action="back">返回輪迴列表</button>'+
    '<p class="note" id="handoverStatus" role="status"></p>'+viewFooter();
  }catch(err){if(token===state.renderToken)host.innerHTML=contentHeader(thread)+'<p class="note">⛔ 交接稿讀取失敗：'+escapeHTML(err?.message||err)+'</p>'}
  return true;
@@ -114,17 +156,17 @@ async function renderActive(w){
 function openThread(id,scroll=true){
  const t=useThread(id);
  if(!t||t.worldId!==worldId()){message('交接對話不屬於目前世界觀，已停止開啟');return}
- state.activeId=id;
+ state.activeId=id;state.view='files';
  window.ArchiveHandoverBridge?.rerender?.();
  if(scroll)$('content')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
-function close(){state.activeId=null;state.renderToken++}
+function close(){state.activeId=null;state.view='files';state.renderToken++}
 function createModal(){
  const modal=document.createElement('div');modal.className='modalback hidden';modal.id='handoverModal';
  modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');
  modal.innerHTML='<div class="modal" style="max-width:620px"><div class="sectionhead"><h2>新增交接對話</h2><button type="button" class="btn small" id="handoverModalClose">關閉</button></div>'+
  '<p class="note" id="handoverModalWorld"></p><label for="handoverTitle">對話名稱 *</label>'+
- '<input id="handoverTitle" maxlength="180" placeholder="例如：耀斑前輩・完整交接稿">'+
+ '<input id="handoverTitle" maxlength="180" placeholder="例如：耀斑前輩・完整交接稿">'+'<label for="handoverAuthor">交接稿撰寫者／負責人（選填）</label><input id="handoverAuthor" maxlength="180" placeholder="例如：耀斑前輩">'+
  '<label for="handoverDescription">說明（選填）</label><textarea id="handoverDescription" placeholder="例如：第 1 至 11 份交接稿集中存放"></textarea>'+
  '<div class="actions topsp"><button type="button" class="btn primary" id="handoverCreate">儲存交接對話</button></div></div>';
  document.body.append(modal);
@@ -133,22 +175,24 @@ function createModal(){
  modal.addEventListener('click',e=>{if(e.target===modal)stop()});
  $('newHandover').onclick=()=>{
   $('handoverModalWorld').textContent='所屬世界觀：'+worldName(worldId())+'（與目前左側選擇一致）';
-  $('handoverTitle').value='';$('handoverDescription').value='';
+  $('handoverTitle').value='';$('handoverAuthor').value='';$('handoverDescription').value='';
   modal.classList.remove('hidden');$('handoverTitle').focus();
  };
  $('handoverCreate').onclick=()=>doSafe(async()=>{
   const title=$('handoverTitle').value.trim(),w=worldId();
   if(!title||!w)throw Error('請先選擇世界觀並填寫交接對話名稱');
   if(title.length>180)throw Error('名稱超過 180 字');
-  const t={id:uuid(),worldId:w,title,description:$('handoverDescription').value.trim().slice(0,3000),
-   createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),fileCount:0,noteCount:0};
+  const t={id:uuid(),worldId:w,title,author:$('handoverAuthor').value.trim().slice(0,180),description:$('handoverDescription').value.trim().slice(0,3000),
+   createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),fileCount:0,noteCount:0,reviewCount:0,selfReviewCount:0};
   await putThread(t);await reloadThreads();stop();openThread(t.id);message('已建立交接對話，現在可一次上傳多份交接稿。');
  });
 }
 async function addEntries(t,entries){
  if(!entries.length)return;
  const next={...t,updatedAt:new Date().toISOString(),fileCount:(t.fileCount||0)+entries.filter(e=>e.kind==='file').length,
-  noteCount:(t.noteCount||0)+entries.filter(e=>e.kind==='note').length};
+  noteCount:(t.noteCount||0)+entries.filter(e=>e.kind==='note').length,
+  reviewCount:(t.reviewCount||0)+entries.filter(e=>e.kind==='review').length,
+  selfReviewCount:(t.selfReviewCount||0)+entries.filter(e=>e.kind==='self-review').length};
  await transaction([THREADS,ENTRIES],'readwrite',tx=>{
   for(const e of entries)tx.objectStore(ENTRIES).put(e);
   tx.objectStore(THREADS).put(next);
@@ -158,7 +202,9 @@ async function addEntries(t,entries){
 async function removeEntry(t,entry){
  const next={...t,updatedAt:new Date().toISOString(),
   fileCount:Math.max(0,(t.fileCount||0)-(entry.kind==='file'?1:0)),
-  noteCount:Math.max(0,(t.noteCount||0)-(entry.kind==='note'?1:0))};
+  noteCount:Math.max(0,(t.noteCount||0)-(entry.kind==='note'?1:0)),
+  reviewCount:Math.max(0,(t.reviewCount||0)-(entry.kind==='review'?1:0)),
+  selfReviewCount:Math.max(0,(t.selfReviewCount||0)-(entry.kind==='self-review'?1:0))};
  await transaction([THREADS,ENTRIES],'readwrite',tx=>{
   tx.objectStore(ENTRIES).delete(entry.id);tx.objectStore(THREADS).put(next);
  });
