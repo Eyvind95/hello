@@ -50,7 +50,7 @@ function isExplicitUnknownGameTime(input){
 // Do not treat other timed AI replies as openings or change their game clocks.
 const LEGACY_OPENING_ISO='2026-08-22T10:42:00.000Z';
 function isAllowedOpeningRow(row){
- if(row?.role!=='ai'||isEvent(row.text))return false;
+ if(row?.role!=='ai'||isEvent(row.text)||isExplicitUnknownGameTime(row.text))return false;
  const clock=parseGameTime(row.text);
  return !clock||clock.iso===LEGACY_OPENING_ISO;
 }
