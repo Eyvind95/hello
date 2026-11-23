@@ -49,7 +49,7 @@ function validate(rows,expectedWorld){
  if(!Array.isArray(rows)||!rows.length)return {ok:false,errors:['沒有掃到任何可辨識訊息'],warnings,opening:'',messages:[],events:[],pairs:0};
  const opener=rows[0];
  if(!isAllowedOpeningRow(opener))
-   errors.push('首則不是可辨識的輪迴開場（原則無劇情時間；僅允許 2026/08/22 18:42 的舊式開場）；請回到真正的開場重新掃描');
+   errors.push('首則不是可辨識的輪迴開場（原則無劇情時間；僅允許 2026年8月22日 18:42 的舊式開場）；請回到真正的開場重新掃描');
  const opening=opener.role==='ai'?clean(opener.text):'';
  if(opening.length<8)errors.push('輪迴開場過短，可能選到工具列或不完整訊息');
  let pending=null,pairs=0,previousMs=null,autoContinues=0;
