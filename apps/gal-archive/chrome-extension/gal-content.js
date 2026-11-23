@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.21: partial native event quote recovery. */
+/* Independent Gal AI page scanner. v0.8.22: verify live WHIF chat binding. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.21';
+const SCANNER_VERSION='0.8.22';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
@@ -11,6 +11,38 @@ let activeRun=null;
 const localDifferences=new Map();
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const $=id=>document.getElementById(id);
+function bindingStateIssue(requested,state,currentSource){
+ if(!state?.ok)return '無法讀取目前 WHIF 頁面綁定：'+(state?.error||'請重開掃描助手');
+ if(state.source!==currentSource)
+  return 'WHIF 聊天網址正在切換，請確認頁面載入完成後重新讀取綁定。';
+ const bound=state.profile;
+ if(!bound?.cycleId||!bound?.worldName)
+  return '目前 WHIF 聊天尚未儲存輪迴綁定。請使用右下角「🧭 開啟輪迴掃描助手」完成綁定。';
+ if(requested?.cycleId&&requested.cycleId!==bound.cycleId)
+  return '掃描面板的輪迴「'+(requested.cycleTitle||requested.cycleId)+
+   '」與目前 WHIF 頁面綁定「'+(bound.cycleTitle||bound.cycleId)+
+   '」不一致。請按「🔄 重新讀取目前綁定」確認後再掃描；本次未匯出任何正史。';
+ return '';
+}
+async function fetchCurrentBinding(requested=null){
+ const reply=await chrome.runtime.sendMessage({type:'gal-page-binding-state'});
+ const currentSource=location.origin+location.pathname.replace(/\/$/,'');
+ const issue=bindingStateIssue(requested,reply,currentSource);
+ if(issue)throw Error(issue);
+ return reply.profile;
+}
+async function refreshBoundTarget(){
+ if(busy){status('掃描進行中，無法變更目標輪迴');return}
+ try{
+  const p=await fetchCurrentBinding();
+  const names=Array.isArray(p.managerNames)?p.managerNames:String(p.manager||'').split(/[、，,;；\r\n]/u).filter(Boolean);
+  if(!names.length||names.length>2)throw Error('目前綁定的副駕駛欄位無效，請重新儲存');
+  target={uid:String(p.uid||''),worldName:p.worldName,cycleId:p.cycleId,
+   cycleTitle:String(p.cycleTitle||''),managerNames:names};
+  status('✅ 已重新讀取這個 WHIF 聊天的輪迴綁定：'+(target.cycleTitle||target.cycleId)+
+   '\n尚未開始掃描。請確認名稱正確，再按「▶ 開始／重新掃描」。');
+ }catch(error){status('⛔ '+String(error?.message||error))}
+}
 function mount(){
  if($(PANEL))return $(PANEL);
  const css=document.createElement('style');css.id=STYLE;css.textContent=
@@ -20,10 +52,10 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.20 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.22 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
- '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
+ '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
  '<button id="gal-scan-preview">掃 3 則停下（開場測試）</button><button id="gal-scan-event-probe">🎯 事件三則測試</button></div>'+
  '<details open><summary>首則 AI 回覆的段落驗收</summary>'+
  '<label for="gal-scan-native-copy">無法自動讀取時，可貼上 Gal AI「複製」的完整首則 AI 回覆</label>'+
@@ -38,6 +70,7 @@ function mount(){
  $('gal-scan-pause').onclick=()=>{if(busy){paused=true;status('已要求暫停，正在儲存診斷。')}};
  $('gal-scan-cancel').onclick=()=>{cancelled=true;status('已要求停止。未下載、未修改任何歸檔資料。')};
  $('gal-scan-pick').onclick=()=>chooseOpening();
+ $('gal-scan-refresh-binding').onclick=()=>refreshBoundTarget();
  $('gal-scan-retry').onclick=()=>{if(!busy&&target)scan(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
  $('gal-scan-preview').onclick=()=>{if(!busy&&target)scan(target,true);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
  $('gal-scan-event-probe').onclick=()=>{if(!busy&&target)eventThreeRowProbe(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
@@ -790,6 +823,7 @@ async function eventThreeRowProbe(profile){
  busy=true;cancelled=false;paused=false;target=profile;mount();localDifferences.clear();
  $('gal-scan-difference').hidden=true;$('gal-scan-difference-label').hidden=true;
  try{
+  await fetchCurrentBinding(profile);
   const shot=snapshot(null,'auto',false,true);
   diagnostic=inspect();
   if(!shot.rows.length)throw Error('目前畫面沒有可讀取的訊息');
@@ -874,6 +908,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   source:'rendered-dom',reason:'first-reply-not-validated'};
  try{
   if(managed){
+   await fetchCurrentBinding(profile);
    const response=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
    if(!response?.ok)throw Error(response?.error||'背景程式未登記掃描工作');
    registered=true;
