@@ -132,6 +132,38 @@ test('projects only an aligned body code block and leaves literal code and real 
     literal.replace(/\s/g,''));
 });
 
+test('serializes WHIF q elements with visible Chinese quotation marks', () => {
+  const quote = element('q', 'inline', text('紅色等級'));
+  const root = element('div', 'block', text('屬於中央管理局'), quote, text('的緊急通訊信號。'));
+  assert.equal(markdownFromDom(root, { role: 'ai' }), '屬於中央管理局「紅色等級」的緊急通訊信號。');
+});
+
+test('restores untimed WHIF event native paragraphs after q quote serialization', () => {
+  const quote1 = element('q', 'inline', text('砰——！'));
+  const quote2 = element('q', 'inline', text('緊急通報：C區邊境出現高強度精神污染源，疑似大規模暴走事件。'));
+  const root = element('div', 'block',
+    element('p', 'block', text('就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。')),
+    element('p', 'block', quote1),
+    element('p', 'block', text('一聲沉悶的爆裂聲從基地遠處的通訊頻道中傳來。')),
+    element('p', 'block', quote2)
+  );
+  const scanned = markdownFromDom(root, { role: 'ai' });
+  assert.equal(scanned,
+    '就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。\n「砰——！」\n一聲沉悶的爆裂聲從基地遠處的通訊頻道中傳來。\n「緊急通報：C區邊境出現高強度精神污染源，疑似大規模暴走事件。」');
+  const hidden = '{{below context is ' + 'x'.repeat(148) + '}}\n';
+  const native = hidden +
+    '就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。\n\n「砰——！」\n\n一聲沉悶的爆裂聲從基地遠處的通訊頻道中傳來。\n\n「緊急通報：C區邊境出現高強度精神污染源，疑似大規模暴走事件。」';
+  const result = context.GalArchiveCore.compareNativeParagraphs(scanned, native, {
+    event: true,
+    eventTitle: '就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。',
+    source: 'whif-event-content'
+  });
+  assert.equal(result.comparison.contentEqual, true);
+  assert.equal(result.comparison.clockEqual, true);
+  assert.equal(result.comparison.formatMarkers[0].kind, 'leading-whif-event-hidden-template');
+  assert.equal(result.text.replace(/\s/g,''), scanned.replace(/\s/g,''));
+});
+
 test('serializes CSS font-weight as markdown bold without requiring a strong tag', () => {
   const bold = element('span', 'inline', text('粗體。'));
   bold.style.fontWeight = '700';
