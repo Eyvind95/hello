@@ -152,9 +152,9 @@ async function push({db,user,progress=()=>{}}){
  if(!db||!user?.uid)throw Error('請先登入 Firebase');
  const local=await localSnapshot(),threadMap=requireSnapshot(local);
  const root=db.collection('galArchive').doc(user.uid);
- const cloudThreads=await root.collection(COLLECTION.threads).get();
- const cloudText=await root.collection(COLLECTION.entries).get();
- const cloudFiles=await root.collection(COLLECTION.files).get();
+ const cloudThreads=await root.collection(COLLECTION.threads).get({source:'server'});
+ const cloudText=await root.collection(COLLECTION.entries).get({source:'server'});
+ const cloudFiles=await root.collection(COLLECTION.files).get({source:'server'});
  if(!local.threads.length&&!local.entries.length&&(cloudThreads.size||cloudText.size||cloudFiles.size))
   throw Error('這台裝置沒有交接稿，但雲端已有資料；請先按「從雲端合併下載」，禁止空資料覆蓋');
  const tMap=new Map(cloudThreads.docs.map(d=>[d.id,d.data()])),eMap=new Map(cloudText.docs.map(d=>[d.id,d.data()]));
@@ -188,7 +188,7 @@ async function pull({db,user,progress=()=>{}}){
  if(!db||!user?.uid)throw Error('請先登入 Firebase');
  const root=db.collection('galArchive').doc(user.uid);
  const [threadSnap,textSnap,fileSnap]=await Promise.all([
-  root.collection(COLLECTION.threads).get(),root.collection(COLLECTION.entries).get(),root.collection(COLLECTION.files).get()
+  root.collection(COLLECTION.threads).get({source:'server'}),root.collection(COLLECTION.entries).get({source:'server'}),root.collection(COLLECTION.files).get({source:'server'})
  ]);
  // Local absence is not treated as delete: all records merge by stable ID.
  const local=await localSnapshot(),threadMap=new Map(local.threads.map(t=>[t.id,t])),entryMap=new Map(local.entries.map(e=>[e.id,e]));
