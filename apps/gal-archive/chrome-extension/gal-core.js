@@ -553,8 +553,12 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
      const sourcePrefix=text.slice(0,firstFence.index);
      const hiddenLine=/^[ \t]*\{\{([^{}\n]{1,200})\}\}[ \t]*$/gm;
      const hidden=[...sourcePrefix.matchAll(hiddenLine)];
-     if(hidden.length===1&&
-        !/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(hidden[0][1].trim())){
+     const priorHiddenTemplate=markers.some(item=>item.kind==='leading-whif-template');
+     if((hidden.length===1&&
+         !/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(hidden[0][1].trim()))||
+        (hidden.length===0&&priorHiddenTemplate)){
+      // An earlier strict preamble rule may already have stripped the one
+      // historic template. Undated HUD fences still require this projection.
       const plainPrefix=sourcePrefix.replace(hiddenLine,'').trim();
       if(unspaced(plainPrefix)===unspaced(visiblePrefix)){
        const noTemplate=plainPrefix?(plainPrefix+'\n'+text.slice(firstFence.index)):
@@ -583,7 +587,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
         (!scannedClock&&!candidateClock&&
          isExplicitUnknownGameTime(scanned)&&isExplicitUnknownGameTime(candidate));
        if(valid&&balance===0&&aligned===visibleKey.length&&verifiedClock){
-        record('whif-legacy-hidden-template',1,text,noTemplate);
+        if(hidden.length)record('whif-legacy-hidden-template',1,text,noTemplate);
         record('whif-legacy-status-code-fence',2,noTemplate,candidate);
         if(omitted.length)
          record('whif-legacy-balanced-dialogue-quotes',omitted.length,candidate,comparable);
