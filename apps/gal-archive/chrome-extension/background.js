@@ -3,6 +3,15 @@ importScripts('gal-scan-status.js');
 installGalScanStatus(chrome);
 const ENDPOINT = 'https://asia-east1-eyvind95-182f0.cloudfunctions.net/archiveIngest';
 const CHAT_PREFIX = 'https://chatgpt.com';
+const WHIF_HOSTS=new Set(['whif.io','www.whif.io']);
+const whifSource=url=>{
+  try{
+    const u=new URL(url);
+    if(u.protocol==='https:'&&WHIF_HOSTS.has(u.hostname)&&/^\/chat\/[a-zA-Z0-9_-]+\/?$/.test(u.pathname))
+      return u.origin+u.pathname.replace(/\/$/,'');
+  }catch(_){}
+  return null;
+};
 const validChat = url => {
   try { const u = new URL(url); return u.origin === CHAT_PREFIX && (/^\/c\/[a-zA-Z0-9-]+\/?$/.test(u.pathname) || /^\/g\/[^/]+\/c\/[a-zA-Z0-9-]+\/?$/.test(u.pathname)); }
   catch (_) { return false; }
@@ -16,6 +25,25 @@ const failures = {};
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if(typeof message?.type==='string'&&message.type.startsWith('gal-run-'))return false;
   (async () => {
+    if (message?.type === 'gal-page-open-assistant') {
+      if(!sender.tab||sender.frameId!==0) return {ok:false,error:'只能從 WHIF 主頁面開啟掃描助手'};
+      const source=whifSource(sender.tab.url||'');
+      if(!source)return {ok:false,error:'目前不是可辨識的 WHIF 聊天頁面'};
+      const data=await storageGet(['galProfilesByPage']);
+      const profile=data.galProfilesByPage?.[source];
+      if(!profile?.cycleId||!profile?.worldName)
+        return {ok:false,error:'這個 WHIF 聊天尚未綁定輪迴；請先用擴充功能完成一次綁定'};
+      try{
+        await chrome.scripting.executeScript({target:{tabId:sender.tab.id},world:'MAIN',files:['gal-native-source.js']});
+      }catch(_){}
+      await chrome.scripting.executeScript({target:{tabId:sender.tab.id},files:['gal-core.js','gal-content.js']});
+      const expected=chrome.runtime.getManifest().version;
+      const loaded=await chrome.tabs.sendMessage(sender.tab.id,{type:'gal-scan-ping'});
+      if(loaded?.version!==expected||loaded?.coreVersion!==expected)
+        return {ok:false,error:'分頁的掃描器或核心版本與已安裝版本不一致；請重新整理 WHIF 頁面'};
+      const opened=await chrome.tabs.sendMessage(sender.tab.id,{type:'gal-scan-open',profile});
+      return opened?.ok?{ok:true,opened:true}:{ok:false,error:opened?.error||'掃描助手沒有回應'};
+    }
     if (message?.type === 'get-status') {
       const data = await storageGet(['watch', 'profilesByChat', 'last']);
       const path = sender.tab && validChat(sender.tab.url || '') ? chatKey(sender.tab.url) : '';
