@@ -22,6 +22,25 @@ const storageSet = data => new Promise(r => chrome.storage.local.set(data, r));
 const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 const sha256 = async value => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
 const failures = {};
+const WHIF_REFRESH_VERSION_KEY='galLastWhifRefreshVersion';
+const refreshOpenWhifTabsAfterVersionChange=async()=>{
+  const version=chrome.runtime.getManifest().version;
+  const saved=await storageGet([WHIF_REFRESH_VERSION_KEY]);
+  if(saved?.[WHIF_REFRESH_VERSION_KEY]===version)return {refreshed:false,count:0};
+  const tabs=await chrome.tabs.query({url:['https://whif.io/chat/*','https://www.whif.io/chat/*']});
+  let count=0;
+  for(const tab of tabs){
+    if(!Number.isInteger(tab.id))continue;
+    try{
+      await chrome.tabs.reload(tab.id);
+      count++;
+    }catch(_){}
+  }
+  await storageSet({[WHIF_REFRESH_VERSION_KEY]:version});
+  return {refreshed:true,count};
+};
+refreshOpenWhifTabsAfterVersionChange().catch(()=>{});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if(typeof message?.type==='string'&&message.type.startsWith('gal-run-'))return false;
   (async () => {
