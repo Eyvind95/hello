@@ -85,7 +85,7 @@ function viewFooter(){
 }
 function contentHeader(thread){
  return '<div class="sectionhead"><div><div class="sub">交接稿・'+escapeHTML(worldName(thread.worldId))+'</div><h2>'+escapeHTML(thread.title)+'</h2>'+
- '<div class="stat">'+escapeHTML((thread.fileCount||0)+' 份檔案／'+(thread.noteCount||0)+' 則備註／'+(thread.reviewCount||0)+(thread.selfReviewCount?'／已有自評':''))+'</div></div>'+
+ '<div class="stat">'+escapeHTML((thread.fileCount||0)+' 份檔案／'+(thread.noteCount||0)+' 則備註'+(thread.selfReviewCount?'／已有自評':''))+'</div></div>'+
  '<div class="actions"><button type="button" class="btn small" data-ha-action="rename">✎ 改名稱</button><button type="button" class="btn small" data-ha-action="edit-author">設定撰寫者</button>'+
  '<button type="button" class="btn small" data-ha-action="backup-thread">下載此對話備份</button>'+
  '<button type="button" class="btn small danger" data-ha-action="delete-thread">刪除對話</button></div></div>'+
@@ -289,6 +289,30 @@ async function saveReviewRecord(t,entry,overwrite){
  });
  await reloadThreads();await renderActive(worldId());
 }
+async function saveSharedReview(w,entry,overwrite){
+ const previous=overwrite?await findWorldReview(w,overwrite):null;
+ if(overwrite&&!previous)throw Error('原評語不存在或不屬於目前世界觀');
+ const owner=previous?state.threads.find(t=>t.id===previous.threadId&&t.worldId===w):null;
+ const next={...previous,...entry,id:previous?.id||entry.id,threadId:sharedReviewId(w),
+  createdAt:previous?.createdAt||entry.createdAt,updatedAt:new Date().toISOString()};
+ await transaction(owner?[THREADS,ENTRIES]:[ENTRIES],'readwrite',tx=>{
+  tx.objectStore(ENTRIES).put(next);
+  if(owner)tx.objectStore(THREADS).put({...owner,reviewCount:Math.max(0,(owner.reviewCount||0)-1)});
+ });
+ await reloadThreads();await renderActive(w);
+}
+async function deleteWorldReview(w,entry){
+ const owner=state.threads.find(t=>t.id===entry.threadId&&t.worldId===w);
+ await transaction(owner?[THREADS,ENTRIES]:[ENTRIES],'readwrite',tx=>{
+  tx.objectStore(ENTRIES).delete(entry.id);
+  if(owner)tx.objectStore(THREADS).put({...owner,reviewCount:Math.max(0,(owner.reviewCount||0)-1)});
+ });
+ if(state.editingReviewId===entry.id)state.editingReviewId=null;
+ await reloadThreads();await renderActive(w);
+}
+function commonReviewContext(w){
+ return {title:worldName(w)+'・共用評語',author:'世界觀共用，並非單一交接稿撰寫者'};
+}
 function downloadReviewTxt(e,thread){
  const heading=e.kind==='self-review'?'【自己的自評】':'【大家的評語】';
  const lines=[heading,'交接對話：'+thread.title,'撰寫者：'+(thread.author||'未填寫'),
@@ -307,7 +331,10 @@ function downloadAllReviews(entries,thread){
  downloadBlob(new Blob([lines.join('\n')],{type:'text/plain;charset=utf-8'}),fileName(thread.title)+'_大家的評語.txt');
 }
 async function removeThread(t){
+ // Legacy per-thread comments must survive deletion of their original handover thread.
+ const legacyPeers=(await listWorldReviews(t.worldId)).filter(e=>e.threadId===t.id);
  await transaction([THREADS,ENTRIES],'readwrite',tx=>{
+  for(const e of legacyPeers)tx.objectStore(ENTRIES).put({...e,threadId:sharedReviewId(t.worldId)});
   tx.objectStore(THREADS).delete(t.id);
   const store=tx.objectStore(ENTRIES),req=store.index('threadId').openKeyCursor(IDBKeyRange.only(t.id));
   req.onsuccess=()=>{const cur=req.result;if(cur){store.delete(cur.primaryKey);cur.continue()}};
@@ -480,6 +507,7 @@ async function doSafe(fn){
  finally{state.busy=false}
 }
 function bindActions(){
+ $('handoverSharedReviews').onclick=()=>openSharedReviews(worldId());
  $('handoverThreads').addEventListener('click',e=>{
   const b=e.target.closest('[data-handover-id]');if(b)openThread(b.dataset.handoverId);
  });
@@ -496,7 +524,9 @@ function bindActions(){
  $('handoverImportFile').onchange=e=>doSafe(async()=>{try{const file=e.target.files?.[0];if(file)await importPack(file)}finally{e.target.value=''}});
  $('content').addEventListener('click',e=>{
   const btn=e.target.closest('[data-ha-action]');if(!btn)return;
-  const action=btn.dataset.haAction,entryId=btn.dataset.haId,t=activeThread(worldId());if(!t)return;
+  const action=btn.dataset.haAction,entryId=btn.dataset.haId,w=worldId(),t=activeThread(w);
+  if(!t&&!isSharedView(w))return;
+  if(!t&&!['back','cancel-review-edit','add-review','edit-review','download-review','download-reviews','delete-entry'].includes(action))return;
   if(action==='back'){close();window.ArchiveHandoverBridge?.rerender?.();return}
   if(action==='switch-view'){
    if(!['files','reviews','self'].includes(btn.dataset.haView))return;
@@ -527,21 +557,21 @@ function bindActions(){
     if(subject.length>250||title.length>200)throw Error('評語標題或範圍太長');
     const existingId=state.editingReviewId,now=new Date().toISOString();
     const entry={id:existingId||uuid(),threadId:t.id,kind:'review',reviewer,subject,title,text,updatedAt:now,createdAt:now,order:Date.now()};
-    await saveReviewRecord(t,entry,existingId);
+    await saveSharedReview(w,entry,existingId);
     state.editingReviewId=null;await renderActive(worldId());
     message(existingId?'✅ 已更新評語（保留原始 ID）':'✅ 已儲存 '+reviewer+' 的評語');
    }else if(action==='edit-review'){
-    const record=(await listEntries(t.id)).find(e=>e.id===entryId&&e.kind==='review');
+    const record=await findWorldReview(w,entryId);
     if(!record)throw Error('找不到這筆評語');
     state.editingReviewId=record.id;await renderActive(worldId());
     $('handoverReviewer')?.scrollIntoView({block:'center',behavior:'smooth'});
     message('已載入原評語，可修改後點「更新評語」。');
    }else if(action==='download-review'){
-    const record=(await listEntries(t.id)).find(e=>e.id===entryId&&e.kind==='review');
+    const record=await findWorldReview(w,entryId);
     if(!record)throw Error('找不到這筆評語');
-    downloadReviewTxt(record,t);
+    downloadReviewTxt(record,commonReviewContext(w));
    }else if(action==='download-reviews'){
-    await downloadAllReviews(await listEntries(t.id),t);
+    await downloadAllReviews(await listWorldReviews(w),commonReviewContext(w));
    }else if(action==='save-self'){
     const reviewer=String($('handoverSelfAuthor')?.value||'').trim(),text=String($('handoverSelfText')?.value||'').trim();
     if(!reviewer||reviewer.length>180)throw Error('請填寫自評者（最多 180 字）');
@@ -564,11 +594,14 @@ function bindActions(){
     await putThread({...t,author:answer.trim(),updatedAt:new Date().toISOString()});
     await reloadThreads();await renderActive(worldId());
    }else if(action==='download'||action==='preview'||action==='delete-entry'){
-    const entry=(await listEntries(t.id)).find(x=>x.id===entryId);
+    const entry=action==='delete-entry'&&state.view==='reviews'?await findWorldReview(w,entryId):(await listEntries(t.id)).find(x=>x.id===entryId);
     if(!entry)throw Error('找不到這筆交接內容，請重新開啟');
     if(action==='download'){if(!(entry.blob instanceof Blob))throw Error('找不到檔案內容');downloadBlob(entry.blob,entry.name)}
     else if(action==='preview')previewEntry(entry);
-    else if(confirm('確定要永久刪除這筆'+(entry.kind==='file'?'檔案（含原檔）':entry.kind==='review'?'他人評語':'備註')+'？'))await removeEntry(t,entry);
+    else if(confirm('確定要永久刪除這筆'+(entry.kind==='file'?'檔案（含原檔）':entry.kind==='review'?'世界觀共用評語':'備註')+'？')){
+     if(entry.kind==='review')await deleteWorldReview(w,entry);
+     else await removeEntry(t,entry);
+    }
    }else if(action==='rename'){
     const answer=prompt('重新命名這份交接對話：',t.title);
     if(answer===null)return;
