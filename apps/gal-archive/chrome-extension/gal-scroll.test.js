@@ -157,3 +157,18 @@ test('main scanner re-anchors only by a new ordered overlap, with a finite retry
  assert.match(content,/info=appendSample\(shot,collected\)/);
  assert.match(content,/scrollStall,scrollAtFailure,/);
 });
+
+
+test('failed 3-row preview exposes precise pairing evidence instead of masking validator errors',()=>{
+ assert.match(content,/openingPreviewStructure:\{/);
+ assert.match(content,/rowRoles:rowFacts\.map\(row=>row\.role\)\.join\(' → '\)/);
+ assert.match(content,/pairs:validation\.pairs,events:validation\.events\.length/);
+ assert.match(content,/errors:validation\.errors\.slice\(0,12\)/);
+ assert.match(content,/acceptedOpening:index===0\?core\.isAllowedOpeningRow\(row\):null/);
+ assert.match(content,/clock:parsed\?\.iso\|\|null/);
+ assert.match(content,/if\(collected\.length!==3\|\|validation\.pairs!==1\|\|validation\.events\.length\|\|!validation\.ok\)/);
+ assert.match(content,/validation\.errors\.length\?validation\.errors\.slice\(0,4\)\.join\('；'\)/);
+ // Story prose and unredacted WHIF native IDs must not enter diagnostics.
+ const area=content.slice(content.indexOf('const rowFacts=collected.map('),content.indexOf("if(!validation.ok)throw Error(",content.indexOf('const rowFacts=collected.map(')));
+ assert.doesNotMatch(area,/text:row\.text|nativeMessageId:|sampleText:|bodyText:/);
+});
