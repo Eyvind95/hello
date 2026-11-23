@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.28: verify inline historic context templates and trace rejected projections. */
+/* Independent Gal AI page scanner. v0.8.29: read and verify opening source paragraphs independently of ordinary replies. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.28';
+const SCANNER_VERSION='0.8.29';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
@@ -52,7 +52,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.28 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.29 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -406,7 +406,7 @@ function boundaryFragmentText(start,end,role='ai',trace,metadata,event=false){
  // Controls embedded in an incomplete DOM fragment are not game narration.
  holder.querySelectorAll('button,[role="button"],[role="toolbar"],svg,style,script,textarea,input').forEach(n=>n.remove());
  const text=core.markdownFromDom(holder,{role,trace,metadata,event}).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
- if(metadata&&(event||core.parseGameTime(text)||core.isExplicitUnknownGameTime(text))){
+ if(metadata){
   const base=range.commonAncestorContainer;
   const markers=[...(base.querySelectorAll?.(nativeMessageSelector)||[])].filter(node=>range.intersectsNode(node));
   if(base.matches?.(nativeMessageSelector))markers.unshift(base);
@@ -499,7 +499,7 @@ function messageText(node,role='ai',trace,metadata){
   ||node;
  const event=role==='ai'&&core.isEvent(body.innerText||'');
  const text=core.markdownFromDom(body,{role,trace,metadata,event}).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
- if(metadata&&(event||core.parseGameTime(text)||core.isExplicitUnknownGameTime(text))){
+ if(metadata){
   const markers=[...node.querySelectorAll(nativeMessageSelector)];
   if(node.matches(nativeMessageSelector))markers.unshift(node);
   metadata.nativeReply=nativeReplySource(markers);
@@ -754,7 +754,7 @@ function canonical(rows,valid,preview){
   readOnlyUntilImported:!preview,note:preview?'僅供三則測試驗收。':'原生來源對完整對話及事件具有優先權；不會更動副駕駛聊天、世界觀或補充筆記。覆蓋前需在檔案館確認備份。'
  };
 }
-function applyNativeFormat(entry,rows,sourceCounts,scanMode,nativeCopy='',event=false){
+function applyNativeFormat(entry,rows,sourceCounts,scanMode,nativeCopy='',event=false,opening=false){
  const metadata=rows[entry.scanIndex]?.formatSource;
  const source=metadata?.nativeReply;
  const matchedRow=source?.scannedText===entry.text;
@@ -778,7 +778,7 @@ function applyNativeFormat(entry,rows,sourceCounts,scanMode,nativeCopy='',event=
   const result=core.compareNativeParagraphs(entry.text,nativeText,{
    source:nativeCopy?'native-copy':event?'whif-event-content':'whif-message-content',
    statusText:metadata?.statusText,codeBlocks:metadata?.codeBlocks,
-   chapterTitle:nativeCopy?undefined:source?.chapterTitle,event,eventTitle:event?entry.title:undefined
+   chapterTitle:nativeCopy?undefined:source?.chapterTitle,event,opening,eventTitle:event?entry.title:undefined
   });
   check.comparison=result.comparison;
   if(result.text!==null){
@@ -1095,11 +1095,18 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     continuedPositions.some(gap=>[gap.previousId,gap.currentId].some(id=>
      sourceCounts.get(id)!==1||eventAudit.history.get(id)!=='ordinary-message'))))
    throw Error('疑似自動繼續，但原生標記數量、角色或來源 ID 無法核對；請檢查是否漏掃');
+  // The independent opening is not part of validation.messages. It must
+  // have its OWN source-ID-checked native paragraph pass before serialization.
+  // In particular, an untimed opening cannot rely on the AI timestamp gate.
+  const openingEntry={role:'ai',text:validation.opening,scanIndex:0,
+   gameTime:core.parseGameTime(validation.opening)?.iso||null};
+  const openingFormat=applyNativeFormat(openingEntry,collected,sourceCounts,scanMode,'',false,true);
+  validation.opening=openingEntry.text;
   const replies=validation.messages.filter(row=>row.role==='ai').map((row,i)=>
    applyNativeFormat(row,collected,sourceCounts,scanMode,i===0?nativeCopy:''));
   paragraphCheck=replies[0].check;
   const events=validation.events.map(row=>applyNativeFormat(row,collected,sourceCounts,scanMode,'',true));
-  showLocalDifferences([...replies,...events]);
+  showLocalDifferences([openingFormat,...replies,...events]);
   const nativeApplied=paragraphCheck.reason==='applied';
   const nativeConfirmed=nativeApplied||paragraphCheck.reason==='source-matched-no-change';
   if(!nativeConfirmed&&(requireNative||nativeCopy)){
@@ -1108,7 +1115,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     ?'原生文字與掃描到的首則 AI 回覆不一致，請核對或貼上完整回覆'
     :'無法讀取原生段落來源，請貼上完整首則 AI 回覆的原生複製文字');
   }
-  const paragraphAudit={ai:summarizeNativeFormats(replies),events:summarizeNativeFormats(events,true)};
+  const paragraphAudit={opening:openingFormat.check,ai:summarizeNativeFormats(replies),events:summarizeNativeFormats(events,true)};
   lastResult=canonical(collected,validation,preview);
   lastResult.scanRunId=run.scanRunId;
   if(!preview){
@@ -1119,6 +1126,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   paragraphCheck.exportedBlankLines=(firstReply?.text.match(/\n[ \t]*\n/g)||[]).length;
   if(preview)lastResult.paragraphCheck=paragraphCheck;
   diagnostic={...diagnostic,scanMode,scannerVersion:SCANNER_VERSION,coreVersion:core.version,nativeParagraphsApplied:nativeApplied,bottomProof,
+   openingCheck:openingFormat.check,
    firstTimedReply:firstTimedTrace,export:{generatedAt:lastResult.generatedAt,
     firstReplyScanIndex:firstReply?.scanIndex,
     firstReplyQuotes:(firstReply?.text.match(/「/g)||[]).length,
@@ -1127,8 +1135,9 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   if(!managed&&$('gal-scan-export'))$('gal-scan-export').disabled=false;
   status(managed?'掃描資料已產生，正在等待 Chrome 完成寫入兩份 JSON。':preview?'✅ 三則測試完成：世界觀開場 × 1、我 × 1、他 × 1。\n'+
    (nativeApplied?'已採用原生文字的分段。':nativeConfirmed?'分段與原生來源相同。':'本次僅使用頁面 DOM。段落驗收請用「用原生來源驗收三則」。')+
+   '\n開場原生段落：'+openingFormat.check.reason+'（空白分段 '+openingFormat.check.exportedBlankLines+'）'+
    '\n首則 AI 回覆的段落空行：'+paragraphCheck.exportedBlankLines+'。可下載測試 JSON。':
-   '✅ 已掃描完畢，未修改正史。\n開場：'+validation.opening.length+'字，完整回合：'+validation.pairs+
+   '✅ 已掃描完畢，未修改正史。\n開場：'+validation.opening.length+'字（原生段落 '+openingFormat.check.reason+'），完整回合：'+validation.pairs+
    '組，事件：'+validation.events.length+'件。'+(recoveryLog.length?'\n曾縮小步距修復 '+recoveryLog.length+' 次。':'')+
    '\nAI 原生分段套用 '+paragraphAudit.ai.applied+'／'+paragraphAudit.ai.total+
    '，與來源相同 '+paragraphAudit.ai.matchedWithoutChange+'，保留 DOM '+paragraphAudit.ai.fallback+'。'+
