@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101625">
+<title>今日總覽｜我的網站</title>
+<link rel="icon" href="/hello/apps/ledger/6.png">
+<style>
+:root{color-scheme:dark;--bg:#0e1422;--panel:#17233a;--border:#32415d;--fg:#eef2ff;--muted:#aeb9cd;--accent:#a99bff}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at 95% 0,#242045 0,transparent 45%),var(--bg);font-family:system-ui,"Noto Sans TC",sans-serif;color:var(--fg)}
+main{max-width:1050px;margin:0 auto;padding:25px 16px 48px}
+header{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center}
+h1{margin:0 0 6px;font-size:clamp(1.6rem,3vw,2.2rem)}
+small,.muted{color:var(--muted)}.notice{margin:20px 0;padding:12px 16px;border:1px solid var(--border);border-radius:13px;color:var(--muted);background:#131c2b}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin-top:18px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:17px;padding:20px;min-width:0}
+.card h2{font-size:1.04rem;margin:0 0 10px}.metric{font-size:clamp(1.3rem,3.5vw,1.9rem);font-weight:800;overflow-wrap:anywhere}.desc{color:var(--muted);font-size:.86rem;line-height:1.65;margin:8px 0 16px;min-height:40px}
+.actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+a,.button{display:inline-flex;align-items:center;text-decoration:none;cursor:pointer;color:#f8f8ff;background:#34324f;border:1px solid #59558e;border-radius:11px;padding:9px 14px;font:inherit}
+a:hover,.button:hover{filter:brightness(1.16)}
+.pill{border-radius:99px;font-size:.75rem;background:#2d2b50;color:#d1c8ff;padding:3px 9px}
+footer{margin-top:24px;color:var(--muted);font-size:.82rem}
+@media(max-width:650px){.grid{grid-template-columns:1fr}main{padding:16px 13px 35px}.card{padding:16px}.desc{min-height:0}}
+</style>
+</head>
+<body>
+<main>
+<header><div><small>我的網站 / 今日總覽</small><h1>今日總覽</h1><div class="muted" id="todayDate"></div></div><div class="actions"><button class="button" id="refresh">重新讀取</button><a href="/hello/main.html">返回主網站</a></div></header>
+<p class="notice">此頁只讀取這台瀏覽器已保存的本機資料，不會登入、改寫或上傳任何紀錄。不同裝置的雲端新資料，請先進入對應工具同步；沒有資料時會明確顯示，不會填入假數字。</p>
+<div class="grid">
+<section class="card"><h2>💰 記帳本 <span class="pill">本月</span></h2><div class="metric" id="walletMetric">讀取中…</div><p class="desc" id="walletDesc"></p><div class="actions"><a href="/hello/apps/a/myself.html">開啟記帳本</a></div></section>
+<section class="card"><h2>🗓️ 每日任務 <span class="pill">當日</span></h2><div class="metric" id="dailyMetric">讀取中…</div><p class="desc" id="dailyDesc"></p><div class="actions"><a href="/hello/apps/ledger/daily.html">開啟每日任務</a></div></section>
+<section class="card"><h2>📚 週計時器 <span class="pill">讀書</span></h2><div class="metric" id="studyMetric">讀取中…</div><p class="desc" id="studyDesc"></p><div class="actions"><a href="/hello/apps/weektimer/timer.html">開啟讀書計時器</a></div></section>
+<section class="card"><h2>⏱️ Gal AI 自律計時器</h2><div class="metric" id="galMetric">讀取中…</div><p class="desc" id="galDesc"></p><div class="actions"><a href="/hello/apps/gal-timer/gal.html">開啟 Gal AI 計時器</a></div></section>
+<section class="card"><h2>📜 輪迴檔案館</h2><div class="metric">獨立正史檔案館</div><p class="desc">包含原生正史匯入、事件簿、版本時光機及可下載的差異診斷。私人資料不會在此頁讀取或展示。</p><div class="actions"><a href="/hello/apps/gal-archive/index.html">進入輪迴檔案館</a></div></section>
+</div>
+<footer>所有數字僅作快速查看；最終記錄以各應用內的當日結算及同步結果為準。</footer>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const money=n=>'NT$ '+Math.round(n).toLocaleString('zh-TW');
+function read(key){try{const s=localStorage.getItem(key);return s?JSON.parse(s):null}catch{return null}}
+function ymd(d){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
+function formatMinutes(min){min=Math.max(0,Math.floor(Number(min)||0));return Math.floor(min/60)+' 小時 '+String(min%60).padStart(2,'0')+' 分'}
+function fmtSeconds(sec){return formatMinutes((Number(sec)||0)/60)}
+function show(metric,desc,value,details){$(metric).textContent=value;$(desc).textContent=details}
+function render(){
+ const now=new Date(),today=ymd(now),month=today.slice(0,7);
+ $('todayDate').textContent=now.toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric',weekday:'long'});
+ const wallet=read('ledgerEntries_v1');
+ if(Array.isArray(wallet)){
+  const total=wallet.filter(x=>x&&x.type==='expense'&&typeof x.date==='string'&&x.date.slice(0,7)===month)
+   .reduce((n,x)=>n+Math.max(0,Number(x.amount)||0),0);
+  show('walletMetric','walletDesc',money(total)+'／12,000','本月本機支出；月預算 NT$12,000（固定零用金）。');
+ }else show('walletMetric','walletDesc','尚無本機資料','先到記帳本確認登入與同步。');
+ const daily=read('daily_state_v1');
+ if(daily&&typeof daily==='object')show('dailyMetric','dailyDesc','已找到本機紀錄','每日任務會依遊戲重置時間判斷完成狀態；請進入原工具查看準確的未完成數。');
+ else show('dailyMetric','dailyDesc','尚無本機資料','先到每日任務確認登入與同步。');
+ const study=read('study_timer_data_v4');
+ if(study&&study.daily&&typeof study.daily==='object'){
+  const mins=Number(study.daily[today])||0;
+  const epoch=new Date(2026,4,18),from=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const diff=Math.floor((from-epoch)/86400000),weekIndex=Math.floor(diff/7),start=new Date(2026,4,18+weekIndex*7);
+  let weekly=0;for(let i=0;i<7;i++){const d=new Date(start.getFullYear(),start.getMonth(),start.getDate()+i);weekly+=Number(study.daily[ymd(d)])||0}
+  show('studyMetric','studyDesc',formatMinutes(mins),'今日已儲存讀書時數；本週累計 '+formatMinutes(weekly)+'。進行中的計時以原工具即時數據為準。');
+ }else show('studyMetric','studyDesc','尚無本機資料','先進入週計時器讀取雲端資料。');
+ const gal=read('gal_heart_timer_v1');
+ if(gal&&gal.days&&typeof gal.days==='object'){
+  let seconds=Math.max(0,Number(gal.days[today])||0);
+  if(Number.isFinite(gal.runningSince)){
+    const midnight=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+    seconds+=Math.max(0,(Date.now()-Math.max(midnight,gal.runningSince))/1000);
+  }
+  show('galMetric','galDesc',fmtSeconds(Math.min(86400,seconds)),'今日遊玩累計（含目前計時的估算值）；獎懲結算請以自律計時器為準。');
+ }else show('galMetric','galDesc','尚無本機資料','先進入 Gal AI 計時器讀取雲端資料。');
+}
+$('refresh').addEventListener('click',render);render();
+</script>
+</body>
+</html>
