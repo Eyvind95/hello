@@ -727,3 +727,92 @@ test('full scanner obtains opening native source even when it has no game clock'
  const app=fs.readFileSync(require.resolve('../index.html'),'utf8');
  assert.match(app,/updated\.opening=v\.opening/);
 });
+
+
+test('cycle 12 opening restores four source-only dialogue quote pairs, image wrapper and 19 original blank paragraphs',()=>{
+ const rendered=[
+ '基甫納前線基地，7F。',
+ '電梯停下時，門外沒有尋常宿舍走廊。',
+ '正前方只有一道需要權限開啟的深色門。',
+ '門鎖亮起綠燈。',
+ '進門後，寬敞客廳與後方開放式廚房一覽無遺。沙發旁散著幾件訓練用品，桌上還留著沒收走的終端與水杯。',
+ '這裡顯然已經有人生活很久。',
+ '米契爾正盤腿坐在地毯上打遊戲，肩上的蜜袋鼯突然抬起頭。',
+ '格里安站在廚房前倒水，視線隨聲音轉來。',
+ '維諾倚著吧台，像是早就在等著看新隊員長什麼樣。',
+ '客廳另一側，諾伊斯沒有說話，只從書頁上方抬了眼。',
+ '最後才是洛倫斯。',
+ '淺銀金長髮低束在身後，他合上手裡的資料，翠灰綠眼眸從晏序身上掃過，停留片刻。',
+ '房間在右側。',
+ '他將一張新的7F門卡放上桌面。',
+ '其他規矩之後再說。',
+ '米契爾從遊戲畫面裡抬頭。',
+ '隊長，你這樣很像在嚇新室友。',
+ '洛倫斯淡淡看他一眼。',
+ '那你閉嘴。',
+ '7F的第一天，就這樣開始了。'
+ ].join('\n');
+ const originalWithQuotes=rendered.replace(/(房間在右側。|其他規矩之後再說。|隊長，你這樣很像在嚇新室友。|那你閉嘴。)/gu,'「$1」');
+ const native=originalWithQuotes.replace(/\n/g,'\n\n')+'\n{{image:archive01.png}}';
+ const check=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  opening:true,source:'whif-message-content'
+ });
+ assert.equal(check.comparison.clockEqual,true);
+ assert.equal(check.comparison.contentEqual,true);
+ assert.equal(check.comparison.openingQuoteProjection.omittedQuotePairs,4);
+ assert.equal(check.comparison.openingQuoteProjection.preservedVisibleQuotes,0);
+ assert.equal(check.comparison.remainingUnexplained.scanned,0);
+ assert.equal(check.comparison.remainingUnexplained.native,0);
+ assert.equal((check.text.match(/\n\n/g)||[]).length,19);
+ assert.equal((check.text.match(/「/g)||[]).length,4);
+ assert.equal(check.text,originalWithQuotes.replace(/\n/g,'\n\n'));
+ assert.equal(check.comparison.formatMarkers.some(x=>x.kind==='terminal-image-marker'),true);
+ assert.equal(check.comparison.formatMarkers.some(x=>x.kind==='opening-balanced-dialogue-quotes'),true);
+ assert.equal(validate([{role:'ai',text:check.text},{role:'me',text:'玩家。'},
+   {role:'ai',text:'｜2026年8月22日｜\n｜🕒18:43｜\n正常回覆。'}]).ok,true);
+});
+
+test('opening quote restoration protects visible quotes and rejects body changes or unpaired source quotes',()=>{
+ const rendered='門打開了。\n「這裡。」他說。\n走廊另一端有人道：進來。';
+ const native='門打開了。\n\n「這裡。」他說。\n\n走廊另一端有人道：「進來。」';
+ const verified=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  opening:true,source:'whif-message-content'
+ });
+ assert.equal(verified.comparison.contentEqual,true);
+ assert.equal(verified.comparison.openingQuoteProjection.omittedQuotePairs,1);
+ assert.equal(verified.comparison.openingQuoteProjection.preservedVisibleQuotes,2);
+ assert.equal(verified.text,native);
+ for(const altered of [
+  native.replace('進來','騙你'),
+  native.replace('「進來。」','「進來。'),
+  native.replace('「進來。」','進來。」'),
+  native.replace('「進來。」','「進來！'),
+  '另一個世界的開場。'
+ ]){
+  const denied=context.GalArchiveCore.compareNativeParagraphs(rendered,altered,{
+   opening:true,source:'whif-message-content'
+  });
+  assert.equal(denied.comparison.contentEqual,false,'Reject '+altered);
+  assert.equal(denied.text,null);
+ }
+ const ordinary=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  opening:false,source:'whif-message-content'
+ });
+ assert.equal(ordinary.text,null);
+});
+
+test('opening quote projection requires verified exact reply and keeps status time intact',()=>{
+ const visible='｜2026年8月22日｜\n｜🕒18:42｜\n洛倫斯說：房間在右側。';
+ const native='｜2026年8月22日｜\n｜🕒18:42｜\n\n洛倫斯說：「房間在右側。」';
+ const restored=context.GalArchiveCore.compareNativeParagraphs(visible,native,{
+  opening:true,source:'whif-message-content'
+ });
+ assert.equal(restored.comparison.contentEqual,true);
+ assert.equal(restored.comparison.clockEqual,true);
+ assert.equal(restored.text,native);
+ const wrongTime=context.GalArchiveCore.compareNativeParagraphs(visible,native.replace('18:42','18:43'),{
+  opening:true,source:'whif-message-content'
+ });
+ assert.equal(wrongTime.text,null);
+ assert.equal(wrongTime.comparison.clockEqual,false);
+});
