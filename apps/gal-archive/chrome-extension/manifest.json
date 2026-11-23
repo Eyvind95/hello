@@ -3,7 +3,7 @@
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
   "version": "0.8.28",
   "version_name": "V0.8.28 測試版",
-  "description": "輪迴檔案館 V0.8.28 測試版：精確核對舊 WHIF 世界觀標題與相鄰隱藏模板，逐字驗證對話引號並記錄未成功的比對階段。",
+  "description": "輪迴檔案館 V0.8.28 測試版：精確核對舊 WHIF 世界觀標題與相鄰隱藏模板，逐字驗證對話引號，同時記錄各階段未命中的原因。",
   "permissions": [
     "storage",
     "activeTab",
