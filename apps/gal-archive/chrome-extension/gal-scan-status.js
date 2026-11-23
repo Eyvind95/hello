@@ -127,7 +127,9 @@ function installGalScanStatus(api){
     throw Error('已有掃描工作正在執行');
    const bindings=(await api.storage.local.get('galProfilesByPage')).galProfilesByPage||{};
    const binding=bindings[tabSource];
-   if(binding?.cycleId!==message.cycleId)throw Error('掃描輪迴與頁面綁定不一致');
+   if(!binding)throw Error('目前 WHIF 聊天尚未儲存輪迴綁定。請從右下角「🧭 開啟輪迴掃描助手」綁定正確輪迴。');
+   if(binding.cycleId!==message.cycleId)
+    throw Error('掃描輪迴與頁面綁定不一致（掃描：'+message.cycleId+'；目前綁定：'+binding.cycleId+'）。請重新讀取目前頁面綁定後再試。');
    if(!['full','preview'].includes(message.scope))throw Error('掃描範圍無效');
    const cycleTitle=String(binding?.cycleTitle||'輪迴').trim().slice(0,160)||'輪迴';
    const next=record(runs,{scanRunId:message.scanRunId,cycleId:message.cycleId,cycleTitle,tabId:sender.tab.id,
