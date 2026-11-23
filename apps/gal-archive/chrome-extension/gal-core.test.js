@@ -492,3 +492,94 @@ test('native paragraphs remain comparable when both sides explicitly declare tim
  assert.equal(result.comparison.contentEqual,true);
  assert.equal(result.text,text);
 });
+
+
+test('cycle 3 historic chapter HUD restores hidden template, status fence and balanced dialogue quotes',()=>{
+ const title='《全員精神穩定，感情除-外》:';
+ const status='｜2026年8月22日（星期六）｜\n｜🕒19:13｜🚨紅色警戒｜\n｜📍基甫納前線基地・中央指揮部｜\n｜🍿暴走值：16%｜';
+ const rendered=title+'\n'+status+'\n那聲簡潔有力的\n好\n字甫一落下。洛倫斯沉聲道：\n維諾，回報。\n在呢，隊長。';
+ const native=title+'\n{{隱藏的章節說明}}\n'+
+  '\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n那聲簡潔有力的「好」字甫一落下。\n\n洛倫斯沉聲道：「維諾，回報。」\n\n「在呢，隊長。」';
+ const expected=title+'\n'+status+'\n\n那聲簡潔有力的「好」字甫一落下。\n\n洛倫斯沉聲道：「維諾，回報。」\n\n「在呢，隊長。」';
+ const comparison=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  source:'whif-message-content',statusText:status,codeBlocks:[]
+ });
+ assert.equal(comparison.comparison.contentEqual,true);
+ assert.equal(comparison.comparison.clockEqual,true);
+ assert.equal(comparison.comparison.legacyMessageProjection.omittedQuotePairs,3);
+ assert.equal(comparison.comparison.legacyMessageProjection.statusRows,4);
+ assert.deepEqual(JSON.parse(JSON.stringify(comparison.comparison.formatMarkers.map(x=>x.kind))),[
+  'whif-legacy-hidden-template','whif-legacy-status-code-fence',
+  'whif-legacy-balanced-dialogue-quotes'
+ ]);
+ assert.equal(comparison.text,expected);
+});
+
+test('cycle 3 historic HUD preserves already visible quotes and recovers only missing quote pairs',()=>{
+ const title='《全員精神穩定，感情除-外》:';
+ const status='｜2026年8月23日（星期日）｜\n｜🕒07:21｜🚨污染入侵警報｜\n｜📍基甫納前線基地・7F走廊｜';
+ const body='「你過來。」洛倫斯看著對方，說：好。\n洛倫斯將手按在門邊。';
+ const restored='「你過來。」洛倫斯看著對方，說：「好」。\n\n洛倫斯將手按在門邊。';
+ const native=title+'\n{{舊式段落}}\n\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n'+restored;
+ const result=context.GalArchiveCore.compareNativeParagraphs(title+'\n'+status+'\n'+body,native,{
+  source:'whif-message-content',statusText:status
+ });
+ assert.equal(result.comparison.contentEqual,true);
+ assert.equal(result.comparison.legacyMessageProjection.omittedQuotePairs,1);
+ assert.equal(result.comparison.legacyMessageProjection.preservedVisibleQuotes,2);
+ assert.equal(result.text,title+'\n'+status+'\n\n'+restored);
+});
+
+test('cycle 3 unknown-time final two replies restore legacy HUD without forging story clocks',()=>{
+ for(const [status,body] of [
+  ['｜日期不詳｜\n｜🕒時間不詳｜🚨狀態：意識崩潰｜\n｜📍維度夾縫｜',
+    '那片黑暗中，時間失去了意義。米契爾……'],
+  ['｜日期不詳｜\n｜🕒時間不詳｜🚨維度抹除｜\n｜📍虛無之海｜',
+    '那根金色的絲線斷了。']
+ ]){
+  const scanned=status+'\n'+body;
+  const source='{{歷史章節狀態}}\n\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n'+body;
+  const result=context.GalArchiveCore.compareNativeParagraphs(scanned,source,{
+   source:'whif-message-content',statusText:status
+  });
+  assert.equal(result.comparison.contentEqual,true);
+  assert.equal(result.comparison.clockEqual,true);
+  assert.equal(result.comparison.legacyMessageProjection.omittedQuotePairs,0);
+  assert.equal(result.text,status+'\n\n'+body);
+  assert.equal(parseGameTime(result.text),null);
+  assert.equal(context.GalArchiveCore.isExplicitUnknownGameTime(result.text),true);
+ }
+});
+
+test('legacy WHIF projection refuses body tampering, wrong dates, placeholders and mismatched context',()=>{
+ const title='《全員精神穩定，感情除-外》:';
+ const status='｜2026年8月22日（星期六）｜\n｜🕒19:13｜🚨紅色警戒｜\n｜📍指揮部｜';
+ const rendered=title+'\n'+status+'\n可靠正文。';
+ const source=(ctx,body='可靠正文。')=>
+  title+'\n{{'+ctx+'}}\n\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n'+body;
+ const invalid=[
+  source('章節','故事被悄悄改掉。'),
+  source('user'),
+  source('img:123.png'),
+  source('章節').replace('19:13','19:14'),
+  source('章節').replace('可靠正文。','「可靠正文。'),
+  source('章節').replace('可靠正文。','可靠正文。接續捏造。'),
+  title+'\n{{章節甲}}\n{{章節乙}}\n\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n可靠正文。'
+ ];
+ for(const native of invalid){
+  const result=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+   source:'whif-message-content',statusText:status
+  });
+  assert.equal(result.text,null,'reject '+native.slice(0,80));
+  assert.equal(result.comparison.contentEqual,false);
+ }
+});
+
+test('historical WHIF projection does not apply to ordinary message without required fenced HUD',()=>{
+ const status='｜2026年8月22日｜\n｜🕒19:13｜';
+ const native='{{模板}}\n'+status+'\n正文。';
+ const rendered=status+'\n正文。';
+ const result=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{source:'whif-message-content',statusText:status});
+ assert.equal(result.text,null);
+ assert.equal(result.comparison.legacyMessageProjection,undefined);
+});
