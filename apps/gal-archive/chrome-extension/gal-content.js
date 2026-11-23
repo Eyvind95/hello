@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.31: native untimed opening quote/paragraph restoration. */
+/* Independent Gal AI page scanner. v0.8.32: diagnose legacy opening preview pairing without exposing story text. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.31';
+const SCANNER_VERSION='0.8.32';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=8000,BOTTOM_POLL_MS=750;
@@ -52,7 +52,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.31 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.32 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -1082,8 +1082,35 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   if(paused)throw Error('掃描已暫停。請返回輪迴開場重新開始，避免匯出半份正史。');
   if(stepCount>=12000)throw Error('未確認掃描到底，達到安全上限');
   const validation=core.validate(collected,target.worldName);
-  if(preview&&(collected.length!==3||validation.pairs!==1||validation.events.length))
-   throw Error('三則測試需要從世界觀開場開始，接著是第一組「我／他」');
+  if(preview){
+   // A 3-item count alone does not prove opening/me/AI pairing. Keep
+   // source-bound IDs out of the downloadable diagnostic; retain only
+   // structure, clock parsing, safe header facts and validator messages.
+   const rowFacts=collected.map((row,index)=>{
+    const parsed=core.parseGameTime(row.text);
+    const visible=core.clean(row.text);
+    const firstLine=visible.split('\n').find(Boolean)||'';
+    const native=row.formatSource?.nativeReply;
+    return {index,role:row.role,eventType:row.eventType||null,
+     characters:visible.length,firstLineLength:firstLine.length,
+     beginsWithDateStatus:/^[｜|│]\s*(?:\d{4}年|\d{4}[-/]|日期不詳)/u.test(firstLine),
+     explicitUnknownTime:core.isExplicitUnknownGameTime(row.text),
+     clock:parsed?.iso||null,
+     acceptedOpening:index===0?core.isAllowedOpeningRow(row):null,
+     nativeSourceFound:native?.reason==='available',
+     nativeMarkerCount:Number.isInteger(native?.markerCount)?native.markerCount:null};
+   });
+   diagnostic={...(diagnostic||{}),openingPreviewStructure:{
+    collected:collected.length,rowRoles:rowFacts.map(row=>row.role).join(' → '),
+    rows:rowFacts,pairs:validation.pairs,events:validation.events.length,
+    validationOk:validation.ok,errors:validation.errors.slice(0,12)}};
+   if(collected.length!==3||validation.pairs!==1||validation.events.length||!validation.ok){
+    const reason=validation.errors.length?validation.errors.slice(0,4).join('；'):
+     '本次三筆沒有形成一組開場 → 玩家 → AI 回合';
+    throw Error('三則測試結構未通過（'+rowFacts.map(row=>row.role).join(' → ')+
+     '；完整回合 '+validation.pairs+' 組；事件 '+validation.events.length+' 件）：'+reason);
+   }
+  }
   if(!validation.ok)throw Error('完整性檢查失敗：\n'+validation.errors.slice(0,12).join('\n'));
   const sourceCounts=new Map();
   for(const row of collected){
