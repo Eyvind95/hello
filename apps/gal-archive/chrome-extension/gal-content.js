@@ -1,11 +1,11 @@
-/* Independent Gal AI page scanner. v0.8.17: proactively refresh WHIF tabs after extension version change. */
+/* Independent Gal AI page scanner. v0.8.18: stable-bottom proof + previous-complete regression guard. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.17';
+const SCANNER_VERSION='0.8.18';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
-const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350;
+const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
 let busy=false,cancelled=false,paused=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
 let activeRun=null;
 const localDifferences=new Map();
@@ -20,7 +20,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.17 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.18 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -768,7 +768,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  const exportButton=$('gal-scan-export');
  exportButton.disabled=true;
  exportButton.textContent=preview?'下載三則測試 JSON':'下載原生正史 JSON';
- const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,scanMode='auto';
+ const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,scanMode='auto',bottomProof=null;
  const recoveryLog=[];
  let unpairedReply=null;
  const continuedPositions=[];
@@ -852,7 +852,37 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     '\n目前步距 '+stepPx+'px，'+Math.round(SCROLL_RATIO*100)+'%／'+MAX_SCROLL_PX+
     'px 上限；'+WAIT_MS+'ms＋'+STABLE_MS+'ms 等待。'+
     '\n'+(info.added?'新增 '+info.added+' 則':'前後畫面重疊')+'；尚未匯出或覆蓋。');
-   if(isBottom(root)){bottomFrames++;if(bottomFrames>=3)break}else bottomFrames=0;
+   if(isBottom(root)){
+    bottomFrames++;
+    if(bottomFrames>=3){
+     const proofStarted=Date.now(),proofHeight=root.scrollHeight;
+     const tailSignature=rows=>rows.slice(-8).map(row=>
+      row.formatSource?.nativeReply?.messageId||row.formatSource?.eventEvidence?.messageId||
+      row.role+'|'+hash(row.text)).join('|');
+     const proofSignature=tailSignature(shot.rows);
+     let changed=false,reason='stable';
+     status('⏳ 已到目前頁面底部；等待 '+Math.round(BOTTOM_CONFIRM_MS/1000)+
+      ' 秒確認 WHIF 是否仍在補載後續歷史。\n目前可信 '+collected.length+' 則，尚未匯出。');
+     while(Date.now()-proofStarted<BOTTOM_CONFIRM_MS){
+      await sleep(BOTTOM_POLL_MS);
+      if(!root.isConnected)throw Error('底部確認期間頁面替換了原捲動容器，停止避免漏掃');
+      if(root.scrollHeight!==proofHeight||!isBottom(root)){
+       changed=true;reason='scroll-geometry-changed';break;
+      }
+      const probe=snapshot(root,scanMode,false,true);
+      if(tailSignature(probe.rows)!==proofSignature){
+       changed=true;reason='visible-tail-changed';break;
+      }
+     }
+     bottomProof={stable:!changed,reason,waitedMs:Date.now()-proofStarted,
+      collected:collected.length,initialScrollHeight:proofHeight,finalScrollHeight:root.scrollHeight};
+     diagnostic={...(diagnostic||inspect()),bottomProof};
+     if(!changed)break;
+     bottomFrames=0;
+     status('↻ WHIF 在底部確認期間又載入了內容；繼續掃描，不判定完成。');
+     continue;
+    }
+   }else bottomFrames=0;
    if(info.added&&stepPx<nominal)stepPx=Math.min(nominal,Math.max(stepPx+12,Math.floor(stepPx*1.2)));
    const before=root.scrollTop;
    root.scrollTop=Math.min(root.scrollHeight-root.clientHeight,before+stepPx);
@@ -900,7 +930,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   const firstReply=lastResult.messages.find(row=>row.role==='ai');
   paragraphCheck.exportedBlankLines=(firstReply?.text.match(/\n[ \t]*\n/g)||[]).length;
   if(preview)lastResult.paragraphCheck=paragraphCheck;
-  diagnostic={...diagnostic,scanMode,scannerVersion:SCANNER_VERSION,coreVersion:core.version,nativeParagraphsApplied:nativeApplied,
+  diagnostic={...diagnostic,scanMode,scannerVersion:SCANNER_VERSION,coreVersion:core.version,nativeParagraphsApplied:nativeApplied,bottomProof,
    firstTimedReply:firstTimedTrace,export:{generatedAt:lastResult.generatedAt,
     firstReplyScanIndex:firstReply?.scanIndex,
     firstReplyQuotes:(firstReply?.text.match(/「/g)||[]).length,
@@ -926,7 +956,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  }catch(err){
   failure=String(err?.message||err);
   if(root?.isConnected)root.scrollTop=lastGoodY;
-  diagnostic={...(diagnostic||inspect()),...run,scanMode,error:failure,trustedCount:collected.length,paragraphCheck,unpairedReply,
+  diagnostic={...(diagnostic||inspect()),...run,scanMode,error:failure,trustedCount:collected.length,paragraphCheck,unpairedReply,bottomProof,
    autoContinueCandidates:continuedPositions.map(({scanIndex})=>scanIndex),
    eventAudit:summarizeEventAudit(eventAudit,collected,{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
