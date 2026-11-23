@@ -322,3 +322,46 @@ if(process.env.GAL_ARCHIVE_EVENT_COPY&&process.env.GAL_ARCHIVE_FENCED_SCAN){
     }
   });
 }
+
+test('cycle 13 event 421 restores omitted quote pairs but keeps its original trailing closer', () => {
+  const compare=context.GalArchiveCore.compareNativeParagraphs;
+  const hidden='{{Below context is an event which has just occurred. Please respond.}}\n';
+  const native=hidden+'警報響起：「警告，B3有污染。」\n\n米契爾看向凱文：「B3怎麼會……」故事繼續。……我們必須立刻過去。」';
+  const scanned='警報響起：\n警告，B3有污染。\n米契爾看向凱文：\nB3怎麼會……\n故事繼續。……我們必須立刻過去。」';
+  const opts={source:'whif-event-content',event:true,eventTitle:'警報響起'};
+  const result=compare(scanned,native,opts);
+  assert.equal(result.comparison.contentEqual,true);
+  assert.equal(result.comparison.clockEqual,true);
+  assert.equal(result.comparison.formatMarkers[0].kind,'leading-whif-event-hidden-template');
+  assert.equal(result.comparison.formatMarkers[1].kind,'native-event-dialogue-quotes');
+  assert.equal(result.comparison.formatMarkers[1].tokens,4);
+  assert.equal(result.comparison.eventQuoteProjection.pairs,2);
+  assert.equal(result.comparison.eventQuoteProjection.preservedVisibleQuotes,1);
+  assert.equal(result.comparison.remainingUnexplained.scanned,0);
+  assert.equal(result.comparison.remainingUnexplained.native,0);
+  assert.equal(result.text,native.slice(hidden.length));
+  assert.equal((result.text.match(/「/g)||[]).length,2);
+  assert.equal((result.text.match(/」/g)||[]).length,3);
+  assert.equal(compare(scanned,native.replace('B3有污染','B3無污染'),opts).text,null);
+  assert.equal(compare(scanned.replace(/」$/,''),native,opts).text,null);
+  assert.equal(compare(scanned,native.slice(hidden.length),opts).text,null);
+  assert.equal(compare(scanned,'{{user}}\n'+native.slice(hidden.length),opts).text,null);
+});
+if(process.env.GAL_ARCHIVE_CYCLE13_EVENT_THREE_ROW){
+  test('cycle 13 event 421 real preview restores native paragraphs without editing content',()=>{
+    const preview=JSON.parse(fs.readFileSync(process.env.GAL_ARCHIVE_CYCLE13_EVENT_THREE_ROW,'utf8'));
+    const event=preview.rows.find(row=>row.eventEvidence?.kind==='event-message');
+    assert.ok(event);
+    const compare=context.GalArchiveCore.compareNativeParagraphs;
+    const result=compare(event.scannedText,event.nativeText,{
+      source:'whif-event-content',event:true,eventTitle:''
+    });
+    const original=event.nativeText.replace(/^\{\{[^{}\n]+\}\}[ \t]*\n(?:[ \t]*\n)*/u,'');
+    assert.equal(result.text,original);
+    assert.equal(result.comparison.eventQuoteProjection.pairs,2);
+    assert.equal(result.comparison.eventQuoteProjection.preservedVisibleQuotes,1);
+    assert.equal(result.comparison.remainingUnexplained.scanned,0);
+    assert.equal(result.comparison.remainingUnexplained.native,0);
+    assert.equal(result.comparison.formatMarkers[1].tokens,4);
+  });
+}
