@@ -145,6 +145,24 @@ function installGalScanStatus(api){
   if(terminal.has(run.state)||run.exportPending)return publicStatus(run);
   if(!terminal.has(message.state)||!Number.isInteger(message.scanned)||message.scanned<0||message.scanned>20000)
    throw Error('掃描狀態無效');
+  let completedResult=null;
+  if(message.state==='completed'){
+   completedResult=JSON.parse(message.result);
+   if(completedResult.scanRunId!==run.scanRunId||completedResult.target?.cycleId!==run.cycleId||
+      source(completedResult.source?.url)!==run.source||completedResult.validation?.ok!==true||
+      completedResult.scope!==(run.scope==='full'?'entire-opening-to-bottom':'opening-first-pair-preview')||
+      completedResult.rawRows!==message.scanned)
+    throw Error('掃描結果未通過工作 ID、來源或完整性核對');
+   if(run.scope==='full'){
+    const previous=Object.values(runs).filter(candidate=>
+     candidate.scanRunId!==run.scanRunId&&candidate.state==='completed'&&candidate.scope==='full'&&
+     candidate.cycleId===run.cycleId&&candidate.source===run.source&&Number.isInteger(candidate.scanned))
+     .sort((a,b)=>String(b.at||'').localeCompare(String(a.at||'')))[0];
+    if(previous&&message.scanned<previous.scanned)
+     throw Error('完整掃描只有 '+message.scanned+' 筆，少於上一份已完成掃描 '+previous.scanned+
+      ' 筆；判定 WHIF 歷史尚未載完，拒絕輸出半份正史');
+   }
+  }
   const next=record(runs,run,{finishState:message.state,scanned:message.scanned,
    reason:message.state==='completed'?undefined:String(message.reason||'掃描中斷').slice(0,350),
    exportPending:true,files:{}});
@@ -153,12 +171,7 @@ function installGalScanStatus(api){
    const diagnostic=JSON.parse(message.diagnostic);
    if(diagnostic.scanRunId!==run.scanRunId||diagnostic.cycleId!==run.cycleId)throw Error('診斷與掃描工作不符');
    if(message.state==='completed'){
-    const result=JSON.parse(message.result);
-    if(result.scanRunId!==run.scanRunId||result.target?.cycleId!==run.cycleId||
-       source(result.source?.url)!==run.source||result.validation?.ok!==true||
-       result.scope!==(run.scope==='full'?'entire-opening-to-bottom':'opening-first-pair-preview')||
-       result.rawRows!==message.scanned)
-     throw Error('掃描結果未通過工作 ID、來源或完整性核對');
+    const result=completedResult;
     next.summary={messages:result.messages.length,pairs:result.validation.pairs,events:result.events.length,
      autoContinues:result.validation.autoContinues||0};
     next.files.result=await startFile(run,'result',message.result);
