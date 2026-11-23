@@ -277,3 +277,10 @@ V0.8.15 測試版 — 更新後 WHIF extension context 自動恢復
 - 偵測到舊 extension context 時，WHIF 分頁會自動重新整理一次，讓 Chrome 注入新版 content script。
 - 加入 15 秒一次性防循環；若重新整理後仍無法恢復，按鈕會停在「請重新整理 WHIF」，不會無限刷新。
 - 固定更新流程仍應在擴充功能「重新載入」後主動重新整理 WHIF；自動恢復是第二層保護。
+
+
+V0.8.16 測試版 — WHIF 事件中文引號擷取修正
+- 修正事件卡中的 <q> 元素：瀏覽器顯示／複製時可見「」，但 textContent 不含引號，導致 DOM 掃描版本少字。
+- markdownFromDom() 現在會把 <q> 明確序列化為「內容」。
+- 不放寬 native exact-match；修正後仍需在剝除 WHIF 隱藏 {{...}} context 後全文一致才採用原生段落。
+- 針對第13輪迴 scanIndex 19、30、87、421、688、849 的共同 mismatch 根因加入回歸測試。
