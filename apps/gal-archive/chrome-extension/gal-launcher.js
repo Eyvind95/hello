@@ -26,7 +26,15 @@ const recoverContext=()=>{
   button.textContent='♻️ 擴充功能已更新，正在重新整理 WHIF…';
   setTimeout(()=>location.reload(),250);
 };
+const extensionContextAlive=()=>{
+  try{return Boolean(globalThis.chrome?.runtime?.id)}catch(_){return false}
+};
 const send=message=>new Promise(resolve=>{
+  if(!extensionContextAlive()){
+    recoverContext();
+    resolve({ok:false,contextInvalidated:true,error:'擴充功能剛更新，WHIF 正在重新整理'});
+    return;
+  }
   try{
     chrome.runtime.sendMessage(message,response=>{
       let error='';
@@ -130,6 +138,10 @@ async function openBinding(){
 }
 button.onclick=async()=>{
   if(button.disabled)return;
+  if(!extensionContextAlive()){
+    recoverContext();
+    return;
+  }
   clearTimeout(timer);button.disabled=true;button.textContent='正在開啟助手…';
   const state=await send({type:'gal-page-binding-state'});
   if(!state?.ok){statusButton('⛔ '+(state?.error||'無法讀取綁定'),4200);return}
