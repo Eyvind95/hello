@@ -70,7 +70,12 @@ async function inspect(file,{previewArchive}){
  const archive=JSON.parse(archiveText.replace(/^\uFEFF/,''));
  if(archive?.format!=='gal-ai-archive'||!Array.isArray(archive.cycles)||!Array.isArray(archive.worlds))
   throw Error('完整備份中的正史 JSON 無效');
- if(typeof previewArchive==='function')previewArchive(archiveText);
+ if(typeof previewArchive==='function'){
+  const report=previewArchive(archiveText);
+  if(report?.errors?.length||report?.valid?.length!==archive.cycles.length||
+   (Array.isArray(report?.worlds)&&report.worlds.length<archive.worlds.length))
+   throw Error('完整備份中的正史包含無法匯入的輪迴／世界觀，拒絕不完整還原');
+ }
  const handover=requireHandover();
  let handoverCount=0,fileCount=0;
  for(const segment of segments.slice(1)){
