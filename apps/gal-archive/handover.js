@@ -180,10 +180,30 @@ function downloadBlob(blob,name){
 function previewEntry(entry){
  if(!(entry.blob instanceof Blob))throw Error('這筆附件遺失檔案內容，請由備份還原');
  if(!String(entry.mime||'').startsWith('image/')&&entry.mime!=='application/pdf')throw Error('此類型請下載後開啟');
+ const previous=$('handoverPreview');
+ if(previous)previous.remove();
  const url=URL.createObjectURL(entry.blob);
- const windowRef=window.open(url,'_blank','noopener,noreferrer');
- if(!windowRef){URL.revokeObjectURL(url);throw Error('瀏覽器阻擋預覽視窗，請改用下載檔案')}
- setTimeout(()=>URL.revokeObjectURL(url),180000);
+ const dialog=document.createElement('div');
+ dialog.id='handoverPreview';dialog.className='modalback';dialog.setAttribute('role','dialog');
+ dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','查看交接稿附件');
+ const card=document.createElement('div');card.className='modal';
+ card.style.maxWidth='min(1100px,96vw)';card.style.maxHeight='94vh';card.style.width='96vw';
+ const heading=document.createElement('div');heading.className='sectionhead';
+ const title=document.createElement('strong');title.textContent=entry.name||'交接稿附件';
+ const closeButton=document.createElement('button');closeButton.className='btn small';
+ closeButton.type='button';closeButton.textContent='關閉預覽';
+ heading.append(title,closeButton);card.append(heading);
+ const viewer=document.createElement(entry.mime==='application/pdf'?'iframe':'img');
+ viewer.src=url;viewer.style.display='block';viewer.style.marginTop='12px';
+ viewer.style.width='100%';viewer.style.maxHeight='75vh';
+ if(entry.mime==='application/pdf'){
+  viewer.title=entry.name||'PDF 交接稿';
+  viewer.style.height='72vh';viewer.style.border='0';
+ }else{viewer.alt=entry.name||'交接稿圖片';viewer.style.objectFit='contain'}
+ card.append(viewer);dialog.append(card);document.body.append(dialog);
+ const close=()=>{dialog.remove();URL.revokeObjectURL(url)};
+ closeButton.onclick=close;
+ dialog.addEventListener('click',e=>{if(e.target===dialog)close()});
 }
 function binaryToBase64(blob){return new Promise((resolve,reject)=>{
  const fr=new FileReader();fr.onerror=()=>reject(fr.error||Error('檔案備份讀取失敗'));
