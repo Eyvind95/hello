@@ -4331,9 +4331,23 @@ async function pushCloud(){
   const root=cloudDb.collection('galArchive').doc(u.uid);
   const now=new Date().toISOString();
   const worlds=Object.values(worldDocs),totalCycles=records.length;
-  let count=0;
-  for(const w of worlds){await root.collection('worlds').doc(w.id).set(w);count++}
+  const [remoteWorlds,remoteCycles]=await Promise.all([
+    root.collection('worlds').get({source:'server'}),
+    root.collection('cycles').get({source:'server'})
+  ]);
+  if(!worlds.length&&remoteWorlds.size||!totalCycles&&remoteCycles.size)
+   throw Error('本機世界觀／輪迴為空，但雲端已有正式資料；請先合併下載，拒絕空白上傳');
+  const cloudWorldMap=new Map(remoteWorlds.docs.map(d=>[d.id,d.data()]));
+  const cloudCycleMap=new Map(remoteCycles.docs.map(d=>[d.id,d.data()]));
+  let count=0,olderSkipped=0;
+  for(const w of worlds){
+    const old=cloudWorldMap.get(w.id);
+    if(old&&String(old.updatedAt||'')>=String(w.updatedAt||'')){olderSkipped++;continue}
+    await root.collection('worlds').doc(w.id).set(w);count++;
+  }
   for(const r of records){
+    const remote=cloudCycleMap.get(r.id);
+    if(remote&&String(remote.updatedAt||'')>=String(r.updatedAt||'')){olderSkipped++;continue}
     const ref=root.collection('cycles').doc(r.id);
     const parts=cloudParts(JSON.stringify(r));
     const oldParts=await ref.collection('parts').get();
@@ -4353,10 +4367,13 @@ async function pushCloud(){
     cloudStatus('已上傳 '+count+' 個項目，正在繼續…');
   }
   // 頂層文件必須確實存在，Firestore 主控台才能清楚看到獨立 galArchive 集合。
-  await root.set({app:'gal-ai-archive',schemaVersion:4,worldCount:worlds.length,cycleCount:totalCycles,cloudSavedAt:now},{merge:true});
+  await root.set({app:'gal-ai-archive',schemaVersion:4,
+    worldCount:new Set([...remoteWorlds.docs.map(d=>d.id),...worlds.map(w=>w.id)]).size,
+    cycleCount:new Set([...remoteCycles.docs.map(d=>d.id),...records.map(r=>r.id)]).size,
+    cloudSavedAt:now},{merge:true});
   const check=await root.get();
   if(!check.exists)throw Error('雲端根文件驗證失敗；請保留 JSON 備份');
-  cloudStatus('上傳完成：'+worlds.length+' 個世界觀、'+totalCycles+' 個輪迴。Firestore：galArchive / 你的 UID。請保留 JSON 備份。');
+  cloudStatus('正史上傳階段完成：本機 '+worlds.length+' 世界觀、'+totalCycles+' 輪，跳過雲端較新／相同版本 '+olderSkipped+' 筆。接下來仍需同步交接稿。');
 }
 async function pullCloud(){
   const u=await cloudSignedIn();
