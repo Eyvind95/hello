@@ -816,3 +816,49 @@ test('opening quote projection requires verified exact reply and keeps status ti
  assert.equal(wrongTime.text,null);
  assert.equal(wrongTime.comparison.clockEqual,false);
 });
+
+
+test('cycle 5 Yaoban historic 18:42 opening passes structurally with a genuine adjacent timed AI reply',()=>{
+ const opening=[
+  '｜2026年8月22日（星期六）｜',
+  '｜🕒18:42｜🌤️晴轉多雲｜',
+  '｜📍基甫納前線基地・7F宿舍客廳｜',
+  '｜🍿暴走值：8%｜',
+  '｜🐆嚮導值：96%｜💭：先觀察。｜',
+  '｜🐿️暴走值：6%｜💭：新隊友耶。｜',
+  '｜🐻暴走值：4%｜💭：看起來還好。｜',
+  '｜🦊暴走值：9%｜💭：有意思。｜',
+  '｜🐦‍⬛暴走值：12%｜💭：……在看。｜',
+  '基甫納前線基地，7F。',
+  '淺銀金長髮低束在身後，他合上手裡的資料，翠灰綠眼眸從耀斑身上掃過。',
+  '「房間在右側。」',
+  '7F的第一天，就這樣開始了。'
+ ].join('\n');
+ const rows=[
+  {role:'ai',text:opening},
+  {role:'me',text:'嗯，你們好。\n打了聲招呼後，進到房間。'},
+  {role:'ai',text:'｜2026年8月22日（星期六）｜\n｜🕒18:43｜\n歡迎來到7F。'}
+ ];
+ assert.equal(parseGameTime(opening)?.iso,'2026-08-22T10:42:00.000Z');
+ assert.equal(context.GalArchiveCore.isAllowedOpeningRow(rows[0]),true);
+ const valid=validate(rows,'全員精神穩定，感情除外');
+ assert.equal(valid.ok,true,JSON.stringify(valid.errors));
+ assert.equal(valid.pairs,1);
+ assert.equal(valid.scannedRows,3);
+ assert.equal(valid.opening,opening);
+ assert.equal(valid.messages.length,2);
+});
+
+test('cycle 5 preview does not invent missing first reply clock; reports the underlying validator reason',()=>{
+ const rows=[
+  {role:'ai',text:'｜2026年8月22日｜\n｜🕒18:42｜\n輪迴開場。'},
+  {role:'me',text:'嗯，你們好。\n打了聲招呼後，進到房間。'},
+  {role:'ai',text:'洛倫斯看向新隊友。'}
+ ];
+ const v=validate(rows,'全員精神穩定，感情除外');
+ assert.equal(v.ok,false);
+ assert.equal(v.pairs,0);
+ assert.equal(v.scannedRows,3);
+ assert.match(v.errors.join('\n'),/第 3 則 Gal AI 回覆缺少可辨識的劇情日期和時間/);
+ assert.equal(context.GalArchiveCore.isAllowedOpeningRow(rows[0]),true);
+});
