@@ -479,6 +479,13 @@ function archiveAutoContinueEvidence(previous,current){
  return {marked:true,ok:true,reason:''};
 }
 function archiveIsVerifiedAutoContinue(previous,current){return archiveAutoContinueEvidence(previous,current).ok}
+function archiveHasExplicitUnknownGalClock(row){
+ if(row?.role!=='ai'||typeof row.text!=='string')return false;
+ const lines=row.text.replace(/\r\n?/g,'\n').trim().split('\n').slice(0,7).map(line=>line.trim());
+ const date=/^[｜|│]\s*日期不詳\s*[｜|│]$/u;
+ const time=/^[｜|│]\s*(?:🕒\s*)?時間不詳\s*[｜|│]/u;
+ return lines.some((line,i)=>date.test(line)&&time.test(lines[i+1]||''));
+}
 function galNativeVerify(obj,r){
  const fail=[],warn=[];
  if(!r){fail.push('請先在檔案館左側選擇要覆蓋的輪迴');return {fail,warn}}
@@ -495,7 +502,7 @@ function galNativeVerify(obj,r){
  if(sourceMessages.length<2||sourceMessages.length>20000)fail.push('完整對話數量異常');
  if(!Array.isArray(obj?.events)||obj.events.length>5000)fail.push('事件清單格式或數量異常');
  const ids=new Set(),messages=[],events=[];
- let previous=null,pendingPlayerClock=null,pairs=0,autoContinues=0;
+ let previous=null,pendingPlayerClock=null,pairs=0,autoContinues=0,unknownGameTimeCount=0;
  for(let i=0;i<sourceMessages.length;i++){
   const raw=sourceMessages[i],role=raw?.role;
   if(role!=='me'&&role!=='ai')fail.push('第 '+(i+1)+' 則身份不是皮卡或 Gal AI');
@@ -504,10 +511,22 @@ function galNativeVerify(obj,r){
   if(typeof raw?.id!=='string'||!raw.id||ids.has(raw.id))fail.push('第 '+(i+1)+' 則 ID 重複或無效');
   ids.add(raw?.id);
   const clock=raw?.gameTime,clockMs=typeof clock==='string'?Date.parse(clock):NaN;
-  if(!Number.isFinite(clockMs))fail.push('第 '+(i+1)+' 則沒有可靠的 Gal AI 劇情時間');
   if(role==='ai'){
-   const header=archiveParseGalAIClock(raw);
-   if(!header||header.ms!==clockMs)fail.push('第 '+(i+1)+' 則 Gal AI 正文時間與 JSON 時間不一致');
+   const explicitlyUnknown=archiveHasExplicitUnknownGalClock(raw);
+   if(explicitlyUnknown){
+    if(clock!==null)fail.push('第 '+(i+1)+' 則原文明示日期／時間不詳，JSON 劇情時間必須為 null');
+    else{
+     unknownGameTimeCount++;
+     warn.push('第 '+(i+1)+' 則 Gal AI 原文日期／時間不詳，保留空白而不推測');
+    }
+   }else{
+    if(!Number.isFinite(clockMs))fail.push('第 '+(i+1)+' 則沒有可靠的 Gal AI 劇情時間');
+    const header=archiveParseGalAIClock(raw);
+    if(!header||header.ms!==clockMs)fail.push('第 '+(i+1)+' 則 Gal AI 正文時間與 JSON 時間不一致');
+   }
+  }else if(role==='me'){
+   if(clock===null)unknownGameTimeCount++;
+   else if(!Number.isFinite(clockMs))fail.push('第 '+(i+1)+' 則玩家訊息沒有可靠的 Gal AI 劇情時間');
   }
   if(role==='me'){
    if(raw?.autoContinue)fail.push('第 '+(i+1)+' 則玩家訊息不應帶 autoContinue 標記');
@@ -540,8 +559,15 @@ function galNativeVerify(obj,r){
  if(!Number.isFinite(reportedAuto)||autoContinues!==reportedAuto)
   fail.push('自動繼續次數與來源驗證報告不同：網站核對 '+autoContinues+'，來源 '+(obj?.validation?.autoContinues??'未填'));
  const reportedGameTimes=Number(obj?.validation?.gameTimeCount);
- if(Number.isFinite(reportedGameTimes)&&reportedGameTimes!==messages.length)
-  fail.push('劇情時間筆數與完整訊息數不同');
+ const verifiedGameTimes=messages.filter(m=>typeof m.gameTime==='string'
+   &&Number.isFinite(Date.parse(m.gameTime))).length;
+ if(Number.isFinite(reportedGameTimes)&&reportedGameTimes!==verifiedGameTimes)
+  fail.push('已知劇情時間筆數與來源驗證報告不符：網站核對 '+verifiedGameTimes+
+   '，來源 '+reportedGameTimes);
+ if(obj?.validation?.unknownGameTimeCount!==undefined&&
+   Number(obj.validation.unknownGameTimeCount)!==unknownGameTimeCount)
+  fail.push('未知劇情時間筆數與來源驗證報告不符：網站核對 '+unknownGameTimeCount+
+   '，來源 '+obj.validation.unknownGameTimeCount);
  for(let i=0;i<(Array.isArray(obj?.events)?obj.events.length:0);i++){
   const raw=obj.events[i];
   if(typeof raw?.text!=='string'||!raw.text.trim()||raw.text.length>30000)
@@ -562,7 +588,7 @@ function galNativeVerify(obj,r){
    fail.push('這份舊掃描檔沒有完整的原始訊息順序，事件無法安全定位；請使用 V0.7.6 重新掃描後匯入，避免把事件移到最後');
  if(Array.isArray(obj?.validation?.errors)&&obj.validation.errors.length)fail.push('來源報告仍有錯誤，不能覆蓋');
  if(Array.isArray(obj?.validation?.warnings))warn.push(...obj.validation.warnings.slice(0,8));
- return {fail,warn,opening,messages,events,selectedWorld,pairs,autoContinues};
+ return {fail,warn,opening,messages,events,selectedWorld,pairs,autoContinues,unknownGameTimeCount};
 }
 function galNativeBuildPlan(obj,r){
  const v=galNativeVerify(obj,r);
@@ -659,7 +685,7 @@ function galNativeBuildPlan(obj,r){
  const check=archiveCheckDialoguePairs(archiveStoryTimeline(updated));
  const ok=untouched&&!check.issues.length;
  return {...v,ok,updated,matched,acceptedUnmatched,
-   sourceCounts:{opening:v.opening.length,messages:v.messages.length,events:v.events.length,pairs:v.pairs,autoContinues:v.autoContinues},
+   sourceCounts:{opening:v.opening.length,messages:v.messages.length,events:v.events.length,pairs:v.pairs,autoContinues:v.autoContinues,unknownGameTimeCount:v.unknownGameTimeCount},
    previousCounts:{opening:(r.opening||'').length,messages:(r.messages||[]).length,events:oldEvents.length},
    afterOrange:check.timeIssues.length,afterRoleIssues:check.issues.length,untouched};
 }
@@ -682,7 +708,7 @@ function galNativePreview(){
  ];
  if(plan.ok){
   lines.push('輪迴開場：'+plan.previousCounts.opening+' → '+plan.sourceCounts.opening+' 字',
-   '完整對話：'+plan.previousCounts.messages+' → '+plan.sourceCounts.messages+' 則（'+plan.sourceCounts.pairs+' 組「我／他」＋'+plan.sourceCounts.autoContinues+' 次自動繼續）',
+   '完整對話：'+plan.previousCounts.messages+' → '+plan.sourceCounts.messages+' 則（'+plan.sourceCounts.pairs+' 組「我／他」＋'+plan.sourceCounts.autoContinues+' 次自動繼續；劇情時間不詳 '+plan.sourceCounts.unknownGameTimeCount+' 則）',
    '事件簿：'+plan.previousCounts.events+' → '+plan.sourceCounts.events+' 件',
    '舊事件狀態唯一對應：'+plan.matched+' 件',
    '舊已接事件找不到對應：'+plan.acceptedUnmatched+' 件'+(plan.acceptedUnmatched?'（需勾選額外確認才可覆蓋）':''),
