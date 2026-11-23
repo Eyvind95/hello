@@ -623,3 +623,90 @@ test('historic WHIF failed projections report safe stage diagnostics without sou
  assert.equal(result.comparison.legacyProjectionTrace.valid,false);
  assert.equal(JSON.stringify(result.comparison.legacyProjectionTrace).includes('變造'),false);
 });
+
+
+test('historical opening keeps original paragraph boundaries, not a flattened DOM block',()=>{
+ const status=[
+  '｜2026年8月22日（星期六）｜',
+  '｜🕒18:42｜🌤️晴轉多雲｜',
+  '｜📍基甫納前線基地・7F宿舍客廳｜',
+  '｜🍿暴走值：8%｜',
+  '｜🐆嚮導值：96%｜💭：先觀察。｜'
+ ].join('\n');
+ const body=[
+  '基甫納前線基地，7F。',
+  '電梯停下時，門外沒有尋常宿舍走廊。',
+  '正前方只有一道需要權限開啟的深色門。',
+  '門鎖亮起綠燈。',
+  '「房間在右側。」',
+  '7F的第一天，就這樣開始了。'
+ ].join('\n\n');
+ const rendered=status+'\n'+body.replace(/\n/g,'');
+ const expected=status+'\n\n'+body;
+ const native='\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n'+body;
+ const result=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  opening:true,source:'whif-message-content',statusText:status
+ });
+ assert.equal(result.comparison.contentEqual,true);
+ assert.equal(result.comparison.clockEqual,true);
+ assert.equal(result.text,expected);
+ assert.equal((result.text.match(/\n\n/g)||[]).length,6);
+ assert.equal(parseGameTime(result.text)?.iso,'2026-08-22T10:42:00.000Z');
+ const check=validate([{role:'ai',text:result.text},
+  {role:'me',text:'「你們好。」'},
+  {role:'ai',text:'｜2026年8月22日｜\n｜🕒18:44｜\n隊員點頭。'}]);
+ assert.equal(check.ok,true,JSON.stringify(check.errors));
+ assert.equal(check.opening,result.text);
+ assert.equal(check.pairs,1);
+ assert.equal(check.messages.length,2);
+});
+
+test('generic untimed opener restores native paragraphs without inventing a time',()=>{
+ const rendered='這裡是一座古老的城市。第一聲鐘響後，旅人走進大門。有人站在廣場等候。';
+ const source='這裡是一座古老的城市。\n\n第一聲鐘響後，旅人走進大門。\n\n有人站在廣場等候。';
+ const restored=context.GalArchiveCore.compareNativeParagraphs(rendered,source,{
+  opening:true,source:'whif-message-content'
+ });
+ assert.equal(restored.comparison.contentEqual,true);
+ assert.equal(restored.comparison.clockEqual,true);
+ assert.equal(restored.text,source);
+ assert.equal(parseGameTime(restored.text),null);
+});
+
+test('generic untimed opening can include fenced narrative HUD and verified hidden context',()=>{
+ const status='｜地點：古堡大廳｜\n｜天空：陰天｜';
+ const visible=status+'\n晨光照進大廳。有人輕敲門扉。';
+ const source='{{世界開場背景}}\n\n'+
+  '\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n'+
+  '晨光照進大廳。\n\n有人輕敲門扉。';
+ const restored=context.GalArchiveCore.compareNativeParagraphs(visible,source,{
+  opening:true,source:'whif-message-content'
+ });
+ assert.equal(restored.comparison.contentEqual,true);
+ assert.equal(restored.comparison.clockEqual,true);
+ assert.equal(restored.text,status+'\n\n晨光照進大廳。\n\n有人輕敲門扉。');
+ assert.equal(restored.comparison.formatMarkers.some(x=>x.kind==='opening-leading-whif-template'),true);
+});
+
+test('opening native restoration rejects modified text, changed clocks and dangerous placeholders',()=>{
+ const status='｜2026年8月22日｜\n｜🕒18:42｜';
+ const rendered=status+'\n真正的開場。';
+ const invalid=[
+  '\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n被換掉的開場。',
+  '\x60\x60\x60\n'+status.replace('18:42','18:43')+'\n\x60\x60\x60\n\n真正的開場。',
+  '{{image:secret.png}}\n'+rendered,
+  '{{user}}\n'+rendered
+ ];
+ for(const candidate of invalid){
+  const result=context.GalArchiveCore.compareNativeParagraphs(rendered,candidate,{
+   opening:true,source:'whif-message-content'
+  });
+  assert.equal(result.text,null,'reject '+candidate.slice(0,45));
+ }
+ const nonWhitelist='｜2026年8月25日｜\n｜🕒18:42｜\n開場。';
+ const denied=context.GalArchiveCore.compareNativeParagraphs(nonWhitelist,nonWhitelist,{
+  opening:true,source:'whif-message-content'
+ });
+ assert.equal(denied.text,null);
+ assert.equal(denied.comparison.clockEqual,false);
+});
