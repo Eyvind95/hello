@@ -292,3 +292,12 @@ V0.8.17 測試版 — 擴充功能更新後主動刷新 WHIF
 - 每個版本只主動刷新一次；同版本 service worker 後續休眠／重啟不會重複刷新。
 - gal-launcher.js 在任何 chrome.runtime.sendMessage 前先檢查 extension context 是否仍存活；若已失效，直接重新整理頁面，不再嘗試呼叫已死的 runtime。
 - 保留 V0.8.16 的 WHIF <q> → 中文「」修正與第13輪迴事件 exact-match 驗證。
+
+
+V0.8.18 測試版 — 防止 WHIF 暫時底部被誤判為完整掃描
+- 撤回 V0.8.17 background 啟動時自動重新整理所有 WHIF 分頁的行為；更新流程恢復由 Browser Use / Codex 在擴充功能重載後明確重新整理目標 WHIF。
+- 保留 launcher 的 extension context 存活預檢；舊 context 已失效時仍會避免直接 sendMessage。
+- 掃描器到達底部後，不再只用 3 個短 frame 判完成；新增 15 秒 stable-bottom proof，每 750ms 檢查 scrollHeight 與可見尾端訊息是否變動。
+- 若 WHIF 在底部等待期間補載更多歷史，立即取消完成判定並繼續掃描。
+- background 在接受 full completed 前，會尋找同一 cycleId + WHIF URL 的上一份 completed full run；新掃描 rawRows 只要更少，就直接拒絕輸出半份正史。
+- 保留 V0.8.16 的 WHIF <q> → 中文「」修正。
