@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.19",
-  "version_name": "V0.8.19 測試版",
-  "description": "輪迴檔案館 V0.8.19 測試版：新增局部事件三則測試，只抓上一則 Gal AI、事件、下一則玩家回應，快速輸出 native 比對診斷。",
+  "version": "0.8.20",
+  "version_name": "V0.8.20 測試版",
+  "description": "輪迴檔案館 V0.8.20 測試版：無時間事件若 DOM 僅缺少 native 成對中文引號，精確驗證後直接還原 native 原文。",
   "permissions": [
     "storage",
     "activeTab",
