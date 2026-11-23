@@ -3,7 +3,7 @@
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
   "version": "0.8.24",
   "version_name": "V0.8.24 測試版",
-  "description": "輪迴檔案館 V0.8.24 測試版：WHIF 捲動短暫停滯可保守重試，不跳過訊息，並記錄失敗瞬間的捲動診斷。",
+  "description": "輪迴檔案館 V0.8.24 測試版：WHIF 捲動暫停時最多安全重試 4 次，保留逐則重疊與 15 秒底部驗證，記錄現場診斷。",
   "permissions": [
     "storage",
     "activeTab",
