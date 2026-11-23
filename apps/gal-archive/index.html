@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.49｜Gal AI</title>
+<title>輪迴檔案館 V5.50｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -75,7 +75,10 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .archive-audit-track.archive-audit-only-time .archive-audit-mark.archive-audit-time-mark{left:0;right:0;width:100%}
 .archive-audit-mark.archive-audit-event-mark{left:50%;right:auto;width:13px;height:13px;transform:translate(-50%,-50%);border-radius:50%;background:#ffe45f;border:2px solid #6e5300;box-shadow:0 0 0 2px #0e1830,0 0 10px #ffd34d;z-index:4}
 .archive-audit-mark.archive-audit-event-mark:hover,.archive-audit-mark.archive-audit-event-mark:focus-visible{height:16px;width:16px;background:#fff5a0;outline:2px solid #fff4ac;outline-offset:2px}
+.archive-audit-mark.archive-audit-auto-continue-mark{left:25%;right:auto;width:13px;height:13px;transform:translate(-50%,-50%);border-radius:50%;background:#55e58a;border:2px solid #126836;box-shadow:0 0 0 2px #0e1830,0 0 10px #42dd7d;z-index:4}
+.archive-audit-mark.archive-audit-auto-continue-mark:hover,.archive-audit-mark.archive-audit-auto-continue-mark:focus-visible{height:16px;width:16px;background:#a4ffc2;outline:2px solid #b9ffd0;outline-offset:2px}
 .archive-event-flash .bubble{outline:3px solid #ffe45f;outline-offset:2px}
+.archive-auto-continue-flash .bubble{outline:3px solid #55e58a;outline-offset:2px}
 .archive-audit-fault .bubble{border-color:#e97e91}
 .archive-time-fault .bubble{box-shadow:inset 3px 0 #ffb347;border-color:#ca8a40}
 .archive-audit-flash .bubble{outline:3px solid #ff506a;outline-offset:2px}
@@ -113,7 +116,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.49</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.0.zip" download title="下載雙掃描助手 V0.8.0：辨識 Gal AI 灰底與玩家紫底引用框，保留區塊與行內排版">🧩 雙掃描助手 V0.8.0</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.50</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.0.zip" download title="下載雙掃描助手 V0.8.0：辨識 Gal AI 灰底與玩家紫底引用框，保留區塊與行內排版">🧩 雙掃描助手 V0.8.0</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><label for="cycleSort" class="note" style="display:block;margin-top:12px">輪迴列表排序</label><select id="cycleSort" class="search" aria-label="輪迴列表排序"><option value="number-desc">輪迴數字：由大到小（預設）</option><option value="number-asc">輪迴數字：由小到大</option><option value="updated">最近修改優先</option></select><div id="cycles"></div><div class="divider"></div><div class="sectionhead"><h2>📚 交接稿</h2><button id="newHandover" type="button" class="btn small primary" title="新增交接對話">＋新增</button></div><p class="note">依目前世界觀分類；每個交接對話可上傳多份檔案。</p><button type="button" id="handoverSharedReviews" class="cycle handover-thread" style="width:100%;margin:4px 0 12px;text-align:left"><strong>💬 大家的評語（共用）</strong><span>這個世界觀只需貼一次，所有交接對話皆可閱讀</span></button><div id="handoverThreads" aria-live="polite"><p class="note">正在載入交接稿…</p></div><div class="actions topsp"><button type="button" class="btn small" id="handoverExport">備份此世界觀（.ghb）</button><button type="button" class="btn small" id="handoverImport">匯入交接稿備份</button><button type="button" class="btn small" id="handoverStorage">檢查本機儲存空間</button></div><p class="note" id="handoverStorageStatus" role="status"></p><input id="handoverImportFile" type="file" accept=".ghb,.json,application/json,application/octet-stream" hidden><p class="note">交接稿與附件已支援手動 Firebase 雲端同步，也包含於上方「完整備份（.gab）」。此區仍可單獨下載 .ghb 備份。</p></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -453,6 +456,29 @@ function downloadText(filename,content){let blob=new Blob([content],{type:'text/
 let galNativeLoaded=null,galNativePlan=null;
 function galNativeText(v){return String(v==null?'':v).replace(/\r\n?/g,'\n').trim()}
 function galNativeWorld(v){return galNativeText(v).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase()}
+function archiveAutoContinueEvidence(previous,current){
+ const meta=current?.autoContinue,marked=meta!=null;
+ if(!marked)return {marked:false,ok:false,reason:'沒有 autoContinue 原生標記'};
+ if(!meta||typeof meta!=='object')return {marked:true,ok:false,reason:'autoContinue 標記格式無效'};
+ if(previous?.role!=='ai'||current?.role!=='ai')return {marked:true,ok:false,reason:'自動繼續必須是相鄰的 Gal AI → Gal AI'};
+ if(meta.kind!=='whif-adjacent-character-replies')return {marked:true,ok:false,reason:'不是 Whif 相鄰角色回覆證據'};
+ if(previous.sourceKind!=='gal-ai-native'||current.sourceKind!=='gal-ai-native')
+  return {marked:true,ok:false,reason:'不是 Gal AI 原生掃描來源'};
+ if(typeof previous.sourceEventId!=='string'||!previous.sourceEventId||
+    typeof current.sourceEventId!=='string'||!current.sourceEventId||
+    meta.previousSourceEventId!==previous.sourceEventId)
+  return {marked:true,ok:false,reason:'previousSourceEventId 沒有精確指向上一則 Gal AI'};
+ if(!previous.chatKey||current.chatKey!==previous.chatKey)
+  return {marked:true,ok:false,reason:'前後回覆不是同一個 Gal AI 聊天'};
+ if(!Number.isInteger(previous.messageOrder)||!Number.isInteger(current.messageOrder)||
+    current.messageOrder!==previous.messageOrder+1)
+  return {marked:true,ok:false,reason:'messageOrder 不是連續相鄰'};
+ if(!Number.isInteger(previous.scanIndex)||!Number.isInteger(current.scanIndex)||
+    current.scanIndex!==previous.scanIndex+1)
+  return {marked:true,ok:false,reason:'scanIndex 不是連續相鄰'};
+ return {marked:true,ok:true,reason:''};
+}
+function archiveIsVerifiedAutoContinue(previous,current){return archiveAutoContinueEvidence(previous,current).ok}
 function galNativeVerify(obj,r){
  const fail=[],warn=[];
  if(!r){fail.push('請先在檔案館左側選擇要覆蓋的輪迴');return {fail,warn}}
@@ -465,27 +491,57 @@ function galNativeVerify(obj,r){
   fail.push('世界觀不一致：來源「'+(obj?.target?.worldName||'未填')+'」，目前為「'+selectedWorld+'」');
  const opening=galNativeText(obj?.opening);
  if(opening.length<8||opening.length>300000)fail.push('輪迴開場為空、不完整或超過安全上限');
- if(!Array.isArray(obj?.messages)||obj.messages.length<2||obj.messages.length%2!==0
-   ||obj.messages.length>20000)fail.push('完整對話不是可辨識的「我／他」雙數回合');
+ const sourceMessages=Array.isArray(obj?.messages)?obj.messages:[];
+ if(sourceMessages.length<2||sourceMessages.length>20000)fail.push('完整對話數量異常');
  if(!Array.isArray(obj?.events)||obj.events.length>5000)fail.push('事件清單格式或數量異常');
- const ids=new Set(),messages=[],events=[],gameTimes=[];
- for(let i=0;i<(Array.isArray(obj?.messages)?obj.messages.length:0);i++){
-  const raw=obj.messages[i],expected=i%2===0?'me':'ai';
-  if(raw?.role!==expected)fail.push('第 '+(i+1)+' 則回合身份不符，原始正史必須我／他交替');
+ const ids=new Set(),messages=[],events=[];
+ let previous=null,pendingPlayerClock=null,pairs=0,autoContinues=0;
+ for(let i=0;i<sourceMessages.length;i++){
+  const raw=sourceMessages[i],role=raw?.role;
+  if(role!=='me'&&role!=='ai')fail.push('第 '+(i+1)+' 則身份不是皮卡或 Gal AI');
+  if(i===0&&role!=='me')fail.push('完整原生掃描第一則不是皮卡發言，疑似從中途開始或漏掃');
   if(typeof raw?.text!=='string'||!raw.text.trim()||raw.text.length>30000)fail.push('第 '+(i+1)+' 則原文無效／太長');
-  if(typeof raw?.id!=='string'||ids.has(raw.id))fail.push('第 '+(i+1)+' 則 ID 重複或無效');
+  if(typeof raw?.id!=='string'||!raw.id||ids.has(raw.id))fail.push('第 '+(i+1)+' 則 ID 重複或無效');
   ids.add(raw?.id);
-  const clock=raw?.gameTime;
-  if(typeof clock!=='string'||!Number.isFinite(Date.parse(clock)))fail.push('第 '+(i+1)+' 則沒有可靠的 Gal AI 劇情時間');
-  const header=i%2===1?archiveParseGalAIClock(raw):null;
-  if(i%2===1&&(!header||header.ms!==Date.parse(clock)))
-   fail.push('第 '+(i+1)+' 則 Gal AI 正文時間與 JSON 時間不一致');
-  if(i%2===0)gameTimes.push(clock);
-  else if(clock!==gameTimes.at(-1))fail.push('第 '+(i+1)+' 則的「我／他」劇情時間未對齊');
-  messages.push({...raw,role:expected,text:raw?.text||'',
+  const clock=raw?.gameTime,clockMs=typeof clock==='string'?Date.parse(clock):NaN;
+  if(!Number.isFinite(clockMs))fail.push('第 '+(i+1)+' 則沒有可靠的 Gal AI 劇情時間');
+  if(role==='ai'){
+   const header=archiveParseGalAIClock(raw);
+   if(!header||header.ms!==clockMs)fail.push('第 '+(i+1)+' 則 Gal AI 正文時間與 JSON 時間不一致');
+  }
+  if(role==='me'){
+   if(raw?.autoContinue)fail.push('第 '+(i+1)+' 則玩家訊息不應帶 autoContinue 標記');
+   if(previous?.role==='me')fail.push('第 '+(i+1)+' 則與上一則都是皮卡，疑似漏掃 Gal AI 回覆');
+   pendingPlayerClock=clock;
+  }else if(role==='ai'){
+   if(previous?.role==='me'){
+    if(raw?.autoContinue)fail.push('第 '+(i+1)+' 則已有玩家前文，不應標成自動繼續');
+    pairs++;
+    if(clock!==pendingPlayerClock)fail.push('第 '+(i+1)+' 則的「我／他」劇情時間未對齊');
+    pendingPlayerClock=null;
+   }else if(previous?.role==='ai'){
+    const evidence=archiveAutoContinueEvidence(previous,raw);
+    if(evidence.ok)autoContinues++;
+    else fail.push('第 '+(i+1)+' 則與上一則都是 Gal AI，但'+(evidence.marked?'自動繼續證據無效：'+evidence.reason:'沒有可驗證的自動繼續標記；可能漏掃玩家訊息'));
+   }
+  }
+  messages.push({...raw,role:role==='me'?'me':'ai',text:raw?.text||'',
     sourceKind:'gal-ai-native',sourceCreatedAt:null,sourceTimeOrigin:null,
     capturedAt:null,receivedAt:null});
+  previous=raw;
  }
+ if(sourceMessages.at(-1)?.role==='me')fail.push('完整原生掃描最後一則仍是皮卡，尚未看到 Gal AI 回覆');
+ if(messages.length!==pairs*2+autoContinues)
+  fail.push('訊息數無法由完整「我／他」回合＋自動繼續解釋，疑似有漏掃或錯序');
+ const reportedPairs=Number(obj?.validation?.pairs);
+ if(!Number.isFinite(reportedPairs)||pairs!==reportedPairs)
+  fail.push('完整「我／他」回合數與來源驗證報告不同：網站核對 '+pairs+'，來源 '+(obj?.validation?.pairs??'未填'));
+ const reportedAuto=Number(obj?.validation?.autoContinues??0);
+ if(!Number.isFinite(reportedAuto)||autoContinues!==reportedAuto)
+  fail.push('自動繼續次數與來源驗證報告不同：網站核對 '+autoContinues+'，來源 '+(obj?.validation?.autoContinues??'未填'));
+ const reportedGameTimes=Number(obj?.validation?.gameTimeCount);
+ if(Number.isFinite(reportedGameTimes)&&reportedGameTimes!==messages.length)
+  fail.push('劇情時間筆數與完整訊息數不同');
  for(let i=0;i<(Array.isArray(obj?.events)?obj.events.length:0);i++){
   const raw=obj.events[i];
   if(typeof raw?.text!=='string'||!raw.text.trim()||raw.text.length>30000)
@@ -494,8 +550,6 @@ function galNativeVerify(obj,r){
   ids.add(raw?.id);
   const m=String(raw?.text||'').match(/與\s*《([^》]+)》\s*的\s*(?:世界|事件)/u);
   if(m&&galNativeWorld(m[1])!==galNativeWorld(selectedWorld))fail.push('第 '+(i+1)+' 件事件是另一個世界觀：「'+m[1]+'」');
-  // A native Gal AI scan includes only events actually accepted by the player.
-  // Older scanner JSON may say me/pending; normalize without editing prose.
   if(raw?.role!=='ai'||raw?.status!=='accepted')
     warn.push('第 '+(i+1)+' 件事件為舊版欄位，將校正為 Gal AI 左側／已接取');
   if(!raw?.gameTime)
@@ -503,14 +557,12 @@ function galNativeVerify(obj,r){
   events.push({...raw,role:'ai',text:raw?.text||'',status:'accepted',
     sourceCreatedAt:null,sourceTimeOrigin:null,capturedAt:null,receivedAt:null});
  }
- if(messages.length===0||messages.length/2!==obj?.validation?.pairs)
-  fail.push('訊息組數與來源驗證報告不同');
  if(events.length!==obj?.validation?.events)fail.push('事件數量與來源驗證報告不同');
  if(events.length&&messages.some(m=>!Number.isInteger(m.scanIndex)))
    fail.push('這份舊掃描檔沒有完整的原始訊息順序，事件無法安全定位；請使用 V0.7.6 重新掃描後匯入，避免把事件移到最後');
  if(Array.isArray(obj?.validation?.errors)&&obj.validation.errors.length)fail.push('來源報告仍有錯誤，不能覆蓋');
  if(Array.isArray(obj?.validation?.warnings))warn.push(...obj.validation.warnings.slice(0,8));
- return {fail,warn,opening,messages,events,selectedWorld};
+ return {fail,warn,opening,messages,events,selectedWorld,pairs,autoContinues};
 }
 function galNativeBuildPlan(obj,r){
  const v=galNativeVerify(obj,r);
@@ -607,7 +659,7 @@ function galNativeBuildPlan(obj,r){
  const check=archiveCheckDialoguePairs(archiveStoryTimeline(updated));
  const ok=untouched&&!check.issues.length;
  return {...v,ok,updated,matched,acceptedUnmatched,
-   sourceCounts:{opening:v.opening.length,messages:v.messages.length,events:v.events.length},
+   sourceCounts:{opening:v.opening.length,messages:v.messages.length,events:v.events.length,pairs:v.pairs,autoContinues:v.autoContinues},
    previousCounts:{opening:(r.opening||'').length,messages:(r.messages||[]).length,events:oldEvents.length},
    afterOrange:check.timeIssues.length,afterRoleIssues:check.issues.length,untouched};
 }
@@ -630,7 +682,7 @@ function galNativePreview(){
  ];
  if(plan.ok){
   lines.push('輪迴開場：'+plan.previousCounts.opening+' → '+plan.sourceCounts.opening+' 字',
-   '完整對話：'+plan.previousCounts.messages+' → '+plan.sourceCounts.messages+' 則（'+plan.sourceCounts.messages/2+' 組「我／他」）',
+   '完整對話：'+plan.previousCounts.messages+' → '+plan.sourceCounts.messages+' 則（'+plan.sourceCounts.pairs+' 組「我／他」＋'+plan.sourceCounts.autoContinues+' 次自動繼續）',
    '事件簿：'+plan.previousCounts.events+' → '+plan.sourceCounts.events+' 件',
    '舊事件狀態唯一對應：'+plan.matched+' 件',
    '舊已接事件找不到對應：'+plan.acceptedUnmatched+' 件'+(plan.acceptedUnmatched?'（需勾選額外確認才可覆蓋）':''),
@@ -1299,15 +1351,23 @@ function archiveCheckChronologicalOrder(timeline,useGalAI=false){
 }
 
 function archiveCheckDialoguePairs(timeline){
-  // Event notices belong to Gal AI (left), but are NOT an additional
-  // assistant turn. Exclude event rows before applying red-line detection,
-  // including older saved events whose legacy role is 'me'.
+  // Event notices are independent. A verified native auto-continue is a legal
+  // AI→AI transition only when the scanner proves it with adjacent source IDs.
   const turns=timeline.flatMap((row,index)=>row.type==='event'?[]:
-    [{index,role:row.entry?.role==='me'?'me':'ai',type:row.type}]);
-  const issues=[];
+    [{index,role:row.entry?.role==='me'?'me':'ai',type:row.type,entry:row.entry}]);
+  const issues=[],autoContinues=[];
   if(turns[0]?.role==='ai')issues.push({index:turns[0].index,text:'第一則是 Gal AI，前面沒有皮卡發言（也可能是從中途開始歸檔）'});
+  if(turns[0]?.entry?.autoContinue)issues.push({index:turns[0].index,text:'第一則帶有自動繼續標記，但前面沒有可核對的 Gal AI 回覆'});
   for(let i=1;i<turns.length;i++){
-    const p=turns[i-1],c=turns[i];
+    const p=turns[i-1],c=turns[i],evidence=archiveAutoContinueEvidence(p.entry,c.entry);
+    if(c.entry?.autoContinue){
+      if(evidence.ok){
+        autoContinues.push({index:c.index,previousIndex:p.index,text:'我按下自動繼續'});
+        continue;
+      }
+      issues.push({index:c.index,text:'第 '+(c.index+1)+' 則自動繼續標記無法驗證：'+evidence.reason+'；仍視為可能漏掃'});
+      continue;
+    }
     if(c.role===p.role){
       issues.push({index:c.index,text:'第 '+(p.index+1)+' 與 '+(c.index+1)+' 則都是'+(c.role==='me'?'皮卡':'Gal AI')
         +'，中間疑似漏了'+(c.role==='me'?'Gal AI 回覆':'皮卡發言')});
@@ -1318,14 +1378,14 @@ function archiveCheckDialoguePairs(timeline){
   let pairs=0;
   for(let i=0;i<turns.length-1;i++)if(turns[i].role==='me'&&turns[i+1].role==='ai'){pairs++;i++}
   const time=archiveCheckChronologicalOrder(timeline,true);
-  return {issues,pairs,count:turns.length,total:timeline.length,excluded:timeline.length-turns.length,
+  return {issues,pairs,autoContinues,count:turns.length,total:timeline.length,excluded:timeline.length-turns.length,
     skipIssues:archiveSkipIssuesForRows(timeline,'messages'),
     timeIssues:time.issues,checkedTime:time.checked,unknownTime:time.unknown,
     galCount:time.storyCount,galPairedCount:time.pairedCount,
     skippedCrossTier:time.skippedCrossTier};
 }
 function archiveAuditTotal(a){return a.issues.length+a.timeIssues.length}
-function archiveAuditText(a){return '完整訊息 '+a.total+' 則（含已接事件 '+a.excluded+' 則）／完整來回 '+a.pairs+' 組／回合檢查 '+a.count+' 則／紅線（回合）'+a.issues.length
+function archiveAuditText(a){return '完整訊息 '+a.total+' 則（含已接事件 '+a.excluded+' 則）／完整來回 '+a.pairs+' 組／自動繼續 '+(a.autoContinues||[]).length+' 次／回合檢查 '+a.count+' 則／紅線（回合）'+a.issues.length
   +' 處／橘線（時間倒流）'+a.timeIssues.length+' 處（劇情 '+a.timeIssues.filter(x=>x.tier==='story').length+'／GPT或手動 '+a.timeIssues.filter(x=>x.tier==='real-source').length+'／擷取 '+a.timeIssues.filter(x=>x.tier==='real-captured').length+'／雲端 '+a.timeIssues.filter(x=>x.tier==='real-received').length+'）／深紅（疑似跳過）'+(a.skipIssues||[]).length+' 則／Gal AI 劇情時間 '+(a.galCount||0)+' 則（玩家同回合 '+(a.galPairedCount||0)+'）／已核對時間 '+a.checkedTime+' 則'
   +(a.unknownTime?'（原始時間未知 '+a.unknownTime+' 則，不判定）':'')
   +(a.skippedCrossTier?'／跨時間類型略過 '+a.skippedCrossTier+' 次（不畫橘線）':'')}
@@ -1341,7 +1401,8 @@ function archiveAuditJump(index,kind='pair',target='chat'){
   const chat=$(target==='pilot'?'pilotChatList':'chat'),node=chat?.querySelector('[data-dialogue-index="'+index+'"]');
   if(!node)return;
   chat.scrollTo({top:Math.max(0,node.offsetTop-chat.clientHeight*.23),behavior:'smooth'});
-  const cls=kind==='event'?'archive-event-flash':kind==='skip'?'archive-skip-flash':kind==='time'?'archive-time-flash':'archive-audit-flash';
+  const cls=kind==='event'?'archive-event-flash':kind==='autoContinue'?'archive-auto-continue-flash':
+    kind==='skip'?'archive-skip-flash':kind==='time'?'archive-time-flash':'archive-audit-flash';
   node.classList.add(cls);
   setTimeout(()=>node.classList.remove(cls),2300);
 }
@@ -1371,12 +1432,16 @@ function archiveAuditRail(a,target='chat'){
     ...a.issues.map(issue=>({issue,kind:'pair'})),
     ...a.timeIssues.map(issue=>({issue,kind:'time'})),
     ...(a.skipIssues||[]).map(issue=>({issue:{...issue,text:issue.cue},kind:'skip'})),
+    ...(pilot?[]:(a.autoContinues||[]).map(issue=>({issue,kind:'autoContinue'}))),
     ...acceptedEvents.map(issue=>({issue,kind:'event'}))
   ].map(({issue,kind})=>{
     const b=document.createElement('button');b.type='button';
-    b.className='archive-audit-mark '+(kind==='event'?'archive-audit-event-mark':kind==='skip'?'archive-audit-skip-mark':kind==='time'?'archive-audit-time-mark':'archive-audit-pair-mark');
+    b.className='archive-audit-mark '+(kind==='event'?'archive-audit-event-mark':
+      kind==='autoContinue'?'archive-audit-auto-continue-mark':
+      kind==='skip'?'archive-audit-skip-mark':kind==='time'?'archive-audit-time-mark':'archive-audit-pair-mark');
     b.dataset.auditJump=issue.index;b.dataset.auditKind=kind;
-    const label=kind==='event'?'已接事件':kind==='skip'?'疑似做愛跳過':kind==='time'?'時間倒流':'發言斷點';
+    const label=kind==='event'?'已接事件':kind==='autoContinue'?'我按下自動繼續':
+      kind==='skip'?'疑似做愛跳過':kind==='time'?'時間倒流':'發言斷點';
     b.setAttribute('aria-label',label+'：跳到完整對話第 '+(issue.index+1)+' 則：'+issue.text);
     b.title=label+' · 第 '+(issue.index+1)+' 則 · '+issue.text;rail.appendChild(b);
     return {issue,element:b};
@@ -1399,7 +1464,6 @@ function archiveAuditRail(a,target='chat'){
   };
   chat.addEventListener('scroll',sync,{passive:true,signal});
   chat.addEventListener('load',e=>{if(e.target?.tagName==='IMG')requestAnimationFrame(place)},{capture:true,signal});
-  // Pointer dragging scrubs the actual chat scrollbar. Red markers still jump on a simple click.
   let drag=null,preventPointerClick=false;
   function scrubTo(clientY){
     if(!drag)return;
@@ -1422,8 +1486,6 @@ function archiveAuditRail(a,target='chat'){
     if(done.moved){
       preventPointerClick=true;
     }else if(done.markerIndex!==null){
-      // Capturing the pointer may retarget the following click to the rail.
-      // Navigate once here and suppress that synthetic click.
       archiveAuditJump(done.markerIndex,done.markerKind,target);
       preventPointerClick=true;
     }
@@ -1458,7 +1520,6 @@ function archiveAuditRail(a,target='chat'){
   rail.addEventListener('lostpointercapture',e=>{
     if(drag&&drag.pointerId===e.pointerId){drag=null;rail.classList.remove('is-dragging')}
   },{signal});
-  // Capture phase makes sure a drag release cannot also trigger a red-marker jump.
   rail.addEventListener('click',e=>{
     if(preventPointerClick&&e.detail!==0){
       preventPointerClick=false;
@@ -1518,7 +1579,7 @@ function archiveAuditRefresh(r){
   archiveAuditRail(a);
 }
 
-function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages),galContext=archiveGalTimeContext(r.messages||[]);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveTimeForensicsExport" class="btn small">🧭 匯出時間診斷 JSON（唯讀）</button><button id="archiveSortCurrentChat" class="btn small">🔧 修復已確認錯序（預覽＋備份）</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：只有同類時間發生倒流才標示。Gal AI 劇情時間（同回合「我／他」相同）、ChatGPT 原始＝手動、首次擷取、雲端接收按優先級辨識；不同類型不能直接比大小（略過並計數）。擷取與接收時間僅是低可信線索。已接事件不參與橘線比較。**版本更新只更新檢查邏輯，並不會自動整理以前已排錯的訊息；請先用「🧭 匯出時間診斷 JSON（唯讀）」找出原因。** 🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。🟥 深紅線：皮卡原句包含 made in heaven／做愛跳過，提示可能主動省略的劇情（不計為漏回合）。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div>${archiveSkipPanelHtml(audit.skipIssues,'chat')}<div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r,galContext)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件，深紅線為疑似做愛跳過；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
+function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages),galContext=archiveGalTimeContext(r.messages||[]);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveTimeForensicsExport" class="btn small">🧭 匯出時間診斷 JSON（唯讀）</button><button id="archiveSortCurrentChat" class="btn small">🔧 修復已確認錯序（預覽＋備份）</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：只有同類時間發生倒流才標示。Gal AI 劇情時間（同回合「我／他」相同）、ChatGPT 原始＝手動、首次擷取、雲端接收按優先級辨識；不同類型不能直接比大小（略過並計數）。擷取與接收時間僅是低可信線索。已接事件不參與橘線比較。**版本更新只更新檢查邏輯，並不會自動整理以前已排錯的訊息；請先用「🧭 匯出時間診斷 JSON（唯讀）」找出原因。** 🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。🟢 綠色光點：原生掃描已證實「我按下自動繼續」，因此合法出現 Gal AI → Gal AI，不視為漏掉玩家發言；沒有完整證據的連續 Gal AI 仍畫紅線。🟥 深紅線：皮卡原句包含 made in heaven／做愛跳過，提示可能主動省略的劇情（不計為漏回合）。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div>${archiveSkipPanelHtml(audit.skipIssues,'chat')}<div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r,galContext)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件，深紅線為疑似做愛跳過；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
@@ -1724,6 +1785,7 @@ if(b.id==='archiveSortCurrentChat'){
   if(preview.afterOrange>preview.beforeOrange||preview.afterRoleIssues>preview.beforeRoleIssues){
     notify('安全停止：預覽會增加異常標記，沒有改動資料。');return;
   }
+  if(preview.invalidAutoContinues){notify('安全停止：偵測到 '+preview.invalidAutoContinues+' 則自動繼續標記無法精確核對上一則 Gal AI；可能是漏掃或資料被改動，這次沒有重新排序或改動任何紀錄。');return}
   if(preview.separatedPairs){notify('安全停止：偵測到 '+preview.separatedPairs+' 組已知「我／他」不相鄰，必須先逐組核對，這次沒有重新排序或改動任何紀錄。');return}
   if(!preview.changed){notify('目前沒有可安全重排的位置差異。不同時間來源的訊息不會跨類型硬排。');return}
   const galContext=archiveGalTimeContext(r.messages||[]);
@@ -2105,7 +2167,7 @@ $('downloadSite').onclick=async()=>{
    if(!html.includes(external))throw Error('獨立網站找不到 '+asset+' 的連結');
    html=html.replace(external,'<scr'+'ipt>'+script+closing);
   }
-  downloadText('輪迴檔案館_V5.49_網站.html',html);
+  downloadText('輪迴檔案館_V5.50_網站.html',html);
   notify('已下載包含交接稿與雲端同步程式的獨立 HTML；私人資料與附件請另外下載完整 .gab 備份');
  }catch(err){alert('下載完整網站失敗：'+String(err?.message||err))}
 };
@@ -2295,6 +2357,11 @@ function archiveGalTimeContext(messages){
   for(const ai of messages){
     const clock=archiveParseGalAIClock(ai);
     if(!clock)continue;
+    const index=positions.get(ai),previous=index>0?messages[index-1]:null;
+    if(archiveIsVerifiedAutoContinue(previous,ai)){
+      context.set(ai,{...clock,basis:'gal-auto-continue',continuedFrom:previous});
+      continue;
+    }
     context.set(ai,clock);
     const sameSource=players.filter(m=>m.sourceEventId&&m.sourceEventId===ai.sourceEventId
       &&Number.isInteger(m.sourcePartIndex)&&Number.isInteger(ai.sourcePartIndex)
@@ -2302,7 +2369,6 @@ function archiveGalTimeContext(messages){
     const sameChat=players.filter(m=>m.chatKey&&ai.chatKey&&m.chatKey===ai.chatKey
       &&Number.isInteger(m.messageOrder)&&Number.isInteger(ai.messageOrder)
       &&m.messageOrder+1===ai.messageOrder&&!context.has(m));
-    const index=positions.get(ai),previous=index>0?messages[index-1]:null;
     const validAdjacent=previous?.role==='me'&&!context.has(previous)
       &&!(previous.chatKey&&ai.chatKey&&previous.chatKey!==ai.chatKey)
       &&!(previous.sourceEventId&&ai.sourceEventId&&previous.sourceEventId!==ai.sourceEventId
@@ -2546,6 +2612,7 @@ function archivePreviewCombinedStorySort(record){
   }));
   return {updated,changed,movedEvents,resetPlacements,messageMoved:sorted.changed,manualTimed:sorted.manualTimed,
     galTimed:sorted.galCount||0,separatedPairs:sorted.separatedPairs||0,
+    invalidAutoContinues:sorted.invalidAutoContinues||0,
     mixedTiers:sorted.mixedTiers||0,preservedPlacements,
     beforeOrange:beforeAudit.timeIssues.length,afterOrange:afterAudit.timeIssues.length,
     beforeRoleIssues:beforeAudit.issues.length,afterRoleIssues:afterAudit.issues.length,
@@ -2661,10 +2728,12 @@ function sortArchivedPilotMessages(items,section='pilotMessages'){
   const manualTimed=items.filter(archiveHasManualSortTime).length;
   const galCount=gal?items.filter(m=>gal.has(m)).length:0;
   const positions=new Map(items.map((m,i)=>[m,i]));
+  const invalidAutoContinues=gal?items.filter((m,i)=>m?.autoContinue&&!archiveIsVerifiedAutoContinue(items[i-1],m)).length:0;
+  if(invalidAutoContinues)return {
+    items,changed:0,orderable:0,manualTimed,galCount,separatedPairs:0,invalidAutoContinues,
+    reason:'自動繼續標記無法精確對上上一則 Gal AI，停止自動重排'
+  };
   const separated=new Set();
-  // Cross-check *all* verifiable turns, not only AI replies with a parsed
-  // status clock. A source with an unreadable clock can still have a trusted
-  // player / AI relationship that must never be split by a sort.
   if(gal){
     const players=items.filter(m=>m.role==='me');
     const bySource=new Map(),byChat=new Map();
@@ -2679,6 +2748,8 @@ function sortArchivedPilotMessages(items,section='pilotMessages'){
       }
     }
     for(const ai of items.filter(m=>m.role==='ai')){
+      const index=positions.get(ai),previous=index>0?items[index-1]:null;
+      if(archiveIsVerifiedAutoContinue(previous,ai))continue;
       let candidates=[];
       if(ai.sourceEventId&&Number.isInteger(ai.sourcePartIndex))
         candidates=bySource.get(ai.sourceEventId+'|'+(ai.sourcePartIndex-1))||[];
@@ -2694,15 +2765,21 @@ function sortArchivedPilotMessages(items,section='pilotMessages'){
   const separatedPairs=separated.size;
   if(separatedPairs)return {
     items,changed:0,orderable:0,manualTimed,galCount,
-    separatedPairs,reason:'已配對的我／他不相鄰，停止自動重排'
+    separatedPairs,invalidAutoContinues:0,reason:'已配對的我／他不相鄰，停止自動重排'
   };
   const units=[];
   for(let i=0;i<items.length;){
-    const a=items[i],b=items[i+1];
-    const group=gal&&b&&archiveIsTrustedAdjacentTurn(a,b,gal)?[a,b]:[a];
+    const group=[items[i]];
+    let next=i+1;
+    if(gal&&next<items.length&&archiveIsTrustedAdjacentTurn(group[0],items[next],gal)){
+      group.push(items[next]);next++;
+    }
+    while(gal&&next<items.length&&archiveIsVerifiedAutoContinue(group.at(-1),items[next])){
+      group.push(items[next]);next++;
+    }
     const clock=archiveSortableUnitClock(group,gal);
     units.push({members:group,index:i,...clock});
-    i+=group.length;
+    i=next;
   }
   const orderable=units.filter(u=>u.tier!=='pinned').reduce((total,u)=>total+u.members.length,0);
   const mixedTiers=units.slice(1).reduce((total,u,i)=>
@@ -2719,9 +2796,8 @@ function sortArchivedPilotMessages(items,section='pilotMessages'){
   }
   const result=sorted.flatMap(u=>u.members);
   return {items:result,changed:result.filter((m,i)=>m!==items[i]).length,
-    orderable,manualTimed,galCount,separatedPairs:0,mixedTiers};
+    orderable,manualTimed,galCount,separatedPairs:0,invalidAutoContinues:0,mixedTiers};
 }
-
 function archiveSortTimedSection(record,section){
   if(!['messages','pilotMessages','events'].includes(section))return {changed:0,manualTimed:0,orderable:0};
   const sorted=sortArchivedPilotMessages(record[section]||[],section);
