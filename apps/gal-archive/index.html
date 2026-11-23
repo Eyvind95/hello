@@ -2012,7 +2012,24 @@ $('importConfirm').onclick=async()=>{
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
-$('downloadSite').onclick=()=>{const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;downloadText('輪迴檔案館_V5.41_網站.html',html);notify('已下載獨立 HTML 網站；網站內的本機資料不包含在 HTML，請另匯出 JSON')};
+$('downloadSite').onclick=async()=>{
+ // Embed the time-machine script so the downloaded standalone HTML also works offline.
+ try{
+  let html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
+  const url=new URL('./time-machine.js?v=2',location.href);
+  const response=await fetch(url,{cache:'no-store'});
+  if(!response.ok)throw Error('讀取時光機程式失敗：HTTP '+response.status);
+  const script=await response.text();
+  if(!script.includes('window.ArchiveTimeMachine'))throw Error('時光機程式內容不完整');
+  const closing='</scr'+'ipt>';
+  if(script.toLowerCase().includes(closing))throw Error('時光機程式包含不可安全內嵌的結束標籤');
+  const external='<scr'+'ipt src="./time-machine.js?v=2">'+closing;
+  if(!html.includes(external))throw Error('下載 HTML 中找不到時光機程式連結');
+  html=html.replace(external,'<scr'+'ipt>'+script+closing);
+  downloadText('輪迴檔案館_V5.41_網站.html',html);
+  notify('已下載包含時光機的獨立 HTML；本機正史與快照仍需另外匯出 JSON 備份');
+ }catch(err){alert('無法安全產生完整獨立 HTML：'+String(err?.message||err));}
+};
 $('cloudBtn').onclick=()=>{$('cloudModal').classList.remove('hidden');cloudInit().catch(e=>cloudStatus('登入功能初始化失敗：'+e.message,true))};
 $('cloudClose').onclick=()=>$('cloudModal').classList.add('hidden');
 $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cloudModal').classList.add('hidden')});
