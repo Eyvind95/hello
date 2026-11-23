@@ -269,3 +269,11 @@ V0.8.14 測試版 — 第13輪迴段落 fallback 修正
 - WHIF 事件開頭若有隱藏 {{...}} context/template，只在移除後與畫面全文完全一致（忽略空白）時才採用 native 段落；真實缺字仍會 fallback。
 - DOM → Markdown 新增 CSS font-weight 擷取，Whif 以樣式而非 <strong> 呈現的粗體也會保存為 **...**。
 - 目標是修正第13輪迴 6 件無時間事件的原生段落 fallback，並處理 2 則 AI native emphasis 與 DOM 格式不一致；仍需重掃驗收確認。
+
+
+V0.8.15 測試版 — 更新後 WHIF extension context 自動恢復
+- 修正 Chrome 在 chrome://extensions 重新載入助手後，既有 WHIF 分頁仍執行舊 gal-launcher.js，點入口時出現「Uncaught Error: Extension context invalidated」。
+- gal-launcher.js 現在會捕捉同步與 callback 形式的 extension context invalidated，不再留下未處理錯誤。
+- 偵測到舊 extension context 時，WHIF 分頁會自動重新整理一次，讓 Chrome 注入新版 content script。
+- 加入 15 秒一次性防循環；若重新整理後仍無法恢復，按鈕會停在「請重新整理 WHIF」，不會無限刷新。
+- 固定更新流程仍應在擴充功能「重新載入」後主動重新整理 WHIF；自動恢復是第二層保護。
