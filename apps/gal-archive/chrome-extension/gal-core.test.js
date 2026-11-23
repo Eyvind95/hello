@@ -710,3 +710,18 @@ test('opening native restoration rejects modified text, changed clocks and dange
  assert.equal(denied.text,null);
  assert.equal(denied.comparison.clockEqual,false);
 });
+
+
+test('full scanner obtains opening native source even when it has no game clock',()=>{
+ const source=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ assert.match(source,/function boundaryFragmentText\([\s\S]*?if\(metadata\)\{/);
+ assert.match(source,/function messageText\([\s\S]*?if\(metadata\)\{/);
+ assert.match(source,/const openingEntry=\{role:'ai',text:validation\.opening,scanIndex:0,/);
+ assert.match(source,/const openingFormat=applyNativeFormat\(openingEntry,collected,sourceCounts,scanMode,'',false,true\)/);
+ assert.match(source,/validation\.opening=openingEntry\.text/);
+ assert.match(source,/paragraphAudit=\{opening:openingFormat\.check,/);
+ assert.match(source,/openingCheck:openingFormat\.check/);
+ assert.match(source,/opening:valid\.opening,messages,events/);
+ const app=fs.readFileSync(require.resolve('../index.html'),'utf8');
+ assert.match(app,/updated\.opening=v\.opening/);
+});
