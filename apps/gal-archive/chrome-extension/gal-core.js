@@ -534,9 +534,14 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const contentEqual=scanChars.join('')===nativeChars.join('');
  const clock=parseGameTime(scanned)?.iso;
  const nativeClock=parseGameTime(text)?.iso;
+ // An ordinary AI reply may have an explicitly unknown date and time. Both
+ // source and rendered text must contain the same leading unknown-clock HUD;
+ // no other missing-clock reply can pass the native paragraph audit.
+ const explicitUnknownClock=!clock&&!nativeClock&&
+  isExplicitUnknownGameTime(scanned)&&isExplicitUnknownGameTime(text);
  const clockEqual=options.event
   ?(clock===nativeClock&&(Boolean(clock)||(!clock&&!nativeClock)))
-  :Boolean(clock&&clock===nativeClock);
+  :Boolean(clock&&clock===nativeClock)||explicitUnknownClock;
  const statusCompact=unspaced(statusText);
  const positions=[...text.matchAll(/(\S)(\s*)/gu)];
  const statusPrefix=options.event&&titleKey&&unspaced(text).startsWith(titleKey+statusCompact)
@@ -617,7 +622,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   const nativeGap=positions[index++][2];
   return char+(/\n/.test(nativeGap)||/\n/.test(space)?nativeGap:space);
  });
- if(parseGameTime(restored)?.iso!==clock){
+ if(parseGameTime(restored)?.iso!==clock||(explicitUnknownClock&&!isExplicitUnknownGameTime(restored))){
   comparison.clockEqual=false;
   return {text:null,comparison};
  }
