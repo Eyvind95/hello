@@ -172,6 +172,53 @@ test('serializes CSS font-weight as markdown bold without requiring a strong tag
   assert.equal(markdownFromDom(root, { role: 'ai' }), '**粗體。**普通。');
 });
 
+test('restores balanced native event dialogue quotes when DOM omits only those quotes', () => {
+  const compare = context.GalArchiveCore.compareNativeParagraphs;
+  const scanned = [
+    '就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。',
+    '砰——！',
+    '廣播中機械化的聲音帶著不容置疑的緊迫感，',
+    '7F所有成員立即進入戰備狀態！',
+    '沉聲道：',
+    '看來休息時間結束了。'
+  ].join('\n');
+  const hidden = '{{Below context is an event which has just occurred. ' + 'x'.repeat(120) + '}}\n';
+  const native = hidden + [
+    '就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。',
+    '',
+    '「砰——！」',
+    '',
+    '廣播中機械化的聲音帶著不容置疑的緊迫感，「7F所有成員立即進入戰備狀態！」',
+    '',
+    '沉聲道：「看來休息時間結束了。」'
+  ].join('\n');
+  const result = compare(scanned, native, {
+    event: true,
+    eventTitle: '就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。',
+    source: 'whif-event-content'
+  });
+  assert.equal(result.comparison.contentEqual, true);
+  assert.equal(result.comparison.clockEqual, true);
+  assert.equal(result.comparison.eventQuoteProjection.pairs, 3);
+  assert.ok(result.comparison.formatMarkers.some(marker => marker.kind === 'native-event-dialogue-quotes'));
+  assert.equal((result.text.match(/「/g)||[]).length, 3);
+  assert.equal(result.text, native.slice(hidden.length));
+
+  const changed = compare(scanned, native.replace('休息時間結束了','休息時間真的結束了'), {
+    event: true,
+    eventTitle: '就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。',
+    source: 'whif-event-content'
+  });
+  assert.equal(changed.text, null);
+
+  const unbalanced = compare(scanned, native.replace('「砰——！」','「砰——！'), {
+    event: true,
+    eventTitle: '就在米契爾試圖再次修正凱文的握法時，原本平靜的客廳空氣卻突兀地凝滯了。',
+    source: 'whif-event-content'
+  });
+  assert.equal(unbalanced.text, null);
+});
+
 test('restores an untimed WHIF event only after an exact hidden-context projection', () => {
   const scanned = '突發事件\n「第一句。」\n「第二句。」';
   const hidden = '{{below context is ' + 'x'.repeat(148) + '}}\n';
