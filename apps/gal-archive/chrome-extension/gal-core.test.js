@@ -469,7 +469,7 @@ test('unknown-time allowance requires both header lines and never fills missing 
    {role:'ai',text:x}
   ]);
   assert.equal(checked.ok,false);
-  assert.match(checked.errors.join(' '),/缺少可辨識的劇情日期和時間/);
+  assert.match(checked.errors.join(' '),/沒有可辨識劇情時間.*原生無時間來源未通過/);
  }
  const prose='故事正文的開始。\n｜日期不詳｜\n｜🕒時間不詳｜\n這是故事中的引用，不是狀態欄。';
  assert.equal(context.GalArchiveCore.isExplicitUnknownGameTime(prose),false);
@@ -859,7 +859,7 @@ test('cycle 5 preview does not invent missing first reply clock; reports the und
  assert.equal(v.ok,false);
  assert.equal(v.pairs,0);
  assert.equal(v.scannedRows,3);
- assert.match(v.errors.join('\n'),/第 3 則 Gal AI 回覆缺少可辨識的劇情日期和時間/);
+ assert.match(v.errors.join('\n'),/第 3 則 Gal AI 回覆沒有可辨識劇情時間.*原生無時間來源未通過/);
  assert.equal(context.GalArchiveCore.isAllowedOpeningRow(rows[0]),true);
 });
 
