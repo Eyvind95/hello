@@ -365,3 +365,55 @@ if(process.env.GAL_ARCHIVE_CYCLE13_EVENT_THREE_ROW){
     assert.equal(result.comparison.formatMarkers[1].tokens,4);
   });
 }
+
+test('historical 2026年8月22日 18:42 opening accepts both zero-padded and original month/day spelling', () => {
+  const original=[
+    '｜2026年8月22日（星期六）｜',
+    '｜🕒18:42｜🌤️晴轉多雲｜',
+    '｜📍基甫納前線基地・7F宿舍客廳｜',
+    '｜🍿暴走值：8%｜',
+    '基甫納前線基地，7F。',
+    '電梯停下時，門外沒有尋常宿舍走廊。'
+  ].join('\n');
+  const plain='｜2026/8/22（星期六）｜\n｜🕒18:42｜\n'+original.split('\n').slice(2).join('\n');
+  const padded='｜2026/08/22（星期六）｜\n｜🕒18:42｜\n'+original.split('\n').slice(2).join('\n');
+  const clock='2026-08-22T10:42:00.000Z';
+  for(const text of [original,plain,padded]){
+    assert.equal(parseGameTime(text)?.iso,clock);
+    assert.equal(context.GalArchiveCore.isAllowedOpeningRow({role:'ai',text}),true);
+    const result=validate([
+      {role:'ai',text},
+      {role:'me',text:'我走進客廳。'},
+      {role:'ai',text:'｜2026年8月22日｜\n｜🕒18:45｜\n洛倫斯向我點頭。'}
+    ]);
+    assert.equal(result.ok,true,JSON.stringify(result.errors));
+    assert.equal(result.opening,text);
+    assert.equal(result.pairs,1);
+    assert.equal(result.messages.length,2);
+    assert.equal(result.messages[0].role,'me');
+    assert.equal(result.messages[1].role,'ai');
+    assert.equal(result.messages[1].gameTime,'2026-08-22T10:45:00.000Z');
+    assert.equal(result.messages.some(row=>row.text===text),false);
+  }
+});
+
+test('historical timed opener exception refuses adjacent minutes, dates, roles and events', () => {
+  const sample='｜2026年8月22日（星期六）｜\n｜🕒18:42｜\n基甫納前線基地，7F。';
+  const invalid=[
+    sample.replace('18:42','18:41'),
+    sample.replace('18:42','18:43'),
+    sample.replace('22日','23日'),
+    sample.replace('2026年','2025年'),
+    sample.replace('18:42','19:42')
+  ];
+  for(const text of invalid){
+    assert.equal(context.GalArchiveCore.isAllowedOpeningRow({role:'ai',text}),false);
+    const result=validate([{role:'ai',text},{role:'me',text:'我進門。'},
+      {role:'ai',text:'｜2026年8月22日｜\n｜🕒18:45｜\n米契爾歡迎新來的人。'}]);
+    assert.equal(result.ok,false);
+    assert.match(result.errors.join('、'),/首則不是可辨識的輪迴開場/);
+  }
+  assert.equal(context.GalArchiveCore.isAllowedOpeningRow({role:'me',text:sample}),false);
+  assert.equal(context.GalArchiveCore.isAllowedOpeningRow({role:'ai',text:'事件通知\n'+sample}),false);
+  assert.equal(context.GalArchiveCore.isAllowedOpeningRow({role:'ai',text:'這是無時間輪迴開場。'}),true);
+});
