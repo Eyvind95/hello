@@ -576,7 +576,7 @@ function bindActions(){
     if(!text||text.length>100000)throw Error('請貼入完整評語（最多 100,000 字）');
     if(subject.length>250||title.length>200)throw Error('評語標題或範圍太長');
     const existingId=state.editingReviewId,now=new Date().toISOString();
-    const entry={id:existingId||uuid(),threadId:t.id,kind:'review',reviewer,subject,title,text,updatedAt:now,createdAt:now,order:Date.now()};
+    const entry={id:existingId||uuid(),threadId:sharedReviewId(w),kind:'review',reviewer,subject,title,text,updatedAt:now,createdAt:now,order:Date.now()};
     await saveSharedReview(w,entry,existingId);
     state.editingReviewId=null;await renderActive(worldId());
     message(existingId?'✅ 已更新評語（保留原始 ID）':'✅ 已儲存 '+reviewer+' 的評語');
