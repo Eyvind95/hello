@@ -1,13 +1,13 @@
-/* Independent Gal AI page scanner. v0.8.33: verify historical untimed AI replies against unique WHIF native source. */
+/* Independent Gal AI page scanner. v0.8.34: preserve in-memory scan work on background expiry with safe local downloads. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.33';
+const SCANNER_VERSION='0.8.34';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=8000,BOTTOM_POLL_MS=750;
 let busy=false,cancelled=false,paused=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
-let activeRun=null;
+let activeRun=null,activeScanRows=null;
 const localDifferences=new Map();
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const $=id=>document.getElementById(id);
@@ -52,9 +52,10 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.33 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.34 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
+ '<button id="gal-scan-save-progress">🧷 保全已讀進度（不可匯入）</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
  '<button id="gal-scan-preview">掃 3 則停下（開場測試）</button><button id="gal-scan-event-probe">🎯 事件三則測試</button></div>'+
  '<details open><summary>首則 AI 回覆的段落驗收</summary>'+
@@ -88,12 +89,45 @@ function mount(){
    difference.scanned+'\n候選：'+difference.native);
  };
  $('gal-scan-close').onclick=()=>{if(busy)cancelled=true;p.remove();css.remove()};
+ $('gal-scan-save-progress').onclick=()=>saveProgressSnapshot();
  $('gal-scan-export').onclick=()=>{if(!lastResult||!lastResult.validation?.ok)return;
    const preview=lastResult.scope==='opening-first-pair-preview';
    downloadJson(preview?'Gal_AI_三則測試_':'Gal_AI_原生正史_',lastResult);
    status(preview?'已下載三則測試 JSON，供格式驗收。':'已請瀏覽器下載原生正史 JSON。這一步不會修改檔案館或 Firebase；請到輪迴檔案館「Gal AI 原生匯入」核對後套用。');
  };
  return p;
+}
+// Local rescue does not rely on the background worker or on the 4-hour
+// deadline. A progress snapshot is explicitly NOT an authoritative scan;
+// keep both visible and native source text for later forensic recovery.
+function saveProgressSnapshot(){
+ const rows=activeScanRows;
+ if(!rows?.length){
+  status('目前沒有可保全的掃描資料。若掃描尚未開始，請勿把舊診斷當成完整正史。');
+  return false;
+ }
+ const snapshot={
+  format:'gal-ai-incomplete-scan-checkpoint',version:1,
+  scope:'unverified-partial-progress',importable:false,
+  generatedAt:new Date().toISOString(),scannerVersion:SCANNER_VERSION,
+  scanRunId:activeRun?.scanRunId||null,
+  target:{cycleId:target?.cycleId,cycleTitle:target?.cycleTitle,worldName:target?.worldName},
+  source:{url:location.origin+location.pathname},
+  collectedCount:rows.length,complete:false,validated:false,
+  rows:rows.map((row,scanIndex)=>({
+   scanIndex,role:row.role,eventType:row.eventType||null,
+   text:row.text,worldName:row.worldName||null,
+   autoContinue:row.autoContinue===true,
+   sourceMessageId:row.formatSource?.nativeReply?.messageId||null,
+   nativeReason:row.formatSource?.nativeReply?.reason||null,
+   nativeText:row.formatSource?.nativeReply?.reason==='available'
+    ?row.formatSource.nativeReply.text:null
+  })),
+  note:'僅為連續掃描過程的原始進度保全，不代表已到頁尾或通過配對、事件、原生格式驗證；禁止直接匯入正史或 Firebase。'
+ };
+ downloadJson('Gal_AI_未完成掃描保全_',snapshot);
+ status('🧷 已要求瀏覽器下載 '+rows.length+' 則未完成掃描保全 JSON。這不是完整正史，不能直接匯入。掃描本身不受影響。');
+ return true;
 }
 function downloadJson(prefix,data){
  const a=document.createElement('a');
@@ -935,7 +969,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  const exportButton=$('gal-scan-export');
  exportButton.disabled=true;
  exportButton.textContent=preview?'下載三則測試 JSON':'下載原生正史 JSON';
- const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,geometryReanchors=0,scanMode='auto',bottomProof=null;
+ const collected=[];activeScanRows=collected;let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,geometryReanchors=0,scanMode='auto',bottomProof=null;
  const recoveryLog=[];
  let unpairedReply=null,scrollStall=null;
  const continuedPositions=[];
@@ -1186,6 +1220,10 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    const response=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:'completed',
     scanned:collected.length,result:JSON.stringify(lastResult,null,2),diagnostic:JSON.stringify(diagnostic,null,2)});
    if(!response?.ok)throw Error(response?.error||'背景程式未接收掃描結果');
+   if(response.status?.state==='failed'||response.status?.state==='cancelled'){
+    status('⚠ 掃描與正史驗證已完成，但背景工作狀態為 '+
+     response.status.state+'。請按「下載原生正史 JSON」保全本頁完成結果，再用診斷核對；不要重載頁面。');
+   }
   }
  }catch(err){
   failure=String(err?.message||err);
@@ -1203,7 +1241,13 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    state:cancelled?'cancelled':paused?'paused':'failed',scanned:collected.length,
    reason:cancelled?'使用者取消':paused?'使用者暫停':'掃描或寫入失敗，請讀取診斷檔',
    diagnostic:JSON.stringify(diagnostic,null,2)}).catch(()=>{});
- }finally{busy=false}
+ }finally{
+  busy=false;
+  // A valid in-page canonical result survives a stale background run.
+  // Make the local export control available even when browser downloads
+  // have timed out, without changing the archive or Firebase.
+  if(lastResult?.validation?.ok)exportButton.disabled=false;
+ }
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
@@ -1213,7 +1257,9 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
   if(result.state==='completed')status('✅ 正史 JSON 與版面診斷已下載。掃描 ID '+result.scanRunId+
    '\n已核對 '+result.summary.pairs+' 組，事件 '+result.summary.events+' 件，自動繼續 '+result.summary.autoContinues+' 次。');
   else if(result.state==='failed'||!result.files.diagnostic)
-   status('掃描未完成。'+(result.reason||'')+'。掃描 ID '+result.scanRunId);
+   status(busy&&result.reason==='掃描或下載逾時'
+    ?'⚠ 背景工作已逾時，但 WHIF 頁面掃描可能仍在進行。勿重新整理；可按「保全已讀進度」。掃描 ID '+result.scanRunId
+    :'掃描未完成。'+(result.reason||'')+'。掃描 ID '+result.scanRunId);
   return false;
  }
  if(msg?.type==='gal-scan-open'){
