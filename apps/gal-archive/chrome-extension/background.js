@@ -25,6 +25,50 @@ const failures = {};
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if(typeof message?.type==='string'&&message.type.startsWith('gal-run-'))return false;
   (async () => {
+    if (message?.type === 'gal-page-binding-state') {
+      if(!sender.tab||sender.frameId!==0) return {ok:false,error:'只能從 WHIF 主頁面讀取綁定'};
+      const source=whifSource(sender.tab.url||'');
+      if(!source)return {ok:false,error:'目前不是可辨識的 WHIF 聊天頁面'};
+      const data=await storageGet(['galProfilesByPage','profilesByChat','profile']);
+      const current=data.galProfilesByPage?.[source]||null;
+      const pool=[
+        ...Object.values(data.galProfilesByPage||{}),
+        ...Object.values(data.profilesByChat||{})
+      ].filter(p=>p?.cycleId&&p?.worldName);
+      const presets=[...new Map(pool.map(p=>[
+        JSON.stringify([String(p.uid||''),String(p.cycleId||''),String(p.manager||''),JSON.stringify(p.managerNames||[])]),
+        {uid:String(p.uid||''),worldName:String(p.worldName||''),cycleTitle:String(p.cycleTitle||''),
+         cycleId:String(p.cycleId||''),manager:String(p.manager||''),managerNames:Array.isArray(p.managerNames)?p.managerNames:[]}
+      ])).values()].slice(0,60);
+      return {ok:true,source,profile:current,presets,defaultUid:String(data.profile?.uid||'')};
+    }
+    if (message?.type === 'gal-page-save-binding') {
+      if(!sender.tab||sender.frameId!==0) return {ok:false,error:'只能從 WHIF 主頁面儲存綁定'};
+      const source=whifSource(sender.tab.url||'');
+      if(!source)return {ok:false,error:'目前不是可辨識的 WHIF 聊天頁面'};
+      const p=message.profile||{};
+      const clean=v=>String(v==null?'':v).trim();
+      const managerNames=Array.isArray(p.managerNames)?p.managerNames.map(clean).filter(Boolean):[];
+      const profile={
+        uid:clean(p.uid),worldName:clean(p.worldName),cycleTitle:clean(p.cycleTitle),cycleId:clean(p.cycleId),
+        managerNames:[...new Set(managerNames)],manager:[...new Set(managerNames)].join('、')
+      };
+      if(!profile.worldName) return {ok:false,error:'請填寫世界觀名稱'};
+      if(!/^[A-Za-z0-9_-]{5,160}$/.test(profile.cycleId))
+        return {ok:false,error:'輪迴文件 ID 格式無效；請從檔案館複製，不要自行猜'};
+      if(profile.managerNames.length<1||profile.managerNames.length>2)
+        return {ok:false,error:'副駕駛必須至少 1 位、最多 2 位'};
+      if(profile.managerNames.some(name=>/[、，,;；\r\n]/u.test(name)))
+        return {ok:false,error:'每個副駕駛欄位只能填一位名稱'};
+      const data=await storageGet(['galProfilesByPage']);
+      const map=data.galProfilesByPage||{};
+      const old=map[source];
+      if(old&&(old.cycleId!==profile.cycleId||old.worldName!==profile.worldName)&&message.confirmReplace!==true)
+        return {ok:false,needsConfirm:true,error:'這個 WHIF 頁面已綁定不同輪迴／世界觀'};
+      map[source]=profile;
+      await storageSet({galProfilesByPage:map});
+      return {ok:true,source,profile};
+    }
     if (message?.type === 'gal-page-open-assistant') {
       if(!sender.tab||sender.frameId!==0) return {ok:false,error:'只能從 WHIF 主頁面開啟掃描助手'};
       const source=whifSource(sender.tab.url||'');
@@ -32,7 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const data=await storageGet(['galProfilesByPage']);
       const profile=data.galProfilesByPage?.[source];
       if(!profile?.cycleId||!profile?.worldName)
-        return {ok:false,error:'這個 WHIF 聊天尚未綁定輪迴；請先用擴充功能完成一次綁定'};
+        return {ok:false,needsBinding:true,error:'這個 WHIF 聊天尚未綁定輪迴'};
       try{
         await chrome.scripting.executeScript({target:{tabId:sender.tab.id},world:'MAIN',files:['gal-native-source.js']});
       }catch(_){}
