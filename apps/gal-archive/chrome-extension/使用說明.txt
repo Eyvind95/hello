@@ -309,3 +309,12 @@ V0.8.19 測試版 — 事件三則局部測試
 - 若目前畫面找不到完整三則順序，直接報錯，不猜事件、不跨缺口。
 - 成功後自動下載「Gal_AI_事件三則測試_*.json」與「輪迴檔案館_事件三則診斷_*.json」。
 - 測試檔保留三則 DOM 掃描文字；上一則 AI 與事件另保留 React native 原文與 compareNativeParagraphs 比對結果。
+
+
+V0.8.20 測試版 — 無時間事件 native 中文引號精確還原
+- 針對事件三則測試確認的格式：WHIF DOM 事件卡可能完全不含中文「」；React native 原文則保留成對引號。
+- 僅限 source=whif-event-content、已辨識 event、無劇情時間、前方存在可移除的 WHIF hidden event context 時啟用。
+- DOM 必須完全沒有「」；native 的「」數量必須左右平衡且至少一對。
+- 只把 native 的「」移除後，全文（忽略空白）必須與 DOM 100% 完全一致，才接受 native 原文；任何其他增字、少字、改字或不平衡引號仍 fallback。
+- 通過時記錄 format marker：native-event-dialogue-quotes，並直接使用 native 的段落與中文引號。
+- 保留 V0.8.19「🎯 事件三則測試」，可直接原地重測，不需再掃整輪。
