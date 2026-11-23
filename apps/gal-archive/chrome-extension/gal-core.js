@@ -54,6 +54,36 @@ function isAllowedOpeningRow(row){
  const clock=parseGameTime(row.text);
  return !clock||clock.iso===LEGACY_OPENING_ISO;
 }
+
+ // A historical reply with no visible time HUD must NOT inherit the opening
+ // time. Accept it only when the unique WHIF React source confirms the
+ // complete rendered message and the original source also has no time HUD.
+ // Other missing-clock cases still fail closed.
+ function verifiedUnclockedReply(row,rows){
+  if(row?.role!=='ai'||row.eventType==='event'||isEvent(row.text)||
+     parseGameTime(row.text)||isExplicitUnknownGameTime(row.text))
+   return {ok:false,reason:'not-an-untimed-ordinary-reply'};
+  const source=row.formatSource?.nativeReply;
+  if(source?.reason!=='available'||typeof source.text!=='string'||
+     source.text.length<8||source.text.length>30000||
+     source.markerCount!==1||!source.messageId||
+     source.scannedText!==row.text)
+   return {ok:false,reason:'missing-matching-native-source'};
+  if(rows.filter(item=>item.formatSource?.nativeReply?.messageId===source.messageId).length!==1)
+   return {ok:false,reason:'non-unique-native-message-id'};
+  const head=clean(source.text).split('\n').slice(0,12);
+  if(parseGameTime(source.text)||isExplicitUnknownGameTime(source.text)||
+     head.some(line=>/^[ \t]*[｜|│]\s*(?:\d{4}\s*(?:年|[-/])|日期|(?:🕒\s*)?時間|\d{1,2}:\d{2})/u.test(line)))
+   return {ok:false,reason:'native-source-contains-time-header'};
+  const verified=compareNativeParagraphs(row.text,source.text,{
+   source:'whif-message-content',verifiedUntimedNative:true,
+   chapterTitle:source.chapterTitle,
+   statusText:row.formatSource?.statusText,codeBlocks:row.formatSource?.codeBlocks
+  });
+  return verified.text!==null&&verified.comparison.contentEqual&&verified.comparison.clockEqual
+   ?{ok:true,reason:'native-text-confirmed-no-time'}
+   :{ok:false,reason:verified.comparison.contentEqual?'native-clock-unverified':'native-text-mismatch'};
+ }
 function validate(rows,expectedWorld){
  const errors=[],warnings=[],canon=[],events=[];
  if(!Array.isArray(rows)||!rows.length)return {ok:false,errors:['沒有掃到任何可辨識訊息'],warnings,opening:'',messages:[],events:[],pairs:0};
@@ -62,7 +92,7 @@ function validate(rows,expectedWorld){
    errors.push('首則不是可辨識的輪迴開場（原則無劇情時間；僅允許 2026年8月22日 18:42 的舊式開場）；請回到真正的開場重新掃描');
  const opening=opener.role==='ai'?clean(opener.text):'';
  if(opening.length<8)errors.push('輪迴開場過短，可能選到工具列或不完整訊息');
- let pending=null,pairs=0,previousMs=null,autoContinues=0,unknownGameTimeCount=0;
+ let pending=null,pairs=0,previousMs=null,autoContinues=0,unknownGameTimeCount=0,verifiedUntimedCount=0;
  for(let i=1;i<rows.length;i++){
   const row=rows[i],role=row.role,t=clean(row.text);
   if(!t){errors.push('第 '+(i+1)+' 則是空訊息');continue}
@@ -86,8 +116,10 @@ function validate(rows,expectedWorld){
   if(role!=='ai'){errors.push('第 '+(i+1)+' 則左右身份不明');continue}
   const explicitlyUnknown=isExplicitUnknownGameTime(t);
   const clock=explicitlyUnknown?null:parseGameTime(t);
-  if(!clock&&!explicitlyUnknown){
-   errors.push('第 '+(i+1)+' 則 Gal AI 回覆缺少可辨識的劇情日期和時間，且未明示日期不詳／時間不詳');
+  const nativeUntimed=!clock&&!explicitlyUnknown?verifiedUnclockedReply(row,rows):null;
+  if(!clock&&!explicitlyUnknown&&!nativeUntimed?.ok){
+   errors.push('第 '+(i+1)+' 則 Gal AI 回覆沒有可辨識劇情時間，原生無時間來源未通過（'+
+    (nativeUntimed?.reason||'unknown')+'）；不能自行沿用前一則時間');
    continue;
   }
   const continued=pending===null&&row.autoContinue===true&&canon.at(-1)?.role==='ai'&&canon.at(-1).scanIndex===i-1;
@@ -95,10 +127,14 @@ function validate(rows,expectedWorld){
   // The explicit '日期不詳／時間不詳' header is evidence of an unknown
   // clock, NOT permission to borrow the previous reply's time.
   if(pending)pending.gameTime=clock?.iso||null;
-  canon.push({role:'ai',text:t,scanIndex:i,gameTime:clock?.iso||null,...(continued?{autoContinue:true}:{})});
+  canon.push({role:'ai',text:t,scanIndex:i,gameTime:clock?.iso||null,...(nativeUntimed?.ok?{verifiedUntimedNative:true}:{}),...(continued?{autoContinue:true}:{})});
   if(explicitlyUnknown){
    unknownGameTimeCount+=pending?2:1;
    warnings.push('第 '+(i+1)+' 則 Gal AI 原文明示「日期不詳／時間不詳」；本回合時間保留空白，不推測時間');
+  }else if(nativeUntimed?.ok){
+   verifiedUntimedCount++;
+   unknownGameTimeCount+=pending?2:1;
+   warnings.push('第 '+(i+1)+' 則 Gal AI 來源 ID 唯一且原生全文核對一致，但原文未標記劇情時間；本回合保留 null，不借用開場時間');
   }else{
    if(previousMs!==null&&Date.parse(clock.iso)<previousMs)
     warnings.push('第 '+(i+1)+' 則遊戲時間早於前一回合（可能是劇情倒流，需核對原文）');
@@ -113,7 +149,7 @@ function validate(rows,expectedWorld){
  if(expectedWorld&&sourceNames.length&&sourceNames.some(x=>normalizedWorld(x)!==normalizedWorld(expectedWorld)))
    errors.push('事件世界觀與綁定世界觀不一致');
  return {ok:errors.length===0,errors,warnings,opening,messages:canon,events,pairs,autoContinues,
-  unknownGameTimeCount,worldNames:sourceNames,scannedRows:rows.length};
+  unknownGameTimeCount,verifiedUntimedCount,worldNames:sourceNames,scannedRows:rows.length};
 }
 function copyRangeWithLiveStyles(range,trace){
  const root=range.commonAncestorContainer;
@@ -388,6 +424,20 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  // Opening text is a separate record, not an ordinary timed AI reply.
  // Permit one hidden contextual prefix only if the FULL visible opening can
  // be reconstructed after removing that prefix and a matching status fence.
+ if(options.verifiedUntimedNative&&options.source==='whif-message-content'&&leading&&!preamble.test(scanned)){
+  const label=leading[1].trim();
+  const after=text.slice(leading[0].length);
+  // This is only a trial transformation. The entire remaining message
+  // still has to match, including all visible quotes, below.
+  if(label&&!/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(label)){
+   const candidate=unspaced(after);
+   const visible=unspaced(scanned);
+   if(candidate.replace(/[「」]/g,'')===visible.replace(/[「」]/g,'')){
+    record('verified-untimed-leading-context',1,text,after);
+    text=after;
+   }
+  }
+ }
  if(options.opening&&options.source==='whif-message-content'&&leading&&!preamble.test(scanned)){
   const label=leading[1].trim();
   const after=text.slice(leading[0].length);
@@ -646,7 +696,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  // ONLY if the full displayed text matches character-for-character after
  // projecting balanced missing quote pairs. Other text changes are rejected.
  let openingQuoteProjection=null;
- if(options.opening&&options.source==='whif-message-content'&&!options.event&&
+ if((options.opening||options.verifiedUntimedNative)&&options.source==='whif-message-content'&&!options.event&&
     unspaced(scanned)!==unspaced(text)){
   const visibleChars=[...unspaced(scanned)];
   let matched=0,projected='',omitted=[],valid=true;
@@ -684,11 +734,13 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  // no other missing-clock reply can pass the native paragraph audit.
  const explicitUnknownClock=!clock&&!nativeClock&&
   isExplicitUnknownGameTime(scanned)&&isExplicitUnknownGameTime(text);
+ const verifiedNoClock=options.verifiedUntimedNative===true&&!clock&&!nativeClock&&
+  !isExplicitUnknownGameTime(scanned)&&!isExplicitUnknownGameTime(text);
  const clockEqual=options.opening
   ?(isAllowedOpeningRow({role:'ai',text:scanned})&&clock===nativeClock)
   :options.event
    ?(clock===nativeClock&&(Boolean(clock)||(!clock&&!nativeClock)))
-   :Boolean(clock&&clock===nativeClock)||explicitUnknownClock;
+   :Boolean(clock&&clock===nativeClock)||explicitUnknownClock||verifiedNoClock;
  const statusCompact=unspaced(statusText);
  const positions=[...text.matchAll(/(\S)(\s*)/gu)];
  const statusPrefix=options.event&&titleKey&&unspaced(text).startsWith(titleKey+statusCompact)
@@ -698,7 +750,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const comparison={scannedLength:[...scanned].length,nativeLength:[...nativeCopy].length,
   scannedNonWhitespace:scanChars.length,nativeNonWhitespace:count(original),
   comparableNativeNonWhitespace:nativeChars.length,whitespaceOnlyEqual,contentEqual,clockEqual,
-  preambleMetadata,formatMarkers:markers,formatMarkerCount:markers.reduce((sum,m)=>sum+m.tokens,0),
+  preambleMetadata,verifiedNoClock,formatMarkers:markers,formatMarkerCount:markers.reduce((sum,m)=>sum+m.tokens,0),
   explainedNonWhitespace:markers.reduce((sum,m)=>sum+m.nonWhitespaceChars,0),
   remainingUnexplained:{scanned:0,native:0},
   nativeBodyParagraphs:bodyOffset===undefined?null:text.slice(bodyOffset).split(/\n(?:[ \t]*\n)+/).length,
@@ -791,5 +843,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.32'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.33'};
 })();
