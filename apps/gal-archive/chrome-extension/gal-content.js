@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.25: re-anchor against source rows after lazy-loaded scroll growth. */
+/* Independent Gal AI page scanner. v0.8.26: verify explicitly unknown story time and preserve source paragraphs. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.25';
+const SCANNER_VERSION='0.8.26';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
@@ -52,7 +52,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.25 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.26 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -406,7 +406,7 @@ function boundaryFragmentText(start,end,role='ai',trace,metadata,event=false){
  // Controls embedded in an incomplete DOM fragment are not game narration.
  holder.querySelectorAll('button,[role="button"],[role="toolbar"],svg,style,script,textarea,input').forEach(n=>n.remove());
  const text=core.markdownFromDom(holder,{role,trace,metadata,event}).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
- if(metadata&&(event||core.parseGameTime(text))){
+ if(metadata&&(event||core.parseGameTime(text)||core.isExplicitUnknownGameTime(text))){
   const base=range.commonAncestorContainer;
   const markers=[...(base.querySelectorAll?.(nativeMessageSelector)||[])].filter(node=>range.intersectsNode(node));
   if(base.matches?.(nativeMessageSelector))markers.unshift(base);
@@ -499,7 +499,7 @@ function messageText(node,role='ai',trace,metadata){
   ||node;
  const event=role==='ai'&&core.isEvent(body.innerText||'');
  const text=core.markdownFromDom(body,{role,trace,metadata,event}).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
- if(metadata&&(event||core.parseGameTime(text))){
+ if(metadata&&(event||core.parseGameTime(text)||core.isExplicitUnknownGameTime(text))){
   const markers=[...node.querySelectorAll(nativeMessageSelector)];
   if(node.matches(nativeMessageSelector))markers.unshift(node);
   metadata.nativeReply=nativeReplySource(markers);
@@ -749,6 +749,7 @@ function canonical(rows,valid,preview){
   opening:valid.opening,messages,events,validation:{ok:valid.ok,pairs:valid.pairs,events:events.length,
     ...(valid.autoContinues?{autoContinues:valid.autoContinues}:{}),
     openingChars:valid.opening.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,
+    unknownGameTimeCount:valid.unknownGameTimeCount||0,
     warnings:valid.warnings,errors:valid.errors},rawRows:rows.length,
   readOnlyUntilImported:!preview,note:preview?'僅供三則測試驗收。':'原生來源對完整對話及事件具有優先權；不會更動副駕駛聊天、世界觀或補充筆記。覆蓋前需在檔案館確認備份。'
  };
