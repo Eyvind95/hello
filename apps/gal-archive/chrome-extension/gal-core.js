@@ -529,15 +529,20 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   }
  }
 
- // For historic WHIF replies: one hidden standalone {{chapter}} preceding
- // the first fenced status HUD, and possibly omitted balanced dialogue
- // quotes. Require exact ordered whole-reply character alignment before use.
+ // Historic WHIF chapters sometimes prepend a world-name label and one
+ // hidden {{...}} context token to a fenced HUD. WHIF's DOM also renders
+ // certain original 「」 pairs as separate unquoted lines. Compare the
+ // ENTIRE rendered reply with an independently identified source, removing
+ // only exactly one verified prefix token and the status fence, and projecting
+ // only balanced Chinese quote characters. No arbitrary body text can change.
  let legacyMessageProjection=null;
+ let legacyProjectionTrace=null;
  if(options.source==='whif-message-content'&&!options.event&&
     !unspaced(scanned).startsWith('{{')&&unspaced(scanned)!==unspaced(text)){
   const visibleLines=scanned.split('\n');
   const dateStart=visibleLines.findIndex(line=>
    /^[｜|│]\s*(?:\d{4}(?:年|[/-])|日期不詳)/u.test(line.trim()));
+  legacyProjectionTrace={stage:'date-search',dateStart};
   if(dateStart>=0&&dateStart<=2){
    const visiblePrefix=visibleLines.slice(0,dateStart).join('\n');
    const statusRows=[];
@@ -547,22 +552,32 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
    const visibleStatusKey=unspaced(statusRows.join('\n'));
    const firstFence=/^[ \t]*\x60{3}[^\n]*\n/m.exec(text);
+   legacyProjectionTrace={stage:'fence-search',dateStart,statusRows:statusRows.length,
+    firstFence:Boolean(firstFence),visiblePrefixLength:count(visiblePrefix)};
    if(statusRows.length>=2&&firstFence){
     const fenced=text.slice(firstFence.index).match(statusFence);
-    if(fenced&&unspaced(fenced[1])===visibleStatusKey){
+    const hudEqual=Boolean(fenced&&unspaced(fenced[1])===visibleStatusKey);
+    legacyProjectionTrace={...legacyProjectionTrace,stage:'hud-compare',
+     fenced:Boolean(fenced),hudEqual,sourceHudLength:fenced?count(fenced[1]):null,
+     visibleHudLength:count(visibleStatusKey)};
+    if(hudEqual){
      const sourcePrefix=text.slice(0,firstFence.index);
-     const hiddenLine=/^[ \t]*\{\{([^{}\n]{1,200})\}\}[ \t]*$/gm;
-     const hidden=[...sourcePrefix.matchAll(hiddenLine)];
+     const syntax=/\{\{([^{}\n]{1,200})\}\}/gu;
+     const hidden=[...sourcePrefix.matchAll(syntax)];
      const priorHiddenTemplate=markers.some(item=>item.kind==='leading-whif-template');
-     if((hidden.length===1&&
-         !/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(hidden[0][1].trim()))||
-        (hidden.length===0&&priorHiddenTemplate)){
-      // An earlier strict preamble rule may already have stripped the one
-      // historic template. Undated HUD fences still require this projection.
-      const plainPrefix=sourcePrefix.replace(hiddenLine,'').trim();
-      if(unspaced(plainPrefix)===unspaced(visiblePrefix)){
-       const noTemplate=plainPrefix?(plainPrefix+'\n'+text.slice(firstFence.index)):
-        text.slice(firstFence.index);
+     const acceptable=hidden.length===1&&
+      !/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(hidden[0][1].trim());
+     const alreadyStripped=hidden.length===0&&priorHiddenTemplate;
+     legacyProjectionTrace={...legacyProjectionTrace,stage:'template-check',
+      templateCount:hidden.length,acceptable:acceptable||alreadyStripped,
+      priorHiddenTemplate};
+     if(acceptable||alreadyStripped){
+      const plainPrefix=(acceptable?sourcePrefix.replace(hidden[0][0],''):sourcePrefix).trim();
+      const prefixEqual=unspaced(plainPrefix)===unspaced(visiblePrefix);
+      legacyProjectionTrace={...legacyProjectionTrace,stage:'prefix-compare',
+       prefixEqual,sourcePrefixLength:count(plainPrefix)};
+      if(prefixEqual){
+       const noTemplate=(plainPrefix?plainPrefix+'\n':'')+text.slice(firstFence.index);
        const rest=text.slice(firstFence.index+fenced[0].length);
        const candidate=(plainPrefix?plainPrefix+'\n':'')+fenced[1]+
         rest.replace(/^\n(?![ \t]*\n)(?=[\s\S]*\S)/,'\n\n');
@@ -586,8 +601,11 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
        const verifiedClock=Boolean(scannedClock&&scannedClock===candidateClock)||
         (!scannedClock&&!candidateClock&&
          isExplicitUnknownGameTime(scanned)&&isExplicitUnknownGameTime(candidate));
+       legacyProjectionTrace={...legacyProjectionTrace,stage:'full-text-compare',
+        valid,sourceAlignedChars:aligned,renderedChars:visibleKey.length,
+        omittedQuoteMarks:omitted.length,balanced:balance===0,clockEqual:verifiedClock};
        if(valid&&balance===0&&aligned===visibleKey.length&&verifiedClock){
-        if(hidden.length)record('whif-legacy-hidden-template',1,text,noTemplate);
+        if(acceptable)record('whif-legacy-hidden-template',1,text,noTemplate);
         record('whif-legacy-status-code-fence',2,noTemplate,candidate);
         if(omitted.length)
          record('whif-legacy-balanced-dialogue-quotes',omitted.length,candidate,comparable);
@@ -596,6 +614,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
          omittedQuotePairs:omitted.filter(char=>char==='「').length,
          preservedVisibleQuotes:(scanned.match(/[「」]/g)||[]).length,
          statusRows:statusRows.length,restoredFromNative:true};
+        legacyProjectionTrace.stage='verified';
        }
       }
      }
@@ -655,6 +674,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   };
  }
  if(!contentEqual){
+  if(legacyProjectionTrace)comparison.legacyProjectionTrace=legacyProjectionTrace;
   const features=value=>({
    markdownHeadings:(value.match(/^\s*#{1,6}[ \t]/gm)||[]).length,
    markdownEmphasis:(value.match(/\*{1,3}[^*\n]+\*{1,3}/g)||[]).length,
@@ -712,5 +732,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.27'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.28'};
 })();
