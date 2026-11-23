@@ -1,4 +1,6 @@
 'use strict';
+importScripts('gal-scan-status.js');
+installGalScanStatus(chrome);
 const ENDPOINT = 'https://asia-east1-eyvind95-182f0.cloudfunctions.net/archiveIngest';
 const CHAT_PREFIX = 'https://chatgpt.com';
 const validChat = url => {
@@ -12,6 +14,7 @@ const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')
 const sha256 = async value => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
 const failures = {};
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if(typeof message?.type==='string'&&message.type.startsWith('gal-run-'))return false;
   (async () => {
     if (message?.type === 'get-status') {
       const data = await storageGet(['watch', 'profilesByChat', 'last']);

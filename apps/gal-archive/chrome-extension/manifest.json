@@ -1,13 +1,16 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.0",
-  "version_name": "V0.8.0",
-  "description": "輪迴檔案館 V0.8.0：辨識 Gal AI 灰底與玩家紫底引用框，保留原有段落、行內排版與斜體。",
+  "version": "0.8.8",
+  "version_name": "V0.8.8 測試版",
+  "description": "輪迴檔案館 V0.8.8 測試版：辨識 Gal AI 灰底與玩家紫底引用框，保留原有段落、行內排版與斜體。",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "downloads",
+    "offscreen",
+    "alarms"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",

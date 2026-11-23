@@ -3,8 +3,14 @@ const $=id=>document.getElementById(id);
 const CHAT_PATTERN=/^\/(?:c\/[a-zA-Z0-9-]+|g\/[^/]+\/c\/[a-zA-Z0-9-]+)\/?$/;
 let tab=null, chat=null,activeBinding=null;
 const emptyTarget = () => ({uid:'',key:'',cycleId:'',manager:'',worldName:'',cycleTitle:''});
-const targetFields=['uid','key','cycleId','manager','worldName','cycleTitle'];
-const targetLabel=p=>[p.worldName,p.cycleTitle,p.manager].filter(Boolean).join('／')||p.cycleId||'未命名輪迴';
+const targetFields=['uid','key','cycleId','worldName','cycleTitle'];
+const managers=globalThis.ArchiveManagerNames;
+const targetLabel=p=>[p.worldName,p.cycleTitle,managers.read(p).join('、')].filter(Boolean).join('／')||p.cycleId||'未命名輪迴';
+function fillManagers(profile){
+  const [first='',second='']=managers.read(profile);
+  $('manager').value=first;
+  $('manager2').value=second;
+}
 const saveStorage=data=>new Promise(resolve=>chrome.storage.local.set(data,resolve));
 const getStorage=keys=>new Promise(resolve=>chrome.storage.local.get(keys,resolve));
 const sendTab=message=>new Promise(resolve=>chrome.tabs.sendMessage(tab.id,message,response=>resolve(chrome.runtime.lastError?null:response)));
@@ -27,9 +33,10 @@ function showWatch(watched){$('start').disabled=!chat||watched||!activeBinding;$
   $('bindingPanel').open=!activeBinding;
   const defaults=data.profile||{};
   for(const k of targetFields)$(k).value=activeBinding?.[k]||(k==='uid'||k==='key'?defaults[k]||'':'');
-  const known=new Map(Object.values(map).filter(p=>p?.cycleId).map(p=>[p.uid+'|'+p.cycleId+'|'+p.manager,p]));
+  fillManagers(activeBinding);
+  const known=new Map(Object.values(map).filter(p=>p?.cycleId).map(p=>[JSON.stringify([p.uid,p.cycleId,managers.read(p)]),p]));
   for(const [key,p] of known){const option=document.createElement('option');option.value=key;option.textContent=targetLabel(p);$('targetPicker').appendChild(option);}
-  $('targetPicker').onchange=()=>{const p=known.get($('targetPicker').value);if(!p)return;for(const k of targetFields)$(k).value=p[k]||'';notice('已帶入輪迴設定；按「將此對話綁定」才會正式生效。');};
+  $('targetPicker').onchange=()=>{const p=known.get($('targetPicker').value);if(!p)return;for(const k of targetFields)$(k).value=p[k]||'';fillManagers(p);notice('已帶入輪迴設定；按「將此對話綁定」才會正式生效。');};
   showWatch(data.watch?.[chat]===true);
   $('autoTime').checked=data.autoTimeCapture===true;
   updateTimePanels(data.lastTimeCaptureByChat?.[chat]||data.lastTimeCapture,data.lastTimeUploadByChat?.[chat]||data.lastTimeUpload);
@@ -65,7 +72,11 @@ async function refreshTimePanels(){const s=await getStorage(['lastTimeCapture','
 $('save').onclick=async()=>{
   if(!chat){notice('請先開啟一個 ChatGPT 對話，再為它綁定輪迴',true);return;}
   const profile=Object.fromEntries(targetFields.map(k=>[k,$(k).value.trim()]));
-  if(!/^[A-Za-z0-9_-]{5,128}$/.test(profile.uid)||!/^[A-Za-z0-9_-]{5,160}$/.test(profile.cycleId)||!profile.manager||!/^[a-fA-F0-9]{64}$/.test(profile.key)){notice('請確認 UID、輪迴 ID、負責人和 64 位十六進位寫入金鑰。',true);return;}
+  try{profile.managerNames=managers.form($('manager').value,$('manager2').value);}
+  catch(error){notice(error.message,true);return;}
+  // The existing ChatGPT inbox attributes each individual message to one manager.
+  profile.manager=profile.managerNames[0];
+  if(!/^[A-Za-z0-9_-]{5,128}$/.test(profile.uid)||!/^[A-Za-z0-9_-]{5,160}$/.test(profile.cycleId)||!/^[a-fA-F0-9]{64}$/.test(profile.key)){notice('請確認 UID、輪迴 ID 和 64 位十六進位寫入金鑰。',true);return;}
   const data=await getStorage(['profilesByChat','profile','watch']);
   const map=data.profilesByChat||{};
   const previous=map[chat];

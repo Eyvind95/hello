@@ -1,7 +1,7 @@
 <!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
 body{font-family:system-ui,'Microsoft JhengHei',sans-serif;background:#101729;color:#eef2ff;width:350px;margin:0;padding:17px;box-sizing:border-box}h2{font-size:18px;margin:0 0 5px}.sub{font-size:12px;color:#aab6db;margin-bottom:15px}.field{margin-bottom:12px}label{display:block;font-size:12px;margin:0 0 4px;color:#c6d2f3}input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #47567c;border-radius:8px;background:#1c2944;color:white}button{padding:10px;border:0;border-radius:8px;background:#626cf5;color:white;font-weight:bold;cursor:pointer}button.secondary{background:#34415d}button:disabled{opacity:.45} .buttons{display:flex;gap:8px;margin:12px 0}.buttons button{flex:1}.hint{font-size:11px;color:#aab6db;line-height:1.6}.notice{white-space:pre-wrap;font-size:12px;background:#1f2d46;padding:10px;margin:9px 0;border-radius:8px;overflow-wrap:anywhere} .good{color:#78e3bb}.bad{color:#ffb1b1}hr{border:0;border-top:1px solid #354461;margin:16px 0}summary{cursor:pointer;padding:10px 0;font-weight:650}details#bindingPanel{border:1px solid #354461;border-radius:9px;padding:0 10px 11px;margin:12px 0}details#bindingPanel .field{margin:8px 0 12px}.sectionhead{font-size:13px;color:#e4e5ff;font-weight:700;margin:13px 0 6px}#status,#lastWriteStatus,#timeCaptureStatus,#timeUploadStatus,#diagnostics{font-size:12px;line-height:1.5}
 </style></head><body>
-<h2>📚 輪迴自動歸檔助手</h2><div class="sub">V0.8.0 · ChatGPT 原掃描27%／477ms + Gal AI 獨立掃描31%／420ms</div><a href="gal-popup.html" style="display:block;text-align:center;padding:12px;border-radius:9px;background:#7b4dc7;color:#fff;text-decoration:none;font-weight:750;margin:10px 0">🌐 開啟 Gal AI 原生正史掃描器（獨立）</a>
+<h2>📚 輪迴自動歸檔助手</h2><div class="sub">V0.8.8 測試版 · ChatGPT 原掃描27%／477ms + Gal AI 獨立掃描31%／420ms</div><a href="gal-popup.html" style="display:block;text-align:center;padding:12px;border-radius:9px;background:#7b4dc7;color:#fff;text-decoration:none;font-weight:750;margin:10px 0">🌐 開啟 Gal AI 原生正史掃描器（獨立）</a>
 <div class="notice" id="current">正在檢查這個頁面……</div>
 <details id="bindingPanel" open><summary>⚙️ 目前對話的輪迴綁定設定（點擊展開／收合）</summary>
 <div class="field"><label for="targetPicker">套用已儲存的輪迴設定（選用）</label><select id="targetPicker" style="width:100%;padding:9px;background:#1c2944;color:white;border:1px solid #47567c;border-radius:8px"><option value="">— 為此對話設定新輪迴 —</option></select></div>
@@ -9,7 +9,8 @@ body{font-family:system-ui,'Microsoft JhengHei',sans-serif;background:#101729;co
 <div class="field"><label for="worldName">世界觀名稱（辨識用，不傳送）</label><input id="worldName" autocomplete="off" placeholder="例如：全員精神穩定"></div>
 <div class="field"><label for="cycleTitle">輪迴名稱（辨識用，不傳送）</label><input id="cycleTitle" autocomplete="off" placeholder="輸入這個輪迴的辨識名稱"></div>
 <div class="field"><label for="cycleId">輪迴文件 ID（從檔案館該輪迴複製）</label><input id="cycleId" autocomplete="off" placeholder="必須是此輪迴真正的文件 ID"></div>
-<div class="field"><label for="manager">此次負責的副駕駛（單一名稱）</label><input id="manager" autocomplete="off" placeholder="填入負責此輪迴的副駕駛名稱"></div>
+<div class="field"><label for="manager">此次負責的副駕駛（至少1位，最多2位）</label><input id="manager" required autocomplete="off" placeholder="第一位副駕駛（必填）"></div>
+<div class="field"><label for="manager2">第二位副駕駛（選填）</label><input id="manager2" autocomplete="off"></div>
 <div class="field"><label for="key">寫入金鑰（僅儲存於本機 Chrome）</label><input id="key" type="password" autocomplete="new-password" placeholder="原有的 64 位寫入金鑰"></div>
 <button id="save" style="width:100%">將此對話綁定到上面輪迴</button>
 <div class="hint" style="margin-top:8px">換對話要重新選擇或確認綁定；不會沿用上一個對話的目標。建立新輪迴後須先在檔案館上傳本機資料。</div>
@@ -35,4 +36,4 @@ body{font-family:system-ui,'Microsoft JhengHei',sans-serif;background:#101729;co
 <div class="notice" id="diagnostics">偵測診斷：檢查中……</div>
 <button id="refresh" class="secondary" style="width:100%;margin-bottom:12px">重新檢查偵測與時間狀態</button>
 <div class="hint">監看預設只記新增訊息；回補前會再次詢問目標輪迴，最多取目前網頁已載入的 200 則。超長回覆會先嘗試按「顯示較多」；展開失敗會停止回補以免只存半段。這裡顯示的是目前 ChatGPT 對話的最近紀錄；不會下載 ChatGPT 伺服器的完整歷史。超過 25,000 字元的單則暫不支援。請勿在公開電腦存放金鑰。</div>
-<script src="popup.js"></script></body></html>
+<script src="manager-names.js"></script><script src="popup.js"></script></body></html>

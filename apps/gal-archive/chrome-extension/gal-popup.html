@@ -10,7 +10,7 @@ small,.help{font-size:11px;color:#bcbbe0;line-height:1.6}
 hr{border:0;border-top:1px solid #394669;margin:14px 0}
 </style></head><body>
 <h2>🧭 Gal AI 原生正史掃描器</h2>
-<div class="sub">V0.8.0 · 通用辨識／開場校準／獨立工具 · 31%／420ms／350固定穩定等待</div>
+<div class="sub">V0.8.8 測試版 · 通用辨識／開場校準／獨立工具 · 31%／420ms／350固定穩定等待</div>
 <a class="btn secondary" href="popup.html" style="width:100%">返回原 ChatGPT 歸檔助手</a>
 <div class="notice" id="pageStatus">正在讀取目前頁面…</div>
 <label for="profileSelect">沿用已綁定的輪迴設定（選用）</label>
@@ -18,10 +18,11 @@ hr{border:0;border-top:1px solid #394669;margin:14px 0}
 <label for="worldName">當前世界觀（必填，從 Gal AI 原始事件核對）</label><input id="worldName" placeholder="例如：全員精神穩定，感情除外">
 <label for="cycleTitle">輪迴名稱（僅供辨識）</label><input id="cycleTitle" placeholder="第16周目・杜林">
 <label for="cycleId">檔案館輪迴文件 ID（必填）</label><input id="cycleId" placeholder="從檔案館複製，不要自行猜">
-<label for="manager">負責副駕駛（可保留原名稱）</label><input id="manager" placeholder="例如：暗夢後輩">
+<label for="manager">此次負責的副駕駛（至少1位，最多2位）</label><input id="manager" required autocomplete="off" placeholder="第一位副駕駛（必填）">
+<label for="manager2">第二位副駕駛（選填）</label><input id="manager2" autocomplete="off">
 <label for="uid">Firebase UID（選填；本版不直接上傳）</label><input id="uid" placeholder="可沿用既有帳號設定">
 <div class="row"><button id="save" class="secondary">儲存此頁面綁定</button><button id="start">↓ 從現在畫面掃描到底</button></div>
 <button id="preview" class="secondary">掃 3 則停下（測試）</button>
 <div class="notice" id="scanStatus">尚未開始。請先在 Gal AI 頁面移至「第一則無時間的開場」，再開始掃描。</div>
 <div class="help">這是另一套獨立工具，不使用 ChatGPT 的「展開時間」或「顯示較多」。只讀取 Gal AI 劇情時間；第一則左側 AI 為「輪迴開場」，其後逐回合「我／他」，事件另存。藍色引用框補成 &gt;，斜體補成 *...*。掃描完整驗證後在頁面右上角下載 JSON，再到檔案館預覽，由 Gal AI 原文覆蓋指定欄位。<strong>掃描本身不會動到 Firebase／正史。</strong></div>
-<script src="gal-popup.js"></script></body></html>
+<script src="manager-names.js"></script><script src="gal-popup.js"></script></body></html>

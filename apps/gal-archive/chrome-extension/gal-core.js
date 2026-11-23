@@ -44,7 +44,7 @@ function validate(rows,expectedWorld){
    errors.push('首則不是「左側、無劇情時間、非事件」的輪迴開場；請回到真正的開場重新掃描');
  const opening=opener.role==='ai'?clean(opener.text):'';
  if(opening.length<8)errors.push('輪迴開場過短，可能選到工具列或不完整訊息');
- let pending=null,pairs=0,previousMs=null;
+ let pending=null,pairs=0,previousMs=null,autoContinues=0;
  for(let i=1;i<rows.length;i++){
   const row=rows[i],role=row.role,t=clean(row.text);
   if(!t){errors.push('第 '+(i+1)+' 則是空訊息');continue}
@@ -68,21 +68,23 @@ function validate(rows,expectedWorld){
   if(role!=='ai'){errors.push('第 '+(i+1)+' 則左右身份不明');continue}
   const clock=parseGameTime(t);
   if(!clock){errors.push('第 '+(i+1)+' 則 Gal AI 回覆缺少可辨識的劇情日期和時間');continue}
-  if(pending===null){errors.push('第 '+(i+1)+' 則 Gal AI 沒有相鄰的「我」');continue}
+  const continued=pending===null&&row.autoContinue===true&&canon.at(-1)?.role==='ai'&&canon.at(-1).scanIndex===i-1;
+  if(pending===null&&!continued){errors.push('第 '+(i+1)+' 則 Gal AI 沒有相鄰的「我」');continue}
   // Both player and Gal AI use the game's own clock, never ChatGPT/capture/received clocks.
-  pending.gameTime=clock.iso;
-  canon.push({role:'ai',text:t,scanIndex:i,gameTime:clock.iso});
+  if(pending)pending.gameTime=clock.iso;
+  canon.push({role:'ai',text:t,scanIndex:i,gameTime:clock.iso,...(continued?{autoContinue:true}:{})});
   if(previousMs!==null&&Date.parse(clock.iso)<previousMs)
     warnings.push('第 '+(i+1)+' 則遊戲時間早於前一回合（可能是劇情倒流，需核對原文）');
   previousMs=Date.parse(clock.iso);
-  pending=null;pairs++;
+  if(continued)autoContinues++;else pairs++;
+  pending=null;
  }
  if(pending!==null)errors.push('掃描尾端只有「我」，沒有對應 Gal AI 回覆');
  if(pairs===0)errors.push('沒有任何完整「我／他」回合');
  const sourceNames=[...new Set(events.map(x=>x.worldName).filter(Boolean))];
  if(expectedWorld&&sourceNames.length&&sourceNames.some(x=>normalizedWorld(x)!==normalizedWorld(expectedWorld)))
    errors.push('事件世界觀與綁定世界觀不一致');
- return {ok:errors.length===0,errors,warnings,opening,messages:canon,events,pairs,
+ return {ok:errors.length===0,errors,warnings,opening,messages:canon,events,pairs,autoContinues,
   worldNames:sourceNames,scannedRows:rows.length};
 }
 function copyRangeWithLiveStyles(range,trace){
@@ -192,6 +194,7 @@ function markdownFromDom(node,options={}){
   const nextItalic=inItalic||italicNow||italicStyle(n)==='italic';
   if(options.metadata&&n.matches(status)&&/^(?:pre|pre-wrap)$/.test(whiteSpace(n))){
    (options.metadata.codeBlocks??=[]).push(n.textContent);
+   if(parseGameTime(n.textContent))options.metadata.statusText||=n.textContent;
   }
   // The native template lays out the status and each text fragment as a
   // separate visual box. Paragraph breaks in its prose come from the text.
@@ -203,7 +206,8 @@ function markdownFromDom(node,options={}){
   const nativeTemplate=statusLeaf?.matches(status)&&
    /^(?:rgb\(28,\s*28,\s*39\)|#1c1c27)$/i.test(color(statusLeaf))&&whiteSpace(statusLeaf)==='pre-wrap';
   const nativeReply=nativeTemplate&&!options.event;
-  if(options.metadata&&nativeTemplate)options.metadata.statusText||=statusLeaf.textContent;
+  if(options.metadata&&nativeTemplate&&parseGameTime(statusLeaf.textContent))
+   options.metadata.statusText||=statusLeaf.textContent;
   if(trace&&nativeLayout&&header&&!trace.templateHeader)
    trace.templateHeader={tag:header.localName,classes:header.getAttribute('class'),background:color(header),whiteSpace:whiteSpace(header)};
   if(trace&&nativeReply)trace.serialized.nativeTemplates++;
@@ -393,6 +397,48 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    text=projected;
   }
  }
+ // WHIF hides non-placeholder templates even inside narration. Walk the
+ // known syntax in order and require a complete visible-text match before
+ // committing any projection. Fenced code remains an indivisible block.
+ if(options.source==='whif-message-content'&&statusKey&&scannedKey!==unspaced(text)){
+  const syntax=/^[ \t]*\x60{3}([^\n\x60]*)\n([\s\S]*?)^[ \t]*\x60{3}[ \t]*(?=\n|$)|\{\{([^{}\n]+)\}\}/gim;
+  const changes=[];
+  let cursor=0,aligned=0,projected='',valid=true;
+  for(const match of text.matchAll(syntax)){
+   const between=text.slice(cursor,match.index),key=unspaced(between);
+   if(!scannedKey.startsWith(key,aligned)){valid=false;break}
+   projected+=between;aligned+=key.length;
+   const written=unspaced(match[0]);
+   const fenceHeader=match[1]?.trim();
+   const fenceBody=match[2]?.replace(/\n$/,'');
+   const template=match[3]?.trim();
+   let replacement=match[0],kind=null;
+   if(!scannedKey.startsWith(written,aligned)){
+    // WHIF can place visible code text directly on the opening fence line.
+    // When that line could be a language label, the rendered block decides.
+    const codeCandidates=fenceHeader?[fenceBody?[fenceHeader,fenceBody].join('\n'):fenceHeader]:[fenceBody];
+    if(fenceBody&&/^[a-z][\w+-]*$/i.test(fenceHeader))codeCandidates.push(fenceBody);
+    const code=codeCandidates.find(candidate=>candidate&&codeKeys.has(unspaced(candidate))&&
+     scannedKey.startsWith(unspaced(candidate),aligned));
+    if(code!==undefined){
+     replacement=code;
+     kind=unspaced(code)===statusKey?'aligned-status-code-fence':'aligned-body-code-fence';
+    }else if(template&&!/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(template)){
+     replacement='';
+     kind='aligned-hidden-whif-template';
+    }else{valid=false;break}
+   }
+   if(kind)changes.push({kind,tokens:template?1:2,nonWhitespaceChars:count(match[0])-count(replacement)});
+   projected+=replacement;aligned+=unspaced(replacement).length;cursor=match.index+match[0].length;
+  }
+  if(valid&&changes.length){
+   projected+=text.slice(cursor);
+   if(scannedKey===unspaced(projected)){
+    markers.push(...changes);
+    text=projected;
+   }
+  }
+ }
  const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(text)];
  const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
  const contentEqual=scanChars.join('')===nativeChars.join('');
@@ -480,5 +526,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.0'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.8'};
 })();
