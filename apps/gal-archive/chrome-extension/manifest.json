@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.23",
-  "version_name": "V0.8.23 測試版",
-  "description": "輪迴檔案館 V0.8.23 測試版：僅將 2026年8月22日 18:42 的舊式有時間開場視為 opening，保留既有綁定安全檢查。",
+  "version": "0.8.24",
+  "version_name": "V0.8.24 測試版",
+  "description": "輪迴檔案館 V0.8.24 測試版：WHIF 捲動短暫停滯可保守重試，不跳過訊息，並記錄失敗瞬間的捲動診斷。",
   "permissions": [
     "storage",
     "activeTab",
