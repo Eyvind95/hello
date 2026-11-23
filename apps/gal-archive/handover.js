@@ -461,7 +461,15 @@ function bindActions(){
  });
  $('handoverExport').onclick=()=>doSafe(async()=>exportPack(state.threads.filter(t=>t.worldId===worldId()),worldName(worldId())));
  $('handoverImport').onclick=()=>$('handoverImportFile').click();
- $('handoverImportFile').onchange=e=>doSafe(async()=>{const file=e.target.files?.[0];if(file)await importPack(file);e.target.value=''});
+ $('handoverStorage').onclick=()=>doSafe(async()=>{
+  const target=$('handoverStorageStatus');
+  if(!navigator.storage?.estimate){target.textContent='這個瀏覽器無法提供儲存空間估計；此檢查不會修改任何資料。';return}
+  const {usage,quota}=await navigator.storage.estimate();
+  if(!Number.isFinite(quota)||!quota){target.textContent='瀏覽器未提供配額數字，不能據此判定記憶體故障。';return}
+  target.textContent='網站儲存空間：約已使用 '+fmtSize(usage||0)+'／配額 '+fmtSize(quota)+
+   '（剩餘約 '+fmtSize(Math.max(0,quota-(usage||0)))+'）。這是瀏覽器網站儲存額度，不等於手機 RAM。';
+ });
+ $('handoverImportFile').onchange=e=>doSafe(async()=>{try{const file=e.target.files?.[0];if(file)await importPack(file)}finally{e.target.value=''}});
  $('content').addEventListener('click',e=>{
   const btn=e.target.closest('[data-ha-action]');if(!btn)return;
   const action=btn.dataset.haAction,entryId=btn.dataset.haId,t=activeThread(worldId());if(!t)return;
