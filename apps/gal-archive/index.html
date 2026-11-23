@@ -2006,7 +2006,7 @@ function analyzeBackup(data){
   return {valid,worlds,errors};
 }
 function importStatus(text,isError=false){const el=$('importStatus');el.textContent=text;el.style.color=isError?'#ffadad':'#d9ddff'}
-let importFileText='';
+let importFileText='',importCombinedFile=null;
 async function readBackupFile(file){
   // FileReader supports browsers that do not implement File.text().
   return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(reader.error||Error('檔案讀取失敗'));reader.readAsText(file,'utf-8')});
@@ -2036,26 +2036,51 @@ async function importBackupText(text){
 $('importBtn').onclick=()=>{$('importModal').classList.remove('hidden');importStatus('請選取 JSON 檔案或貼上 JSON。');};
 $('closeImport').onclick=()=>$('importModal').classList.add('hidden');
 $('importFile').addEventListener('change',async e=>{
-  const file=e.target.files?.[0];if(!file)return;
-  importStatus('讀取檔案中：'+file.name);
-  try{
-    importFileText=await readBackupFile(file);
-    const {parsed,valid,worlds,errors}=previewBackup(importFileText);
-    $('importPaste').value='';
-    importStatus(`已成功讀取：${file.name}\n備份版本：V${parsed.version||'未知'}\n可還原：${valid.length} 輪、${worlds.length} 個世界觀`+(errors.length?`\n格式不符：${errors.join('；')}`:'')+'\n按「開始匯入」完成還原。');
-  }catch(err){importFileText='';importStatus('讀取失敗：'+(err?.message||String(err)),true)}
+ const file=e.target.files?.[0];if(!file)return;
+ importStatus('讀取備份檔案中：'+file.name);
+ try{
+  importFileText='';importCombinedFile=null;
+  if(await window.ArchiveCompleteBackup?.isCombined?.(file)){
+   const check=await window.ArchiveCompleteBackup.inspect(file,{previewArchive});
+   importCombinedFile=file;$('importPaste').value='';
+   importStatus('已核對完整 .gab：'+check.summary.cycles+' 輪、'+check.summary.worlds+' 世界觀、'+
+    check.summary.handoverConversations+' 份交接對話、'+check.summary.attachedFiles+' 份附件（包含評語及自評）。按「開始匯入」合併還原。');
+   return;
+  }
+  importFileText=await readBackupFile(file);
+  const check=previewBackup(importFileText);$('importPaste').value='';
+  importStatus('已讀取 JSON：'+file.name+'\n可還原 '+check.valid.length+' 輪、'+check.worlds.length+' 世界觀'+
+   (check.errors.length?'\n跳過：'+check.errors.join('；'):'')+'\n按「開始匯入」執行。');
+ }catch(err){importFileText='';importCombinedFile=null;importStatus('讀取失敗：'+String(err?.message||err),true)}
 });
-$('importCheck').onclick=()=>{
-  try{const text=$('importPaste').value.trim()||importFileText;if(!text)throw Error('尚未選檔或貼上 JSON');const {parsed,valid,worlds,errors}=previewBackup(text);importStatus(`檢查通過：V${parsed.version||'未知'}，可匯入 ${valid.length} 輪、${worlds.length} 個世界觀。`+(errors.length?'\n跳過：'+errors.join('；'):''))}
-  catch(err){importStatus('檢查失敗：'+(err?.message||String(err)),true)}
+$('importCheck').onclick=async()=>{
+ try{
+  if(importCombinedFile&&!$('importPaste').value.trim()){
+   const check=await window.ArchiveCompleteBackup.inspect(importCombinedFile,{previewArchive});
+   importStatus('完整備份檢查通過：'+check.summary.cycles+' 輪、'+check.summary.handoverConversations+
+    ' 份交接對話、'+check.summary.attachedFiles+' 份附件。');
+  }else{
+   const text=$('importPaste').value.trim()||importFileText;
+   if(!text)throw Error('尚未選檔或貼上 JSON');
+   const check=previewBackup(text);
+   importStatus('正史備份檢查通過：'+check.valid.length+' 輪、'+check.worlds.length+' 世界觀。'+
+    (check.errors.length?'\n跳過：'+check.errors.join('；'):''));
+  }
+ }catch(err){importStatus('檢查失敗：'+String(err?.message||err),true)}
 };
 $('importConfirm').onclick=async()=>{
-  const btn=$('importConfirm');
-  try{
-    const text=$('importPaste').value.trim()||importFileText;
-    if(!text)throw Error('請先選擇備份檔案或貼上 JSON');
-    btn.disabled=true;await importBackupText(text);
-  }catch(err){importStatus('匯入失敗：'+(err?.message||String(err)),true)}finally{btn.disabled=false}
+ const button=$('importConfirm');button.disabled=true;
+ try{
+  if(importCombinedFile&&!$('importPaste').value.trim()){
+   await window.ArchiveCompleteBackup.importBackup(importCombinedFile,{
+    previewArchive,importArchive:importBackupText,progress:importStatus});
+  }else{
+   const text=$('importPaste').value.trim()||importFileText;
+   if(!text)throw Error('請先選擇備份檔案或貼上 JSON');
+   await importBackupText(text);
+  }
+ }catch(err){importStatus('匯入失敗：'+String(err?.message||err),true)}
+ finally{button.disabled=false}
 };
 (async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
