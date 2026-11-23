@@ -284,3 +284,11 @@ V0.8.16 測試版 — WHIF 事件中文引號擷取修正
 - markdownFromDom() 現在會把 <q> 明確序列化為「內容」。
 - 不放寬 native exact-match；修正後仍需在剝除 WHIF 隱藏 {{...}} context 後全文一致才採用原生段落。
 - 針對第13輪迴 scanIndex 19、30、87、421、688、849 的共同 mismatch 根因加入回歸測試。
+
+
+V0.8.17 測試版 — 擴充功能更新後主動刷新 WHIF
+- 修正舊 WHIF content script 在擴充功能重新載入後仍可能觸發「Extension context invalidated」的問題。
+- background.js 在服務工作器啟動時比對已記錄版本；若偵測到新版本，會主動重新整理所有已開啟的 WHIF /chat/ 分頁一次，讓新版 gal-launcher.js 重新注入。
+- 每個版本只主動刷新一次；同版本 service worker 後續休眠／重啟不會重複刷新。
+- gal-launcher.js 在任何 chrome.runtime.sendMessage 前先檢查 extension context 是否仍存活；若已失效，直接重新整理頁面，不再嘗試呼叫已死的 runtime。
+- 保留 V0.8.16 的 WHIF <q> → 中文「」修正與第13輪迴事件 exact-match 驗證。
