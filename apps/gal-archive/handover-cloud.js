@@ -169,12 +169,23 @@ async function push({db,user,progress=()=>{}}){
  const cloudThreads=await root.collection(COLLECTION.threads).get({source:'server'});
  const cloudText=await root.collection(COLLECTION.entries).get({source:'server'});
  const cloudFiles=await root.collection(COLLECTION.files).get({source:'server'});
- if(!local.threads.length&&!local.entries.length&&(cloudThreads.size||cloudText.size||cloudFiles.size))
+ const cloudDeletes=await root.collection(COLLECTION.deletes).get({source:'server'});
+ if(!local.threads.length&&!local.entries.length&&!local.deletes.length&&(cloudThreads.size||cloudText.size||cloudFiles.size||cloudDeletes.size))
   throw Error('這台裝置沒有交接稿，但雲端已有資料；請先按「從雲端合併下載」，禁止空資料覆蓋');
  const tMap=new Map(cloudThreads.docs.map(d=>[d.id,d.data()])),eMap=new Map(cloudText.docs.map(d=>[d.id,d.data()]));
  const fMap=new Map(cloudFiles.docs.map(d=>[d.id,d.data()]));
- let updatedThreads=0,updatedText=0,updatedFiles=0,skipped=0;
+ let updatedThreads=0,updatedText=0,updatedFiles=0,updatedDeletes=0,skipped=0;
+ const remoteMarks=tombstoneMap(cloudDeletes.docs.map(d=>d.data()));
+ const marks=tombstoneMap([...remoteMarks.values(),...local.deletes]);
+ for(const marker of local.deletes){
+  const old=remoteMarks.get(marker.id);
+  if(old&&old.worldId!==marker.worldId)throw Error('刪除標記世界觀衝突：'+marker.id);
+  if(old&&!newer(marker.deletedAt,old.deletedAt))continue;
+  await root.collection(COLLECTION.deletes).doc(marker.id).set({...safeObj(marker),schemaVersion:1});
+  updatedDeletes++;
+ }
  for(const thread of local.threads){
+  if(compareDeleted(thread,marks.get('thread:'+thread.id))){skipped++;continue}
   const old=tMap.get(thread.id);if(old)conflictWorld(old.worldId,thread.worldId,thread.id);
   if(old&&(!newer(thread.updatedAt,old.updatedAt))){skipped++;continue}
   // The full metadata document is small and contains no PDF blobs.
@@ -182,6 +193,7 @@ async function push({db,user,progress=()=>{}}){
   updatedThreads++;progress('↑ 交接對話：'+updatedThreads+'／'+local.threads.length);
  }
  for(const entry of local.entries){
+  if(compareDeleted(entry,marks.get('entry:'+entry.id))||compareDeleted(threadMap.get(entry.threadId),marks.get('thread:'+entry.threadId))){skipped++;continue}
   const w=worldFor(entry,threadMap);
   if(entry.kind==='file'){
    const old=fMap.get(entry.id);
@@ -196,7 +208,7 @@ async function push({db,user,progress=()=>{}}){
    updatedText++;
   }
  }
- return {threads:updatedThreads,text:updatedText,files:updatedFiles,skipped};
+ return {threads:updatedThreads,text:updatedText,files:updatedFiles,deletes:updatedDeletes,skipped};
 }
 async function pull({db,user,progress=()=>{}}){
  if(!db||!user?.uid)throw Error('請先登入 Firebase');
