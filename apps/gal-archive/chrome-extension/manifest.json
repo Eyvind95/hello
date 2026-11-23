@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.32",
-  "version_name": "V0.8.32 測試版",
-  "description": "輪迴檔案館 V0.8.32：第5輪迴舊式18:42開場三則測試提供具體角色順序、時間解析與配對失敗原因，不放寬任何來源或回合驗證。",
+  "version": "0.8.33",
+  "version_name": "V0.8.33 測試版",
+  "description": "輪迴檔案館 V0.8.33：原生來源唯一、全文吻合且未標記時間時，保留早期 AI 回覆 gameTime:null；其他無證據缺時回覆一律拒絕。",
   "permissions": [
     "storage",
     "activeTab",
