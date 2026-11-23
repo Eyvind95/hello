@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.13",
-  "version_name": "V0.8.13 測試版",
-  "description": "輪迴檔案館 V0.8.13 測試版：背景自動掃描輸出改用可讀檔名，不再以 scanRunId/UUID 當人類可見檔名。",
+  "version": "0.8.14",
+  "version_name": "V0.8.14 測試版",
+  "description": "輪迴檔案館 V0.8.14 測試版：修正無時間事件的原生段落驗收，並補抓 WHIF CSS 粗體。",
   "permissions": [
     "storage",
     "activeTab",
