@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.22: verify live WHIF chat binding. */
+/* Independent Gal AI page scanner. v0.8.23: narrowly allow the historical 2026/08/22 18:42 opener. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.22';
+const SCANNER_VERSION='0.8.23';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
@@ -52,7 +52,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.22 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.23 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -916,8 +916,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   const first=snapshot();diagnostic=inspect();
   if(!first.rows.length)throw Error('找不到完整訊息。世界觀界線與舊版泡泡辨識都沒有結果；請複製版面診斷。');
   scanMode=first.method==='world-header-reaction-bar'?'bounded':'legacy';
-  if(first.rows[0].role!=='ai'||core.parseGameTime(first.rows[0].text))
-   throw Error('第一則不是左側無時間開場，請校準真正的開場訊息');
+  if(!core.isAllowedOpeningRow(first.rows[0]))
+   throw Error('第一則不是左側輪迴開場：只有無時間開場或 2026/08/22 18:42 的舊式開場可通過');
   root=first.root;lastGoodY=root.scrollTop;
   const nominal=Math.max(12,Math.min(MAX_SCROLL_PX,Math.floor(root.clientHeight*SCROLL_RATIO)));
   stepPx=nominal;
