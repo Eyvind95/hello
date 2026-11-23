@@ -43,7 +43,8 @@ function isExplicitUnknownGameTime(input){
  const lines=clean(input).split('\n').slice(0,7).map(line=>line.trim());
  const date=/^[｜|│]\s*日期不詳\s*[｜|│]$/u;
  const time=/^[｜|│]\s*(?:🕒\s*)?時間不詳\s*[｜|│]/u;
- return lines.some((line,i)=>date.test(line)&&time.test(lines[i+1]||''));
+ const first=lines[0]?.startsWith('```')?1:0;
+ return date.test(lines[first]||'')&&time.test(lines[first+1]||'');
 }
 // Only the first AI item may use this historical timed opener (2026/08/22 18:42 UTC+8).
 // Do not treat other timed AI replies as openings or change their game clocks.
