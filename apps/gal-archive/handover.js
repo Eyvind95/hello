@@ -86,7 +86,7 @@ function renderList(w){
  ).join(''):'<p class="note">這個世界觀還沒有交接對話。</p>';
 }
 function viewFooter(){
- return '<p class="note handover-warning">交接稿與附件只存於這台瀏覽器的 IndexedDB，<strong>目前不包含在檔案館原本的「雲端同步／匯出備份」內；請改下載交接稿專用的 .ghb 備份</strong>。請使用下方「備份此世界觀」，換手機或清除瀏覽器資料前務必下載備份。</p>';
+ return '<p class="note handover-warning">交接稿、評語、自評及附件會在你手動執行「☁ 雲端同步」的上傳／下載時，一起透過私人 Firestore 合併。<strong>現在也包含在檔案館上方「📦 完整備份（.gab）」內</strong>；下方「備份此世界觀（.ghb）」仍可單獨備份。雲端操作可能因網路或配額失敗，請務必保存本機完整備份。</p>';
 }
 function contentHeader(thread){
  return '<div class="sectionhead"><div><div class="sub">交接稿・'+escapeHTML(worldName(thread.worldId))+'</div><h2>'+escapeHTML(thread.title)+'</h2>'+
