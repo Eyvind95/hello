@@ -417,3 +417,78 @@ test('historical timed opener exception refuses adjacent minutes, dates, roles a
   assert.equal(context.GalArchiveCore.isAllowedOpeningRow({role:'ai',text:'事件通知\n'+sample}),false);
   assert.equal(context.GalArchiveCore.isAllowedOpeningRow({role:'ai',text:'這是無時間輪迴開場。'}),true);
 });
+
+
+test('cycle 3 final two replies explicitly say 日期不詳／時間不詳 and remain paired with null clocks',()=>{
+ const opening='｜2026年8月22日（星期六）｜\n｜🕒18:42｜\n基甫納前線基地，7F。開場。';
+ const aiKnown=(time,body)=>'｜2026年8月23日（星期日）｜\n｜🕒'+time+'｜\n'+body;
+ const aiUnknown=(state,body)=>'｜日期不詳｜\n｜🕒時間不詳｜🚨'+state+'｜\n｜📍維度夾縫｜\n'+body;
+ const a=aiUnknown('意識崩潰','劇情中的時間與空間已不再可確認。');
+ const b=aiUnknown('維度抹除','虛無之海中的故事仍然按原文先後發生。');
+ const rows=[
+  {role:'ai',text:opening},
+  {role:'me',text:'第一則玩家訊息。'},
+  {role:'ai',text:aiKnown('07:28','第一則已知時間的 AI 回覆。')},
+  {role:'me',text:'第二則玩家訊息。'},
+  {role:'ai',text:aiKnown('07:29','第二則已知時間的 AI 回覆。')},
+  {role:'me',text:'第三則玩家訊息。'},
+  {role:'ai',text:a},
+  {role:'me',text:'第四則玩家訊息。'},
+  {role:'ai',text:b}
+ ];
+ const result=validate(rows);
+ assert.equal(result.ok,true,JSON.stringify(result.errors));
+ assert.equal(result.pairs,4);
+ assert.equal(result.messages.length,8);
+ assert.equal(result.unknownGameTimeCount,4);
+ assert.equal(result.messages[4].gameTime,null);
+ assert.equal(result.messages[5].gameTime,null);
+ assert.equal(result.messages[6].gameTime,null);
+ assert.equal(result.messages[7].gameTime,null);
+ assert.equal(result.messages[5].text,a);
+ assert.equal(result.messages[7].text,b);
+ assert.equal(result.warnings.filter(w=>w.includes('日期不詳')).length,2);
+ assert.equal(context.GalArchiveCore.isExplicitUnknownGameTime(a),true);
+ assert.equal(context.GalArchiveCore.isExplicitUnknownGameTime(b),true);
+ assert.equal(parseGameTime(a),null);
+ assert.equal(parseGameTime(b),null);
+});
+
+test('unknown-time allowance requires both header lines and never fills missing dates by guessing',()=>{
+ const unknown='｜日期不詳｜\n｜🕒時間不詳｜\n故事內容。';
+ const incomplete=[
+  '｜日期不詳｜\n｜🕒07:29｜\n故事內容。',
+  '｜2026年8月23日｜\n｜🕒時間不詳｜\n故事內容。',
+  '｜日期不詳｜\n故事裡提到時間不詳。'
+ ];
+ for(const x of incomplete){
+  assert.equal(context.GalArchiveCore.isExplicitUnknownGameTime(x),false);
+  const checked=validate([
+   {role:'ai',text:'這是無時間輪迴開場。'},
+   {role:'me',text:'玩家提問。'},
+   {role:'ai',text:x}
+  ]);
+  assert.equal(checked.ok,false);
+  assert.match(checked.errors.join(' '),/缺少可辨識的劇情日期和時間/);
+ }
+ const prose='故事正文的開始。\n｜日期不詳｜\n｜🕒時間不詳｜\n這是故事中的引用，不是狀態欄。';
+ assert.equal(context.GalArchiveCore.isExplicitUnknownGameTime(prose),false);
+ assert.equal(context.GalArchiveCore.isExplicitUnknownGameTime(unknown),true);
+ const result=validate([
+  {role:'ai',text:'這是無時間輪迴開場。'},
+  {role:'me',text:'玩家說話。'},
+  {role:'ai',text:unknown}
+ ]);
+ assert.equal(result.ok,true);
+ assert.equal(result.messages[0].gameTime,null);
+ assert.equal(result.messages[1].gameTime,null);
+});
+
+test('native paragraphs remain comparable when both sides explicitly declare time unknown',()=>{
+ const text='｜日期不詳｜\n｜🕒時間不詳｜🚨意識崩潰｜\n｜📍維度夾縫｜\n\n第一段。\n\n第二段。';
+ const fromDom=text.replace(/\n\n/g,'\n');
+ const result=context.GalArchiveCore.compareNativeParagraphs(fromDom,text);
+ assert.equal(result.comparison.clockEqual,true);
+ assert.equal(result.comparison.contentEqual,true);
+ assert.equal(result.text,text);
+});
