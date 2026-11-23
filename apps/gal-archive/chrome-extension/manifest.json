@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.10",
-  "version_name": "V0.8.10 測試版",
-  "description": "輪迴檔案館 V0.8.10 測試版：修正 V0.8.9 核心版本不同步，並放大上移 WHIF Browser Use 助手入口。",
+  "version": "0.8.11",
+  "version_name": "V0.8.11 測試版",
+  "description": "輪迴檔案館 V0.8.11 測試版：修正 content.js 發布時被 1000 行文字上限截斷的問題。",
   "permissions": [
     "storage",
     "activeTab",
