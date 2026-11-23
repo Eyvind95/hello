@@ -172,3 +172,14 @@ test('failed 3-row preview exposes precise pairing evidence instead of masking v
  const area=content.slice(content.indexOf('const rowFacts=collected.map('),content.indexOf("if(!validation.ok)throw Error(",content.indexOf('const rowFacts=collected.map(')));
  assert.doesNotMatch(area,/text:row\.text|nativeMessageId:|sampleText:|bodyText:/);
 });
+
+
+test('cycle 5 timed opening and native-verified untimed first reply remain paired with null clock provenance',()=>{
+ assert.match(content,/const validation=core\.validate\(collected,target\.worldName\)/);
+ assert.match(content,/if\(row\.verifiedUntimedNative\)messages\[i\]\.nativeClockEvidence='verified-original-without-game-time'/);
+ assert.match(content,/verifiedUntimedNative:entry\.verifiedUntimedNative===true/);
+ assert.match(content,/verifiedUntimedCount:valid\.verifiedUntimedCount\|\|0/);
+ assert.match(content,/verifiedUntimedNative:index>0&&row\.role==='ai'/);
+ assert.match(content,/openingPreviewStructure:\{/);
+ assert.match(content,/if\(!validation\.ok\)throw Error/);
+});
