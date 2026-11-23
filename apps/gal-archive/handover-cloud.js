@@ -213,48 +213,89 @@ async function push({db,user,progress=()=>{}}){
 async function pull({db,user,progress=()=>{}}){
  if(!db||!user?.uid)throw Error('請先登入 Firebase');
  const root=db.collection('galArchive').doc(user.uid);
- const [threadSnap,textSnap,fileSnap]=await Promise.all([
-  root.collection(COLLECTION.threads).get({source:'server'}),root.collection(COLLECTION.entries).get({source:'server'}),root.collection(COLLECTION.files).get({source:'server'})
+ const [threadSnap,textSnap,fileSnap,deleteSnap]=await Promise.all([
+  root.collection(COLLECTION.threads).get({source:'server'}),
+  root.collection(COLLECTION.entries).get({source:'server'}),
+  root.collection(COLLECTION.files).get({source:'server'}),
+  root.collection(COLLECTION.deletes).get({source:'server'})
  ]);
- // Local absence is not treated as delete: all records merge by stable ID.
- const local=await localSnapshot(),threadMap=new Map(local.threads.map(t=>[t.id,t])),entryMap=new Map(local.entries.map(e=>[e.id,e]));
- const threads=[],entries=[];let skipped=0,downloadedFiles=0;
+ const local=await localSnapshot();
+ const threadMap=new Map(local.threads.map(t=>[t.id,t]));
+ const entryMap=new Map(local.entries.map(e=>[e.id,e]));
+ const marks=tombstoneMap(local.deletes);
+ const remoteMarks=tombstoneMap(deleteSnap.docs.map(d=>d.data()));
+ const newMarkers=[];
+ for(const marker of remoteMarks.values()){
+  const old=marks.get(marker.id);
+  if(old&&old.worldId!==marker.worldId)throw Error('刪除標記的世界觀衝突：'+marker.id);
+  if(!old||newer(marker.deletedAt,old.deletedAt)){marks.set(marker.id,marker);newMarkers.push(marker)}
+ }
+ const threads=[],entries=[];
+ let skipped=0,downloadedFiles=0;
  for(const doc of threadSnap.docs){
   const item=doc.data(),old=threadMap.get(doc.id);
-  if(!validId(doc.id)||item.id!==doc.id||!validId(item.worldId))throw Error('雲端交接對話 ID／世界觀無效：'+doc.id);
+  if(!validId(doc.id)||item.id!==doc.id||!validId(item.worldId))
+   throw Error('雲端交接對話 ID／世界觀無效：'+doc.id);
+  if(compareDeleted(item,marks.get('thread:'+doc.id))){skipped++;continue}
   if(old)conflictWorld(old.worldId,item.worldId,doc.id);
   if(old&&!newer(item.updatedAt,old.updatedAt)){skipped++;continue}
   threads.push({...item,id:doc.id});threadMap.set(doc.id,item);
  }
+ // Remove tombstoned threads from the effective parent map to avoid restoring orphan entries.
+ for(const [id,t] of threadMap)
+  if(compareDeleted(t,marks.get('thread:'+id)))threadMap.delete(id);
  for(const doc of textSnap.docs){
   const item=doc.data(),old=entryMap.get(doc.id);
   if(!validId(doc.id)||item.id!==doc.id||!['note','review','self-review'].includes(item.kind))
    throw Error('雲端交接文字格式異常：'+doc.id);
-  const world=worldFor(item,threadMap);
-  if(!world||world!==item.worldId)throw Error('交接文字所屬世界觀／對話不一致：'+doc.id);
+  if(compareDeleted(item,marks.get('entry:'+doc.id))||
+    compareDeleted({updatedAt:item.updatedAt||item.createdAt},marks.get('thread:'+item.threadId))){
+   skipped++;continue;
+  }
+  const w=worldFor(item,threadMap);
+  if(!w||w!==item.worldId)throw Error('交接文字所屬世界觀／對話不一致：'+doc.id);
   if(old&&!newer(dataTimestamp(item),dataTimestamp(old))){skipped++;continue}
-  const copy={...item};delete copy.worldId;delete copy.schemaVersion;entries.push(copy);entryMap.set(doc.id,copy);
+  const copy={...item};delete copy.worldId;delete copy.schemaVersion;
+  entries.push(copy);entryMap.set(doc.id,copy);
  }
  if(fileSnap.size>MAX_FILES)throw Error('雲端附件數量超過安全上限');
  for(const doc of fileSnap.docs){
   const item=doc.data(),old=entryMap.get(doc.id);
-  if(item.status!=='ready')continue; // Incomplete uploads are ignored, not imported.
+  if(item.status!=='ready')continue; // Incomplete uploads never appear as valid downloads.
+  if(compareDeleted(item,marks.get('entry:'+doc.id))||
+   compareDeleted({updatedAt:item.updatedAt||item.createdAt},marks.get('thread:'+item.threadId))){
+   skipped++;continue;
+  }
   if(!validId(doc.id)||item.id!==doc.id||item.kind!=='file'||!validId(item.threadId)||
-    !threadMap.has(item.threadId)||threadMap.get(item.threadId).worldId!==item.worldId)
+   !threadMap.has(item.threadId)||threadMap.get(item.threadId).worldId!==item.worldId)
    throw Error('雲端附件 ID／世界觀不一致：'+doc.id);
   if(old&&old.kind==='file'&&old.size===item.size&&old.threadId===item.threadId){skipped++;continue}
   if(old)throw Error('本機附件與雲端同 ID 內容不同，已停止，沒有覆蓋任何原檔：'+item.name);
-  entries.push(await downloadFile(doc.ref,item,progress));downloadedFiles++;
-  progress('↓ 已核對附件 '+downloadedFiles+' 份');
+  entries.push(await downloadFile(doc.ref,item,progress));
+  downloadedFiles++;progress('↓ 已核對附件 '+downloadedFiles+' 份');
  }
+ const removedThreads=local.threads.filter(t=>compareDeleted(t,marks.get('thread:'+t.id))).map(t=>t.id);
+ const removedEntries=local.entries.filter(e=>
+   compareDeleted(e,marks.get('entry:'+e.id))||
+   compareDeleted({updatedAt:e.updatedAt||e.createdAt},marks.get('thread:'+e.threadId))).map(e=>e.id);
+ // Atomic local merge: all verified file entries, reviews, and deletion markers commit together.
  const localDb=await dbOpen();
  try{
-  await putMany(localDb,THREADS,threads);
-  await putMany(localDb,ENTRIES,entries);
+  await new Promise((resolve,reject)=>{
+   const tx=localDb.transaction([THREADS,ENTRIES,DELETES],'readwrite'),
+    ts=tx.objectStore(THREADS),es=tx.objectStore(ENTRIES),ds=tx.objectStore(DELETES);
+   for(const mark of newMarkers)ds.put(mark);
+   for(const t of threads)ts.put(t);
+   for(const e of entries)es.put(e);
+   for(const id of removedThreads)ts.delete(id);
+   for(const id of removedEntries)es.delete(id);
+   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||Error('下載合併寫入失敗'));
+   tx.onabort=()=>reject(tx.error||Error('下載合併交易取消'));
+  });
  }finally{localDb.close()}
- // Ensure the UI reloads, without switching world or selecting a different conversation.
  await window.ArchiveHandover?.reload?.();
- return {threads:threads.length,text:entries.length-downloadedFiles,files:downloadedFiles,skipped};
+ return {threads:threads.length,text:entries.length-downloadedFiles,files:downloadedFiles,
+  deletes:newMarkers.length,skipped};
 }
 window.ArchiveHandoverCloud={push,pull};
 })();
