@@ -639,7 +639,9 @@ async function setup(){
  createModal();bindActions();
  try{await reloadThreads()}catch(err){state.loading=false;message('⛔ 無法初始化交接稿：'+String(err?.message||err))}
 }
-window.ArchiveHandover={renderList,isActive,renderActive,close};
+window.ArchiveHandover={renderList,isActive,renderActive,close,
+ reload:async()=>{await reloadThreads();if(isActive(worldId()))await renderActive(worldId())}
+};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setup,{once:true});
 else setup();
 })();
