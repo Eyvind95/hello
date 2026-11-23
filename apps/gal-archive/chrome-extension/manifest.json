@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.27",
-  "version_name": "V0.8.27 測試版",
-  "description": "輪迴檔案館 V0.8.27 測試版：只在全文精確核對後還原舊 WHIF 回覆的隱藏模板、狀態欄與成對引號，其他文字差異仍拒絕。",
+  "version": "0.8.28",
+  "version_name": "V0.8.28 測試版",
+  "description": "輪迴檔案館 V0.8.28 測試版：精確核對舊 WHIF 世界觀標題與相鄰隱藏模板，逐字驗證對話引號並記錄未成功的比對階段。",
   "permissions": [
     "storage",
     "activeTab",
