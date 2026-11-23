@@ -4,7 +4,7 @@
    Files are stored as Blobs in IndexedDB; never embedded in public GitHub pages. */
 const DATABASE='gal-archive-handovers-v1',THREADS='threads',ENTRIES='entries';
 const FILE_LIMIT=50*1024*1024,BACKUP_LIMIT=150*1024*1024,IMPORT_LIMIT=210*1024*1024;
-const state={db:null,threads:[],activeId:null,view:'files',renderToken:0,loading:true,busy:false,objectUrls:[]};
+const state={db:null,threads:[],activeId:null,view:'files',editingReviewId:null,renderToken:0,loading:true,busy:false,objectUrls:[]};
 const $=id=>document.getElementById(id);
 const worldId=()=>window.ArchiveHandoverBridge?.worldId?.()||'';
 const worldName=id=>window.ArchiveHandoverBridge?.worldName?.(id)||id;
@@ -156,11 +156,11 @@ async function renderActive(w){
 function openThread(id,scroll=true){
  const t=useThread(id);
  if(!t||t.worldId!==worldId()){message('交接對話不屬於目前世界觀，已停止開啟');return}
- state.activeId=id;state.view='files';
+ state.activeId=id;state.view='files';state.editingReviewId=null;
  window.ArchiveHandoverBridge?.rerender?.();
  if(scroll)$('content')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
-function close(){state.activeId=null;state.view='files';state.renderToken++}
+function close(){state.activeId=null;state.view='files';state.editingReviewId=null;state.renderToken++}
 function createModal(){
  const modal=document.createElement('div');modal.className='modalback hidden';modal.id='handoverModal';
  modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');
@@ -209,6 +209,38 @@ async function removeEntry(t,entry){
   tx.objectStore(ENTRIES).delete(entry.id);tx.objectStore(THREADS).put(next);
  });
  await reloadThreads();renderActive(worldId());
+}
+async function saveReviewRecord(t,entry,overwrite){
+ const currentEntries=await listEntries(t.id);
+ const previous=overwrite?currentEntries.find(x=>x.id===overwrite&&x.kind===entry.kind):null;
+ if(overwrite&&!previous)throw Error('原評語已不存在，請重新載入');
+ const finalEntry=previous?{...previous,...entry,id:previous.id,createdAt:previous.createdAt}:entry;
+ if(entry.kind==='self-review'&&currentEntries.some(x=>x.kind==='self-review'&&x.id!==finalEntry.id))throw Error('每個交接對話只能有一份自評；請先刪除重複資料');
+ const next={...t,updatedAt:new Date().toISOString(),
+  reviewCount:(t.reviewCount||0)+(!previous&&entry.kind==='review'?1:0),
+  selfReviewCount:entry.kind==='self-review'?1:(t.selfReviewCount||0)};
+ await transaction([THREADS,ENTRIES],'readwrite',tx=>{
+  tx.objectStore(ENTRIES).put(finalEntry);
+  tx.objectStore(THREADS).put(next);
+ });
+ await reloadThreads();await renderActive(worldId());
+}
+function downloadReviewTxt(e,thread){
+ const heading=e.kind==='self-review'?'【自己的自評】':'【大家的評語】';
+ const lines=[heading,'交接對話：'+thread.title,'撰寫者：'+(thread.author||'未填寫'),
+   '評語者：'+(e.reviewer||'未署名'),
+   e.subject?'評價範圍：'+e.subject:'',
+   e.title?'標題：'+e.title:'',
+   '保存時間：'+fmtDate(e.createdAt),'',e.text||''].filter((v,i)=>v!==''||i===7);
+ downloadBlob(new Blob([lines.join('\n')],{type:'text/plain;charset=utf-8'}),fileName(thread.title)+'_'+fileName(e.reviewer||'評語')+'_'+(e.kind==='self-review'?'自評':'評語')+'.txt');
+}
+function downloadAllReviews(entries,thread){
+ const peer=entries.filter(e=>e.kind==='review').sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt)));
+ if(!peer.length)throw Error('目前沒有其他人的評語可下載');
+ const lines=['【交接稿・大家的評語】','交接對話：'+thread.title,'撰寫者：'+(thread.author||'未填寫'),'合計：'+peer.length+' 則',''];
+ peer.forEach((e,i)=>lines.push('＝＝＝＝ 第 '+(i+1)+' 則評語 ＝＝＝＝','評語者：'+e.reviewer,
+  '評價範圍：'+(e.subject||'未指定'),'標題：'+(e.title||'未命名'),'',e.text,''));
+ downloadBlob(new Blob([lines.join('\n')],{type:'text/plain;charset=utf-8'}),fileName(thread.title)+'_大家的評語.txt');
 }
 async function removeThread(t){
  await transaction([THREADS,ENTRIES],'readwrite',tx=>{
@@ -264,7 +296,7 @@ async function backupPack(threads){
  for(const thread of threads){
   const entries=await listEntries(thread.id),items=[];
   for(const e of entries){
-   const item={id:e.id,kind:e.kind,text:e.text||'',name:e.name||'',mime:e.mime||'',size:e.size||0,createdAt:e.createdAt,order:e.order||0};
+   const item={id:e.id,kind:e.kind,text:e.text||'',name:e.name||'',mime:e.mime||'',size:e.size||0,createdAt:e.createdAt,updatedAt:e.updatedAt||null,order:e.order||0,reviewer:e.reviewer||'',subject:e.subject||'',title:e.title||''};
    if(e.kind==='file'){
     if(!(e.blob instanceof Blob))throw Error('附件「'+e.name+'」已損毀，無法備份');
     total+=e.blob.size;
@@ -275,7 +307,7 @@ async function backupPack(threads){
   }
   pack.push({thread:{...thread},entries:items});
  }
- return {format:'gal-ai-handover-backup',version:1,worldId:sourceWorld,worldName:worldName(sourceWorld),exportedAt:new Date().toISOString(),conversations:pack};
+ return {format:'gal-ai-handover-backup',version:2,worldId:sourceWorld,worldName:worldName(sourceWorld),exportedAt:new Date().toISOString(),conversations:pack};
 }
 async function exportPack(threads,label){
  if(!threads.length)throw Error('目前還沒有可備份的交接對話');
@@ -292,7 +324,7 @@ function base64ToBlob(b64,mime){
 async function importPack(file){
  if(!file||file.size>IMPORT_LIMIT)throw Error('備份檔超過 210 MB');
  const raw=JSON.parse(await file.text()),w=worldId();
- if(raw?.format!=='gal-ai-handover-backup'||raw.version!==1||!Array.isArray(raw.conversations))throw Error('不是有效的交接稿備份 JSON');
+ if(raw?.format!=='gal-ai-handover-backup'||![1,2].includes(raw.version)||!Array.isArray(raw.conversations))throw Error('不是有效的交接稿備份 JSON');
  if(raw.worldId!==w)throw Error('交接稿屬於其他世界觀（'+String(raw.worldName||raw.worldId)+'），請先切換到正確的世界觀');
  if(raw.conversations.length>200)throw Error('備份對話數超出安全限制');
  const restored=[];
@@ -300,9 +332,9 @@ async function importPack(file){
   const old=group?.thread;
   if(!old||old.worldId!==w||typeof old.title!=='string'||!old.title.trim()||!Array.isArray(group.entries)||group.entries.length>2000)throw Error('備份中的世界觀、對話或檔案清單不合法');
   const now=new Date().toISOString(),thread={id:uuid(),worldId:w,title:old.title.trim().slice(0,180),
-   description:String(old.description||'').slice(0,3000),createdAt:now,updatedAt:now,fileCount:0,noteCount:0},entries=[];
+   author:String(old.author||'').slice(0,180),description:String(old.description||'').slice(0,3000),createdAt:now,updatedAt:now,fileCount:0,noteCount:0,reviewCount:0,selfReviewCount:0},entries=[];
   for(const item of group.entries){
-   if(!item||!['file','note'].includes(item.kind))throw Error('無效交接內容類型');
+   if(!item||!['file','note','review','self-review'].includes(item.kind))throw Error('無效交接內容類型');
    const e={id:uuid(),threadId:thread.id,kind:item.kind,createdAt:item.createdAt||now,
     order:Number(item.order)||Date.now()+entries.length};
    if(item.kind==='file'){
@@ -310,7 +342,14 @@ async function importPack(file){
     const blob=base64ToBlob(item.base64,String(item.mime||'application/octet-stream'));
     if(blob.size>FILE_LIMIT)throw Error('備份單檔超過 50 MB：'+String(item.name));
     e.name=String(item.name||'未命名檔案').slice(0,250);e.mime=blob.type;e.size=blob.size;e.blob=blob;thread.fileCount++;
-   }else{e.text=String(item.text||'').slice(0,100000);thread.noteCount++}
+   }else if(item.kind==='note'){e.text=String(item.text||'').slice(0,100000);thread.noteCount++}
+   else{
+    if(typeof item.reviewer!=='string'||!item.reviewer.trim()||typeof item.text!=='string'||!item.text.trim()||item.text.length>100000)throw Error('備份評語缺少署名或正文');
+    e.reviewer=item.reviewer.trim().slice(0,180);e.subject=String(item.subject||'').slice(0,250);e.title=String(item.title||'').slice(0,200);
+    e.text=item.text;e.updatedAt=item.updatedAt||now;
+    if(item.kind==='review')thread.reviewCount++;
+    else if(++thread.selfReviewCount>1)throw Error('同一交接對話的備份包含多份自評，請先整理');
+   }
    entries.push(e);
   }
   restored.push({thread,entries});
