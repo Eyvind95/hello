@@ -415,7 +415,7 @@ async function backupPack(threads){
  return {blob,count:pack.length,fileCount:pack.reduce((n,p)=>n+p.entries.filter(e=>e.kind==='file').length,0)};
 }
 async function exportPack(threads,label){
- if(!threads.length)throw Error('目前還沒有可備份的交接對話');
+ if(!threads.length&&!(await listWorldReviews(worldId())).length)throw Error('目前還沒有可備份的交接對話或共用評語');
  message('正在準備交接稿備份；附件以原檔封裝，避免大量占用記憶體…');
  const pack=await backupPack(threads);
  downloadBlob(pack.blob,'交接稿_'+fileName(label)+'_'+new Date().toISOString().slice(0,10)+'.ghb');
