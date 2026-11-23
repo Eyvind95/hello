@@ -2096,7 +2096,7 @@ $('downloadSite').onclick=async()=>{
   }
   let html='<!DOCTYPE html>\n'+page.outerHTML;
   const closing='</scr'+'ipt>';
-  for(const asset of ['time-machine.js?v=2','handover.js?v=7','handover-cloud.js?v=1','complete-backup.js?v=1']){
+  for(const asset of ['time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2']){
    const response=await fetch(new URL('./'+asset,location.href),{cache:'no-store'});
    if(!response.ok)throw Error('程式讀取失敗：'+asset+'，HTTP '+response.status);
    const script=await response.text();
@@ -4430,7 +4430,7 @@ $('cloudPush').onclick=async()=>{
   cloudStatus('正在上傳輪迴正史…');await pushCloud();canonDone=true;
   cloudStatus('正史已上傳，開始交接稿與 PDF 附件的同步…');
   const result=await window.ArchiveHandoverCloud.push({db:cloudDb,user:await cloudSignedIn(),progress:cloudStatus});
-  cloudStatus('✅ 正史及交接稿全部上傳完成：交接對話 '+result.threads+'，文字／評語 '+result.text+'，附件 '+result.files+'，略過未變更 '+result.skipped+' 筆。');
+  cloudStatus('✅ 正史及交接稿全部上傳完成：交接對話 '+result.threads+'，文字／評語 '+result.text+'，附件 '+result.files+'，刪除標記 '+result.deletes+'，略過未變更 '+result.skipped+' 筆。');
  }catch(e){
   cloudStatus((canonDone?'⚠ 正史已上傳，交接稿同步未完成：':'⛔ 上傳中斷：')+String(e?.message||e)+'。請保留本機與完整備份。',true);
  }finally{btn.disabled=false}
@@ -4443,7 +4443,7 @@ $('cloudPull').onclick=async()=>{
   cloudStatus('正在合併輪迴正史…');await pullCloud();canonDone=true;
   cloudStatus('正史已合併，開始下載交接稿並逐段驗證附件…');
   const result=await window.ArchiveHandoverCloud.pull({db:cloudDb,user:await cloudSignedIn(),progress:cloudStatus});
-  cloudStatus('✅ 正史及交接稿全部合併完成：交接對話 '+result.threads+'，文字／評語 '+result.text+'，附件 '+result.files+'，保留原有 '+result.skipped+' 筆。');
+  cloudStatus('✅ 正史及交接稿全部合併完成：交接對話 '+result.threads+'，文字／評語 '+result.text+'，附件 '+result.files+'，刪除標記 '+result.deletes+'，保留原有 '+result.skipped+' 筆。');
  }catch(e){
   cloudStatus((canonDone?'⚠ 正史已合併，但交接稿未完整下載：':'⛔ 下載中斷：')+String(e?.message||e)+'。未驗證的 PDF 不會匯入。',true);
  }finally{btn.disabled=false}
@@ -4489,5 +4489,5 @@ $('cloudPull').onclick=async()=>{
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
   }
 })();
-</script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=7"></script><script src="./handover-cloud.js?v=1"></script><script src="./complete-backup.js?v=1"></script>
+</script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script>
 </body></html>
