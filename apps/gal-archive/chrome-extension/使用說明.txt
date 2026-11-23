@@ -262,3 +262,10 @@ V0.8.13 測試版 — 背景自動掃描輸出檔名可讀化
 - 診斷：輪迴檔案館_掃描診斷_<輪迴名稱>_<日期>.json
 - 狀態：輪迴檔案館_掃描狀態_<輪迴名稱>_<狀態>_<日期>.json
 - scanRunId / UUID 仍保留在 JSON 內容中供程式核對，但不再出現在人類可見檔名。
+
+
+V0.8.14 測試版 — 第13輪迴段落 fallback 修正
+- 無遊戲時間的已接事件：允許「掃描端與 native 都沒有時間」視為時間一致，但只限 event；一般 Gal AI 回覆仍必須有可驗證劇情時間。
+- WHIF 事件開頭若有隱藏 {{...}} context/template，只在移除後與畫面全文完全一致（忽略空白）時才採用 native 段落；真實缺字仍會 fallback。
+- DOM → Markdown 新增 CSS font-weight 擷取，Whif 以樣式而非 <strong> 呈現的粗體也會保存為 **...**。
+- 目標是修正第13輪迴 6 件無時間事件的原生段落 fallback，並處理 2 則 AI native emphasis 與 DOM 格式不一致；仍需重掃驗收確認。
