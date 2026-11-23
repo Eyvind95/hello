@@ -64,7 +64,7 @@ function renderList(w){
  ).join(''):'<p class="note">這個世界觀還沒有交接對話。</p>';
 }
 function viewFooter(){
- return '<p class="note handover-warning">交接稿與附件只存於這台瀏覽器的 IndexedDB，<strong>目前不包含在檔案館原本的「雲端同步／匯出備份」內</strong>。請使用下方「備份此世界觀」，換手機或清除瀏覽器資料前務必下載備份。</p>';
+ return '<p class="note handover-warning">交接稿與附件只存於這台瀏覽器的 IndexedDB，<strong>目前不包含在檔案館原本的「雲端同步／匯出備份」內；請改下載交接稿專用的 .ghb 備份</strong>。請使用下方「備份此世界觀」，換手機或清除瀏覽器資料前務必下載備份。</p>';
 }
 function contentHeader(thread){
  return '<div class="sectionhead"><div><div class="sub">交接稿・'+escapeHTML(worldName(thread.worldId))+'</div><h2>'+escapeHTML(thread.title)+'</h2>'+
@@ -134,7 +134,7 @@ function renderFilesSection(entries){
   '<div class="divider"></div><h3>新增交接內容</h3>'+
   '<label for="handoverFiles">上傳檔案（可一次選取多份）</label>'+
   '<input type="file" id="handoverFiles" multiple accept=".pdf,.doc,.docx,.txt,.md,.json,.png,.jpg,.jpeg,.webp,.zip,.odt,.rtf" />'+
-  '<p class="note">支援 PDF、Word、文字、JSON、圖片、ZIP 等；單檔最多 50 MB。上傳後可查看 PDF／圖片，其他檔案可下載。上傳只會寫入本機，不會改動任何輪迴正史。</p>'+
+  '<p class="note">支援 PDF、Word、文字、JSON、圖片、ZIP 等；單檔最多 50 MB，依序儲存以減輕手機負擔。上傳後可查看 PDF／圖片，其他檔案可下載。上傳只會寫入本機，不會改動任何輪迴正史。</p>'+
   '<button type="button" class="btn primary" data-ha-action="upload">上傳所選檔案</button>'+
   '<label for="handoverNote">新增文字備註（選填）</label>'+
   '<textarea id="handoverNote" placeholder="例如：第 1～11 份的整理順序、交接注意事項…"></textarea>'+
@@ -200,6 +200,44 @@ async function addEntries(t,entries){
   tx.objectStore(THREADS).put(next);
  });
  await reloadThreads();renderActive(worldId());
+}
+async function uploadFilesSafely(thread,files){
+ if(!files.length)throw Error('請先選擇要上傳的檔案');
+ if(files.length>100)throw Error('單次最多選取 100 份附件，請分批上傳');
+ if(files.some(file=>file.size>FILE_LIMIT))throw Error('單檔上限 50 MB，請先拆分過大的檔案');
+ const totalBytes=files.reduce((n,f)=>n+f.size,0);
+ // Advisory only: browser quota estimates can be inaccurate; IDB transaction remains authoritative.
+ let estimate=null;
+ try{
+  if(typeof navigator!=='undefined'&&navigator.storage?.estimate)estimate=await navigator.storage.estimate();
+ }catch(_){}
+ if(estimate?.quota&&Number.isFinite(estimate.usage)&&estimate.quota-estimate.usage<totalBytes+2*1024*1024)
+  throw Error('瀏覽器儲存空間可能不足（剩餘約 '+fmtSize(estimate.quota-estimate.usage)+'），請先下載交接稿備份；不可直接清除網站資料');
+ let current=thread,completed=0;
+ const stamp=Date.now();
+ try{
+  for(const file of files){
+   message('正在儲存第 '+(completed+1)+'／'+files.length+' 份：'+file.name+'（逐份寫入，不一次讀進記憶體）');
+   const entry={id:uuid(),threadId:thread.id,kind:'file',name:String(file.name||'未命名檔案').slice(0,250),
+    mime:file.type||'application/octet-stream',size:file.size,blob:file,createdAt:new Date(stamp+completed).toISOString(),order:stamp+completed};
+   const next={...current,fileCount:(current.fileCount||0)+1,updatedAt:new Date().toISOString()};
+   await transaction([THREADS,ENTRIES],'readwrite',tx=>{
+    tx.objectStore(ENTRIES).put(entry);
+    tx.objectStore(THREADS).put(next);
+   });
+   current=next;
+   completed++;
+  }
+ }catch(err){
+  const reason=String(err?.message||err);
+  throw Error('已成功儲存 '+completed+'／'+files.length+' 份，後續停止。'+
+   ((err?.name==='QuotaExceededError'||/quota|space|memory|storage/i.test(reason))?'可能為瀏覽器容量／記憶體不足；請保留現有資料。':'')+
+   ' 原因：'+reason);
+ }finally{
+  await reloadThreads();
+  await renderActive(worldId());
+ }
+ return completed;
 }
 async function removeEntry(t,entry){
  const next={...t,updatedAt:new Date().toISOString(),
@@ -438,14 +476,9 @@ function bindActions(){
   }
   doSafe(async()=>{
    if(action==='upload'){
-    const input=$('handoverFiles'),files=Array.from(input?.files||[]);
-    if(!files.length)throw Error('請先選擇要上傳的檔案');
-    if(files.some(f=>f.size>FILE_LIMIT))throw Error('單檔上限 50 MB，請先拆分過大的檔案');
-    const stamp=Date.now(),entries=files.map((f,i)=>({
-     id:uuid(),threadId:t.id,kind:'file',name:f.name.slice(0,250),mime:f.type||'application/octet-stream',
-     size:f.size,blob:f,createdAt:new Date(stamp+i).toISOString(),order:stamp+i
-    }));
-    await addEntries(t,entries);message('✅ 已儲存 '+entries.length+' 份交接檔案（本機）');
+    const files=Array.from($('handoverFiles')?.files||[]);
+    const count=await uploadFilesSafely(t,files);
+    message('✅ 已逐份儲存 '+count+' 份交接檔案（本機）；建議接著下載 .ghb 備份。');
    }else if(action==='note'){
     const textarea=$('handoverNote'),text=String(textarea?.value||'').trim();
     if(!text)throw Error('請先輸入備註文字');
