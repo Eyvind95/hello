@@ -94,3 +94,63 @@ test('scanner retains strict ordered overlap and 15-second bottom proof',()=>{
  assert.match(content,/BOTTOM_CONFIRM_MS=15000/);
  assert.match(content,/if\(root\.scrollHeight!==proofHeight\|\|!isBottom\(root\)\)/);
 });
+
+test('cycle 3 step 400: +20075px WHIF height and -43px anchoring requires resnapshot, not failure or progress',async()=>{
+ const root=scrolling(122399.9921875,124018,989);
+ const result=await advance(root,306,async()=>{
+  root.scrollHeight=144093;
+  root.scrollTop=122356.796875;
+ });
+ assert.equal(result.moved,false);
+ assert.equal(result.atBottom,false);
+ assert.equal(result.geometryShift,false);
+ assert.equal(result.reanchor,true);
+ assert.equal(result.attempts.length,1);
+ assert.equal(result.attempts[0].scrollHeightAfter-result.attempts[0].scrollHeightBefore,20075);
+ assert.ok(result.attempts[0].after<result.attempts[0].before);
+});
+
+test('grown scroll with already-visible overlap cannot silently skip or duplicate messages',()=>{
+ const first=content.indexOf('function sameRow(');
+ const end=content.indexOf('\nfunction observeEventAudit(',first);
+ assert.ok(first>0&&end>first);
+ const sandbox=vm.createContext({});
+ vm.runInContext(content.slice(first,end)+'\nthis.appendSample=appendSample;',sandbox);
+ const collected=[
+  {role:'ai',text:'可靠舊訊息 246',formatSource:{nativeReply:{messageId:'m246'}}},
+  {role:'me',text:'可靠舊訊息 247'},
+  {role:'ai',text:'可靠舊訊息 248',formatSource:{nativeReply:{messageId:'m248'}}}
+ ];
+ const current={rows:[
+  {role:'me',text:'可靠舊訊息 247',id:null},
+  {role:'ai',text:'可靠舊訊息 248',id:null,formatSource:{nativeReply:{messageId:'m248'}}},
+  {role:'me',text:'新的訊息 249',id:null},
+  {role:'ai',text:'新的訊息 250',id:'m250',formatSource:{nativeReply:{messageId:'m250'}}}
+ ]};
+ const aligned=sandbox.appendSample(current,collected);
+ assert.equal(aligned.repeated,2);
+ assert.equal(aligned.added,2);
+ assert.equal(collected.length,5);
+ assert.equal(collected.at(-1).text,'新的訊息 250');
+ assert.throws(()=>sandbox.appendSample({rows:[
+  {role:'ai',text:'中間訊息遺失而無法比對 253',id:'m253'}
+ ]},collected),/無法找到順序重疊/);
+});
+
+test('WHIF backward scroll without new height remains a safe geometry-shift stop',async()=>{
+ const root=scrolling(122400,124018,989);
+ const result=await advance(root,306,async()=>{root.scrollTop=122356});
+ assert.equal(result.geometryShift,true);
+ assert.equal(result.reanchor,undefined);
+});
+
+test('main scanner re-anchors only by a new ordered overlap, with a finite retry limit',()=>{
+ const snippet=content.slice(content.indexOf('const movement=await advanceScanScroll('));
+ assert.match(snippet,/if\(movement\.reanchor\)\{/);
+ assert.match(snippet,/geometryReanchors\+\+/);
+ assert.match(snippet,/if\(geometryReanchors>8\)/);
+ assert.match(snippet,/bottomFrames=0/);
+ assert.match(snippet,/stepCount\+\+;\s*continue;/);
+ assert.match(content,/info=appendSample\(shot,collected\)/);
+ assert.match(content,/scrollStall,scrollAtFailure,/);
+});
