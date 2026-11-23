@@ -917,7 +917,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   if(!first.rows.length)throw Error('找不到完整訊息。世界觀界線與舊版泡泡辨識都沒有結果；請複製版面診斷。');
   scanMode=first.method==='world-header-reaction-bar'?'bounded':'legacy';
   if(!core.isAllowedOpeningRow(first.rows[0]))
-   throw Error('第一則不是左側輪迴開場：只有無時間開場或 2026/08/22 18:42 的舊式開場可通過');
+   throw Error('第一則不是左側輪迴開場：只有無時間開場或 2026年8月22日 18:42 的舊式開場可通過');
   root=first.root;lastGoodY=root.scrollTop;
   const nominal=Math.max(12,Math.min(MAX_SCROLL_PX,Math.floor(root.clientHeight*SCROLL_RATIO)));
   stepPx=nominal;
