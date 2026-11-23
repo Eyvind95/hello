@@ -211,6 +211,8 @@ function binaryToBase64(blob){return new Promise((resolve,reject)=>{
  fr.readAsDataURL(blob);
 })}
 async function backupPack(threads){
+ const sourceWorld=threads[0]?.worldId||worldId();
+ if(threads.some(t=>t.worldId!==sourceWorld))throw Error('不同世界觀的交接稿不能混合備份');
  let total=0;
  const pack=[];
  for(const thread of threads){
@@ -227,7 +229,7 @@ async function backupPack(threads){
   }
   pack.push({thread:{...thread},entries:items});
  }
- return {format:'gal-ai-handover-backup',version:1,worldId:worldId(),worldName:worldName(worldId()),exportedAt:new Date().toISOString(),conversations:pack};
+ return {format:'gal-ai-handover-backup',version:1,worldId:sourceWorld,worldName:worldName(sourceWorld),exportedAt:new Date().toISOString(),conversations:pack};
 }
 async function exportPack(threads,label){
  if(!threads.length)throw Error('目前還沒有可備份的交接對話');
