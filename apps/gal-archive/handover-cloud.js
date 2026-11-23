@@ -5,8 +5,8 @@
  * Server-only reads and an explicit 'ready' manifest prevent half-uploaded files from being imported.
  * Additive, timestamp-aware merges; never use an empty device to delete cloud content.
  */
-const DB='gal-archive-handovers-v1',THREADS='threads',ENTRIES='entries',CHUNK=128*1024;
-const COLLECTION={threads:'handoverThreads',entries:'handoverEntries',files:'handoverFiles'};
+const DB='gal-archive-handovers-v1',THREADS='threads',ENTRIES='entries',DELETES='deletes',CHUNK=128*1024;
+const COLLECTION={threads:'handoverThreads',entries:'handoverEntries',files:'handoverFiles',deletes:'handoverDeletes'};
 const LIMIT=50*1024*1024,MAX_FILES=5000,MAX_RECORDS=10000;
 const toText=e=>String(e?.message||e||'未知錯誤');
 const iso=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:'';
@@ -16,13 +16,14 @@ const sharedId='__gal-handover-shared-reviews__:';
 const safeObj=e=>JSON.parse(JSON.stringify(e));
 async function dbOpen(){
  return new Promise((resolve,reject)=>{
-  const r=indexedDB.open(DB,2);
+  const r=indexedDB.open(DB,3);
   r.onupgradeneeded=()=>{
    const d=r.result;
    if(!d.objectStoreNames.contains(THREADS))d.createObjectStore(THREADS,{keyPath:'id'});
    const os=d.objectStoreNames.contains(ENTRIES)?r.transaction.objectStore(ENTRIES):d.createObjectStore(ENTRIES,{keyPath:'id'});
    if(!os.indexNames.contains('threadId'))os.createIndex('threadId','threadId',{unique:false});
    if(!os.indexNames.contains('kind'))os.createIndex('kind','kind',{unique:false});
+   if(!d.objectStoreNames.contains(DELETES))d.createObjectStore(DELETES,{keyPath:'id'});
   };
   r.onerror=()=>reject(r.error||Error('交接稿資料庫無法開啟'));
   r.onblocked=()=>reject(Error('請先關閉其他檔案館分頁，避免資料庫升級被阻擋'));
@@ -50,12 +51,25 @@ async function putMany(db,table,items){
   });
  }
 }
+function compareDeleted(record,mark){
+ return Boolean(mark)&&(!newer(dataTimestamp(record),mark.deletedAt));
+}
+function tombstoneMap(items){
+ const map=new Map();
+ for(const item of items){
+  if(!item?.id||!item.kind||!['thread','entry'].includes(item.kind)||!validId(item.targetId)||!validId(item.worldId))
+   throw Error('交接稿刪除標記不合法');
+  const old=map.get(item.id);
+  if(!old||newer(item.deletedAt,old.deletedAt))map.set(item.id,item);
+ }
+ return map;
+}
 async function localSnapshot(){
  const db=await dbOpen();
  try{
-  const threads=await readAll(db,THREADS),entries=await readAll(db,ENTRIES);
-  if(threads.length>MAX_RECORDS||entries.length>MAX_RECORDS)throw Error('交接稿數量超過安全上限');
-  return {threads,entries};
+  const threads=await readAll(db,THREADS),entries=await readAll(db,ENTRIES),deletes=await readAll(db,DELETES);
+  if(threads.length>MAX_RECORDS||entries.length>MAX_RECORDS||deletes.length>MAX_RECORDS)throw Error('交接稿數量超過安全上限');
+  return {threads,entries,deletes};
  }finally{db.close()}
 }
 function worldFor(entry,byId){
