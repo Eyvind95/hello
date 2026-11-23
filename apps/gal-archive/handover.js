@@ -4,6 +4,7 @@
    Files are stored as Blobs in IndexedDB; never embedded in public GitHub pages. */
 const DATABASE='gal-archive-handovers-v1',THREADS='threads',ENTRIES='entries';
 const FILE_LIMIT=50*1024*1024,BACKUP_LIMIT=150*1024*1024,IMPORT_LIMIT=210*1024*1024;
+const BUNDLE_MAGIC='GAL-ARCHIVE-HANDOVER-V3\n',BUNDLE_LENGTH_DIGITS=12,MAX_METADATA=10*1024*1024,LEGACY_JSON_LIMIT=24*1024*1024;
 const state={db:null,threads:[],activeId:null,view:'files',editingReviewId:null,renderToken:0,loading:true,busy:false,objectUrls:[]};
 const $=id=>document.getElementById(id);
 const worldId=()=>window.ArchiveHandoverBridge?.worldId?.()||'';
@@ -284,68 +285,111 @@ function previewEntry(entry){
  closeButton.onclick=close;
  dialog.addEventListener('click',e=>{if(e.target===dialog)close()});
 }
-function binaryToBase64(blob){return new Promise((resolve,reject)=>{
- const fr=new FileReader();fr.onerror=()=>reject(fr.error||Error('檔案備份讀取失敗'));
- fr.onload=()=>{const str=String(fr.result||''),pos=str.indexOf(',');if(pos<0)reject(Error('檔案無法編碼'));else resolve(str.slice(pos+1))};
- fr.readAsDataURL(blob);
-})}
+/*
+ * V3 .ghb binary backup: tiny JSON manifest + original Blob parts.
+ * This avoids base64 (~33% expansion), FileReader data URLs, and JSON.stringify of binary.
+ * Older V1/V2 .json backups remain importable (up to a conservative mobile-safe size).
+ */
 async function backupPack(threads){
  const sourceWorld=threads[0]?.worldId||worldId();
  if(threads.some(t=>t.worldId!==sourceWorld))throw Error('不同世界觀的交接稿不能混合備份');
  let total=0;
- const pack=[];
+ const pack=[],binaryParts=[];
  for(const thread of threads){
   const entries=await listEntries(thread.id),items=[];
   for(const e of entries){
-   const item={id:e.id,kind:e.kind,text:e.text||'',name:e.name||'',mime:e.mime||'',size:e.size||0,createdAt:e.createdAt,updatedAt:e.updatedAt||null,order:e.order||0,reviewer:e.reviewer||'',subject:e.subject||'',title:e.title||''};
+   const item={id:e.id,kind:e.kind,text:e.text||'',name:e.name||'',mime:e.mime||'',size:e.size||0,createdAt:e.createdAt,
+    updatedAt:e.updatedAt||null,order:e.order||0,reviewer:e.reviewer||'',subject:e.subject||'',title:e.title||''};
    if(e.kind==='file'){
     if(!(e.blob instanceof Blob))throw Error('附件「'+e.name+'」已損毀，無法備份');
+    if(e.blob.size>FILE_LIMIT)throw Error('附件超過 50MB：'+e.name);
+    if(total+e.blob.size>BACKUP_LIMIT)throw Error('這次備份附件合計超過 150 MB；請分別下載單一交接對話');
+    item.byteOffset=total;
+    item.byteLength=e.blob.size;
+    binaryParts.push(e.blob); // references bytes; no base64 conversion or copying into strings
     total+=e.blob.size;
-    if(total>BACKUP_LIMIT)throw Error('這次備份合計超過 150 MB；請分別下載單一交接對話或附件');
-    item.base64=await binaryToBase64(e.blob);
    }
    items.push(item);
   }
   pack.push({thread:{...thread},entries:items});
  }
- return {format:'gal-ai-handover-backup',version:2,worldId:sourceWorld,worldName:worldName(sourceWorld),exportedAt:new Date().toISOString(),conversations:pack};
+ const manifest={format:'gal-ai-handover-backup',version:3,worldId:sourceWorld,worldName:worldName(sourceWorld),
+  exportedAt:new Date().toISOString(),conversations:pack};
+ const metadata=new TextEncoder().encode(JSON.stringify(manifest));
+ if(metadata.byteLength>MAX_METADATA)throw Error('備份索引超過 10 MB，請改成分別下載單一交接對話');
+ const blob=new Blob([BUNDLE_MAGIC,String(metadata.byteLength).padStart(BUNDLE_LENGTH_DIGITS,'0'),metadata,...binaryParts],
+  {type:'application/octet-stream'});
+ return {blob,count:pack.length,fileCount:pack.reduce((n,p)=>n+p.entries.filter(e=>e.kind==='file').length,0)};
 }
 async function exportPack(threads,label){
  if(!threads.length)throw Error('目前還沒有可備份的交接對話');
- const doc=await backupPack(threads);
- downloadBlob(new Blob([JSON.stringify(doc)],{type:'application/json'}),'交接稿_'+fileName(label)+'_'+new Date().toISOString().slice(0,10)+'.json');
- message('✅ 交接稿備份已提供下載：'+doc.conversations.length+' 個對話（包含附件原檔）。');
+ message('正在準備交接稿備份；附件以原檔封裝，避免大量占用記憶體…');
+ const pack=await backupPack(threads);
+ downloadBlob(pack.blob,'交接稿_'+fileName(label)+'_'+new Date().toISOString().slice(0,10)+'.ghb');
+ message('✅ 已提供 .ghb 備份下載：'+pack.count+' 個對話、'+pack.fileCount+' 份附件。請確認手機下載完成再刪除任何資料。');
 }
 function base64ToBlob(b64,mime){
- if(typeof b64!=='string'||b64.length>IMPORT_LIMIT*1.5)throw Error('交接檔案編碼過大');
+ if(typeof b64!=='string'||b64.length>LEGACY_JSON_LIMIT*1.5)throw Error('舊版 JSON 的單一附件過大，建議先在電腦轉存新版 .ghb');
  const binary=atob(b64),bytes=new Uint8Array(binary.length);
  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
  return new Blob([bytes],{type:mime||'application/octet-stream'});
 }
-async function importPack(file){
+async function readBackup(file){
  if(!file||file.size>IMPORT_LIMIT)throw Error('備份檔超過 210 MB');
- const raw=JSON.parse(await file.text()),w=worldId();
- if(raw?.format!=='gal-ai-handover-backup'||![1,2].includes(raw.version)||!Array.isArray(raw.conversations))throw Error('不是有效的交接稿備份 JSON');
+ const header=await file.slice(0,BUNDLE_MAGIC.length).text();
+ if(header===BUNDLE_MAGIC){
+  const digits=await file.slice(BUNDLE_MAGIC.length,BUNDLE_MAGIC.length+BUNDLE_LENGTH_DIGITS).text();
+  if(!/^[0-9]{12}$/.test(digits))throw Error('新版 .ghb 備份標頭損毀');
+  const metaLength=Number(digits);
+  const dataStart=BUNDLE_MAGIC.length+BUNDLE_LENGTH_DIGITS+metaLength;
+  if(metaLength<=0||metaLength>MAX_METADATA||dataStart>file.size)throw Error('新版 .ghb 備份索引不完整');
+  const manifest=JSON.parse(await file.slice(BUNDLE_MAGIC.length+BUNDLE_LENGTH_DIGITS,dataStart).text());
+  if(manifest?.version!==3||manifest?.format!=='gal-ai-handover-backup')throw Error('備份格式版本不正確');
+  return {manifest,file,dataStart,binary:true};
+ }
+ if(file.size>LEGACY_JSON_LIMIT)throw Error('舊版 JSON 備份超過 24 MB；為避免手機再次記憶體不足，請在電腦匯入並轉存新版 .ghb');
+ const manifest=JSON.parse(await file.text());
+ if(manifest?.format!=='gal-ai-handover-backup'||![1,2].includes(manifest.version))throw Error('不是有效的交接稿備份檔案');
+ return {manifest,file,binary:false,dataStart:0};
+}
+async function importPack(file){
+ const source=await readBackup(file),raw=source.manifest,w=worldId();
+ if(!Array.isArray(raw.conversations))throw Error('交接稿備份缺少對話清單');
  if(raw.worldId!==w)throw Error('交接稿屬於其他世界觀（'+String(raw.worldName||raw.worldId)+'），請先切換到正確的世界觀');
  if(raw.conversations.length>200)throw Error('備份對話數超出安全限制');
  const restored=[];
+ let expectedOffset=0;
  for(const group of raw.conversations){
   const old=group?.thread;
   if(!old||old.worldId!==w||typeof old.title!=='string'||!old.title.trim()||!Array.isArray(group.entries)||group.entries.length>2000)throw Error('備份中的世界觀、對話或檔案清單不合法');
   const now=new Date().toISOString(),thread={id:uuid(),worldId:w,title:old.title.trim().slice(0,180),
-   author:String(old.author||'').slice(0,180),description:String(old.description||'').slice(0,3000),createdAt:now,updatedAt:now,fileCount:0,noteCount:0,reviewCount:0,selfReviewCount:0},entries=[];
+   author:String(old.author||'').slice(0,180),description:String(old.description||'').slice(0,3000),
+   createdAt:now,updatedAt:now,fileCount:0,noteCount:0,reviewCount:0,selfReviewCount:0},entries=[];
   for(const item of group.entries){
    if(!item||!['file','note','review','self-review'].includes(item.kind))throw Error('無效交接內容類型');
    const e={id:uuid(),threadId:thread.id,kind:item.kind,createdAt:item.createdAt||now,
     order:Number(item.order)||Date.now()+entries.length};
    if(item.kind==='file'){
-    if(typeof item.base64!=='string')throw Error('備份附件缺少內容：'+String(item.name));
-    const blob=base64ToBlob(item.base64,String(item.mime||'application/octet-stream'));
+    let blob;
+    const mime=String(item.mime||'application/octet-stream');
+    if(source.binary){
+     const offset=item.byteOffset,length=item.byteLength;
+     if(!Number.isSafeInteger(offset)||!Number.isSafeInteger(length)||offset!==expectedOffset||length<0||length>FILE_LIMIT)
+      throw Error('附件位置或大小不合法：'+String(item.name));
+     if(source.dataStart+offset+length>file.size)throw Error('附件內容不完整：'+String(item.name));
+     blob=file.slice(source.dataStart+offset,source.dataStart+offset+length,mime);
+     expectedOffset+=length;
+    }else{
+     if(typeof item.base64!=='string')throw Error('舊版備份附件缺少內容：'+String(item.name));
+     blob=base64ToBlob(item.base64,mime);
+    }
     if(blob.size>FILE_LIMIT)throw Error('備份單檔超過 50 MB：'+String(item.name));
-    e.name=String(item.name||'未命名檔案').slice(0,250);e.mime=blob.type;e.size=blob.size;e.blob=blob;thread.fileCount++;
+    e.name=String(item.name||'未命名檔案').slice(0,250);e.mime=blob.type;e.size=blob.size;e.blob=blob;
+    thread.fileCount++;
    }else if(item.kind==='note'){e.text=String(item.text||'').slice(0,100000);thread.noteCount++}
    else{
-    if(typeof item.reviewer!=='string'||!item.reviewer.trim()||typeof item.text!=='string'||!item.text.trim()||item.text.length>100000)throw Error('備份評語缺少署名或正文');
+    if(typeof item.reviewer!=='string'||!item.reviewer.trim()||typeof item.text!=='string'||!item.text.trim()||item.text.length>100000)
+     throw Error('備份評語缺少署名或正文');
     e.reviewer=item.reviewer.trim().slice(0,180);e.subject=String(item.subject||'').slice(0,250);e.title=String(item.title||'').slice(0,200);
     e.text=item.text;e.updatedAt=item.updatedAt||now;
     if(item.kind==='review')thread.reviewCount++;
@@ -355,14 +399,16 @@ async function importPack(file){
   }
   restored.push({thread,entries});
  }
- // Always import as NEW conversations to avoid overwriting existing files or rounds.
+ if(source.binary&&source.dataStart+expectedOffset!==file.size)throw Error('備份檔案長度與附件清單不符，已取消匯入');
+ // Import as NEW conversations. No existing local records or canon cycles are overwritten.
  await transaction([THREADS,ENTRIES],'readwrite',tx=>{
-  for(const g of restored){
-   tx.objectStore(THREADS).put(g.thread);
-   for(const e of g.entries)tx.objectStore(ENTRIES).put(e);
+  for(const group of restored){
+   tx.objectStore(THREADS).put(group.thread);
+   for(const item of group.entries)tx.objectStore(ENTRIES).put(item);
   }
  });
- await reloadThreads();if(restored.length)openThread(restored[0].thread.id,false);
+ await reloadThreads();
+ if(restored.length)openThread(restored[0].thread.id,false);
  message('✅ 已匯入 '+restored.length+' 個交接對話（另建副本，未覆蓋舊對話或正史）。');
 }
 async function doSafe(fn){
