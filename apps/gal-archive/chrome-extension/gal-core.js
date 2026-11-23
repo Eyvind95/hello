@@ -528,7 +528,79 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
   }
  }
- const comparableText=eventQuoteProjection?eventQuoteProjection.comparableText:text;
+
+ // For historic WHIF replies: one hidden standalone {{chapter}} preceding
+ // the first fenced status HUD, and possibly omitted balanced dialogue
+ // quotes. Require exact ordered whole-reply character alignment before use.
+ let legacyMessageProjection=null;
+ if(options.source==='whif-message-content'&&!options.event&&
+    !unspaced(scanned).startsWith('{{')&&unspaced(scanned)!==unspaced(text)){
+  const visibleLines=scanned.split('\n');
+  const dateStart=visibleLines.findIndex(line=>
+   /^[｜|│]\s*(?:\d{4}(?:年|[/-])|日期不詳)/u.test(line.trim()));
+  if(dateStart>=0&&dateStart<=2){
+   const visiblePrefix=visibleLines.slice(0,dateStart).join('\n');
+   const statusRows=[];
+   for(const line of visibleLines.slice(dateStart)){
+    if(!/^[｜|│][\s\S]*[｜|│]$/u.test(line.trim()))break;
+    statusRows.push(line);
+   }
+   const visibleStatusKey=unspaced(statusRows.join('\n'));
+   const firstFence=/^[ \t]*\x60{3}[^\n]*\n/m.exec(text);
+   if(statusRows.length>=2&&firstFence){
+    const fenced=text.slice(firstFence.index).match(statusFence);
+    if(fenced&&unspaced(fenced[1])===visibleStatusKey){
+     const sourcePrefix=text.slice(0,firstFence.index);
+     const hiddenLine=/^[ \t]*\{\{([^{}\n]{1,200})\}\}[ \t]*$/gm;
+     const hidden=[...sourcePrefix.matchAll(hiddenLine)];
+     if(hidden.length===1&&
+        !/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(hidden[0][1].trim())){
+      const plainPrefix=sourcePrefix.replace(hiddenLine,'').trim();
+      if(unspaced(plainPrefix)===unspaced(visiblePrefix)){
+       const noTemplate=plainPrefix?(plainPrefix+'\n'+text.slice(firstFence.index)):
+        text.slice(firstFence.index);
+       const rest=text.slice(firstFence.index+fenced[0].length);
+       const candidate=(plainPrefix?plainPrefix+'\n':'')+fenced[1]+
+        rest.replace(/^\n(?![ \t]*\n)(?=[\s\S]*\S)/,'\n\n');
+       const visibleKey=[...unspaced(scanned)],omitted=[];
+       let aligned=0,comparable='',valid=true;
+       for(const char of candidate){
+        if(/\s/u.test(char)){comparable+=char;continue}
+        if(aligned<visibleKey.length&&char===visibleKey[aligned]){
+         comparable+=char;aligned++;continue;
+        }
+        if(char==='「'||char==='」'){omitted.push(char);continue}
+        valid=false;break;
+       }
+       let balance=0;
+       for(const char of omitted){
+        balance+=char==='「'?1:-1;
+        if(balance<0){valid=false;break}
+       }
+       const scannedClock=parseGameTime(scanned)?.iso;
+       const candidateClock=parseGameTime(candidate)?.iso;
+       const verifiedClock=Boolean(scannedClock&&scannedClock===candidateClock)||
+        (!scannedClock&&!candidateClock&&
+         isExplicitUnknownGameTime(scanned)&&isExplicitUnknownGameTime(candidate));
+       if(valid&&balance===0&&aligned===visibleKey.length&&verifiedClock){
+        record('whif-legacy-hidden-template',1,text,noTemplate);
+        record('whif-legacy-status-code-fence',2,noTemplate,candidate);
+        if(omitted.length)
+         record('whif-legacy-balanced-dialogue-quotes',omitted.length,candidate,comparable);
+        text=candidate;
+        legacyMessageProjection={comparableText:comparable,
+         omittedQuotePairs:omitted.filter(char=>char==='「').length,
+         preservedVisibleQuotes:(scanned.match(/[「」]/g)||[]).length,
+         statusRows:statusRows.length,restoredFromNative:true};
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+
+ const comparableText=legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text);
  const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(comparableText)];
  const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
  const contentEqual=scanChars.join('')===nativeChars.join('');
@@ -610,6 +682,13 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   return {text:null,comparison,localContext:{scanned:context(scanChars),native:context(nativeChars)}};
  }
  if(!text||!clockEqual)return {text:null,comparison};
+ if(legacyMessageProjection){
+  comparison.legacyMessageProjection={
+   omittedQuotePairs:legacyMessageProjection.omittedQuotePairs,
+   preservedVisibleQuotes:legacyMessageProjection.preservedVisibleQuotes,
+   statusRows:legacyMessageProjection.statusRows,restoredFromNative:true};
+  return {text,comparison};
+ }
  if(eventQuoteProjection){
   comparison.eventQuoteProjection={pairs:eventQuoteProjection.pairs,restoredFromNative:true,
    preservedVisibleQuotes:eventQuoteProjection.preservedVisibleQuotes};
@@ -629,5 +708,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.26'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.27'};
 })();
