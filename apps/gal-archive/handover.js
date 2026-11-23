@@ -97,7 +97,7 @@ function reviewCard(entry){
  const by=escapeHTML(entry.reviewer||'未署名'),subject=entry.subject?'・評價對象：'+escapeHTML(entry.subject):'';
  return '<article class="handover-entry"><div class="sectionhead"><strong>💬 '+by+subject+'</strong><span class="note">'+escapeHTML(fmtDate(entry.createdAt))+'</span></div>'+
   (entry.title?'<h3>'+escapeHTML(entry.title)+'</h3>':'')+
-  '<div class="handover-note">'+escapeHTML(entry.text||'')+'</div>'+
+  '<details class="handover-review-details"><summary>展開閱讀全文（'+String((entry.text||'').length)+' 字）</summary><div class="handover-note">'+escapeHTML(entry.text||'')+'</div></details>'+
   '<div class="actions"><button type="button" class="btn small" data-ha-action="download-review" data-ha-id="'+escapeHTML(entry.id)+'">下載這篇評語</button>'+
   '<button type="button" class="btn small" data-ha-action="edit-review" data-ha-id="'+escapeHTML(entry.id)+'">編輯</button>'+
   '<button type="button" class="btn small danger" data-ha-action="delete-entry" data-ha-id="'+escapeHTML(entry.id)+'">刪除</button></div></article>';
@@ -435,6 +435,7 @@ function bindActions(){
     const reviewer=String($('handoverSelfAuthor')?.value||'').trim(),text=String($('handoverSelfText')?.value||'').trim();
     if(!reviewer||reviewer.length>180)throw Error('請填寫自評者（最多 180 字）');
     if(!text||text.length>100000)throw Error('請填寫自己的完整自評（最多 100,000 字）');
+    if(t.author&&t.author!==reviewer)throw Error('自評者與這份交接稿的撰寫者「'+t.author+'」不一致；請先按「設定撰寫者」修正。');
     const old=(await listEntries(t.id)).find(e=>e.kind==='self-review'),now=new Date().toISOString();
     const entry={id:old?.id||uuid(),threadId:t.id,kind:'self-review',reviewer,text,
      createdAt:old?.createdAt||now,updatedAt:now,order:old?.order||Date.now()};
