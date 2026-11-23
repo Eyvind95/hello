@@ -580,6 +580,9 @@ test('historical WHIF projection does not apply to ordinary message without requ
  const native='{{模板}}\n'+status+'\n正文。';
  const rendered=status+'\n正文。';
  const result=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{source:'whif-message-content',statusText:status});
- assert.equal(result.text,null);
+ // The older preamble-only handler legitimately removes this exact,
+ // pre-verified template, but the NEW fenced-HUD projection must not run.
+ assert.equal(result.text,rendered);
  assert.equal(result.comparison.legacyMessageProjection,undefined);
+ assert.ok(result.comparison.formatMarkers.some(x=>x.kind==='leading-whif-template'));
 });
