@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.17",
-  "version_name": "V0.8.17 測試版",
-  "description": "輪迴檔案館 V0.8.17 測試版：更新後由新 background 主動重新整理已開啟的 WHIF 分頁，避免舊 content script 觸發 Extension context invalidated。",
+  "version": "0.8.18",
+  "version_name": "V0.8.18 測試版",
+  "description": "輪迴檔案館 V0.8.18 測試版：撤回自動刷新 WHIF，強化 lazy-load 底部確認，並拒絕比上一份完整掃描更短的半份正史。",
   "permissions": [
     "storage",
     "activeTab",
