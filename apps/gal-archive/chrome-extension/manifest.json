@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.12",
-  "version_name": "V0.8.12 測試版",
-  "description": "輪迴檔案館 V0.8.12 測試版：WHIF 頁面內完成首次綁定與開啟掃描，不再依賴 Chrome 工具列 popup。",
+  "version": "0.8.13",
+  "version_name": "V0.8.13 測試版",
+  "description": "輪迴檔案館 V0.8.13 測試版：背景自動掃描輸出改用可讀檔名，不再以 scanRunId/UUID 當人類可見檔名。",
   "permissions": [
     "storage",
     "activeTab",
