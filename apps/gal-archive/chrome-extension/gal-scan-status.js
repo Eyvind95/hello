@@ -157,9 +157,9 @@ function installGalScanStatus(api){
     const previous=Object.values(runs).filter(candidate=>
      candidate.scanRunId!==run.scanRunId&&candidate.state==='completed'&&candidate.scope==='full'&&
      candidate.cycleId===run.cycleId&&candidate.source===run.source&&Number.isInteger(candidate.scanned))
-     .sort((a,b)=>String(b.at||'').localeCompare(String(a.at||'')))[0];
+     .sort((a,b)=>b.scanned-a.scanned||String(b.at||'').localeCompare(String(a.at||'')))[0];
     if(previous&&message.scanned<previous.scanned)
-     throw Error('完整掃描只有 '+message.scanned+' 筆，少於上一份已完成掃描 '+previous.scanned+
+     throw Error('完整掃描只有 '+message.scanned+' 筆，少於歷史已完成掃描最大值 '+previous.scanned+
       ' 筆；判定 WHIF 歷史尚未載完，拒絕輸出半份正史');
    }
   }
