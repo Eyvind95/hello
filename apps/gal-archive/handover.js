@@ -343,7 +343,7 @@ async function removeThread(t){
  const legacyPeers=(await listWorldReviews(t.worldId)).filter(e=>e.threadId===t.id);
  const leftovers=(await listEntries(t.id)).filter(e=>!legacyPeers.some(r=>r.id===e.id));
  await transaction([THREADS,ENTRIES,DELETES],'readwrite',tx=>{
-  for(const e of legacyPeers)tx.objectStore(ENTRIES).put({...e,threadId:sharedReviewId(t.worldId)});
+  for(const e of legacyPeers)tx.objectStore(ENTRIES).put({...e,threadId:sharedReviewId(t.worldId),updatedAt:new Date().toISOString()});
   tx.objectStore(DELETES).put(deleteMarker('thread',t.id,t.worldId));
   for(const e of leftovers)tx.objectStore(DELETES).put(deleteMarker('entry',e.id,t.worldId));
   tx.objectStore(THREADS).delete(t.id);
