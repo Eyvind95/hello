@@ -1,6 +1,6 @@
-const CACHE='gal-archive-pwa-v55';
+const CACHE='gal-archive-pwa-v56';
 const HOME='/hello/apps/gal-archive/index.html';
-const PRECACHE=[HOME,'/hello/apps/gal-archive/manifest.webmanifest','/hello/apps/ledger/6.png','/hello/apps/ledger/8.png'];
+const PRECACHE=[HOME,'/hello/apps/gal-archive/time-machine.js','/hello/apps/gal-archive/manifest.webmanifest','/hello/apps/ledger/6.png','/hello/apps/ledger/8.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(c=>c.addAll(PRECACHE)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',event=>{event.waitUntil((async()=>{for(const k of await caches.keys())if(k.startsWith('gal-archive-pwa-')&&k!==CACHE)await caches.delete(k);await self.clients.claim()})())});
 self.addEventListener('fetch',event=>{
