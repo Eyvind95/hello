@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.23: narrowly allow the historical 2026/08/22 18:42 opener. */
+/* Independent Gal AI page scanner. v0.8.24: retry temporary WHIF scroll stalls without skipping source rows. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.23';
+const SCANNER_VERSION='0.8.24';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
@@ -52,7 +52,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.23 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.24 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -683,6 +683,31 @@ function isBottom(root){
  const y=root===document.scrollingElement||root===document.documentElement?root.scrollTop:root.scrollTop;
  return y+root.clientHeight>=root.scrollHeight-5;
 }
+async function advanceScanScroll(root,stepPx,wait=sleep){
+ const initialTop=root.scrollTop,attempts=[];
+ for(let retry=1;retry<=4;retry++){
+  if(!root.isConnected)throw Error('捲動期間 WHIF 更換了訊息容器；已停止避免漏掃');
+  const before=root.scrollTop;
+  const heightBefore=root.scrollHeight;
+  const maxTop=Math.max(0,heightBefore-root.clientHeight);
+  const requested=Math.min(maxTop,before+Math.max(12,stepPx));
+  if(requested>before+0.25)root.scrollTop=requested;
+  await wait(WAIT_MS+STABLE_MS);
+  if(!root.isConnected)throw Error('捲動期間 WHIF 更換了訊息容器；已停止避免漏掃');
+  const after=root.scrollTop,atBottom=isBottom(root);
+  attempts.push({retry,before,requested,after,
+   scrollHeightBefore:heightBefore,scrollHeightAfter:root.scrollHeight,
+   clientHeight:root.clientHeight,atBottom});
+  if(after>initialTop+1)return {moved:true,atBottom:false,geometryShift:false,attempts};
+  // A lazy-loaded WHIF message can cancel the requested scroll or change
+  // scrollHeight between the scroll command and the next DOM snapshot.
+  // Bottom must still pass the existing 15-second stability proof; NEVER infer
+  // completion from an immobile scroll alone.
+  if(atBottom)return {moved:false,atBottom:true,geometryShift:false,attempts};
+  if(after<initialTop-4)return {moved:false,atBottom:false,geometryShift:true,attempts};
+ }
+ return {moved:false,atBottom:false,geometryShift:false,attempts};
+}
 function hash(str){let h1=2166136261,h2=0x811c9dc5;for(let i=0;i<str.length;i++){
  h1=Math.imul(h1^str.charCodeAt(i),16777619)>>>0;h2=Math.imul(h2^str.charCodeAt(i),2246822519)>>>0;
  }return h1.toString(16).padStart(8,'0')+h2.toString(16).padStart(8,'0');}
@@ -899,7 +924,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  exportButton.textContent=preview?'下載三則測試 JSON':'下載原生正史 JSON';
  const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,scanMode='auto',bottomProof=null;
  const recoveryLog=[];
- let unpairedReply=null;
+ let unpairedReply=null,scrollStall=null;
  const continuedPositions=[];
  const eventAudit={headers:new Map(),native:new Map(),unverifiedCards:new Map(),probes:new WeakMap(),history:new Map()};
  let firstTimedTrace=null;
@@ -1014,10 +1039,13 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     }
    }else bottomFrames=0;
    if(info.added&&stepPx<nominal)stepPx=Math.min(nominal,Math.max(stepPx+12,Math.floor(stepPx*1.2)));
-   const before=root.scrollTop;
-   root.scrollTop=Math.min(root.scrollHeight-root.clientHeight,before+stepPx);
-   await sleep(WAIT_MS+STABLE_MS);
-   if(root.scrollTop<=before&&!isBottom(root))throw Error('畫面無法向下捲動，請複製版面診斷');
+   const movement=await advanceScanScroll(root,stepPx);
+   if(!movement.moved&&!movement.atBottom){
+    scrollStall={...movement,step:stepCount,scanned:collected.length};
+    throw Error(movement.geometryShift
+     ?'WHIF 捲動位置突然倒退，為避免漏掃已停止；請提供含 scrollStall 的診斷'
+     :'WHIF 捲動停滯，已重試 4 次仍無法向下移動，也尚未確認到底；請提供含 scrollStall 的診斷');
+   }
    stepCount++;
   }
   if(cancelled)throw Error('使用者停止掃描');
@@ -1085,8 +1113,11 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   }
  }catch(err){
   failure=String(err?.message||err);
+  const scrollAtFailure=root?.isConnected?{
+   scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight}:null;
   if(root?.isConnected)root.scrollTop=lastGoodY;
   diagnostic={...(diagnostic||inspect()),...run,scanMode,error:failure,trustedCount:collected.length,paragraphCheck,unpairedReply,bottomProof,
+   scrollStall,scrollAtFailure,
    autoContinueCandidates:continuedPositions.map(({scanIndex})=>scanIndex),
    eventAudit:summarizeEventAudit(eventAudit,collected,{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
