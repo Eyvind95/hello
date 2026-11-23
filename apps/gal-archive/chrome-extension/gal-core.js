@@ -640,7 +640,40 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   }
  }
 
- const comparableText=legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text);
+ // WHIF renders some historic independent openings without any of their
+ // native 「」 dialogue quotes. When the image marker has already been
+ // independently stripped, restore these quotes and the original blank lines
+ // ONLY if the full displayed text matches character-for-character after
+ // projecting balanced missing quote pairs. Other text changes are rejected.
+ let openingQuoteProjection=null;
+ if(options.opening&&options.source==='whif-message-content'&&!options.event&&
+    unspaced(scanned)!==unspaced(text)){
+  const visibleChars=[...unspaced(scanned)];
+  let matched=0,projected='',omitted=[],valid=true;
+  for(const char of text){
+   if(/\s/u.test(char)){projected+=char;continue}
+   if(matched<visibleChars.length&&char===visibleChars[matched]){
+    projected+=char;matched++;continue;
+   }
+   if(char==='「'||char==='」'){omitted.push(char);continue}
+   valid=false;break;
+  }
+  let balance=0;
+  for(const mark of omitted){
+   balance+=mark==='「'?1:-1;
+   if(balance<0){valid=false;break}
+  }
+  if(valid&&matched===visibleChars.length&&balance===0&&omitted.length>0){
+   record('opening-balanced-dialogue-quotes',omitted.length,text,projected);
+   openingQuoteProjection={comparableText:projected,
+    omittedQuotePairs:omitted.filter(char=>char==='「').length,
+    preservedVisibleQuotes:(scanned.match(/[「」]/g)||[]).length,
+    restoredFromNative:true};
+  }
+ }
+
+ const comparableText=openingQuoteProjection?.comparableText??
+  (legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text));
  const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(comparableText)];
  const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
  const contentEqual=scanChars.join('')===nativeChars.join('');
@@ -725,6 +758,13 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   return {text:null,comparison,localContext:{scanned:context(scanChars),native:context(nativeChars)}};
  }
  if(!text||!clockEqual)return {text:null,comparison};
+ if(openingQuoteProjection){
+  comparison.openingQuoteProjection={
+   omittedQuotePairs:openingQuoteProjection.omittedQuotePairs,
+   preservedVisibleQuotes:openingQuoteProjection.preservedVisibleQuotes,
+   restoredFromNative:true};
+  return {text,comparison};
+ }
  if(legacyMessageProjection){
   comparison.legacyMessageProjection={
    omittedQuotePairs:legacyMessageProjection.omittedQuotePairs,
@@ -751,5 +791,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.30'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.31'};
 })();
