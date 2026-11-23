@@ -36,6 +36,15 @@ function isEvent(content){
    || /^.{0,45}(?:世界事件|緊急事件)\s*(?:到達|通知|觸發)/u.test(t);
 }
 function meaningful(str){return clean(str).replace(/\s+/g,' ')}
+// A WHIF reply may explicitly say that both its date and time are unknown.
+// Require an actual two-line status header; merely mentioning the phrases in
+// story prose does not authorize a missing game clock.
+function isExplicitUnknownGameTime(input){
+ const lines=clean(input).split('\n').slice(0,7).map(line=>line.trim());
+ const date=/^[｜|│]\s*日期不詳\s*[｜|│]$/u;
+ const time=/^[｜|│]\s*(?:🕒\s*)?時間不詳\s*[｜|│]/u;
+ return lines.some((line,i)=>date.test(line)&&time.test(lines[i+1]||''));
+}
 // Only the first AI item may use this historical timed opener (2026/08/22 18:42 UTC+8).
 // Do not treat other timed AI replies as openings or change their game clocks.
 const LEGACY_OPENING_ISO='2026-08-22T10:42:00.000Z';
@@ -52,7 +61,7 @@ function validate(rows,expectedWorld){
    errors.push('首則不是可辨識的輪迴開場（原則無劇情時間；僅允許 2026年8月22日 18:42 的舊式開場）；請回到真正的開場重新掃描');
  const opening=opener.role==='ai'?clean(opener.text):'';
  if(opening.length<8)errors.push('輪迴開場過短，可能選到工具列或不完整訊息');
- let pending=null,pairs=0,previousMs=null,autoContinues=0;
+ let pending=null,pairs=0,previousMs=null,autoContinues=0,unknownGameTimeCount=0;
  for(let i=1;i<rows.length;i++){
   const row=rows[i],role=row.role,t=clean(row.text);
   if(!t){errors.push('第 '+(i+1)+' 則是空訊息');continue}
@@ -74,16 +83,26 @@ function validate(rows,expectedWorld){
    continue;
   }
   if(role!=='ai'){errors.push('第 '+(i+1)+' 則左右身份不明');continue}
-  const clock=parseGameTime(t);
-  if(!clock){errors.push('第 '+(i+1)+' 則 Gal AI 回覆缺少可辨識的劇情日期和時間');continue}
+  const explicitlyUnknown=isExplicitUnknownGameTime(t);
+  const clock=explicitlyUnknown?null:parseGameTime(t);
+  if(!clock&&!explicitlyUnknown){
+   errors.push('第 '+(i+1)+' 則 Gal AI 回覆缺少可辨識的劇情日期和時間，且未明示日期不詳／時間不詳');
+   continue;
+  }
   const continued=pending===null&&row.autoContinue===true&&canon.at(-1)?.role==='ai'&&canon.at(-1).scanIndex===i-1;
   if(pending===null&&!continued){errors.push('第 '+(i+1)+' 則 Gal AI 沒有相鄰的「我」');continue}
-  // Both player and Gal AI use the game's own clock, never ChatGPT/capture/received clocks.
-  if(pending)pending.gameTime=clock.iso;
-  canon.push({role:'ai',text:t,scanIndex:i,gameTime:clock.iso,...(continued?{autoContinue:true}:{})});
-  if(previousMs!==null&&Date.parse(clock.iso)<previousMs)
+  // The explicit '日期不詳／時間不詳' header is evidence of an unknown
+  // clock, NOT permission to borrow the previous reply's time.
+  if(pending)pending.gameTime=clock?.iso||null;
+  canon.push({role:'ai',text:t,scanIndex:i,gameTime:clock?.iso||null,...(continued?{autoContinue:true}:{})});
+  if(explicitlyUnknown){
+   unknownGameTimeCount+=pending?2:1;
+   warnings.push('第 '+(i+1)+' 則 Gal AI 原文明示「日期不詳／時間不詳」；本回合時間保留空白，不推測時間');
+  }else{
+   if(previousMs!==null&&Date.parse(clock.iso)<previousMs)
     warnings.push('第 '+(i+1)+' 則遊戲時間早於前一回合（可能是劇情倒流，需核對原文）');
-  previousMs=Date.parse(clock.iso);
+   previousMs=Date.parse(clock.iso);
+  }
   if(continued)autoContinues++;else pairs++;
   pending=null;
  }
@@ -93,7 +112,7 @@ function validate(rows,expectedWorld){
  if(expectedWorld&&sourceNames.length&&sourceNames.some(x=>normalizedWorld(x)!==normalizedWorld(expectedWorld)))
    errors.push('事件世界觀與綁定世界觀不一致');
  return {ok:errors.length===0,errors,warnings,opening,messages:canon,events,pairs,autoContinues,
-  worldNames:sourceNames,scannedRows:rows.length};
+  unknownGameTimeCount,worldNames:sourceNames,scannedRows:rows.length};
 }
 function copyRangeWithLiveStyles(range,trace){
  const root=range.commonAncestorContainer;
@@ -604,5 +623,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.25'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.26'};
 })();
