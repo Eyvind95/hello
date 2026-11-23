@@ -514,11 +514,24 @@ function galNativeVerify(obj,r){
   const clock=raw?.gameTime,clockMs=typeof clock==='string'?Date.parse(clock):NaN;
   if(role==='ai'){
    const explicitlyUnknown=archiveHasExplicitUnknownGalClock(raw);
+   const sourceUnclocked=raw?.nativeClockEvidence==='verified-original-without-game-time';
+   if(sourceUnclocked&&(!raw?.sourceEventId||raw?.sourceKind!=='gal-ai-native'))
+    fail.push('第 '+(i+1)+' 則無時間回覆的原生證據欄位不完整');
+   if(sourceUnclocked&&explicitlyUnknown)
+    fail.push('第 '+(i+1)+' 則原文明示時間不詳，不應標成完全沒有時間欄');
+   if(sourceUnclocked&&archiveParseGalAIClock(raw))
+    fail.push('第 '+(i+1)+' 則宣告原生無時間，但正文包含可解析的時間');
    if(explicitlyUnknown){
     if(clock!==null)fail.push('第 '+(i+1)+' 則原文明示日期／時間不詳，JSON 劇情時間必須為 null');
     else{
      unknownGameTimeCount++;
      warn.push('第 '+(i+1)+' 則 Gal AI 原文日期／時間不詳，保留空白而不推測');
+    }
+   }else if(sourceUnclocked){
+    if(clock!==null)fail.push('第 '+(i+1)+' 則 WHIF 原生未標記劇情時間，JSON 必須保留 null');
+    else{
+     unknownGameTimeCount++;
+     warn.push('第 '+(i+1)+' 則已由 WHIF 原生訊息唯一 ID 與全文核對證實無時間欄；保留空白，不借用開場時間');
     }
    }else{
     if(!Number.isFinite(clockMs))fail.push('第 '+(i+1)+' 則沒有可靠的 Gal AI 劇情時間');
@@ -526,6 +539,7 @@ function galNativeVerify(obj,r){
     if(!header||header.ms!==clockMs)fail.push('第 '+(i+1)+' 則 Gal AI 正文時間與 JSON 時間不一致');
    }
   }else if(role==='me'){
+   if(raw?.nativeClockEvidence)fail.push('第 '+(i+1)+' 則玩家訊息不應帶 AI 原生時間來源標記');
    if(clock===null)unknownGameTimeCount++;
    else if(!Number.isFinite(clockMs))fail.push('第 '+(i+1)+' 則玩家訊息沒有可靠的 Gal AI 劇情時間');
   }
@@ -569,6 +583,11 @@ function galNativeVerify(obj,r){
    Number(obj.validation.unknownGameTimeCount)!==unknownGameTimeCount)
   fail.push('未知劇情時間筆數與來源驗證報告不符：網站核對 '+unknownGameTimeCount+
    '，來源 '+obj.validation.unknownGameTimeCount);
+ const confirmedUntimed=messages.filter(m=>m.role==='ai'&&m.nativeClockEvidence==='verified-original-without-game-time').length;
+ if(obj?.validation?.verifiedUntimedCount!==undefined&&
+   Number(obj.validation.verifiedUntimedCount)!==confirmedUntimed)
+  fail.push('原生驗證無時間回覆筆數不一致：網站核對 '+confirmedUntimed+
+   '，來源 '+obj.validation.verifiedUntimedCount);
  for(let i=0;i<(Array.isArray(obj?.events)?obj.events.length:0);i++){
   const raw=obj.events[i];
   if(typeof raw?.text!=='string'||!raw.text.trim()||raw.text.length>30000)
