@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.24: retry temporary WHIF scroll stalls without skipping source rows. */
+/* Independent Gal AI page scanner. v0.8.25: re-anchor against source rows after lazy-loaded scroll growth. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.24';
+const SCANNER_VERSION='0.8.25';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
@@ -52,7 +52,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.24 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.25 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -704,7 +704,15 @@ async function advanceScanScroll(root,stepPx,wait=sleep){
   // Bottom must still pass the existing 15-second stability proof; NEVER infer
   // completion from an immobile scroll alone.
   if(atBottom)return {moved:false,atBottom:true,geometryShift:false,attempts};
-  if(after<initialTop-4)return {moved:false,atBottom:false,geometryShift:true,attempts};
+  if(after<initialTop-4){
+   // WHIF's infinite-history loader can expand the document while applying
+   // scroll anchoring. In cycle 3 it grew by 20,075px and adjusted scrollTop
+   // backwards by 43px. This is not forward progress: return to the main
+   // loop and require a new ordered, source-ID-aware appendSample overlap.
+   if(root.scrollHeight>heightBefore+5)
+    return {moved:false,atBottom:false,geometryShift:false,reanchor:true,attempts};
+   return {moved:false,atBottom:false,geometryShift:true,attempts};
+  }
  }
  return {moved:false,atBottom:false,geometryShift:false,attempts};
 }
@@ -922,7 +930,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  const exportButton=$('gal-scan-export');
  exportButton.disabled=true;
  exportButton.textContent=preview?'下載三則測試 JSON':'下載原生正史 JSON';
- const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,scanMode='auto',bottomProof=null;
+ const collected=[];let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,geometryReanchors=0,scanMode='auto',bottomProof=null;
  const recoveryLog=[];
  let unpairedReply=null,scrollStall=null;
  const continuedPositions=[];
@@ -1040,12 +1048,33 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    }else bottomFrames=0;
    if(info.added&&stepPx<nominal)stepPx=Math.min(nominal,Math.max(stepPx+12,Math.floor(stepPx*1.2)));
    const movement=await advanceScanScroll(root,stepPx);
+   if(movement.reanchor){
+    geometryReanchors++;
+    const anchor=movement.attempts.at(-1);
+    recoveryLog.push({step:stepCount,kind:'whif-scroll-height-growth-reanchor',
+     scanned:collected.length,scrollTopBefore:anchor.before,scrollTopAfter:anchor.after,
+     scrollHeightBefore:anchor.scrollHeightBefore,scrollHeightAfter:anchor.scrollHeightAfter});
+    if(geometryReanchors>8){
+     scrollStall={...movement,step:stepCount,scanned:collected.length};
+     throw Error('WHIF 連續 9 次擴張捲動內容卻無法前進，已停止以防止無限循環');
+    }
+    // Do not accept the backwards position as progress or skip forward.
+    // Resample the current viewport; appendSample must prove that it
+    // overlaps the last trusted rows before any further scroll is allowed.
+    bottomFrames=0;
+    status('↻ WHIF 動態載入更多內容（高度 '+anchor.scrollHeightBefore+' → '+
+     anchor.scrollHeightAfter+'px），捲動位置已調整；正在重新核對前後訊息。'+
+     '\n已保留 '+collected.length+' 則，尚未匯出。');
+    stepCount++;
+    continue;
+   }
    if(!movement.moved&&!movement.atBottom){
     scrollStall={...movement,step:stepCount,scanned:collected.length};
     throw Error(movement.geometryShift
-     ?'WHIF 捲動位置突然倒退，為避免漏掃已停止；請提供含 scrollStall 的診斷'
+     ?'WHIF 捲動位置無新內容載入卻突然倒退，為避免漏掃已停止；請提供含 scrollStall 的診斷'
      :'WHIF 捲動停滯，已重試 4 次仍無法向下移動，也尚未確認到底；請提供含 scrollStall 的診斷');
    }
+   if(movement.moved)geometryReanchors=0;
    stepCount++;
   }
   if(cancelled)throw Error('使用者停止掃描');
