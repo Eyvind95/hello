@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.32: diagnose legacy opening preview pairing without exposing story text. */
+/* Independent Gal AI page scanner. v0.8.33: verify historical untimed AI replies against unique WHIF native source. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.32';
+const SCANNER_VERSION='0.8.33';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=8000,BOTTOM_POLL_MS=750;
@@ -52,7 +52,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.32 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.33 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -735,6 +735,9 @@ function canonical(rows,valid,preview){
  };
  const messages=valid.messages.map((m,i)=>build(m,i,'message'));
  for(const [i,row] of valid.messages.entries()){
+  if(row.verifiedUntimedNative)messages[i].nativeClockEvidence='verified-original-without-game-time';
+ }
+ for(const [i,row] of valid.messages.entries()){
   if(row.autoContinue)messages[i].autoContinue={
    kind:'whif-adjacent-character-replies',previousSourceEventId:messages[i-1].sourceEventId
   };
@@ -749,7 +752,7 @@ function canonical(rows,valid,preview){
   opening:valid.opening,messages,events,validation:{ok:valid.ok,pairs:valid.pairs,events:events.length,
     ...(valid.autoContinues?{autoContinues:valid.autoContinues}:{}),
     openingChars:valid.opening.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,
-    unknownGameTimeCount:valid.unknownGameTimeCount||0,
+    unknownGameTimeCount:valid.unknownGameTimeCount||0,verifiedUntimedCount:valid.verifiedUntimedCount||0,
     warnings:valid.warnings,errors:valid.errors},rawRows:rows.length,
   readOnlyUntilImported:!preview,note:preview?'僅供三則測試驗收。':'原生來源對完整對話及事件具有優先權；不會更動副駕駛聊天、世界觀或補充筆記。覆蓋前需在檔案館確認備份。'
  };
@@ -778,7 +781,8 @@ function applyNativeFormat(entry,rows,sourceCounts,scanMode,nativeCopy='',event=
   const result=core.compareNativeParagraphs(entry.text,nativeText,{
    source:nativeCopy?'native-copy':event?'whif-event-content':'whif-message-content',
    statusText:metadata?.statusText,codeBlocks:metadata?.codeBlocks,
-   chapterTitle:nativeCopy?undefined:source?.chapterTitle,event,opening,eventTitle:event?entry.title:undefined
+   chapterTitle:nativeCopy?undefined:source?.chapterTitle,event,opening,
+   verifiedUntimedNative:entry.verifiedUntimedNative===true,eventTitle:event?entry.title:undefined
   });
   check.comparison=result.comparison;
   if(result.text!==null){
@@ -1097,12 +1101,14 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
      explicitUnknownTime:core.isExplicitUnknownGameTime(row.text),
      clock:parsed?.iso||null,
      acceptedOpening:index===0?core.isAllowedOpeningRow(row):null,
+     verifiedUntimedNative:index>0&&row.role==='ai'?validation.messages.some(m=>m.scanIndex===index&&m.verifiedUntimedNative===true):false,
      nativeSourceFound:native?.reason==='available',
      nativeMarkerCount:Number.isInteger(native?.markerCount)?native.markerCount:null};
    });
    diagnostic={...(diagnostic||{}),openingPreviewStructure:{
     collected:collected.length,rowRoles:rowFacts.map(row=>row.role).join(' → '),
     rows:rowFacts,pairs:validation.pairs,events:validation.events.length,
+    verifiedUntimedCount:validation.verifiedUntimedCount||0,
     validationOk:validation.ok,errors:validation.errors.slice(0,12)}};
    if(collected.length!==3||validation.pairs!==1||validation.events.length||!validation.ok){
     const reason=validation.errors.length?validation.errors.slice(0,4).join('；'):
