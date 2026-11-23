@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.18: stable-bottom proof + previous-complete regression guard. */
+/* Independent Gal AI page scanner. v0.8.19: local event three-row probe. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.18';
+const SCANNER_VERSION='0.8.19';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
@@ -20,11 +20,11 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.18 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.19 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
- '<button id="gal-scan-preview">掃 3 則停下（測試）</button></div>'+
+ '<button id="gal-scan-preview">掃 3 則停下（開場測試）</button><button id="gal-scan-event-probe">🎯 事件三則測試</button></div>'+
  '<details open><summary>首則 AI 回覆的段落驗收</summary>'+
  '<label for="gal-scan-native-copy">無法自動讀取時，可貼上 Gal AI「複製」的完整首則 AI 回覆</label>'+
  '<textarea id="gal-scan-native-copy" rows="3" maxlength="30000" spellcheck="false"></textarea>'+
@@ -40,6 +40,7 @@ function mount(){
  $('gal-scan-pick').onclick=()=>chooseOpening();
  $('gal-scan-retry').onclick=()=>{if(!busy&&target)scan(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
  $('gal-scan-preview').onclick=()=>{if(!busy&&target)scan(target,true);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
+ $('gal-scan-event-probe').onclick=()=>{if(!busy&&target)eventThreeRowProbe(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
  $('gal-scan-paragraph-preview').onclick=()=>{if(!busy&&target)scan(target,true,true);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
  $('gal-scan-diagnostics').onclick=()=>{const report=diagnostic||inspect();
    const sanitized=JSON.stringify(report,null,2);
@@ -754,6 +755,100 @@ function showLocalDifferences(results){
  $('gal-scan-difference').hidden=hidden;
  $('gal-scan-difference-label').hidden=hidden;
 }
+
+function pickVisibleEventTriple(rows,root){
+ const container=isDocumentRoot(root)?{top:0,bottom:innerHeight}:root.getBoundingClientRect();
+ const center=(container.top+container.bottom)/2;
+ const candidates=[];
+ for(let index=0;index<rows.length;index++){
+  const event=rows[index];
+  if(event.eventType!=='event'||event.role!=='ai')continue;
+  const previous=rows[index-1],next=rows[index+1];
+  if(!previous||previous.role!=='ai'||previous.eventType||!next||next.role!=='me')continue;
+  const rect=event.scanNode?.getBoundingClientRect?.();
+  const y=rect?(rect.top+rect.bottom)/2:center;
+  candidates.push({index,previous,event,next,distance:Math.abs(y-center)});
+ }
+ if(!candidates.length)throw Error('目前畫面找不到完整的「上一則 Gal AI → 事件 → 下一則我」。請把問題事件捲到畫面中央附近再按一次。');
+ candidates.sort((a,b)=>a.distance-b.distance);
+ return candidates[0];
+}
+function eventProbeRow(row,position,index){
+ const source=row.formatSource?.nativeReply;
+ return {
+  position,index,role:row.role,eventType:row.eventType||null,
+  scannedText:row.text,
+  nativeText:source?.reason==='available'?source.text:null,
+  nativeReason:source?.reason||'native-source-unavailable',
+  sourceMessageId:source?.messageId||null,
+  eventEvidence:source?.eventEvidence||null
+ };
+}
+async function eventThreeRowProbe(profile){
+ if(busy)return {ok:false,error:'正在掃描中'};
+ if(core?.version!==SCANNER_VERSION)return {ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'};
+ busy=true;cancelled=false;paused=false;target=profile;mount();localDifferences.clear();
+ $('gal-scan-difference').hidden=true;$('gal-scan-difference-label').hidden=true;
+ try{
+  const shot=snapshot(null,'auto',false,true);
+  diagnostic=inspect();
+  if(!shot.rows.length)throw Error('目前畫面沒有可讀取的訊息');
+  const scanMode=shot.method==='world-header-reaction-bar'?'bounded':'legacy';
+  const picked=pickVisibleEventTriple(shot.rows,shot.root);
+  const rows=[picked.previous,picked.event,picked.next];
+  const sourceCounts=new Map();
+  for(const row of rows){
+   const id=row.formatSource?.nativeReply?.messageId;
+   if(id)sourceCounts.set(id,(sourceCounts.get(id)||0)+1);
+  }
+  const previousEntry={role:'ai',text:picked.previous.text,gameTime:core.parseGameTime(picked.previous.text)?.iso||null,scanIndex:0};
+  const eventEntry={role:'ai',text:picked.event.text,gameTime:core.parseGameTime(picked.event.text)?.iso||null,
+   scanIndex:1,title:core.clean(picked.event.text.split('\n')[0]||'')};
+  const previousFormat=applyNativeFormat(previousEntry,rows,sourceCounts,scanMode,'',false);
+  const eventFormat=applyNativeFormat(eventEntry,rows,sourceCounts,scanMode,'',true);
+  showLocalDifferences([previousFormat,eventFormat]);
+  const eventTestId=crypto.randomUUID();
+  const result={
+   format:'gal-ai-event-three-row-test',version:1,generatedAt:new Date().toISOString(),
+   scannerVersion:SCANNER_VERSION,coreVersion:core.version,eventTestId,
+   scope:'event-three-row-preview',
+   source:{url:location.origin+location.pathname,origin:location.origin,path:location.pathname},
+   target:{cycleId:profile.cycleId,worldName:profile.worldName,cycleTitle:profile.cycleTitle,
+    manager:profile.managerNames.join('、'),managerNames:profile.managerNames},
+   selection:{method:'nearest-visible-valid-event',distanceFromViewportCenterPx:Math.round(picked.distance),
+    visibleRowCount:shot.rows.length,scanMode},
+   rows:[
+    {...eventProbeRow(picked.previous,'above-ai',0),exportedText:previousEntry.text},
+    {...eventProbeRow(picked.event,'event',1),exportedText:eventEntry.text},
+    {...eventProbeRow(picked.next,'below-me',2),exportedText:picked.next.text}
+   ],
+   paragraphAudit:{
+    previousAi:summarizeNativeFormats([previousFormat]),
+    event:summarizeNativeFormats([eventFormat],true)
+   },
+   note:'局部事件三則測試：只讀目前畫面附近的上一則 Gal AI、事件、下一則玩家回應；不匯入、不覆蓋正式正史。'
+  };
+  diagnostic={...diagnostic,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+   eventThreeRowTest:{eventTestId,selection:result.selection,
+    previousAi:previousFormat.check,event:eventFormat.check,
+    localDifferences:{previousAi:previousFormat.localContext||null,event:eventFormat.localContext||null}}};
+  downloadJson('Gal_AI_事件三則測試_',result);
+  downloadJson('輪迴檔案館_事件三則診斷_',diagnostic);
+  const diff=eventFormat.localContext;
+  status('✅ 事件三則測試完成，不會修改正式正史。\n'+
+   '上一則 Gal AI：'+previousFormat.check.reason+'\n事件：'+eventFormat.check.reason+
+   '\n下一則玩家回應：已擷取'+
+   (diff?'\n事件首個差異：掃描「'+diff.scanned+'」／native「'+diff.native+'」':'')+
+   '\n已下載三則測試 JSON 與三則診斷 JSON。');
+  return {ok:true,eventTestId,eventReason:eventFormat.check.reason};
+ }catch(error){
+  const message=String(error?.message||error);
+  diagnostic={...(diagnostic||inspect()),scannerVersion:SCANNER_VERSION,coreVersion:core.version,eventThreeRowError:message};
+  status('⛔ 事件三則測試失敗：'+message+'\n沒有啟動完整掃描，也沒有修改正式正史。');
+  return {ok:false,error:message};
+ }finally{busy=false}
+}
+
 async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.randomUUID()){
  if(busy)return {ok:false,error:'正在掃描中'};
  if(core?.version!==SCANNER_VERSION)return {ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'};
@@ -1000,6 +1095,23 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  if(msg?.type==='gal-scan-ping'){respond({ok:true,version:SCANNER_VERSION,coreVersion:core?.version,busy,hasResult:!!lastResult,
   scanRunId:activeRun?.scanRunId||null});return false}
+ if(msg?.type==='gal-scan-event-probe'){
+  if(busy){respond({ok:false,error:'掃描進行中'});return false}
+  if(core?.version!==SCANNER_VERSION){respond({ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'});return false}
+  const p=msg.profile||{};
+  if(typeof p.cycleId!=='string'||!p.cycleId||typeof p.worldName!=='string'||!p.worldName){
+   respond({ok:false,error:'必須先選擇目標輪迴與世界觀'});return false;
+  }
+  const managerNames=Array.isArray(p.managerNames)?p.managerNames:[p.manager];
+  if(managerNames.length<1||managerNames.length>2||
+     managerNames.some(name=>typeof name!=='string'||!name.trim()||/[、，,;；\r\n]/u.test(name))||
+     new Set(managerNames.map(name=>name.trim())).size!==managerNames.length){
+   respond({ok:false,error:'必須先儲存 1 至 2 位不同的副駕駛'});return false;
+  }
+  eventThreeRowProbe({uid:String(p.uid||''),worldName:p.worldName,cycleId:p.cycleId,
+    cycleTitle:String(p.cycleTitle||''),managerNames:managerNames.map(name=>name.trim())});
+  respond({ok:true,started:true,mode:'event-three-row-preview'});return false;
+ }
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
   if(core?.version!==SCANNER_VERSION){respond({ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'});return false}
@@ -1020,5 +1132,5 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  return false;
 });
-globalThis.GalArchivePageScanner={scan,version:SCANNER_VERSION};
+globalThis.GalArchivePageScanner={scan,eventThreeRowProbe,version:SCANNER_VERSION};
 })();
