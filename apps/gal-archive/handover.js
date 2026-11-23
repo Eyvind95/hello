@@ -104,16 +104,17 @@ function reviewCard(entry){
 }
 function renderReviewSection(entries){
  const peer=entries.filter(e=>e.kind==='review').sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+ const editing=peer.find(e=>e.id===state.editingReviewId);
  return '<h3>大家的評語</h3>'+
   '<p class="note">同一份交接稿可以收到不同前輩的評價；可以貼入數千字的完整評論，保留原本的段落。評語者、評價對象與原文會獨立保存，不會混入正史。</p>'+
   '<div class="actions"><button class="btn small" type="button" data-ha-action="download-reviews">下載全部評語 TXT</button></div>'+
   (peer.length?peer.map(reviewCard).join(''):'<p class="note">目前還沒有其他人的評語。</p>')+
-  '<div class="divider"></div><h3>＋新增別人的評語</h3>'+
-  '<label for="handoverReviewer">評語者 *</label><input id="handoverReviewer" maxlength="180" placeholder="例如：暗夢後輩">'+
-  '<label for="handoverReviewSubject">評價對象／範圍（選填）</label><input id="handoverReviewSubject" maxlength="250" placeholder="例如：耀斑、赤紅、鐵墓、小貓與暗夢的五份交接稿">'+
-  '<label for="handoverReviewTitle">評語標題（選填）</label><input id="handoverReviewTitle" maxlength="200" placeholder="例如：五代交接稿總評">'+
-  '<label for="handoverReviewText">評語原文 *</label><textarea id="handoverReviewText" class="tall" maxlength="100000" placeholder="可一次貼入完整長篇評語，包含分段、換行、優缺點及總評。"></textarea>'+
-  '<div class="actions topsp"><button type="button" class="btn primary" data-ha-action="add-review">儲存評語</button></div>';
+  '<div class="divider"></div><h3>'+(editing?'編輯既有評語':'＋新增別人的評語')+'</h3>'+
+  '<label for="handoverReviewer">評語者 *</label><input id="handoverReviewer" maxlength="180" value="'+escapeHTML(editing?.reviewer||'')+'" placeholder="例如：暗夢後輩">'+
+  '<label for="handoverReviewSubject">評價對象／範圍（選填）</label><input id="handoverReviewSubject" maxlength="250" value="'+escapeHTML(editing?.subject||'')+'" placeholder="例如：耀斑、赤紅、鐵墓、小貓與暗夢的五份交接稿">'+
+  '<label for="handoverReviewTitle">評語標題（選填）</label><input id="handoverReviewTitle" maxlength="200" value="'+escapeHTML(editing?.title||'')+'" placeholder="例如：五代交接稿總評">'+
+  '<label for="handoverReviewText">評語原文 *</label><textarea id="handoverReviewText" class="tall" maxlength="100000" placeholder="可一次貼入完整長篇評語，包含分段、換行、優缺點及總評。">'+escapeHTML(editing?.text||'')+'</textarea>'+
+  '<div class="actions topsp"><button type="button" class="btn primary" data-ha-action="add-review">'+(editing?'更新評語':'儲存評語')+'</button>'+(editing?'<button type="button" class="btn small" data-ha-action="cancel-review-edit">取消編輯</button>':'')+'</div>';
 }
 function renderSelfSection(entries,thread){
  const existing=entries.find(e=>e.kind==='self-review');
@@ -231,7 +232,7 @@ function downloadReviewTxt(e,thread){
    '評語者：'+(e.reviewer||'未署名'),
    e.subject?'評價範圍：'+e.subject:'',
    e.title?'標題：'+e.title:'',
-   '保存時間：'+fmtDate(e.createdAt),'',e.text||''].filter((v,i)=>v!==''||i===7);
+   '保存時間：'+fmtDate(e.createdAt),'',e.text||''].filter(v=>v!==undefined);
  downloadBlob(new Blob([lines.join('\n')],{type:'text/plain;charset=utf-8'}),fileName(thread.title)+'_'+fileName(e.reviewer||'評語')+'_'+(e.kind==='self-review'?'自評':'評語')+'.txt');
 }
 function downloadAllReviews(entries,thread){
@@ -381,6 +382,14 @@ function bindActions(){
   const btn=e.target.closest('[data-ha-action]');if(!btn)return;
   const action=btn.dataset.haAction,entryId=btn.dataset.haId,t=activeThread(worldId());if(!t)return;
   if(action==='back'){close();window.ArchiveHandoverBridge?.rerender?.();return}
+  if(action==='switch-view'){
+   if(!['files','reviews','self'].includes(btn.dataset.haView))return;
+   state.view=btn.dataset.haView;state.editingReviewId=null;
+   renderActive(worldId());return;
+  }
+  if(action==='cancel-review-edit'){
+   state.editingReviewId=null;renderActive(worldId());return;
+  }
   doSafe(async()=>{
    if(action==='upload'){
     const input=$('handoverFiles'),files=Array.from(input?.files||[]);
@@ -397,12 +406,57 @@ function bindActions(){
     if(text.length>100000)throw Error('單則備註最多 100,000 字');
     await addEntries(t,[{id:uuid(),threadId:t.id,kind:'note',text,createdAt:new Date().toISOString(),order:Date.now()}]);
     message('✅ 已加入文字備註');
+   }else if(action==='add-review'){
+    const reviewer=String($('handoverReviewer')?.value||'').trim();
+    const text=String($('handoverReviewText')?.value||'').trim();
+    const subject=String($('handoverReviewSubject')?.value||'').trim();
+    const title=String($('handoverReviewTitle')?.value||'').trim();
+    if(!reviewer||reviewer.length>180)throw Error('請填寫評語者（最多 180 字）');
+    if(!text||text.length>100000)throw Error('請貼入完整評語（最多 100,000 字）');
+    if(subject.length>250||title.length>200)throw Error('評語標題或範圍太長');
+    const existingId=state.editingReviewId,now=new Date().toISOString();
+    const entry={id:existingId||uuid(),threadId:t.id,kind:'review',reviewer,subject,title,text,updatedAt:now,createdAt:now,order:Date.now()};
+    await saveReviewRecord(t,entry,existingId);
+    state.editingReviewId=null;await renderActive(worldId());
+    message(existingId?'✅ 已更新評語（保留原始 ID）':'✅ 已儲存 '+reviewer+' 的評語');
+   }else if(action==='edit-review'){
+    const record=(await listEntries(t.id)).find(e=>e.id===entryId&&e.kind==='review');
+    if(!record)throw Error('找不到這筆評語');
+    state.editingReviewId=record.id;await renderActive(worldId());
+    $('handoverReviewer')?.scrollIntoView({block:'center',behavior:'smooth'});
+    message('已載入原評語，可修改後點「更新評語」。');
+   }else if(action==='download-review'){
+    const record=(await listEntries(t.id)).find(e=>e.id===entryId&&e.kind==='review');
+    if(!record)throw Error('找不到這筆評語');
+    downloadReviewTxt(record,t);
+   }else if(action==='download-reviews'){
+    await downloadAllReviews(await listEntries(t.id),t);
+   }else if(action==='save-self'){
+    const reviewer=String($('handoverSelfAuthor')?.value||'').trim(),text=String($('handoverSelfText')?.value||'').trim();
+    if(!reviewer||reviewer.length>180)throw Error('請填寫自評者（最多 180 字）');
+    if(!text||text.length>100000)throw Error('請填寫自己的完整自評（最多 100,000 字）');
+    const old=(await listEntries(t.id)).find(e=>e.kind==='self-review'),now=new Date().toISOString();
+    const entry={id:old?.id||uuid(),threadId:t.id,kind:'self-review',reviewer,text,
+     createdAt:old?.createdAt||now,updatedAt:now,order:old?.order||Date.now()};
+    await saveReviewRecord(t,entry,old?.id||null);
+    message('✅ '+reviewer+' 的自評已保存，與他人評語分開。');
+   }else if(action==='download-self'||action==='delete-self'){
+    const record=(await listEntries(t.id)).find(e=>e.kind==='self-review');
+    if(!record)throw Error('這份交接對話尚無自評');
+    if(action==='download-self')downloadReviewTxt(record,t);
+    else if(confirm('確定永久刪除這份自評？建議先下載備份。'))await removeEntry(t,record);
+   }else if(action==='edit-author'){
+    const answer=prompt('請輸入交接稿的實際撰寫者／副駕駛（可留空）：',t.author||'');
+    if(answer===null)return;
+    if(answer.trim().length>180)throw Error('撰寫者名稱最多 180 字');
+    await putThread({...t,author:answer.trim(),updatedAt:new Date().toISOString()});
+    await reloadThreads();await renderActive(worldId());
    }else if(action==='download'||action==='preview'||action==='delete-entry'){
     const entry=(await listEntries(t.id)).find(x=>x.id===entryId);
     if(!entry)throw Error('找不到這筆交接內容，請重新開啟');
     if(action==='download'){if(!(entry.blob instanceof Blob))throw Error('找不到檔案內容');downloadBlob(entry.blob,entry.name)}
     else if(action==='preview')previewEntry(entry);
-    else if(confirm('確定要永久刪除這筆'+(entry.kind==='file'?'檔案（含原檔）':'備註')+'？'))await removeEntry(t,entry);
+    else if(confirm('確定要永久刪除這筆'+(entry.kind==='file'?'檔案（含原檔）':entry.kind==='review'?'他人評語':'備註')+'？'))await removeEntry(t,entry);
    }else if(action==='rename'){
     const answer=prompt('重新命名這份交接對話：',t.title);
     if(answer===null)return;
