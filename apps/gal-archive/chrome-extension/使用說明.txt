@@ -236,3 +236,11 @@ V0.8.10 測試版 — Browser Use 入口放大與核心版本同步
 - manifest、gal-content.js、gal-core.js 現在統一為 0.8.10。
 - WHIF 右下角「🧭 開啟輪迴掃描助手」改為至少 220×52px，右距 24px、底距 96px，避免 Browser Use／Computer Use 點到 Windows 工作列。
 - 點擊入口仍只開啟助手面板，不會自動開始掃描；既有綁定與掃描核心邏輯不變。
+
+
+V0.8.11 測試版 — 修正 ChatGPT content.js 發布截斷
+- 修正 V0.8.10 套件中的 content.js 在第 1000 行被發布流程截斷，造成 Chrome 擴充功能顯示「Uncaught SyntaxError: Unexpected end of input」。
+- 已從皮卡提供的 V0.8.8 原始 raw 檔完整還原 content.js（1459 行原始內容；讀入後含結尾換行共 1460 行）。
+- 完整 content.js、gal-content.js、gal-core.js 均通過 JavaScript 語法檢查。
+- manifest、gal-content.js、gal-core.js 統一為 0.8.11。
+- V0.8.10 的放大上移 WHIF Browser Use 入口保留不變。
