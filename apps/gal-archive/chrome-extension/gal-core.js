@@ -91,7 +91,7 @@ function copyRangeWithLiveStyles(range,trace){
  const root=range.commonAncestorContainer;
  const base=root.nodeType===Node.ELEMENT_NODE?root:root.parentElement;
  const props=[
-  ['bg','backgroundColor'],['italic','fontStyle'],['display','display'],['white-space','whiteSpace'],
+  ['bg','backgroundColor'],['italic','fontStyle'],['font-weight','fontWeight'],['display','display'],['white-space','whiteSpace'],
   ['border-width','borderLeftWidth'],['border-style','borderLeftStyle'],['border-color','borderLeftColor']
  ];
  const originals=[...(base?.querySelectorAll('*')||[])].filter(el=>range.intersectsNode(el));
@@ -132,6 +132,13 @@ function markdownFromDom(node,options={}){
  const style=(n,key,prop)=>source(n,key)||(n?.nodeType===E?getComputedStyle(n)[prop]:'');
  const color=n=>style(n,'bg','backgroundColor');
  const italicStyle=n=>style(n,'italic','fontStyle');
+ const fontWeight=n=>style(n,'font-weight','fontWeight');
+ const isBoldWeight=value=>{
+  const raw=String(value||'').trim().toLowerCase();
+  if(raw==='bold'||raw==='bolder')return true;
+  const numeric=parseInt(raw,10);
+  return Number.isFinite(numeric)&&numeric>=600;
+ };
  const display=n=>style(n,'display','display');
  const whiteSpace=n=>style(n,'white-space','whiteSpace');
  const borderWidth=n=>style(n,'border-width','borderLeftWidth');
@@ -192,6 +199,8 @@ function markdownFromDom(node,options={}){
   const italicNow=(tag==='em'||tag==='i'||italicStyle(n)==='italic')
     &&!inItalic&&(n===node||italicStyle(n.parentElement)!=='italic');
   const nextItalic=inItalic||italicNow||italicStyle(n)==='italic';
+  const boldNow=(tag==='strong'||tag==='b'||isBoldWeight(fontWeight(n)))&&
+    (n===node||!isBoldWeight(fontWeight(n.parentElement)));
   if(options.metadata&&n.matches(status)&&/^(?:pre|pre-wrap)$/.test(whiteSpace(n))){
    (options.metadata.codeBlocks??=[]).push(n.textContent);
    if(parseGameTime(n.textContent))options.metadata.statusText||=n.textContent;
@@ -254,7 +263,7 @@ function markdownFromDom(node,options={}){
   }
   let out=inner;
   if(italicNow&&out.trim())out=out.replace(/\S[\s\S]*\S|\S/,t=>'*'+t+'*');
-  if((tag==='strong'||tag==='b')&&out.trim())out='**'+out.trim()+'**';
+  if(boldNow&&out.trim())out='**'+out.trim()+'**';
   if(tag==='code'&&n.parentElement?.tagName!=='PRE')return String.fromCharCode(96)+out+String.fromCharCode(96);
   if(tag==='pre')return '\n'+String.fromCharCode(96).repeat(3)+'\n'+out+'\n'+String.fromCharCode(96).repeat(3)+'\n';
   if(tag==='li')return '\n- '+out;
@@ -296,6 +305,26 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const statusKey=unspaced(statusText);
  const leading=text.match(preamble);
  let preambleMetadata='not-present';
+ // Untimed WHIF events can still carry one or two hidden leading templates.
+ // Strip them only when the remaining native text becomes an exact full-text
+ // match (ignoring whitespace), so a real content difference can never be
+ // accepted just because the event has no game clock.
+ if(options.source==='whif-event-content'&&options.event&&!statusKey&&leading&&!preamble.test(scanned)){
+  let candidate=text,removed=0;
+  while(removed<2){
+   const template=candidate.match(preamble);
+   if(!template)break;
+   const label=template[1].trim();
+   if(/^(?:(?:user|char|character)$|(?:img|image)\s*:)/i.test(label))break;
+   candidate=candidate.slice(template[0].length);
+   removed++;
+   if(unspaced(candidate)===unspaced(scanned)){
+    record('leading-whif-event-hidden-template',removed,text,candidate);
+    text=candidate;
+    break;
+   }
+  }
+ }
  if(options.source==='whif-message-content'&&leading&&!preamble.test(scanned)){
   const label=leading[1].trim();
   const after=text.slice(leading[0].length);
@@ -443,7 +472,10 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
  const contentEqual=scanChars.join('')===nativeChars.join('');
  const clock=parseGameTime(scanned)?.iso;
- const clockEqual=Boolean(clock&&clock===parseGameTime(text)?.iso);
+ const nativeClock=parseGameTime(text)?.iso;
+ const clockEqual=options.event
+  ?(clock===nativeClock&&(Boolean(clock)||(!clock&&!nativeClock)))
+  :Boolean(clock&&clock===nativeClock);
  const statusCompact=unspaced(statusText);
  const positions=[...text.matchAll(/(\S)(\s*)/gu)];
  const statusPrefix=options.event&&titleKey&&unspaced(text).startsWith(titleKey+statusCompact)
@@ -526,5 +558,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.13'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.14'};
 })();
