@@ -862,3 +862,109 @@ test('cycle 5 preview does not invent missing first reply clock; reports the und
  assert.match(v.errors.join('\n'),/第 3 則 Gal AI 回覆缺少可辨識的劇情日期和時間/);
  assert.equal(context.GalArchiveCore.isAllowedOpeningRow(rows[0]),true);
 });
+
+
+test('cycle 5 source-backed untimed first reply is paired with null clock and native paragraph formatting',()=>{
+ const opening='｜2026年8月22日（星期六）｜\n｜🕒18:42｜🌤️晴轉多雲｜\n基甫納前線基地，7F。';
+ const rendered='新隊員的身影消失在走廊盡頭，房門輕輕闔上。\n米契爾小聲地說：他走路真的好安靜喔。\n洛倫斯淡淡回答：行了。';
+ const native='新隊員的身影消失在走廊盡頭，房門輕輕闔上。\n\n米契爾小聲地說：「他走路真的好安靜喔。」\n\n洛倫斯淡淡回答：「行了。」';
+ const rows=[
+  {role:'ai',text:opening},
+  {role:'me',text:'嗯，你們好\n打了聲招呼後，進到房間'},
+  {role:'ai',text:rendered,formatSource:{nativeReply:{
+   reason:'available',markerCount:1,messageId:'original-first-reply',
+   scannedText:rendered,text:native
+  }}}
+ ];
+ const v=validate(rows,'全員精神穩定，感情除外');
+ assert.equal(v.ok,true,JSON.stringify(v.errors));
+ assert.equal(v.pairs,1);
+ assert.equal(v.verifiedUntimedCount,1);
+ assert.equal(v.unknownGameTimeCount,2);
+ assert.equal(v.messages[0].gameTime,null);
+ assert.equal(v.messages[1].gameTime,null);
+ assert.equal(v.messages[1].verifiedUntimedNative,true);
+ const cmp=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  source:'whif-message-content',verifiedUntimedNative:true
+ });
+ assert.equal(cmp.comparison.contentEqual,true);
+ assert.equal(cmp.comparison.clockEqual,true);
+ assert.equal(cmp.comparison.verifiedNoClock,true);
+ assert.equal(cmp.comparison.openingQuoteProjection.omittedQuotePairs,2);
+ assert.equal(cmp.text,native);
+ assert.ok(v.warnings.some(w=>w.includes('保留 null')));
+});
+
+test('untimed WHIF content can carry one hidden leading context only after entire source comparison',()=>{
+ const rendered='門輕輕闔上。米契爾說：很好。';
+ const native='{{舊格式章節}}\n\n門輕輕闔上。\n\n米契爾說：「很好。」';
+ const make=(text,id='unique',scannedText=rendered)=>({
+  role:'ai',text:rendered,formatSource:{nativeReply:{
+   reason:'available',messageId:id,markerCount:1,scannedText,text
+  }}
+ });
+ const rows=[
+  {role:'ai',text:'這是獨立輪迴開場。'},
+  {role:'me',text:'我走進房間。'},
+  make(native)
+ ];
+ const v=validate(rows);
+ assert.equal(v.ok,true,JSON.stringify(v.errors));
+ const cmp=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  source:'whif-message-content',verifiedUntimedNative:true
+ });
+ assert.equal(cmp.comparison.contentEqual,true);
+ assert.equal(cmp.comparison.clockEqual,true);
+ assert.equal(cmp.text,'門輕輕闔上。\n\n米契爾說：「很好。」');
+ assert.equal(cmp.comparison.formatMarkers.some(m=>m.kind==='verified-untimed-leading-context'),true);
+});
+
+test('unclocked AI requires unique matching original; cannot hide source time or tamper prose',()=>{
+ const rendered='洛倫斯淡淡看他一眼。';
+ const good='洛倫斯淡淡看他一眼。';
+ const make=(source={},text=rendered)=>({role:'ai',text,formatSource:{nativeReply:{
+  reason:'available',messageId:'same',markerCount:1,scannedText:text,text:good,...source
+ }}});
+ const prefix=[{role:'ai',text:'原始無時間開場。'},{role:'me',text:'你們好。'}];
+ const cases=[
+  make({reason:'native-reader-unavailable'}),
+  make({markerCount:2}),
+  make({messageId:null}),
+  make({scannedText:'別的訊息'}),
+  make({text:'洛倫斯冷冷看他一眼。'}),
+  make({text:'｜2026年8月22日｜\n｜🕒18:43｜\n'+good}),
+  make({text:'｜2026年8月22日｜\n'+good}),
+  make({text:'{{image:secret.png}}\n'+good}),
+  make({text:'洛倫斯「淡淡看他一眼。'}),
+  make({text:good+'其他故事'})
+ ];
+ for(const row of cases){
+  const v=validate([...prefix,row]);
+  assert.equal(v.ok,false,JSON.stringify(row.formatSource.nativeReply));
+  assert.match(v.errors.join(' '),/原生無時間來源未通過/);
+ }
+ const dup=validate([...prefix,make(),make()]);
+ assert.equal(dup.ok,false);
+ assert.match(dup.errors.join(' '),/non-unique-native-message-id/);
+ const noProof=validate([...prefix,{role:'ai',text:rendered}]);
+ assert.equal(noProof.ok,false);
+ assert.equal(noProof.verifiedUntimedCount,0);
+});
+
+test('source-proven untimed replies do not weaken regular timed AI or explicit unknown-clock handling',()=>{
+ const opening='這裡是獨立開場。';
+ const p='玩家打聲招呼。';
+ const timed='｜2026年8月22日｜\n｜🕒18:43｜\n米契爾回應。';
+ const original=[
+  {role:'ai',text:opening},{role:'me',text:p},{role:'ai',text:timed}
+ ];
+ const v=validate(original);
+ assert.equal(v.ok,true);
+ assert.equal(v.verifiedUntimedCount,0);
+ assert.equal(v.messages[1].gameTime,'2026-08-22T10:43:00.000Z');
+ const wronglyLabeled=context.GalArchiveCore.compareNativeParagraphs(
+  '回應的狀態欄被隱藏。','｜2026年8月22日｜\n｜🕒18:43｜\n回應的狀態欄被隱藏。',
+  {source:'whif-message-content',verifiedUntimedNative:true}
+ );
+ assert.equal(wronglyLabeled.text,null);
+});
