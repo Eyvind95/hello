@@ -229,3 +229,10 @@ V0.8.9 測試版 — Browser Use 可直接開啟 Gal AI 助手
 - 頁面入口只讀取「該 WHIF URL 已儲存的 galProfilesByPage 綁定」，沒有綁定就停止，不沿用其他聊天、不猜 cycleId／世界觀。
 - 點開助手只注入並顯示既有 V0.8.8 掃描面板，不自動開始掃描。Browser Use 可再按「▶ 開始／重新掃描」或「掃 3 則停下（測試）」。
 - 網站權限只增加 whif.io／www.whif.io 的 /chat/ 頁面入口；ChatGPT 掃描與 Firebase 規則不變。
+
+
+V0.8.10 測試版 — Browser Use 入口放大與核心版本同步
+- 修正 V0.8.9 的版本不一致：manifest 與 gal-content.js 為 0.8.9，但 gal-core.js 仍回報 0.8.8，導致入口驗證被安全停止。
+- manifest、gal-content.js、gal-core.js 現在統一為 0.8.10。
+- WHIF 右下角「🧭 開啟輪迴掃描助手」改為至少 220×52px，右距 24px、底距 96px，避免 Browser Use／Computer Use 點到 Windows 工作列。
+- 點擊入口仍只開啟助手面板，不會自動開始掃描；既有綁定與掃描核心邏輯不變。
