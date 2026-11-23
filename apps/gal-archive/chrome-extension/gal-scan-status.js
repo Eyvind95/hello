@@ -24,13 +24,26 @@ function installGalScanStatus(api){
   }catch{ /* A missing tab or URL has no WHIF source. */ }
   return null;
  }
+ function safeName(value,fallback='輪迴'){
+  const name=String(value||'').trim().replace(/[\\/:*?"<>|]/g,'_').replace(/\s+/g,' ').replace(/[. ]+$/g,'');
+  return (name||fallback).slice(0,120);
+ }
+ const taipeiDate=()=>new Date(Date.now()+8*60*60*1000).toISOString().slice(0,10);
+ function downloadName(run,kind,state=run.state){
+  const title=safeName(run.cycleTitle);
+  const date=taipeiDate();
+  if(kind==='result')return (run.scope==='preview'?'Gal_AI_三則測試_':'Gal_AI_原生正史_')+title+'_'+date+'.json';
+  if(kind==='diagnostic')return '輪迴檔案館_掃描診斷_'+title+'_'+date+'.json';
+  if(kind==='status')return '輪迴檔案館_掃描狀態_'+title+'_'+safeName(state,'unknown')+'_'+date+'.json';
+  return '輪迴檔案館_'+safeName(kind,'掃描檔案')+'_'+title+'_'+date+'.json';
+ }
  function record(runs,run,change){
   const next={...run,...change,at:time()};
   runs[run.scanRunId]=next;
   return next;
  }
  const publicStatus=run=>({
-  format:'gal-archive-scan-status',version:1,scanRunId:run.scanRunId,cycleId:run.cycleId,
+  format:'gal-archive-scan-status',version:1,scanRunId:run.scanRunId,cycleId:run.cycleId,cycleTitle:run.cycleTitle,
   state:run.state,at:run.at,startedAt:run.startedAt,scope:run.scope,scanned:run.scanned,source:run.source,
   reason:run.reason,summary:run.summary,
   files:Object.fromEntries(Object.entries(run.files||{}).filter(([,file])=>file.path).map(([kind,file])=>[kind,file.path]))
@@ -39,7 +52,7 @@ function installGalScanStatus(api){
   const text=JSON.stringify(publicStatus(run));
   await api.downloads.download({
    url:'data:application/json;charset=utf-8,'+encodeURIComponent(text),
-   filename:folder+'/status-'+run.scanRunId+'-'+run.state+'.json',saveAs:false,conflictAction:'overwrite'
+   filename:folder+'/'+downloadName(run,'status',run.state),saveAs:false,conflictAction:'overwrite'
   });
  }
  async function stop(runs,run,state,reason){
@@ -63,7 +76,7 @@ function installGalScanStatus(api){
   const url=await api.runtime.sendMessage({type:'gal-run-blob-create',text});
   if(typeof url!=='string'||!url.startsWith('blob:'+api.runtime.getURL('')))throw Error('無法建立擴充功能下載檔案');
   try{
-   const id=await api.downloads.download({url,filename:folder+'/'+kind+'-'+run.scanRunId+'.json',
+   const id=await api.downloads.download({url,filename:folder+'/'+downloadName(run,kind),
     saveAs:false,conflictAction:'uniquify'});
    return {id,url};
   }catch(error){
@@ -113,9 +126,11 @@ function installGalScanStatus(api){
       (candidate.tabId===sender.tab.id||candidate.source===tabSource)))
     throw Error('已有掃描工作正在執行');
    const bindings=(await api.storage.local.get('galProfilesByPage')).galProfilesByPage||{};
-   if(bindings[tabSource]?.cycleId!==message.cycleId)throw Error('掃描輪迴與頁面綁定不一致');
+   const binding=bindings[tabSource];
+   if(binding?.cycleId!==message.cycleId)throw Error('掃描輪迴與頁面綁定不一致');
    if(!['full','preview'].includes(message.scope))throw Error('掃描範圍無效');
-   const next=record(runs,{scanRunId:message.scanRunId,cycleId:message.cycleId,tabId:sender.tab.id,
+   const cycleTitle=String(binding?.cycleTitle||'輪迴').trim().slice(0,160)||'輪迴';
+   const next=record(runs,{scanRunId:message.scanRunId,cycleId:message.cycleId,cycleTitle,tabId:sender.tab.id,
     documentId:sender.documentId,source:tabSource,scope:message.scope,startedAt:time(),scanned:0},{state:'running'});
    const old=Object.values(runs).filter(candidate=>terminal.has(candidate.state))
     .sort((a,b)=>b.at.localeCompare(a.at)).slice(79);
