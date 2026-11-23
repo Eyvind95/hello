@@ -47,6 +47,7 @@ test('scroll clamping at newly loaded bottom must defer to existing stability pr
  const root=scrolling(850,1050);
  const result=await advance(root,200,async()=>{
   root.scrollHeight=950;
+  root.scrollTop=850; // WHIF anchored the visible item while its height changed.
  });
  assert.equal(result.moved,false);
  assert.equal(result.atBottom,true);
