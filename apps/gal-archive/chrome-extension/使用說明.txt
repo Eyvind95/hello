@@ -223,3 +223,9 @@ V0.8.7 測試版 — Gal AI 自動繼續
 
 V0.8.8 測試版 — 掃描狀態與下載通知
 - WHIF 掃描的 JSON 和狀態寫入 Chrome 下載目錄的 GalArchive 子資料夾。只有兩份檔案都完成才記錄掃描完成。
+
+V0.8.9 測試版 — Browser Use 可直接開啟 Gal AI 助手
+- WHIF 聊天頁右下角新增「🧭 開啟輪迴掃描助手」。Chrome Browser Use 可直接點頁面按鈕，不再需要操作 Chrome 工具列的擴充功能 popup。
+- 頁面入口只讀取「該 WHIF URL 已儲存的 galProfilesByPage 綁定」，沒有綁定就停止，不沿用其他聊天、不猜 cycleId／世界觀。
+- 點開助手只注入並顯示既有 V0.8.8 掃描面板，不自動開始掃描。Browser Use 可再按「▶ 開始／重新掃描」或「掃 3 則停下（測試）」。
+- 網站權限只增加 whif.io／www.whif.io 的 /chat/ 頁面入口；ChatGPT 掃描與 Firebase 規則不變。
