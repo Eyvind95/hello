@@ -207,3 +207,57 @@ test('an undated reply without an explicit leading status header still fails imp
  assert.equal(plan.ok,false);
  assert.match(plan.fail.join(' '),/沒有可靠的 Gal AI 劇情時間/);
 });
+
+
+test('website imports uniquely source-verified untimed Yaoban reply without forging 18:42 timestamp',()=>{
+ const scan=fixture();
+ scan.messages[0].gameTime=null;
+ scan.messages[1].gameTime=null;
+ scan.messages[1].text='新隊員的身影消失在走廊盡頭，房門輕輕闔上。';
+ scan.messages[1].nativeClockEvidence='verified-original-without-game-time';
+ scan.validation.unknownGameTimeCount=2;
+ scan.validation.verifiedUntimedCount=1;
+ scan.validation.gameTimeCount=0;
+ const {original,context}=archive(scan);
+ const result=context.galNativeBuildPlan(scan,original);
+ assert.equal(result.ok,true,JSON.stringify(result.fail));
+ assert.equal(result.pairs,1);
+ assert.equal(result.updated.messages[0].gameTime,null);
+ assert.equal(result.updated.messages[1].gameTime,null);
+ assert.equal(result.updated.messages[1].nativeClockEvidence,'verified-original-without-game-time');
+ assert.equal(result.updated.notes,original.notes);
+ assert.ok(result.warn.some(x=>x.includes('無時間欄')));
+ for(const mutate of [
+  copy=>{delete copy.messages[1].nativeClockEvidence},
+  copy=>{copy.messages[1].nativeClockEvidence='fake-no-time'},
+  copy=>{copy.messages[1].gameTime='2026-08-22T10:42:00.000Z'},
+  copy=>{copy.messages[1].text='｜2026年8月22日｜\n｜🕒18:42｜\n'+copy.messages[1].text},
+  copy=>{copy.messages[1].sourceEventId=''},
+  copy=>{copy.validation.verifiedUntimedCount=0},
+  copy=>{copy.validation.unknownGameTimeCount=0},
+  copy=>{copy.messages[0].gameTime='2026-08-22T10:42:00.000Z'}
+ ]){
+  const forged=structuredClone(scan);mutate(forged);
+  const blocked=context.galNativeBuildPlan(forged,original);
+  assert.equal(blocked.ok,false,JSON.stringify(mutate.toString()));
+ }
+});
+
+test('website requires original no-time provenance for AI only; explicit unknown HUD remains separate',()=>{
+ const scan=fixture();
+ scan.messages[0].gameTime=null;
+ scan.messages[1].gameTime=null;
+ scan.messages[1].text='｜日期不詳｜\n｜🕒時間不詳｜\n米契爾說話。';
+ scan.messages[1].nativeClockEvidence='verified-original-without-game-time';
+ scan.validation.unknownGameTimeCount=2;
+ scan.validation.verifiedUntimedCount=1;
+ const {original,context}=archive(scan);
+ const rejected=context.galNativeBuildPlan(scan,original);
+ assert.equal(rejected.ok,false);
+ assert.match(rejected.fail.join('、'),/不應標成完全沒有時間欄/);
+ const illegalPlayer=structuredClone(scan);
+ delete illegalPlayer.messages[1].nativeClockEvidence;
+ illegalPlayer.messages[0].nativeClockEvidence='verified-original-without-game-time';
+ illegalPlayer.validation.verifiedUntimedCount=0;
+ assert.equal(context.galNativeBuildPlan(illegalPlayer,original).ok,false);
+});
