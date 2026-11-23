@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.30",
-  "version_name": "V0.8.30 測試版",
-  "description": "輪迴檔案館 V0.8.30：完整掃描結尾改為 8 秒持續檢查底部、訊息重疊與高度；三則測試附獨立開場原生段落驗證。",
+  "version": "0.8.31",
+  "version_name": "V0.8.31 測試版",
+  "description": "輪迴檔案館 V0.8.31：安全還原無時間開場中 WHIF 隱藏的原生對話引號與空白段落，保留 8 秒頁尾驗證。",
   "permissions": [
     "storage",
     "activeTab",
