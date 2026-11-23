@@ -1,11 +1,11 @@
-/* Independent Gal AI page scanner. v0.8.29: read and verify opening source paragraphs independently of ordinary replies. */
+/* Independent Gal AI page scanner. v0.8.30: eight-second bottom proof and opening checks in three-row preview. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.29';
+const SCANNER_VERSION='0.8.30';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
-const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=15000,BOTTOM_POLL_MS=750;
+const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=8000,BOTTOM_POLL_MS=750;
 let busy=false,cancelled=false,paused=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
 let activeRun=null;
 const localDifferences=new Map();
@@ -52,7 +52,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.29 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.30 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -1118,8 +1118,12 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   const paragraphAudit={opening:openingFormat.check,ai:summarizeNativeFormats(replies),events:summarizeNativeFormats(events,true)};
   lastResult=canonical(collected,validation,preview);
   lastResult.scanRunId=run.scanRunId;
+  // Three-row test exports MUST include the opening's independent audit.
+  // Otherwise paragraphCheck only describes the first ordinary AI reply,
+  // which can misleadingly pass while opening remains flattened.
+  lastResult.openingCheck=openingFormat.check;
+  lastResult.paragraphAudit=paragraphAudit;
   if(!preview){
-   lastResult.paragraphAudit=paragraphAudit;
    lastResult.eventAudit=summarizeEventAudit(eventAudit,collected,validation,true);
   }
   const firstReply=lastResult.messages.find(row=>row.role==='ai');
