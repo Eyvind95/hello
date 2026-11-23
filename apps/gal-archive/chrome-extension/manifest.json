@@ -3,7 +3,7 @@
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
   "version": "0.8.26",
   "version_name": "V0.8.26 測試版",
-  "description": "輪迴檔案館 V0.8.26 測試版：明示日期不詳／時間不詳的 Gal AI 回覆可保留 null 時間並正常配對，其他無時間情況維持安全拒絕。",
+  "description": "輪迴檔案館 V0.8.26 測試版：只有明示日期／時間不詳的 Gal AI 回覆可用 null 時間配對及比對原生段落，其他缺漏仍安全拒絕。",
   "permissions": [
     "storage",
     "activeTab",
