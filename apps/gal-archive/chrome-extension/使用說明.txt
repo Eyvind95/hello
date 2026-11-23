@@ -253,3 +253,12 @@ V0.8.12 測試版 — WHIF 頁面內首次綁定
 - 已綁定 WHIF 維持原流程：按頁面入口直接開掃描面板。
 - 若同一 WHIF URL 原本綁定不同輪迴，頁面內會要求第二次明確確認才覆蓋，避免跨輪迴誤綁。
 - Chrome 工具列 popup 保留為人工備援，不再是 Browser Use 正常流程的一部分。
+
+
+V0.8.13 測試版 — 背景自動掃描輸出檔名可讀化
+- 修正背景自動掃描仍輸出 result-<scanRunId>.json、diagnostic-<scanRunId>.json、status-<scanRunId>-<state>.json 的問題。
+- 正式結果：Gal_AI_原生正史_<輪迴名稱>_<日期>.json
+- 三則測試：Gal_AI_三則測試_<輪迴名稱>_<日期>.json
+- 診斷：輪迴檔案館_掃描診斷_<輪迴名稱>_<日期>.json
+- 狀態：輪迴檔案館_掃描狀態_<輪迴名稱>_<狀態>_<日期>.json
+- scanRunId / UUID 仍保留在 JSON 內容中供程式核對，但不再出現在人類可見檔名。
