@@ -5,7 +5,7 @@
 const DATABASE='gal-archive-handovers-v1',THREADS='threads',ENTRIES='entries';
 const FILE_LIMIT=50*1024*1024,BACKUP_LIMIT=150*1024*1024,IMPORT_LIMIT=210*1024*1024;
 const BUNDLE_MAGIC='GAL-ARCHIVE-HANDOVER-V3\n',BUNDLE_LENGTH_DIGITS=12,MAX_METADATA=10*1024*1024,LEGACY_JSON_LIMIT=24*1024*1024;
-const state={db:null,threads:[],activeId:null,view:'files',editingReviewId:null,renderToken:0,loading:true,busy:false,objectUrls:[]};
+const state={db:null,threads:[],activeId:null,sharedWorldId:null,view:'files',editingReviewId:null,renderToken:0,loading:true,busy:false,objectUrls:[]};
 const $=id=>document.getElementById(id);
 const worldId=()=>window.ArchiveHandoverBridge?.worldId?.()||'';
 const worldName=id=>window.ArchiveHandoverBridge?.worldName?.(id)||id;
@@ -16,14 +16,14 @@ function fmtSize(n){const bytes=Number(n)||0;return bytes>=1048576?(bytes/104857
 function fileName(s){return String(s||'交接稿').replace(/[\\/:*?"<>|\r\n]/g,'_').slice(0,120)}
 function message(s){const target=$('handoverStatus');if(target){target.textContent=s;return}alert(s)}
 function getDb(){if(state.db)return Promise.resolve(state.db);return new Promise((resolve,reject)=>{
- const req=indexedDB.open(DATABASE,1);
+ const req=indexedDB.open(DATABASE,2);
  req.onupgradeneeded=()=>{
   const db=req.result;
   if(!db.objectStoreNames.contains(THREADS))db.createObjectStore(THREADS,{keyPath:'id'});
-  if(!db.objectStoreNames.contains(ENTRIES)){
-   const es=db.createObjectStore(ENTRIES,{keyPath:'id'});
-   es.createIndex('threadId','threadId',{unique:false});
-  }
+  const es=db.objectStoreNames.contains(ENTRIES)?
+   req.transaction.objectStore(ENTRIES):db.createObjectStore(ENTRIES,{keyPath:'id'});
+  if(!es.indexNames.contains('threadId'))es.createIndex('threadId','threadId',{unique:false});
+  if(!es.indexNames.contains('kind'))es.createIndex('kind','kind',{unique:false});
  };
  req.onsuccess=()=>{state.db=req.result;state.db.onversionchange=()=>{state.db.close();state.db=null};resolve(state.db)};
  req.onerror=()=>reject(req.error||Error('無法開啟交接稿資料庫'));
@@ -46,8 +46,24 @@ function listStore(name){return transaction([name],'readonly',tx=>tx.objectStore
 function listEntries(id){return transaction([ENTRIES],'readonly',tx=>tx.objectStore(ENTRIES).index('threadId').getAll(id))}
 function putThread(thread){return transaction([THREADS],'readwrite',tx=>tx.objectStore(THREADS).put(thread))}
 function useThread(id){return state.threads.find(t=>t.id===id)}
+function sharedReviewId(w){return '__gal-handover-shared-reviews__:'+encodeURIComponent(w)}
+function isSharedView(w){return state.sharedWorldId===w&&state.view==='reviews'&&!state.activeId}
+async function listWorldReviews(w){
+ const allowed=new Set(state.threads.filter(t=>t.worldId===w).map(t=>t.id));
+ allowed.add(sharedReviewId(w));
+ const all=await transaction([ENTRIES],'readonly',tx=>tx.objectStore(ENTRIES).index('kind').getAll('review'));
+ return all.filter(e=>allowed.has(e.threadId));
+}
+async function findWorldReview(w,id){return (await listWorldReviews(w)).find(e=>e.id===id)||null}
+function openSharedReviews(w=worldId()){
+ if(!w)return;
+ state.activeId=null;state.sharedWorldId=w;state.view='reviews';state.editingReviewId=null;
+ window.ArchiveHandoverBridge?.rerender?.();
+ $('content')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
 function activeThread(w){const t=useThread(state.activeId);return t&&t.worldId===w?t:null}
-function isActive(w){return !!activeThread(w)}
+function isActive(w){return !!activeThread(w)||isSharedView(w)}
 function revokeUrls(){for(const url of state.objectUrls)try{URL.revokeObjectURL(url)}catch(_){}state.objectUrls=[]}
 async function reloadThreads(){
  state.threads=await listStore(THREADS);
@@ -58,9 +74,10 @@ function renderList(w){
  const host=$('handoverThreads');if(!host)return;
  if(state.loading){host.innerHTML='<p class="note">正在讀取交接稿…</p>';return}
  const threads=state.threads.filter(t=>t.worldId===w).sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
+ const commonButton=$('handoverSharedReviews');if(commonButton)commonButton.classList.toggle('active',isSharedView(w));
  host.innerHTML=threads.length?threads.map(t=>
   '<button type="button" class="cycle handover-thread'+(state.activeId===t.id?' active':'')+'" data-handover-id="'+escapeHTML(t.id)+'">'+
-  '<strong>'+escapeHTML(t.title)+'</strong><span>'+escapeHTML(String(t.fileCount||0)+' 份檔案・'+String(t.noteCount||0)+' 則備註・'+String(t.reviewCount||0)+' 則評語'+(t.selfReviewCount?'・有自評':''))+'</span></button>'
+  '<strong>'+escapeHTML(t.title)+'</strong><span>'+escapeHTML(String(t.fileCount||0)+' 份檔案・'+String(t.noteCount||0)+' 則備註'+(t.selfReviewCount?'・有自評':''))+'</span></button>'
  ).join(''):'<p class="note">這個世界觀還沒有交接對話。</p>';
 }
 function viewFooter(){
@@ -90,7 +107,7 @@ function entryCard(e){
 }
 function handoverTabBar(){
  return '<div class="tabs" role="tablist" aria-label="交接對話分類">'+
-  [['files','📎 交接檔案'],['reviews','💬 大家的評語'],['self','🪞 對自己的自評']].map(([id,label])=>
+  [['files','📎 交接檔案'],['reviews','💬 大家的評語（共用）'],['self','🪞 對自己的自評']].map(([id,label])=>
    '<button type="button" class="tab '+(state.view===id?'active':'')+'" data-ha-action="switch-view" data-ha-view="'+id+'" aria-selected="'+(state.view===id?'true':'false')+'">'+label+'</button>').join('')+
   '</div>';
 }
@@ -107,7 +124,7 @@ function renderReviewSection(entries){
  const peer=entries.filter(e=>e.kind==='review').sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
  const editing=peer.find(e=>e.id===state.editingReviewId);
  return '<h3>大家的評語</h3>'+
-  '<p class="note">同一份交接稿可以收到不同前輩的評價；可以貼入數千字的完整評論，保留原本的段落。評語者、評價對象與原文會獨立保存，不會混入正史。</p>'+
+  '<p class="note">此世界觀所有交接對話共用同一份「大家的評語」。每位前輩的完整評論只需貼一次，內文可以同時評價多人，不必拆稿；原本分散儲存的評語也會一起顯示。自評仍各自獨立。</p>'+
   '<div class="actions"><button class="btn small" type="button" data-ha-action="download-reviews">下載全部評語 TXT</button></div>'+
   (peer.length?peer.map(reviewCard).join(''):'<p class="note">目前還沒有其他人的評語。</p>')+
   '<div class="divider"></div><h3>'+(editing?'編輯既有評語':'＋新增別人的評語')+'</h3>'+
@@ -158,11 +175,11 @@ async function renderActive(w){
 function openThread(id,scroll=true){
  const t=useThread(id);
  if(!t||t.worldId!==worldId()){message('交接對話不屬於目前世界觀，已停止開啟');return}
- state.activeId=id;state.view='files';state.editingReviewId=null;
+ state.activeId=id;state.sharedWorldId=null;state.view='files';state.editingReviewId=null;
  window.ArchiveHandoverBridge?.rerender?.();
  if(scroll)$('content')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
-function close(){state.activeId=null;state.view='files';state.editingReviewId=null;state.renderToken++}
+function close(){state.activeId=null;state.sharedWorldId=null;state.view='files';state.editingReviewId=null;state.renderToken++}
 function createModal(){
  const modal=document.createElement('div');modal.className='modalback hidden';modal.id='handoverModal';
  modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');
