@@ -329,16 +329,30 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
     text=candidate;
     break;
    }
-   const openQuotes=(candidate.match(/「/g)||[]).length;
-   const closeQuotes=(candidate.match(/」/g)||[]).length;
-   const scannedQuotes=(scanned.match(/[「」]/g)||[]).length;
-   const withoutDialogueQuotes=candidate.replace(/[「」]/g,'');
-   if(scannedQuotes===0&&openQuotes>0&&openQuotes===closeQuotes&&
-      unspaced(withoutDialogueQuotes)===scannedKey){
+   // Restore only omitted native Chinese quote pairs. Quotes still visible
+   // in the DOM, including a pre-existing unmatched closer, must survive.
+   // Reject any other text difference instead of guessing the original.
+   const scannedChars=[...scannedKey];
+   let matched=0,omitted='',projected='',valid=true;
+   for(const char of candidate){
+    if(/\s/u.test(char)){projected+=char;continue}
+    if(matched<scannedChars.length&&char===scannedChars[matched]){
+     projected+=char;matched++;continue;
+    }
+    if(char==='「'||char==='」'){omitted+=char;continue}
+    valid=false;break;
+   }
+   let balance=0;
+   for(const quote of omitted){
+    balance+=quote==='「'?1:-1;
+    if(balance<0){valid=false;break}
+   }
+   if(valid&&matched===scannedChars.length&&omitted.length>0&&balance===0){
     record('leading-whif-event-hidden-template',removed,text,candidate);
-    record('native-event-dialogue-quotes',openQuotes*2,candidate,withoutDialogueQuotes);
+    record('native-event-dialogue-quotes',omitted.length,candidate,projected);
     text=candidate;
-    eventQuoteProjection={pairs:openQuotes};
+    eventQuoteProjection={pairs:[...omitted].filter(char=>char==='「').length,
+     comparableText:projected,preservedVisibleQuotes:(scanned.match(/[「」]/g)||[]).length};
     break;
    }
   }
@@ -486,7 +500,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
   }
  }
- const comparableText=eventQuoteProjection?text.replace(/[「」]/g,''):text;
+ const comparableText=eventQuoteProjection?eventQuoteProjection.comparableText:text;
  const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(comparableText)];
  const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
  const contentEqual=scanChars.join('')===nativeChars.join('');
@@ -564,7 +578,8 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  }
  if(!text||!clockEqual)return {text:null,comparison};
  if(eventQuoteProjection){
-  comparison.eventQuoteProjection={pairs:eventQuoteProjection.pairs,restoredFromNative:true};
+  comparison.eventQuoteProjection={pairs:eventQuoteProjection.pairs,restoredFromNative:true,
+   preservedVisibleQuotes:eventQuoteProjection.preservedVisibleQuotes};
   return {text,comparison};
  }
  // Content and time match. Only move line boundaries at corresponding
@@ -581,5 +596,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.20'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.21'};
 })();
