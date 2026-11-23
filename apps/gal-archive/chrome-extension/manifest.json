@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.25",
-  "version_name": "V0.8.25 測試版",
-  "description": "輪迴檔案館 V0.8.25 測試版：WHIF 懶載入造成捲動倒退時先重新核對訊息重疊，保留來源順序及防漏掃驗證。",
+  "version": "0.8.26",
+  "version_name": "V0.8.26 測試版",
+  "description": "輪迴檔案館 V0.8.26 測試版：明示日期不詳／時間不詳的 Gal AI 回覆可保留 null 時間並正常配對，其他無時間情況維持安全拒絕。",
   "permissions": [
     "storage",
     "activeTab",
