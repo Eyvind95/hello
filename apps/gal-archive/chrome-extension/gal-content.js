@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. Only loads on a user-selected active tab. v0.8.8 */
+/* Independent Gal AI page scanner. v0.8.9: popup or WHIF page launcher. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.8';
+const SCANNER_VERSION='0.8.9';
 const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350;
@@ -20,10 +20,10 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.8 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.9 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
- '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">🔁 重新掃描</button>'+
+ '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
  '<button id="gal-scan-preview">掃 3 則停下（測試）</button></div>'+
  '<details open><summary>首則 AI 回覆的段落驗收</summary>'+
  '<label for="gal-scan-native-copy">無法自動讀取時，可貼上 Gal AI「複製」的完整首則 AI 回覆</label>'+
@@ -948,6 +948,25 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
   else if(result.state==='failed'||!result.files.diagnostic)
    status('掃描未完成。'+(result.reason||'')+'。掃描 ID '+result.scanRunId);
   return false;
+ }
+ if(msg?.type==='gal-scan-open'){
+  if(core?.version!==SCANNER_VERSION){respond({ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'});return false}
+  const p=msg.profile||{};
+  if(typeof p.cycleId!=='string'||!p.cycleId||typeof p.worldName!=='string'||!p.worldName){
+   respond({ok:false,error:'這個 WHIF 聊天尚未綁定目標輪迴與世界觀'});return false;
+  }
+  const managerNames=Array.isArray(p.managerNames)?p.managerNames:String(p.manager||'').split(/[、，,;；\r\n]/u).map(x=>x.trim()).filter(Boolean);
+  if(managerNames.length<1||managerNames.length>2||
+     managerNames.some(name=>typeof name!=='string'||!name.trim()||/[、，,;；\r\n]/u.test(name))||
+     new Set(managerNames.map(name=>name.trim())).size!==managerNames.length){
+   respond({ok:false,error:'綁定中的副駕駛資料無效，請回擴充功能重新儲存'});return false;
+  }
+  target={uid:String(p.uid||''),worldName:p.worldName,cycleId:p.cycleId,
+    cycleTitle:String(p.cycleTitle||''),managerNames:managerNames.map(name=>name.trim())};
+  mount();
+  status('✅ 已從 WHIF 頁面開啟掃描助手。\n目標：'+(target.cycleTitle||target.cycleId)+
+   '\n尚未開始掃描；Browser Use 可直接操作本頁助手。');
+  respond({ok:true,opened:true});return false;
  }
  if(msg?.type==='gal-scan-ping'){respond({ok:true,version:SCANNER_VERSION,coreVersion:core?.version,busy,hasResult:!!lastResult,
   scanRunId:activeRun?.scanRunId||null});return false}
