@@ -264,6 +264,10 @@ function markdownFromDom(node,options={}){
   let out=inner;
   if(italicNow&&out.trim())out=out.replace(/\S[\s\S]*\S|\S/,t=>'*'+t+'*');
   if(boldNow&&out.trim())out='**'+out.trim()+'**';
+  // WHIF event/dialogue quotes are rendered with <q>; the browser-generated
+  // quotation marks are not part of textContent, so serialize them explicitly.
+  // Preserve the inner text exactly and only add the visible Chinese quote pair.
+  if(tag==='q')out='「'+out+'」';
   if(tag==='code'&&n.parentElement?.tagName!=='PRE')return String.fromCharCode(96)+out+String.fromCharCode(96);
   if(tag==='pre')return '\n'+String.fromCharCode(96).repeat(3)+'\n'+out+'\n'+String.fromCharCode(96).repeat(3)+'\n';
   if(tag==='li')return '\n- '+out;
@@ -558,5 +562,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.15'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.16'};
 })();
