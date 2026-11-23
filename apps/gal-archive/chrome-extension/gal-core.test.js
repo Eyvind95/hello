@@ -586,3 +586,40 @@ test('historical WHIF projection does not apply to ordinary message without requ
  assert.equal(result.comparison.legacyMessageProjection,undefined);
  assert.ok(result.comparison.formatMarkers.some(x=>x.kind==='leading-whif-template'));
 });
+
+
+test('historic WHIF hidden chapter template can share the visible world label line',()=>{
+ const title='《全員精神穩定，感情除-外》:';
+ const status='｜2026年8月22日（星期六）｜\n｜🕒19:13｜🚨紅色警戒｜\n｜📍基甫納前線基地・中央指揮部｜';
+ const body='那聲簡潔有力的\n好\n字甫一落下。';
+ const sourceBody='那聲簡潔有力的「好」字甫一落下。';
+ for(const prefix of [
+  title+'{{隱藏章節}}',
+  title+' {{隱藏章節}}',
+  title+'\n{{隱藏章節}}',
+  title+'\n  {{隱藏章節}}'
+ ]){
+  const original=prefix+'\n\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n'+sourceBody;
+  const result=context.GalArchiveCore.compareNativeParagraphs(title+'\n'+status+'\n'+body,original,{
+   source:'whif-message-content',statusText:status
+  });
+  assert.equal(result.comparison.contentEqual,true,JSON.stringify(result.comparison.legacyProjectionTrace));
+  assert.equal(result.comparison.legacyMessageProjection.omittedQuotePairs,1);
+  assert.equal(result.text,title+'\n'+status+'\n\n'+sourceBody);
+ }
+});
+
+test('historic WHIF failed projections report safe stage diagnostics without source story content',()=>{
+ const title='《全員精神穩定，感情除-外》:';
+ const status='｜2026年8月22日｜\n｜🕒19:13｜\n｜📍基地｜';
+ const rendered=title+'\n'+status+'\n原文。';
+ const native=title+'{{隱藏章節}}\n\x60\x60\x60\n'+status+'\n\x60\x60\x60\n\n變造。';
+ const result=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  source:'whif-message-content',statusText:status
+ });
+ assert.equal(result.text,null);
+ assert.equal(result.comparison.contentEqual,false);
+ assert.equal(result.comparison.legacyProjectionTrace.stage,'full-text-compare');
+ assert.equal(result.comparison.legacyProjectionTrace.valid,false);
+ assert.equal(JSON.stringify(result.comparison.legacyProjectionTrace).includes('變造'),false);
+});
