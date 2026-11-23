@@ -1,6 +1,12 @@
 'use strict';
 function installGalScanStatus(api){
  const storageKey='galScanRuns',alarmPrefix='gal-scan-deadline:';
+ // Full WHIF histories can take over 90 minutes. The prior hard 45-minute
+ // alarm marked a healthy page scan failed while it was still scrolling.
+ // Keep a finite upper limit; use a separate short deadline for downloads.
+ const FULL_SCAN_DEADLINE_MINUTES=240;
+ const PREVIEW_DEADLINE_MINUTES=45;
+ const FILE_EXPORT_DEADLINE_MINUTES=15;
  const terminal=new Set(['completed','paused','failed','cancelled']);
  const folder='GalArchive';
  const offscreenUrl=api.runtime.getURL('gal-scan-files.html');
@@ -45,6 +51,7 @@ function installGalScanStatus(api){
  const publicStatus=run=>({
   format:'gal-archive-scan-status',version:1,scanRunId:run.scanRunId,cycleId:run.cycleId,cycleTitle:run.cycleTitle,
   state:run.state,at:run.at,startedAt:run.startedAt,scope:run.scope,scanned:run.scanned,source:run.source,
+  deadlineMinutes:run.deadlineMinutes,lateCompletionRecovered:run.lateCompletionRecovered||false,
   reason:run.reason,summary:run.summary,
   files:Object.fromEntries(Object.entries(run.files||{}).filter(([,file])=>file.path).map(([kind,file])=>[kind,file.path]))
  });
@@ -138,13 +145,23 @@ function installGalScanStatus(api){
     .sort((a,b)=>b.at.localeCompare(a.at)).slice(79);
    for(const candidate of old)delete runs[candidate.scanRunId];
    await save(runs);
-   await api.alarms.create(alarmPrefix+next.scanRunId,{delayInMinutes:45});
+   next.deadlineMinutes=next.scope==='full'?FULL_SCAN_DEADLINE_MINUTES:PREVIEW_DEADLINE_MINUTES;
+   await save(runs);
+   await api.alarms.create(alarmPrefix+next.scanRunId,{delayInMinutes:next.deadlineMinutes});
    try{await signal(next)}catch(error){await stop(runs,next,'failed','無法啟動掃描狀態檔下載');throw error}
    return publicStatus(next);
   }
   if(!isOwner(run,sender)||run.cycleId!==message.cycleId)throw Error('掃描工作 ID 不屬於目前分頁');
   if(message.type!=='gal-run-finish')throw Error('未知掃描訊號');
-  if(terminal.has(run.state)||run.exportPending)return publicStatus(run);
+  // A scan can finish after a historical 45-minute deadline while the
+  // original WHIF document, its source-bound run ID and its live scanner
+  // remain intact. Recover only a genuine completed result from that exact
+  // document, and only when no newer scan has started for the same chat.
+  const lateCompletion=run.state==='failed'&&run.reason==='掃描或下載逾時'&&
+   message.state==='completed'&&!Object.values(runs).some(candidate=>
+    candidate.scanRunId!==run.scanRunId&&candidate.state==='running'&&
+    candidate.tabId===run.tabId&&candidate.source===run.source);
+  if((terminal.has(run.state)&&!lateCompletion)||run.exportPending)return publicStatus(run);
   if(!terminal.has(message.state)||!Number.isInteger(message.scanned)||message.scanned<0||message.scanned>20000)
    throw Error('掃描狀態無效');
   let completedResult=null;
@@ -165,10 +182,12 @@ function installGalScanStatus(api){
       ' 筆；判定 WHIF 歷史尚未載完，拒絕輸出半份正史');
    }
   }
-  const next=record(runs,run,{finishState:message.state,scanned:message.scanned,
+  const next=record(runs,run,{state:'running',lateCompletionRecovered:lateCompletion,
+   finishState:message.state,scanned:message.scanned,
    reason:message.state==='completed'?undefined:String(message.reason||'掃描中斷').slice(0,350),
    exportPending:true,files:{}});
   await save(runs);
+  await api.alarms.create(alarmPrefix+run.scanRunId,{delayInMinutes:FILE_EXPORT_DEADLINE_MINUTES});
   try{
    const diagnostic=JSON.parse(message.diagnostic);
    if(diagnostic.scanRunId!==run.scanRunId||diagnostic.cycleId!==run.cycleId)throw Error('診斷與掃描工作不符');
