@@ -8,7 +8,7 @@ button.id=ID;
 button.type='button';
 button.textContent='🧭 開啟輪迴掃描助手';
 button.setAttribute('aria-label','開啟輪迴掃描助手');
-button.style.cssText='position:fixed;right:14px;bottom:14px;z-index:2147483645;padding:9px 12px;border:1px solid #a98be8;border-radius:10px;background:#513b82;color:#fff;font:700 13px/1.2 system-ui,Microsoft JhengHei,sans-serif;box-shadow:0 6px 24px #0008;cursor:pointer';
+button.style.cssText='position:fixed;right:24px;bottom:96px;z-index:2147483645;min-width:220px;min-height:52px;padding:14px 20px;border:2px solid #bda7f4;border-radius:14px;background:#513b82;color:#fff;font:800 16px/1.25 system-ui,Microsoft JhengHei,sans-serif;letter-spacing:.02em;box-shadow:0 8px 28px #0009;cursor:pointer;touch-action:manipulation';
 let timer=null;
 const reset=()=>{button.disabled=false;button.textContent='🧭 開啟輪迴掃描助手'};
 button.onclick=()=>{
