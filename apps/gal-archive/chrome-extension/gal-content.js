@@ -1294,7 +1294,7 @@ async function positionSevenProbe(mode){
   status('沒有本分頁前次掃描的全輪來源索引。不能把目前 DOM 排列位置冒充 scanIndex。');return;
  }
  const previous=activeRun,rows=activeScanRows;
- let index=null,sourceId=null;
+ let index=null,sourceId=null,run=null,registered=false,probeRows=[];
  try{
   if(mode==='index'){
    const raw=$('gal-scan-index-input').value.trim();
@@ -1324,6 +1324,7 @@ async function positionSevenProbe(mode){
    throw Error('指定索引 '+index+' 不在前次已讀 '+rows.length+' 則資料內；不能補造未讀內容');
   const start=Math.max(0,index-3),end=Math.min(rows.length,index+4);
   const selected=rows.slice(start,end);
+  probeRows=selected;
   // Full rows and their source IDs come from the actual prior scan memory,
   // NOT an unanchored newly loaded viewport.
   const output=selected.map((row,offset)=>{
@@ -1339,14 +1340,15 @@ async function positionSevenProbe(mode){
     nativeParsedTime:native?.text?core.parseGameTime(native.text):null,
     explicitUnknownClock:core.isExplicitUnknownGameTime(row.text)};
   });
-  const run={scanRunId:crypto.randomUUID(),cycleId:target.cycleId,
+  run={scanRunId:crypto.randomUUID(),cycleId:target.cycleId,
    scope:'position-seven',scannerVersion:SCANNER_VERSION};
   const managed=['whif.io','www.whif.io'].includes(location.hostname);
   if(!managed)throw Error('指定位置測試僅支援正式 WHIF 分頁');
   const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
   if(!reg?.ok)throw Error(reg?.error||'無法建立獨立指定位置測試批次');
   run.batchFolder=reg.status?.batchFolder;
-  activeRun=run;
+  run.statusPath=reg.status?.statusPath;
+  registered=true;activeRun=run;
   const report={
    format:'gal-ai-position-seven-test',version:1,importable:false,
    generatedAt:new Date().toISOString(),scanRunId:run.scanRunId,
@@ -1373,7 +1375,28 @@ async function positionSevenProbe(mode){
    ' 則。批次 '+(run.batchFolder||'未知')+
    '。'+(finished.status?.state==='completed'?'Chrome 已完成下載':'等待 Chrome 下載完成')+
    '。未驗證資料不能匯入。');
- }catch(error){status('指定位置測試未通過：'+String(error.message||error))}
+ }catch(error){
+  const message=String(error.message||error);
+  if(registered){
+   const report={scanRunId:run.scanRunId,cycleId:run.cycleId,
+    scannerVersion:SCANNER_VERSION,
+    sourceScanRunId:previous?.scanRunId||null,
+    index,selectionMode:mode,error:message,
+    errorContexts:failureContexts(probeRows,null,message)};
+   let unverified=null;
+   if(probeRows.length){
+    const data=unverifiedEvidence(probeRows,run,message,report);
+    // The original whole-scan indices must not be replaced by slice ordinals.
+    data.rows.forEach((row,i)=>{row.scanIndex=rows.indexOf(probeRows[i])});
+    unverified=JSON.stringify(data);
+   }
+   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
+    state:'failed',scanned:probeRows.length,reason:message,
+    unverified,diagnostic:JSON.stringify(report)}).catch(e=>({error:String(e)}));
+   status('指定位置測試失敗：'+message+'\n批次：'+(run.batchFolder||'未知')+
+    '\n'+(saved?.ok?'已送出診斷與未驗證保全':'未能確認下載：'+(saved?.error||'未知')));
+  }else status('指定位置測試未通過：'+message);
+ }
 }
 
 async function eventThreeRowProbe(profile){
