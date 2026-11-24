@@ -1002,7 +1002,7 @@ test('V0.8.35 accepts one exactly proven untimed WHIF wrapper/fence/image projec
  assert.equal(result.comparison.untimedWrappedProjection.templateCount,1);
  assert.equal(result.comparison.untimedWrappedProjection.bareFencePairs,1);
  assert.equal(result.comparison.untimedWrappedProjection.terminalImageMarker,true);
- assert.deepEqual(result.comparison.formatMarkers.map(v=>v.kind),[
+ assert.deepEqual(Array.from(result.comparison.formatMarkers,v=>v.kind),[
   'terminal-image-marker','untimed-verified-hidden-context','untimed-verified-bare-fence'
  ]);
  assert.equal(result.comparison.remainingUnexplained.scanned,0);
