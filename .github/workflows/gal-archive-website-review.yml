@@ -1,0 +1,26 @@
+name: Gal Archive Website Review Tests
+on:
+  pull_request:
+    paths:
+      - 'apps/gal-archive/**'
+      - '.github/workflows/gal-archive-website-review.yml'
+  push:
+    branches: [main, feat/gal-archive-blue-review]
+    paths:
+      - 'apps/gal-archive/**'
+      - '.github/workflows/gal-archive-website-review.yml'
+permissions:
+  contents: read
+jobs:
+  website-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify blue markers and existing scanner regressions
+        run: |
+          node --test apps/gal-archive/archive-special-review.test.js
+          node --test apps/gal-archive/chrome-extension/gal-core.test.js apps/gal-archive/chrome-extension/gal-format-evidence.test.js apps/gal-archive/chrome-extension/gal-import.test.js apps/gal-archive/chrome-extension/gal-binding.test.js apps/gal-archive/chrome-extension/gal-scroll.test.js apps/gal-archive/chrome-extension/gal-scan-status.test.js apps/gal-archive/chrome-extension/gal-continue-audit.test.js
+          node --check apps/gal-archive/sw.js
