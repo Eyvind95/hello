@@ -1269,6 +1269,97 @@ function eventProbeRow(row,position,index){
   eventEvidence:source?.eventEvidence||null
  };
 }
+
+// Local, source-anchored 7-row forensic probe. It never treats an arbitrary
+// viewport ordinal as a global scan index, nor triggers a one-hour rescan.
+async function positionSevenProbe(mode){
+ if(busy){status('掃描正在執行中，請勿用指定位置測試干擾目前工作');return}
+ if(!target?.cycleId||!activeScanRows?.length){
+  status('沒有本分頁前次掃描的全輪來源索引。不能把目前 DOM 排列位置冒充 scanIndex。');return;
+ }
+ const previous=activeRun,rows=activeScanRows;
+ let index=null,sourceId=null;
+ try{
+  if(mode==='index'){
+   const raw=$('gal-scan-index-input').value.trim();
+   if(!/^\d+$/.test(raw))throw Error('請填寫從 0 開始的有效 scanIndex');
+   index=Number(raw);
+  }else if(mode==='last-error'){
+   if(!lastFailureIndices.length)throw Error('最近一次掃描沒有可核對的錯誤 scanIndex');
+   index=lastFailureIndices[0];
+  }else if(mode==='visible'){
+   const shot=snapshot(null,'bounded',false,true);
+   const root=shot.root.getBoundingClientRect();
+   const center=(root.top+root.bottom)/2;
+   const choices=shot.rows.filter(row=>row.role==='ai'&&
+    row.formatSource?.nativeReply?.messageId&&row.scanNode?.getBoundingClientRect);
+   if(!choices.length)throw Error('當前畫面找不到可辨識來源 ID 的 WHIF AI 訊息');
+   choices.sort((a,b)=>{
+    const centerOf=r=>{const x=r.scanNode.getBoundingClientRect();return (x.top+x.bottom)/2};
+    return Math.abs(centerOf(a)-center)-Math.abs(centerOf(b)-center);
+   });
+   sourceId=choices[0].formatSource.nativeReply.messageId;
+   const matches=rows.flatMap((row,i)=>
+    row.formatSource?.nativeReply?.messageId===sourceId?[i]:[]);
+   if(matches.length!==1)throw Error('當前訊息來源 ID 無法唯一對應前次掃描 scanIndex，不得猜測位置');
+   index=matches[0];
+  }else throw Error('未知的指定位置模式');
+  if(!Number.isSafeInteger(index)||index<0||index>=rows.length)
+   throw Error('指定索引 '+index+' 不在前次已讀 '+rows.length+' 則資料內；不能補造未讀內容');
+  const start=Math.max(0,index-3),end=Math.min(rows.length,index+4);
+  const selected=rows.slice(start,end);
+  // Full rows and their source IDs come from the actual prior scan memory,
+  // NOT an unanchored newly loaded viewport.
+  const output=selected.map((row,offset)=>{
+   const i=start+offset,native=row.formatSource?.nativeReply||null;
+   return {scanIndex:i,role:row.role,eventType:row.eventType||null,
+    domText:row.text,nativeText:native?.reason==='available'?native.text:null,
+    nativeSourceId:native?.messageId||null,
+    unavailableReason:native?.reason==='available'?null:native?.reason||'not-captured',
+    playerSources:row.formatSource?.playerSources||[],
+    sourceEvidence:native?.eventEvidence||null,
+    originalTimeHeader:core.clean(row.text).split('\n').slice(0,12),
+    parsedTime:core.parseGameTime(row.text)||null,
+    nativeParsedTime:native?.text?core.parseGameTime(native.text):null,
+    explicitUnknownClock:core.isExplicitUnknownGameTime(row.text)};
+  });
+  const run={scanRunId:crypto.randomUUID(),cycleId:target.cycleId,
+   scope:'position-seven',scannerVersion:SCANNER_VERSION};
+  const managed=['whif.io','www.whif.io'].includes(location.hostname);
+  if(!managed)throw Error('指定位置測試僅支援正式 WHIF 分頁');
+  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
+  if(!reg?.ok)throw Error(reg?.error||'無法建立獨立指定位置測試批次');
+  run.batchFolder=reg.status?.batchFolder;
+  activeRun=run;
+  const report={
+   format:'gal-ai-position-seven-test',version:1,importable:false,
+   generatedAt:new Date().toISOString(),scanRunId:run.scanRunId,
+   scope:'source-anchored-position-seven',
+   source:{url:location.origin+location.pathname},target:{cycleId:target.cycleId,cycleTitle:target.cycleTitle,
+    worldName:target.worldName},
+   originalScanRunId:previous?.scanRunId||null,
+   selectedIndex:index,selectionMode:mode,selectedSourceId:sourceId,
+   fromScanIndex:start,toScanIndex:end-1,
+   count:output.length,completeSevenRows:output.length===7,rows:output,
+   note:'只讀前次掃描記憶並核實原生來源；不能據此產出完整正史。'
+  };
+  const audit={
+   scanRunId:run.scanRunId,cycleId:target.cycleId,scannerVersion:SCANNER_VERSION,
+   sourceRunId:previous?.scanRunId||null,selectionMode:mode,selectionIndex:index,
+   scannedRows:output.length,sourceIds:output.map(x=>x.nativeSourceId),
+   errorContexts:failureContexts(rows,{errors:['第 '+(index+1)+' 則指定位置來源核對']},null)
+  };
+  const finished=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
+   state:'completed',scanned:output.length,result:JSON.stringify(report),
+   diagnostic:JSON.stringify(audit)});
+  if(!finished?.ok)throw Error(finished?.error||'指定位置測試已讀取但下載尚未完成');
+  status('🧪 '+target.cycleTitle+' 指定位置 '+index+'，已整理 '+output.length+
+   ' 則。批次 '+(run.batchFolder||'未知')+
+   '。'+(finished.status?.state==='completed'?'Chrome 已完成下載':'等待 Chrome 下載完成')+
+   '。未驗證資料不能匯入。');
+ }catch(error){status('指定位置測試未通過：'+String(error.message||error))}
+}
+
 async function eventThreeRowProbe(profile){
  if(busy)return {ok:false,error:'正在掃描中'};
  if(core?.version!==SCANNER_VERSION)return {ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'};
