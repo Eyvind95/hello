@@ -1713,3 +1713,15 @@ test('V0.9.05 anchor probe has bounded deduplicated positions and distinguishes 
  assert.equal(state(1,[{sourceIds:['anchor']}],'anchor'),'anchor-collected');
  assert.equal(state(1,[{sourceIds:['anchor']},{sourceIds:['anchor']}],'anchor'),'anchor-row-not-unique');
 });
+
+test('V0.9.06 untimed adventure event exact wrapper and title companion',()=>{
+ const core=context.GalArchiveCore,w='身為冒險者就可以這樣那樣',title=w+':',ctx='{{Below context is an event which has just occurred. '+w+' should not skip this moment — chime in naturally as '+w+' would react. This event is to make the story dynamic and fresh.}}';
+ const body='事件正文。\n\n**通知**\n「測試對話」\n保留「可見引號」。';
+ const native=ctx+'\n'+title+' {{合成事件}}\n\n'+body,dom=title+'\n'+body.replace('「測試對話」','測試對話');
+ const opts={source:'whif-event-content',event:true,eventTitle:title};
+ const check=(n=native,d=dom,o=opts)=>core.compareNativeParagraphs(d,n,o).text;
+ assert.equal(check(),title+'\n\n'+body);
+ for(const n of [native.replace('合成事件','user|role'),native.replace('合成事件','img:fake'),native.replace('Below context','Other context'),native.replace('事件正文','其他正文'),native.replace('「測試對話」','「測試對話'),native.replace('**通知**','通知'),native.replace('{{合成事件}}','{{合成事件}}{{第二個}}')])assert.equal(check(n),null);
+ assert.equal(check(native,dom,{...opts,eventTitle:'其他:'}),null);
+ assert.equal(check(native,dom,{...opts,source:'whif-message-content',event:false}),null);
+});

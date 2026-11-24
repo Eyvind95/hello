@@ -675,6 +675,38 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const leading=text.match(preamble);
  let preambleMetadata='not-present';
  let eventQuoteProjection=null;
+ // Exact untimed adventure event wrapper and visible title companion.
+ // Unique accepted native source is established by the caller.
+ if(options.event===true&&options.source==='whif-event-content'&&!statusKey&&
+    !(options.codeBlocks||[]).length&&titleKey&&!parseGameTime(scanned)&&
+    !parseGameTime(original)&&!isExplicitUnknownGameTime(scanned)&&!isExplicitUnknownGameTime(original)&&
+    !adventureClockEvidence(scanned)&&!adventureClockEvidence(original)){
+  const world=ADVENTURE_WORLD;
+  const context='{{Below context is an event which has just occurred. '+world+' should not skip this moment — chime in naturally as '+world+' would react. This event is to make the story dynamic and fresh.}}';
+  const prefix=original.match(/^\{\{[^{}\n]{1,300}\}\}[ \t]*\n(?:[ \t]*\n){0,2}/u);
+  const rest=prefix?original.slice(prefix[0].length):'';
+  const header=rest.match(/^(身為冒險者就可以這樣那樣[:：])[ \t]+(\{\{([^{}\n]{1,200})\}\})[ \t]*(?=\n)/u);
+  if(prefix&&prefix[0].trim()===context&&header&&adventureContextLine(header[2])&&
+     visibleTitle===header[1]&&scanned.split('\n')[0].trim()===header[1]&&
+     !scanned.includes(context)&&!scanned.includes(header[2])){
+   const candidate=header[1]+rest.slice(header[0].length);
+   const dom=[...unspaced(scanned)];let index=0,projected='',omitted=[],valid=true;
+   for(const ch of candidate){
+    if(/\s/u.test(ch)){projected+=ch;continue}
+    if(ch===dom[index]){projected+=ch;index++;continue}
+    if(ch==='「'||ch==='」'){omitted.push(ch);continue}
+    valid=false;break;
+   }
+   let balance=0;for(const q of omitted){balance+=q==='「'?1:-1;if(balance<0){valid=false;break}}
+   if(valid&&index===dom.length&&balance===0&&unspaced(projected)===unspaced(scanned)){
+    record('leading-whif-event-context',1,text,rest);
+    record('whif-untimed-adventure-event-title-companion',1,rest,candidate);
+    if(omitted.length)record('native-event-dialogue-quotes',omitted.length,candidate,projected);
+    text=candidate;
+    eventQuoteProjection={pairs:omitted.length/2,comparableText:projected,preservedVisibleQuotes:(scanned.match(/[「」]/g)||[]).length};
+   }
+  }
+ }
  // Untimed WHIF events can still carry one or two hidden leading templates.
  // Strip them only when the remaining native text becomes an exact full-text
  // match (ignoring whitespace), so a real content difference can never be
