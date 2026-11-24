@@ -48,10 +48,6 @@ function archive(oldExport) {
   const context = vm.createContext({
     structuredClone, GalArchiveCore, WORLDS:[{id:original.world,name:oldExport.target.worldName}],
     validWorldId:id=>id===original.world,
-    archiveParseGalAIClock:row=>{
-      const time=GalArchiveCore.parseGameTime(row.text);
-      return time?{ms:Date.parse(time.iso)}:null;
-    },
     archiveStoryTimeline:cycle=>cycle.messages,
     archiveCheckDialoguePairs:messages=>({
       issues:messages.filter((row,i)=>row.role!==(i%2?'ai':'me')),timeIssues:[]
@@ -72,6 +68,7 @@ function archive(oldExport) {
     refresh:async()=>{context.records=[...records.values()]}
   });
   vm.runInContext(section('function archiveSpecialKey(', 'async function archiveSpecialReadDiagnostic('), context);
+  vm.runInContext(section('function archiveParseGalAIClock(', 'function archiveRealChronologyTime('), context);
   vm.runInContext(section('function galNativeText(', 'function galNativeShowStatus('), context);
   vm.runInContext(section('function normalizeBackupCycle(', 'function importStatus('), context);
   vm.runInContext(section('function previewBackup(', "$('importBtn').onclick="), context);
@@ -287,4 +284,31 @@ test('V0.9.00 adventure import requires explicit versions, complete native count
   o=>o.messages[1].gameTime='2026-01-01T00:00:00.000Z',
   o=>{o.messages[1].text=o.messages[1].text.replace('🔹【基礎】🔹','破損');o.messages.forEach(m=>m.gameTime=null);o.messages[1].nativeClockEvidence='verified-original-without-game-time'}
  ]){const o=structuredClone(x);mutate(o);assert.ok(verify(o).fail.length>0);}
+});
+
+test('website uses actual production clock parser for long terminal and news scanner output',()=>{
+ const x=fixture(),hud='｜2026年8月22日｜\n｜🕒20:12｜晴｜\n｜📍測試地點｜\n測試正文。';
+ const terminal='【終端】\n📢基地公告：\n'+Array(14).fill('・測試公告').join('\n')+'\n📨任務通知：\n・無\n\n';
+ const news='【基甫納熱搜】\n'+[1,2,3,4,5].map(n=>'#'+n+' 測試新聞\n🔥熱度：100\n💬匿名留言：測試\n').join('\n')+'\n***\n';
+ const replies=[terminal+hud,news+hud, '無時間的測試正文。'];
+ const core=GalArchiveCore;
+ const rows=[{role:'ai',text:'測試輪迴開場。'},...replies.flatMap((text,i)=>[{role:'me',text:'玩家'+i},{role:'ai',text,...(i===2?{formatSource:{nativeReply:{reason:'available',messageId:'untimed',markerCount:1,scannedText:text,text}}}: {})}])];
+ const v=core.validate(rows,x.target.worldName);assert.equal(v.ok,true,JSON.stringify(v.errors));
+ x.events=[];x.messages=v.messages.map((m,i)=>({...m,id:'m'+i,sourceEventId:'m'+i,sourceKind:'gal-ai-native',chatKey:'synthetic',messageOrder:m.scanIndex,...(m.verifiedUntimedNative?{nativeClockEvidence:'verified-original-without-game-time'}:{})}));
+ x.validation={ok:true,pairs:v.pairs,events:0,gameTimeCount:4,unknownGameTimeCount:2,verifiedUntimedCount:1,warnings:[],errors:[]};
+ const {context,original}=archive(x);
+ assert.deepEqual(asJSON(context.galNativeVerify(x,original).fail),[]);
+ const clocks=context.archiveGalTimeContext(x.messages);
+ for(const m of x.messages.slice(0,4))assert.equal(clocks.get(m).ms,Date.parse(m.gameTime));
+ assert.equal(clocks.has(x.messages[4]),false);assert.equal(clocks.has(x.messages[5]),false);
+ const bad=structuredClone(x);bad.messages[0].gameTime=bad.messages[1].gameTime='2026-08-22T10:42:00.000Z';
+ assert.match(context.galNativeVerify(bad,original).fail.join(' '),/正文時間與 JSON 時間不一致/);
+ const native={role:'ai',sourceKind:'gal-ai-native',text:'2026年8月22日\n⏰20:12\n測試正文。'};
+ const manual={...native,sourceKind:'manual'};
+ // Native mode is always identical to the core; historical inputs may use
+ // their existing fallback only when the core has no clock.
+ assert.equal(context.archiveParseGalAIClock(native)?.ms??null,core.parseGameTime(native.text)?Date.parse(core.parseGameTime(native.text).iso):null);
+ assert.equal(context.archiveParseGalAIClock(manual).ms,Date.parse('2026-08-22T12:12:00.000Z'));
+ context.GalArchiveCore=null;
+ assert.ok(context.galNativeVerify(x,original).fail.some(s=>s.includes('共用劇情時間核心')));
 });
