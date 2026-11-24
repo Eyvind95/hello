@@ -99,6 +99,23 @@ function inspect(file,diagnosticFile){
   requiredEventEvidence:eventEvidence,failedAi:ai,followingPlayer:nextInfo};
  if(diagnosticFile){
   const diagnostic=JSON.parse(fs.readFileSync(diagnosticFile,'utf8'));
+  const candidates=diagnostic.eventAudit?.nativeCandidates||[];
+  const headers=diagnostic.eventAudit?.headers||[];
+  report.eventCrossCheck=wantedEvents.map(index=>{
+   const c=candidates.find(x=>x.scanIndex===index);
+   const h=headers.find(x=>x.scanIndex===index);
+   const checkpoint=eventEvidence.find(x=>x.scanIndex===index);
+   return {
+    scanIndex:index,checkpointIsEvent:checkpoint?.role==='ai'&&checkpoint.eventType==='event',
+    nativeSourcePresent:checkpoint?.nativePresent===true,
+    sourceIdUnique:checkpoint?.sourceIdOccurrences===1,
+    diagnosticCandidateFound:!!c,diagnosticAccepted:c?.accepted??null,
+    diagnosticKind:c?.kind||null,diagnosticReason:c?.reason||null,
+    headerFound:!!h,headerReason:h?.reason||null,
+    provisionalClassificationConfirmed:!!(c&&c.accepted===true&&checkpoint?.role==='ai'&&
+      checkpoint.eventType==='event'&&checkpoint.nativePresent&&checkpoint.sourceIdOccurrences===1)
+   };
+  });
   report.originalDiagnostic={
    scannerVersion:diagnostic.version||diagnostic.scannerVersion||null,
    trustedCount:diagnostic.trustedCount??null,
