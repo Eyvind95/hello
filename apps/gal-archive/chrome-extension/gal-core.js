@@ -5,8 +5,42 @@ if(globalThis.GalArchiveCore)return;
 const txt=x=>String(x==null?'':x);
 const clean=x=>txt(x).replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').trim();
 const normalizedWorld=x=>clean(x).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase();
+// A clock-shaped HUD anywhere is evidence against an untimed classification,
+// even when the bounded primary parser cannot resolve its location or value.
+function hasHudClockEvidence(input){
+ const lines=clean(input).split('\n').map(line=>line.trim());
+ return lines.some((line,i)=>{
+  if(!/^[｜|│]\s*\d{4}\s*(?:年|[-/])/u.test(line))return false;
+  const next=lines.slice(i+1,i+5).find(Boolean)||'';
+  return /^[｜|│]\s*(?:🕒\s*)?\d{1,2}\s*[：:]\s*\d{2}/u.test(next);
+ });
+}
+// Strict alternative to the historical *** separator: the prefix must be a
+// complete numbered news list, with each item carrying its heat and comment.
+function structuredNewsPrefix(prefix){
+ const rows=prefix.split('\n').map(line=>line.trim()).filter(Boolean);
+ if(rows.shift()!=='【基甫納熱搜】')return false;
+ if(/^\x60{3}$/u.test(rows.at(-1)||''))rows.pop();
+ if(/^\{\{[^{}\n]{1,200}\}\}$/u.test(rows.at(-1)||'')){
+  if(/^\{\{\s*(?:user|char|character|img|image)(?:\s*[:|=}]|\s*$)/iu.test(rows.at(-1)))return false;
+  rows.pop();
+ }
+ if(rows.length<6||rows.length%3!==0)return false;
+ for(let i=0;i<rows.length;i+=3){
+  const heading=rows[i].match(/^(?:\*{2})?#(\d+)[ \t]+.+$/u);
+  if(!heading||+heading[1]!==i/3+1||
+     !/^(?:\*{2})?🔥(?:\uFE0F)?熱度[：:]\s*[\d,]+(?:\*{2})?$/u.test(rows[i+1])||
+     !/^(?:\*{2})?💬(?:\uFE0F)?匿名留言[：:]\s*\S/u.test(rows[i+2]))return false;
+ }
+ return true;
+}
 function parseGameTime(input){
-  const lines=clean(input).split('\n');
+  let lines=clean(input).split('\n');
+  const lead=lines[0]?.match(/^\{\{([^{}\n]{1,200})\}\}$/u);
+  if(lead&&!/^(?:(?:user|char|character)(?:\s*(?:\||:|=|$))|(?:img|image)\s*:)/iu.test(lead[1].trim())){
+   const first=lines.findIndex((line,i)=>i>0&&line.trim());
+   if(first>0&&lines[first].trim()==='【基甫納熱搜】')lines=lines.slice(first);
+  }
   let head=lines.slice(0,18).join('\n').slice(0,1600);
   // Recognized notification/news headers may precede a real HUD by many
   // lines. Extend only for a unique consecutive date/time/location header.
@@ -19,11 +53,13 @@ function parseGameTime(input){
     const prefix=lines.slice(0,i).join('\n');
     if(prefix.length>4000)continue;
     if(lines[0].trim()==='【基甫納熱搜】'&&
-       !/(?:^|\n)[ \t]*\*{3}[ \t]*(?:\n\s*\{\{[^{}\n]{1,200}\}\})?(?:\n\s*\x60{3})?\s*$/u.test(prefix))continue;
+       !/(?:^|\n)[ \t]*\*{3}[ \t]*(?:\n\s*\{\{[^{}\n]{1,200}\}\})?(?:\n\s*\x60{3})?\s*$/u.test(prefix)&&
+       !structuredNewsPrefix(prefix))continue;
     if(lines[0].trim()==='【終端】'&&!/📨任務通知[：:]/u.test(prefix))continue;
     candidates.push(i);
    }
    if(candidates.length===1)head=lines.slice(candidates[0],candidates[0]+3).join('\n');
+   else if(candidates.length>1)return null;
   }
   // A Gal AI event may place the entire status header on ONE rendered line.
   // Keep the search in the header and prefer the clock closest after its date.
@@ -70,7 +106,7 @@ const LEGACY_OPENING_ISO='2026-08-22T10:42:00.000Z';
 function isAllowedOpeningRow(row){
  if(row?.role!=='ai'||isEvent(row.text)||isExplicitUnknownGameTime(row.text))return false;
  const clock=parseGameTime(row.text);
- return !clock||clock.iso===LEGACY_OPENING_ISO;
+ return (!clock&&!hasHudClockEvidence(row.text))||clock?.iso===LEGACY_OPENING_ISO;
 }
 
  // A historical reply with no visible time HUD must NOT inherit the opening
@@ -91,6 +127,7 @@ function isAllowedOpeningRow(row){
    return {ok:false,reason:'non-unique-native-message-id'};
   const head=clean(source.text).split('\n').slice(0,12);
   if(parseGameTime(source.text)||isExplicitUnknownGameTime(source.text)||
+     hasHudClockEvidence(row.text)||hasHudClockEvidence(source.text)||
      head.some(line=>/^[ \t]*[｜|│]\s*(?:\d{4}\s*(?:年|[-/])|日期|(?:🕒\s*)?時間|\d{1,2}:\d{2})/u.test(line)))
    return {ok:false,reason:'native-source-contains-time-header'};
   const verified=compareNativeParagraphs(row.text,source.text,{
@@ -119,6 +156,7 @@ function validate(rows,expectedWorld){
     errors.push('第 '+(i+1)+' 則事件／世界名稱「'+domain+'」與綁定世界觀「'+expectedWorld+'」不符；不能覆蓋其他世界觀');
   if(role==='ai'&&(row.eventType==='event'||isEvent(t))){
    const eventTime=parseGameTime(t);
+   if(!eventTime&&hasHudClockEvidence(t))errors.push('第 '+(i+1)+' 則事件含有日期及時鐘欄位，但無法解析；禁止當成無時間事件');
    if(!eventTime)warnings.push('第 '+(i+1)+' 則 Gal AI 事件沒有可確認的劇情時間，保留原文但不推測時間');
    events.push({role:'ai',text:t,title:(t.split('\n').find(Boolean)||'事件').slice(0,70),
     status:'accepted',scanIndex:i,worldName:row.worldName||domain||null,
@@ -133,6 +171,9 @@ function validate(rows,expectedWorld){
   }
   if(role!=='ai'){errors.push('第 '+(i+1)+' 則左右身份不明');continue}
   const explicitlyUnknown=isExplicitUnknownGameTime(t);
+  if(explicitlyUnknown&&(hasHudClockEvidence(t)||hasHudClockEvidence(row.formatSource?.nativeReply?.text))){
+   errors.push('第 '+(i+1)+' 則同時存在未知時間與明確時鐘欄位，無法安全判定');continue;
+  }
   const clock=explicitlyUnknown?null:parseGameTime(t);
   const nativeUntimed=!clock&&!explicitlyUnknown?verifiedUnclockedReply(row,rows):null;
   if(!clock&&!explicitlyUnknown&&!nativeUntimed?.ok){
@@ -1134,6 +1175,84 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
   }
  }
+ // Historic replies can have multiline HUD rows (with their own literal
+ // quotes), or a genuinely unclosed opening fence. Do not normalize either
+ // shape without exact boundary and full non-whitespace text evidence.
+ if(!prefixedHudProjection&&!timedCompositeProjection&&!eventPostStatusProjection&&
+    !untimedCombinedProjection&&!openingQuoteProjection&&!legacyMessageProjection&&!eventQuoteProjection&&
+    options.source==='whif-message-content'&&!options.event&&!options.opening&&
+    unspaced(original)!==unspaced(scanned)){
+  const fence=String.fromCharCode(96).repeat(3);
+  const sourceLines=original.split('\n'),visibleLines=scanned.split('\n');
+  const clock=parseGameTime(scanned)?.iso;
+  const templateOK=label=>label.trim()&&
+   !/^(?:(?:user|char|character)(?:\s*(?:\||:|=|$))|(?:img|image)\s*:)/iu.test(label.trim());
+  const exactHudShape=lines=>lines.length>=4&&
+   /^[｜|│]\s*\d{4}(?:年|[-/])/u.test(lines[0].trim())&&
+   /^[｜|│]\s*(?:🕒\s*)?\d{1,2}[：:]\d{2}/u.test(lines[1].trim())&&
+   /^[｜|│]\s*📍/u.test(lines[2].trim())&&
+   lines.slice(3).some(line=>/^[｜|│].*(?:暴走|嚮導)值/u.test(line.trim()));
+  const quoteProof=(native,dom)=>{
+   const visible=[...unspaced(dom)];let pos=0,depth=0,omitted=0;
+   for(const ch of unspaced(native)){
+    if(ch===visible[pos]){pos++;continue}
+    if(ch==='「'){depth++;omitted++;continue}
+    if(ch==='」'&&depth>0){depth--;omitted++;continue}
+    return null;
+   }
+   return pos===visible.length&&depth===0?omitted:null;
+  };
+  const syntaxCount=(original.match(/\{\{[^{}\n]*\}\}/gu)||[]).length;
+  const fenceCount=(original.match(/\x60{3}/g)||[]).length;
+  let candidate=null,omitted=null,template=null,kind=null;
+  if(clock&&clock===parseGameTime(original)?.iso&&syntaxCount===1){
+   const header=sourceLines[0].match(/^(《[^》\n]+》[：:])[ \t]*\{\{([^{}\n]{1,200})\}\}[ \t]*$/u);
+   if(header&&templateOK(header[2])&&fenceCount===2&&sourceLines[1]===fence&&
+      unspaced(visibleLines[0])===unspaced(header[1])&&
+      (options.codeBlocks||[]).length===1&&statusKey&&codeKeys.has(statusKey)){
+    const close=sourceLines.findIndex((line,i)=>i>1&&line===fence);
+    const hud=sourceLines.slice(2,close),hudText=hud.join('\n');
+    if(close>2&&exactHudShape(hud)&&unspaced(hudText)===statusKey){
+     let end=1,visibleHud='';
+     while(end<visibleLines.length&&visibleHud.length<statusKey.length){
+      visibleHud+=unspaced(visibleLines[end++]);
+      if(!statusKey.startsWith(visibleHud))break;
+     }
+     if(visibleHud===statusKey){
+      const tail=sourceLines.slice(close+1).join('\n').trimStart();
+      omitted=quoteProof(tail,visibleLines.slice(end).join('\n'));
+      if(omitted!==null){
+       candidate=header[1]+'\n\n'+hudText+'\n\n'+tail;
+       template=header[0].slice(header[1].length).trim();
+       kind='multiline-hud';
+      }
+     }
+    }
+   }
+   const lead=sourceLines[0].match(/^\{\{([^{}\n]{1,200})\}\}$/u);
+   if(!candidate&&lead&&templateOK(lead[1])&&fenceCount===1&&
+      sourceLines[1]===fence&&visibleLines[0]===fence&&!statusKey&&!codeKeys.size&&
+      (scanned.match(/\x60{3}/g)||[]).length===1){
+    const nativeHud=[],visibleHud=[];
+    for(const line of sourceLines.slice(2)){if(!/^[｜|│][\s\S]*[｜|│]$/u.test(line.trim()))break;nativeHud.push(line)}
+    for(const line of visibleLines.slice(1)){if(!/^[｜|│][\s\S]*[｜|│]$/u.test(line.trim()))break;visibleHud.push(line)}
+    if(exactHudShape(nativeHud)&&unspaced(nativeHud.join('\n'))===unspaced(visibleHud.join('\n'))){
+     omitted=quoteProof(sourceLines.slice(2+nativeHud.length).join('\n'),visibleLines.slice(1+visibleHud.length).join('\n'));
+     if(omitted!==null){
+      candidate=sourceLines.slice(1).join('\n');template=lead[0];kind='unclosed-fence';
+     }
+    }
+   }
+  }
+  if(candidate&&parseGameTime(candidate)?.iso===clock&&!scanned.includes(template)){
+   markers.length=0;
+   markers.push({kind:'verified-legacy-hidden-context',tokens:1,nonWhitespaceChars:count(template)});
+   if(kind==='multiline-hud')markers.push({kind:'verified-multiline-hud-fences',tokens:2,nonWhitespaceChars:6});
+   if(omitted)markers.push({kind:'verified-legacy-boundary-quotes',tokens:omitted,nonWhitespaceChars:omitted});
+   text=candidate;
+   prefixedHudProjection={comparableText:scanned,omittedQuotePairs:omitted/2,provenEntireText:true,legacyBoundary:kind};
+  }
+ }
  const comparableText=prefixedHudProjection?.comparableText??timedCompositeProjection?.comparableText??eventPostStatusProjection?.comparableText??
   (untimedCombinedProjection?.comparableText??
   (openingQuoteProjection?.comparableText??
@@ -1147,13 +1266,15 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  // source and rendered text must contain the same leading unknown-clock HUD;
  // no other missing-clock reply can pass the native paragraph audit.
  const explicitUnknownClock=!clock&&!nativeClock&&
+  !hasHudClockEvidence(scanned)&&!hasHudClockEvidence(original)&&
   isExplicitUnknownGameTime(scanned)&&isExplicitUnknownGameTime(text);
  const verifiedNoClock=options.verifiedUntimedNative===true&&!clock&&!nativeClock&&
+  !hasHudClockEvidence(scanned)&&!hasHudClockEvidence(original)&&!hasHudClockEvidence(text)&&
   !isExplicitUnknownGameTime(scanned)&&!isExplicitUnknownGameTime(text);
  const clockEqual=options.opening
   ?(isAllowedOpeningRow({role:'ai',text:scanned})&&clock===nativeClock)
   :options.event
-   ?(clock===nativeClock&&(Boolean(clock)||(!clock&&!nativeClock)))
+   ?(clock===nativeClock&&(Boolean(clock)||(!clock&&!nativeClock&&!hasHudClockEvidence(scanned)&&!hasHudClockEvidence(original))))
    :Boolean(clock&&clock===nativeClock)||explicitUnknownClock||verifiedNoClock;
  const statusCompact=unspaced(statusText);
  const positions=[...text.matchAll(/(\S)(\s*)/gu)];
@@ -1290,5 +1411,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.45'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.46'};
 })();
