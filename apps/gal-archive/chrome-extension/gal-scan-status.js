@@ -85,7 +85,7 @@ function installGalScanStatus(api){
   if(typeof url!=='string'||!url.startsWith('blob:'+api.runtime.getURL('')))throw Error('無法建立下載來源');
   try{
    const id=await api.downloads.download({url,filename:run.batchFolder+'/'+filenames[kind],
-    saveAs:false,conflictAction:'uniquify'});
+    saveAs:false,conflictAction:'overwrite'});
    return {id,url};
   }catch(error){
    await api.runtime.sendMessage({type:'gal-run-blob-release',url}).catch(()=>{});
@@ -183,6 +183,23 @@ function installGalScanStatus(api){
   const run=runs[message.scanRunId];
   if(!isOwner(run,sender)||run.cycleId!==message.cycleId)
    throw Error('工作不屬於這個 WHIF 分頁');
+  if(message.type==='gal-run-manual-save'){
+   if(run.exportPending)throw Error('正在整理終態下載，請等下載完成再操作');
+   const data=JSON.parse(message.unverified);
+   if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||
+      data.scanRunId!==run.scanRunId||data.target?.cycleId!==run.cycleId||
+      !Array.isArray(data.rows)||data.rows.length!==data.collectedCount)
+    throw Error('手動已讀保全來源驗證失敗');
+   if(run.files?.unverified?.path)return publicStatus(run);
+   const file=await makeFile(run,'unverified',message.unverified);
+   file.path=await confirmedDownload(file.id,80);
+   run.files={...(run.files||{}),unverified:file};
+   run.scanned=Math.max(run.scanned||0,data.collectedCount);
+   await save(runs);
+   // Status stays in this run's one fixed location.
+   run.statusPath=await signal(run);await save(runs);
+   return publicStatus(run);
+  }
   if(message.type==='gal-run-open-folder'){
    const filename=run.files?.diagnostic?.path||run.files?.result?.path||
     run.files?.unverified?.path||run.statusPath;
@@ -223,7 +240,7 @@ function installGalScanStatus(api){
   const next=record(runs,run,{state:'running',lateCompletionRecovered:late,
    finishState:message.state,scanned:message.scanned,
    reason:message.state==='completed'?null:String(message.reason||'掃描中斷').slice(0,500),
-   exportPending:true,files:{}});
+   exportPending:true,files:{...(run.files||{})}});
   await save(runs);
   await api.alarms.create(ALARM+run.scanRunId,{delayInMinutes:EXPORT_DEADLINE});
   try{
@@ -248,7 +265,7 @@ function installGalScanStatus(api){
   return publicStatus(runs[run.scanRunId]);
  }
  api.runtime.onMessage.addListener((message,sender,reply)=>{
-  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder'].includes(message?.type))return false;
+  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save'].includes(message?.type))return false;
   serial(()=>handle(message,sender)).then(s=>reply({ok:true,status:s}),
    error=>reply({ok:false,error:String(error.message||error)}));
   return true;
