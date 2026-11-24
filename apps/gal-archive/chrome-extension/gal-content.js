@@ -449,6 +449,30 @@ function boundaryFragmentText(start,end,role='ai',trace,metadata,event=false){
  }
  return text;
 }
+
+// Identify individual native WHIF user markers in a rendered player gap.
+// Native source IDs remain internal; diagnostics publish hashes only.
+function nativePlayerSourcesBetween(start,end){
+ if(!boundaryFollows(start,end))return [];
+ const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
+ const ancestor=range.commonAncestorContainer;
+ const base=ancestor.nodeType===Node.ELEMENT_NODE?ancestor:ancestor.parentElement;
+ if(!base?.querySelectorAll)return [];
+ const out=new Map();
+ const take=node=>{
+  if(!range.intersectsNode(node))return;
+  const id=node.getAttribute('data-selection-copy-message-id');
+  if(!id||out.has(id))return;
+  const evidence=readNativeNode(node,true).eventEvidence;
+  out.set(id,{id,sender:evidence?.sender||null,kind:evidence?.kind||null,
+   hasText:Boolean(core.clean(node.textContent||'')),
+   hasMedia:Boolean(node.querySelector('img,video,audio,[data-attachment-id]'))});
+ };
+ if(base.matches?.(nativeMessageSelector))take(base);
+ for(const node of base.querySelectorAll(nativeMessageSelector))take(node);
+ return [...out.values()];
+}
+
 function candidatePlayerGap(start,end,previousId,currentId){
  const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
  const markers=new Map();
@@ -503,7 +527,10 @@ function boundaryRead(root,traceFirst=false,captureNative=false){
    // A player can answer with one character. Controls and navigation
    // labels have already been removed from this bounded DOM range.
    if(gap){
-    rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1});
+    rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1,
+     formatSource:captureNative?{
+      playerSources:nativePlayerSourcesBetween(pairs[i-1].end,item.start)
+     }:undefined});
     debug.playerGaps++;
    }else if(item.metadata&&item.kind==='reply'&&pairs[i-1].kind==='reply'){
     item.metadata.playerGap={
@@ -649,6 +676,16 @@ function observeEventAudit(audit,shot,collected,alignment){
   return true;
  };
  const captured=new Map();
+ if(offset!==null)for(const [index,row] of shot.rows.entries()){
+  const scanIndex=offset+index;
+  if(row.role!=='me'||scanIndex<0||scanIndex>=collected.length||
+   collected[scanIndex]?.role!=='me')continue;
+  for(const source of row.formatSource?.playerSources||[]){
+   if(!source.id)continue;
+   if(!audit.playerSourceRows.has(source.id))audit.playerSourceRows.set(source.id,new Set());
+   audit.playerSourceRows.get(source.id).add(scanIndex);
+  }
+ }
  for(const row of shot.rows){
   const evidence=row.formatSource?.nativeReply?.eventEvidence;
   if(evidence?.messageId){
@@ -667,6 +704,14 @@ function observeEventAudit(audit,shot,collected,alignment){
   if(id&&(!audit.history.has(id)||evidence?.kind!=='unknown-message'&&evidence?.kind))
    audit.history.set(id,evidence?.kind||'unreadable');
   if(id&&evidence?.sender)audit.senders.set(id,evidence.sender);
+  if(id&&evidence?.sender==='user'){
+   const near=position(node),old=audit.userNearby.get(id);
+   audit.userNearby.set(id,{
+    first:old?.first||near,last:near,sightings:(old?.sightings||0)+1,
+    hasText:old?.hasText||Boolean(core.clean(node.textContent||'')),
+    hasMedia:old?.hasMedia||Boolean(node.querySelector('img,video,audio,[data-attachment-id]'))
+   });
+  }
   remember(evidence,node);
  }
  // WHIF's pending event card uses the reject/accept action row; it may not
@@ -691,7 +736,56 @@ function observeEventAudit(audit,shot,collected,alignment){
  *
  * Never infer an auto-continue from a timestamp or from text similarity.
  */
-function verifyAutoContinueAudit(collected,candidates,history,senders){
+
+/*
+ * A rendered player gap can contain multiple native user IDs.
+ * This audit explains the units rather than declaring two missing turns
+ * from a count difference alone. It never authorizes a canonical export.
+ */
+function analyzePlayerSourceDifference(collected,history,senders,links,nearby){
+ const playerIndices=collected.flatMap((row,index)=>row.role==='me'?[index]:[]);
+ const observed=[...history.keys()].filter(id=>senders.get(id)==='user');
+ const observedSet=new Set(observed);
+ const perRow=new Map(playerIndices.map(index=>[index,new Set()]));
+ for(const [id,indices] of links||[]){
+  for(const index of indices)if(perRow.has(index))perRow.get(index).add(id);
+ }
+ const mapped=observed.filter(id=>links?.has(id));
+ const unmapped=observed.filter(id=>!links?.has(id)).map(id=>({
+  sourceHash:hash(id),nearFirst:nearby?.get(id)?.first||null,
+  nearLast:nearby?.get(id)?.last||null,
+  sightings:nearby?.get(id)?.sightings||0,
+  hasText:nearby?.get(id)?.hasText===true,
+  hasMedia:nearby?.get(id)?.hasMedia===true
+ }));
+ const multiSourceRows=[...perRow].filter(([,ids])=>ids.size>1)
+  .map(([scanIndex,ids])=>({scanIndex,nativeUserSourceCount:ids.size,
+   sourceHashes:[...ids].map(hash)}));
+ const rowsWithoutProvenUserMarker=[...perRow].filter(([,ids])=>
+  ![...ids].some(id=>observedSet.has(id))).map(([scanIndex])=>scanIndex);
+ const multipleRows=[...(links||new Map())].filter(([id,indices])=>
+  observedSet.has(id)&&indices.size>1).map(([id,indices])=>({
+   sourceHash:hash(id),scanIndices:[...indices].sort((a,b)=>a-b)
+  }));
+ const notObserved=[...(links||new Map()).keys()]
+  .filter(id=>!observedSet.has(id)).map(id=>({sourceHash:hash(id),
+   scanIndices:[...(links?.get(id)||[])]}));
+ return {
+  originalUserMarkers:observed.length,renderedPlayerRows:playerIndices.length,
+  countDifference:observed.length-playerIndices.length,
+  mappedNativeUserMarkers:mapped.length,unmappedNativeUserMarkers:unmapped.length,
+  unmappedNativeUserDetails:unmapped.slice(0,30),
+  rowsWithMultipleNativeUserSources:multiSourceRows.length,
+  multipleNativeSourceDetails:multiSourceRows.slice(0,30),
+  rowsWithoutProvenUserMarker:rowsWithoutProvenUserMarker.length,
+  rowsWithoutProvenUserMarkerIndices:rowsWithoutProvenUserMarker.slice(0,30),
+  sourceInMultiplePlayerRows:multipleRows.slice(0,30),
+  linkedButNotObserved:notObserved.slice(0,30),
+  diagnosis:'Count difference alone cannot establish missing messages. Distinguish multiple native user IDs in one rendered gap from user markers outside those gaps. Never invent missing text.'
+ };
+}
+
+function verifyAutoContinueAudit(collected,candidates,history,senders,playerLinks=null,userNearby=null){
  const sourceRows=new Map();
  const identities=new Map();
  for(const [scanIndex,row] of collected.entries()){
@@ -742,15 +836,24 @@ function verifyAutoContinueAudit(collected,candidates,history,senders){
  }).map(([id,kind])=>({sourceHash:hash(id),kind,sender:senders.get(id)||identities.get(id),
   collectedMatches:sourceRows.get(id)?.length||0}));
  if(missingObserved.length)problems.push({scope:'history',errors:['observed-ai-or-event-source-not-uniquely-collected']});
- const playerMarkers=[...history.keys()].filter(id=>(senders.get(id)||identities.get(id))==='user').length;
- const playerRows=collected.filter(row=>row.role==='me').length;
- if(playerMarkers>playerRows)problems.push({scope:'history',errors:['more-observed-user-messages-than-player-rows']});
+ const playerSourceAudit=analyzePlayerSourceDifference(collected,history,senders,playerLinks,userNearby);
+ const playerMarkers=playerSourceAudit.originalUserMarkers;
+ const playerRows=playerSourceAudit.renderedPlayerRows;
+ if(playerMarkers>playerRows)problems.push({scope:'history',
+  errors:['more-observed-user-messages-than-player-rows'],
+  extraNativeUserMarkers:playerMarkers-playerRows,
+  candidateMultipleSourceRowIndices:playerSourceAudit.multipleNativeSourceDetails.map(x=>x.scanIndex),
+  unmatchedNativeUserSourceHashes:playerSourceAudit.unmappedNativeUserDetails.map(x=>x.sourceHash)});
+ if(playerSourceAudit.sourceInMultiplePlayerRows.length)
+  problems.push({scope:'player-provenance',errors:['same-user-source-mapped-to-multiple-player-rows']});
+ if(playerSourceAudit.linkedButNotObserved.length)
+  problems.push({scope:'player-provenance',errors:['player-source-in-gap-not-seen-in-native-history']});
  return {ok:problems.length===0,candidateIndices:candidates.map(x=>x.scanIndex),
   gaps,problems,observedNativeMarkers:history.size,scannedRows:collected.length,
   markerCountDifference:history.size-collected.length,
   unaccountedAIOrEvents:missingObserved,
   unknownMarkers:unknown,
-  observedUserMessages:playerMarkers,playerRows,
+  observedUserMessages:playerMarkers,playerRows,playerSourceAudit,
   explanation:'A global marker/row cardinality mismatch is not itself a missed player. Each continuation must pass native ID, sender, local between-message markers and loading checks; independently observed missing character/event IDs still fail.'};
 }
 
@@ -1048,7 +1151,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  const recoveryLog=[];
  let unpairedReply=null,scrollStall=null;
  const continuedPositions=[];
- const eventAudit={headers:new Map(),native:new Map(),unverifiedCards:new Map(),probes:new WeakMap(),history:new Map(),senders:new Map()};
+ const eventAudit={headers:new Map(),native:new Map(),unverifiedCards:new Map(),probes:new WeakMap(),history:new Map(),senders:new Map(),playerSourceRows:new Map(),userNearby:new Map()};
  let firstTimedTrace=null;
  let registered=false;
  // Preserve any partially valid event classifications in failure diagnostics.
@@ -1238,7 +1341,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    if(id)sourceCounts.set(id,(sourceCounts.get(id)||0)+1);
   }
   autoContinueAudit=continuedPositions.length
-   ?verifyAutoContinueAudit(collected,continuedPositions,eventAudit.history,eventAudit.senders)
+   ?verifyAutoContinueAudit(collected,continuedPositions,eventAudit.history,eventAudit.senders,
+    eventAudit.playerSourceRows,eventAudit.userNearby)
    :{ok:true,notApplicable:true,candidateIndices:[],observedNativeMarkers:eventAudit.history.size,
      scannedRows:collected.length};
   if(!autoContinueAudit.ok)
