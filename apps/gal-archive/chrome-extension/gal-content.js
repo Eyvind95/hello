@@ -464,19 +464,25 @@ function nativePlayerSourcesBetween(start,end){
   const id=node.getAttribute('data-selection-copy-message-id');
   if(!id||out.has(id))return;
   const evidence=readNativeNode(node,true).eventEvidence;
-  // Exact React content is required to prove a source-preserving merge.
-  // Keep text in this page's scan memory; diagnostics publish only hashes.
-  const original=readNativeNode(node);
   out.set(id,{id,sender:evidence?.sender||null,kind:evidence?.kind||null,
    hasText:Boolean(core.clean(node.textContent||'')),
    hasMedia:Boolean(node.querySelector('img,video,audio,[data-attachment-id]')),
-   nativeReason:original?.reason||'unavailable',
-   nativeText:original?.reason==='available'?original.text:null,
-   nativeSender:original?.eventEvidence?.sender||null,
-   nativeMessageId:original?.eventEvidence?.messageId||null});
+   sourceNode:node});
  };
  if(base.matches?.(nativeMessageSelector))take(base);
  for(const node of base.querySelectorAll(nativeMessageSelector))take(node);
+ // Most user gaps contain ONE message. Avoid repeatedly reading entire
+ // React content for those on every scrolling snapshot.
+ for(const item of out.values()){
+  if(out.size>1){
+   const original=readNativeNode(item.sourceNode);
+   item.nativeReason=original?.reason||'unavailable';
+   item.nativeText=original?.reason==='available'?original.text:null;
+   item.nativeSender=original?.eventEvidence?.sender||null;
+   item.nativeMessageId=original?.eventEvidence?.messageId||null;
+  }
+  delete item.sourceNode; // Never retain live DOM nodes in long-running checkpoints.
+ }
  return [...out.values()];
 }
 
@@ -534,18 +540,18 @@ function boundaryRead(root,traceFirst=false,captureNative=false){
    // A player can answer with one character. Controls and navigation
    // labels have already been removed from this bounded DOM range.
    if(gap){
+    const playerSources=captureNative?
+      nativePlayerSourcesBetween(pairs[i-1].end,item.start):[];
+    const playerGapHasMedia=captureNative&&playerSources.length>1?(()=>{
+     const range=document.createRange();
+     range.setStartAfter(pairs[i-1].end);range.setEndBefore(item.start);
+     const base=range.commonAncestorContainer;
+     return [...(base.querySelectorAll?.('img,video,audio,[data-attachment-id]')||[])]
+      .some(node=>range.intersectsNode(node)&&
+       !node.closest('#'+PANEL+',button,[role="button"],[role="toolbar"]'));
+    })():false;
     rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1,
-     formatSource:captureNative?{
-      playerSources:nativePlayerSourcesBetween(pairs[i-1].end,item.start),
-      playerGapHasMedia:(()=>{
-       const range=document.createRange();
-       range.setStartAfter(pairs[i-1].end);range.setEndBefore(item.start);
-       const base=range.commonAncestorContainer;
-       return [...(base.querySelectorAll?.('img,video,audio,[data-attachment-id]')||[])]
-        .some(node=>range.intersectsNode(node)&&
-         !node.closest('#'+PANEL+',button,[role="button"],[role="toolbar"]'));
-      })()
-     }:undefined});
+     formatSource:captureNative?{playerSources,playerGapHasMedia}:undefined});
     debug.playerGaps++;
    }else if(item.metadata&&item.kind==='reply'&&pairs[i-1].kind==='reply'){
     item.metadata.playerGap={
