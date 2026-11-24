@@ -92,7 +92,8 @@ test('both scanner launch paths load the audit before content and preflight its 
  for(const file of ['background.js','gal-popup.js']){
   const src=fs.readFileSync(require.resolve('./'+file),'utf8');
   const launches=[...src.matchAll(/files:\[([^\]]*'gal-content\.js'[^\]]*)\]/g)];
-  assert.equal(launches.length,file==='gal-popup.js'?2:1);
+  // Full scan, preview and anchor recovery all inject the audit before the scanner.
+  assert.equal(launches.length,file==='gal-popup.js'?3:1);
   for(const m of launches)assert.match(m[1],/'gal-core\.js','gal-format-evidence\.js','gal-content\.js'/);
   assert.match(src,/formatEvidenceReady!==true/);
  }

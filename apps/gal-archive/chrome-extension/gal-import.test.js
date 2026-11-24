@@ -67,6 +67,9 @@ function archive(oldExport) {
     $:()=>({}), importStatus:()=>{}, notify:()=>{},
     refresh:async()=>{context.records=[...records.values()]}
   });
+  // Load real production dependencies added by native time and archive extras support.
+  vm.runInContext(section('function archiveExtraRows(', 'function archiveVisibleExtras('), context);
+  vm.runInContext(section('function archiveNativePairedClock(', 'function archiveNativeTimeReadback('), context);
   vm.runInContext(section('function archiveSpecialKey(', 'async function archiveSpecialReadDiagnostic('), context);
   vm.runInContext(section('function archiveParseGalAIClock(', 'function archiveRealChronologyTime('), context);
   vm.runInContext(section('function galNativeText(', 'function galNativeShowStatus('), context);
