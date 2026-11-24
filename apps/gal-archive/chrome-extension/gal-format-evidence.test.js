@@ -59,7 +59,7 @@ test('unverified native format cannot turn successful structural check into cano
  assert.match(content,/lastResult=null;exportButton\.disabled=true/);
  assert.match(content,/nativeFormatAudit\.failures/);
  assert.match(content,/if\(lastResult\?\.validation\?\.ok&&lastResult\.validation\.nativeFormatComplete===true\)/);
- assert.match(content,/formatEvidence\.inspectRaw\(/);
+ assert.match(content,/requireFormatEvidence\(\)\.inspectRaw\(/);
  assert.match(content,/validationPhases:\{integrity:/);
 });
 test('failed structural check still generates full original native-format diagnostics, even for wrong source IDs',()=>{
@@ -84,4 +84,29 @@ test('sensitive content is not sent to GitHub, evidence is kept in local JSON on
  assert.equal(x[1].kind,'chinese-open-quote');
  assert.equal(x[2].kind,'chinese-close-quote');
  assert.equal(x[1].nonWhitespaceOffset,x[0].nonWhitespaceLength);
+});
+
+test('both scanner launch paths load the audit before content and preflight its version',()=>{
+ const vm=require('node:vm');
+ const content=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ for(const file of ['background.js','gal-popup.js']){
+  const src=fs.readFileSync(require.resolve('./'+file),'utf8');
+  const launches=[...src.matchAll(/files:\[([^\]]*'gal-content\.js'[^\]]*)\]/g)];
+  assert.equal(launches.length,file==='gal-popup.js'?2:1);
+  for(const m of launches)assert.match(m[1],/'gal-core\.js','gal-format-evidence\.js','gal-content\.js'/);
+  assert.match(src,/formatEvidenceReady!==true/);
+ }
+ const first=content.indexOf('function formatEvidenceReady()');
+ const end=content.indexOf('\nconst STOP=',first);
+ const sandbox=vm.createContext({SCANNER_VERSION:audit.version});
+ vm.runInContext(content.slice(first,end),sandbox);
+ assert.equal(sandbox.formatEvidenceReady(),false);
+ assert.throws(()=>sandbox.requireFormatEvidence(),/驗收模組/);
+ sandbox.GalArchiveFormatEvidence={version:audit.version,summarize(){}};
+ assert.equal(sandbox.formatEvidenceReady(),false);
+ sandbox.GalArchiveFormatEvidence=audit;
+ assert.equal(sandbox.formatEvidenceReady(),true);
+ assert.equal(sandbox.requireFormatEvidence(),audit);
+ assert.match(content,/phaseStatus\('failure'[\s\S]*?try\{diagnostic\.nativeFormatAudit=requireFormatEvidence\(\)\.inspectRaw\(/);
+ assert.match(content,/catch\(error\)\{diagnostic\.nativeFormatAudit=\{nativeFormatComplete:false/);
 });
