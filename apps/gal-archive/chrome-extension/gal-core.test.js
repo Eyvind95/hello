@@ -1660,3 +1660,19 @@ test('V0.9.04 minute suffix, bounded world label, adjacent code blocks and post-
  assert.equal(compare(postDom,postNative.replace(post+'\n\n正文甲','正文甲\n'+post),postOpts),null);
  assert.equal(core.parseGameTime(dom.replace('07:20分','07:20秒')),null);
 });
+
+test('V0.9.04 state HUD marker variant and literal malformed visible template are preserved exactly',()=>{
+ const core=context.GalArchiveCore,f='\x60\x60\x60';
+ const hud=['**3000年01月02日 07:20分 I 測試地點**','🔹【基礎】🔹','等級：3 I 10%','血量：25/25','🔹【共鳴契】🔹','對象：無','深度：無','🔹【狀態】','測試狀態'].join('\n');
+ const n=f+'\n'+hud+'\n'+f+'\n測試正文。',d=hud+'\n測試正文。',o={source:'whif-message-content',codeBlocks:[hud.replace(/^\*\*(.*?)\*\*/,'$1')]};
+ assert.equal(core.parseGameTime(n).civil,'3000/01/02 07:20');
+ assert.equal(core.compareNativeParagraphs(d,n,o).text,n);
+ assert.equal(core.compareNativeParagraphs(d,n.replace('🔹【狀態】','🔹【狀態】🔹'),o).text,null);
+ assert.equal(core.parseGameTime(n.replace('🔹【狀態】','其他')),null);
+ const marker='{{測試上下文】】\n';
+ assert.equal(core.parseGameTime(marker+d).civil,'3000/01/02 07:20');
+ assert.equal(core.compareNativeParagraphs(marker+d,marker+n,o).text,marker+n);
+ assert.equal(core.compareNativeParagraphs(d,marker+n,o).text,null);
+ assert.equal(core.compareNativeParagraphs(marker+d,marker.replace('測試','其他')+n,o).text,null);
+ assert.equal(core.parseGameTime('{{user|role】】\n'+d),null);
+});

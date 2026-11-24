@@ -21,7 +21,7 @@ function adventureHeader(line){
 function adventureClockEvidence(input){
  const lines=clean(input).split('\n');
  const markers=new Set(lines.map(line=>line.trim()));
- if(markers.has('🔹【基礎】🔹')&&markers.has('🔹【共鳴契】🔹')&&markers.has('🔹【狀態】🔹'))return true;
+ if(markers.has('🔹【基礎】🔹')&&markers.has('🔹【共鳴契】🔹')&&(markers.has('🔹【狀態】🔹')||markers.has('🔹【狀態】')))return true;
  return lines.some((line,i)=>/^(?:\*\*)?\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}[：:]\d{2}/u.test(line.trim())&&
   (/[ \t]+[I｜|][ \t]+\S/u.test(line)||lines[i+1]?.trim()==='🔹【基礎】🔹'));
 }
@@ -56,10 +56,14 @@ function parseAdventureClock(input){
  let lines=clean(input).split('\n').map(line=>line.trim());
  if(isEvent(lines[0])){lines.shift();while(lines[0]==='')lines.shift()}
  const prefix=adventureWorldPrefix(lines[0]);
- if(adventureContextLine(lines[0])||prefix){
+ // A literal malformed marker observed identically in both projections.
+ // Parse the following HUD but never remove or repair this marker in text.
+ const literalContext=lines[0]?.match(/^\{\{([^{}\n【】]{1,200})】】$/u);
+ const visibleMalformed=!!literalContext&&adventureContextLine('{{'+literalContext[1]+'}}');
+ if(adventureContextLine(lines[0])||prefix||visibleMalformed){
   let at=1;
   while(at<=3&&lines[at]==='')at++;
-  if(lines[at]===ADVENTURE_FENCE||(prefix&&!prefix.context&&adventureClockTitle(lines.slice(at))))lines=lines.slice(at);
+  if(lines[at]===ADVENTURE_FENCE||((prefix&&!prefix.context||visibleMalformed)&&adventureClockTitle(lines.slice(at))))lines=lines.slice(at);
  }
  const fenced=lines[0]===ADVENTURE_FENCE;
  if(fenced)lines.shift();
@@ -68,7 +72,7 @@ function parseAdventureClock(input){
  const {match,headerRows}=title;
  const end=lines.indexOf(ADVENTURE_FENCE,headerRows+1);
  if(fenced&&end<0)return null;
- const hud=lines.slice(headerRows+1,end<0?undefined:end),co=hud.indexOf('🔹【共鳴契】🔹'),st=hud.indexOf('🔹【狀態】🔹');
+ const hud=lines.slice(headerRows+1,end<0?undefined:end),co=hud.indexOf('🔹【共鳴契】🔹'),st=hud.findIndex(x=>x==='🔹【狀態】🔹'||x==='🔹【狀態】');
  if(co<0||st<=co||!hud.slice(0,co).some(x=>/^等級[：:]/u.test(x))||
   !hud.slice(0,co).some(x=>/^血量[：:]/u.test(x))||
   !hud.slice(co+1,st).some(x=>/^對象[：:]/u.test(x))||
