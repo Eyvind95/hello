@@ -2,7 +2,7 @@
 *{box-sizing:border-box}body{margin:0;padding:16px;width:366px;background:#11192c;color:#f6f1ff;font:13px/1.5 system-ui,'Microsoft JhengHei',sans-serif}
 h2{font-size:17px;margin:0 0 4px}.sub{font-size:12px;color:#bcb1e8;margin-bottom:12px}.notice{white-space:pre-wrap;overflow-wrap:anywhere;background:#202c48;border:1px solid #455370;border-radius:10px;padding:9px;margin:9px 0}
 .notice.warn{border-color:#e1a064;color:#ffd7a5}label{display:block;color:#c7cbf5;font-size:12px;margin:9px 0 4px}
-input,select{width:100%;padding:9px 10px;color:white;background:#1a2743;border:1px solid #4a577d;border-radius:7px}
+input,select,textarea{width:100%;padding:9px 10px;color:white;background:#1a2743;border:1px solid #4a577d;border-radius:7px}
 button,a.btn{cursor:pointer;display:inline-block;padding:9px 11px;border:0;border-radius:8px;background:#6d5cdb;color:white;font-weight:700;text-decoration:none;text-align:center}
 button.secondary,a.secondary{background:#334260}button:disabled{opacity:.45}
 .row{display:flex;gap:7px;margin:12px 0}.row>*{flex:1}
@@ -23,6 +23,14 @@ hr{border:0;border-top:1px solid #394669;margin:14px 0}
 <label for="uid">Firebase UID（選填；本版不直接上傳）</label><input id="uid" placeholder="可沿用既有帳號設定">
 <div class="row"><button id="save" class="secondary">儲存此頁面綁定</button><button id="start">↓ 從現在畫面掃描到底</button></div>
 <button id="preview" class="secondary">掃 3 則停下（開場測試）</button><button id="eventProbe" class="secondary" style="width:100%;margin-top:7px">🎯 事件三則測試（上 AI／事件／下我）</button>
+<details id="anchorTools" style="border:1px solid #455370;border-radius:9px;padding:9px;margin:12px 0"><summary style="cursor:pointer;font-weight:700">🧪 指定原生錨點復原取證</summary>
+<label for="anchorId">原生訊息 ID（必填）</label><input id="anchorId" maxlength="100" autocomplete="off">
+<label for="anchorY">上次可信 Y（必填）</label><input id="anchorY" type="number" min="0" step="any">
+<label for="anchorHeight">上次頁面高度（選填）</label><input id="anchorHeight" type="number" min="1" step="any">
+<label for="anchorClock">目標劇情時間（選填，YYYY/MM/DD HH:mm）</label><input id="anchorClock" maxlength="24" autocomplete="off" placeholder="3000/01/03 19:15">
+<label for="anchorNeighbors">已知相鄰來源 ID（選填，一行一個）</label><textarea id="anchorNeighbors" rows="4" maxlength="2000" spellcheck="false"></textarea>
+<button id="anchorProbe" class="secondary" style="width:100%;margin-top:9px">執行錨點復原取證（不匯入）</button>
+<div class="help">只操作目前已綁定的 WHIF 分頁。先定位歷史，再局部取證；不啟動完整掃描、不匯入正史。關閉此彈出視窗後，請查看網頁內掃描面板的進度。</div></details>
 <div class="notice" id="scanStatus">尚未開始。請先在 Gal AI 頁面移至「第一則無時間的開場」，再開始掃描。</div>
 <div class="help">這是另一套獨立工具，不使用 ChatGPT 的「展開時間」或「顯示較多」。只讀取 Gal AI 劇情時間；第一則左側 AI 為「輪迴開場」，其後逐回合「我／他」，事件另存。藍色引用框補成 &gt;，斜體補成 *...*。掃描完整驗證後在頁面右上角下載 JSON，再到檔案館預覽，由 Gal AI 原文覆蓋指定欄位。<strong>掃描本身不會動到 Firebase／正史。</strong></div>
 <script src="manager-names.js"></script><script src="gal-popup.js"></script></body></html>
