@@ -7,7 +7,7 @@ const core=globalThis.GalArchiveCore;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=8000,BOTTOM_POLL_MS=750;
 let busy=false,cancelled=false,paused=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
-let activeRun=null,activeScanRows=null;
+let activeRun=null,activeScanRows=null,lastFailureIndices=[];
 const localDifferences=new Map();
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const $=id=>document.getElementById(id);
@@ -56,6 +56,12 @@ function mount(){
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-save-progress">🧷 保全已讀進度（不可匯入）</button>'+
+ '<div style="margin:6px 0"><label>指定索引（0 起算） <input id="gal-scan-index-input" type="number" min="0" step="1" style="width:95px"></label>'+
+ '<button id="gal-scan-position-index">指定位置測試</button>'+
+ '<button id="gal-scan-position-visible">測目前畫面</button>'+
+ '<button id="gal-scan-position-last-error">測上次錯誤位置</button></div>'+
+ '<div style="margin:6px 0"><button id="gal-scan-open-folder">📁 顯示最近下載資料夾</button>'+
+ '<button id="gal-scan-copy-folder">📋 複製批次路徑</button></div>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
  '<button id="gal-scan-preview">掃 3 則停下（開場測試）</button><button id="gal-scan-event-probe">🎯 事件三則測試</button></div>'+
  '<details open><summary>首則 AI 回覆的段落驗收</summary>'+
@@ -70,6 +76,25 @@ function mount(){
  document.documentElement.append(p);
  $('gal-scan-pause').onclick=()=>{if(busy){paused=true;status('已要求暫停，正在儲存診斷。')}};
  $('gal-scan-cancel').onclick=()=>{cancelled=true;status('已要求停止。未下載、未修改任何歸檔資料。')};
+ $('gal-scan-open-folder').onclick=async()=>{
+  if(!activeRun?.scanRunId)return status('此分頁尚無掃描批次');
+  const response=await chrome.runtime.sendMessage({type:'gal-run-open-folder',
+   scanRunId:activeRun.scanRunId,cycleId:target?.cycleId}).catch(error=>({error:String(error)}));
+  if(response?.ok)status('已請 Windows 檔案總管顯示批次下載檔');
+  else status('無法開啟下載位置：'+(response?.error||'未知錯誤'));
+ };
+ $('gal-scan-copy-folder').onclick=()=>{
+  const path=activeRun?.batchFolder;
+  if(!path)return status('尚無固定批次路徑');
+  const full='下載\\'+path.replaceAll('/','\\');
+  if(navigator.clipboard?.writeText)
+   navigator.clipboard.writeText(full).then(()=>status('已複製批次路徑：'+full))
+    .catch(()=>status(full));
+  else status(full);
+ };
+ $('gal-scan-position-index').onclick=()=>positionSevenProbe('index');
+ $('gal-scan-position-visible').onclick=()=>positionSevenProbe('visible');
+ $('gal-scan-position-last-error').onclick=()=>positionSevenProbe('last-error');
  $('gal-scan-pick').onclick=()=>chooseOpening();
  $('gal-scan-refresh-binding').onclick=()=>refreshBoundTarget();
  $('gal-scan-retry').onclick=()=>{if(!busy&&target)scan(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
@@ -100,6 +125,97 @@ function mount(){
 // Local rescue does not rely on the background worker or on the 4-hour
 // deadline. A progress snapshot is explicitly NOT an authoritative scan;
 // keep both visible and native source text for later forensic recovery.
+
+// Failed scan evidence always remains downloadable, never canonical.
+// Preserve all gathered DOM markdown (quotes/italics/fences), native React
+// message text, original order, provenance and independently parsed clocks.
+function unverifiedEvidence(rows,run,why,fullDiagnostic){
+ const data=(rows||[]).map((row,scanIndex)=>{
+  const native=row.formatSource?.nativeReply||null;
+  return {scanIndex,role:row.role,eventType:row.eventType||null,
+   worldName:row.worldName||null,autoContinue:row.autoContinue===true,
+   domText:row.text,originalText:row.text,
+   nativeText:native?.reason==='available'?native.text:null,
+   nativeTextUnavailableReason:native?.reason==='available'?null:
+    native?.reason||'native-reader-not-captured',
+   sourceMessageId:native?.messageId||null,
+   sourceEvidence:native?.eventEvidence||null,
+   nativeMarkerCount:native?.markerCount??null,
+   playerSources:row.formatSource?.playerSources||[],
+   originalTimeHeader:core.clean(row.text).split('\n').slice(0,12),
+   parsedGameTime:core.parseGameTime(row.text)||null,
+   nativeParsedGameTime:native?.text?core.parseGameTime(native.text):null,
+   explicitUnknownGameTime:core.isExplicitUnknownGameTime(row.text),
+   formatSource:row.formatSource||null};
+ });
+ return {format:'gal-ai-unverified-scan',version:1,importable:false,
+  validated:false,complete:false,forensicOnly:true,
+  generatedAt:new Date().toISOString(),scanRunId:run?.scanRunId||null,
+  scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+  target:{cycleId:target?.cycleId,cycleTitle:target?.cycleTitle,
+   worldName:target?.worldName},
+  source:{url:location.origin+location.pathname},scope:'unverified-read-progress',
+  collectedCount:data.length,rawRows:data.length,
+  failure:why||null,eventAudit:fullDiagnostic?.eventAudit||null,
+  errors:fullDiagnostic?.errorContexts||[],rows:data,
+  note:'不具正式正史效力，禁止直接匯入檔案館或 Firebase；不捏造時間、來源文字或未讀歷史。'};
+}
+function failureContexts(rows,validation,reason){
+ const errs=validation?.errors?.length?validation.errors:[reason].filter(Boolean);
+ const sourceFor=row=>row?.formatSource?.nativeReply;
+ const indices=new Set();
+ const issues=[];
+ for(const error of errs){
+  const m=String(error).match(/第\s*(\d+)\s*則/);
+  if(m){const at=Number(m[1])-1;indices.add(at);issues.push({scanIndex:at,error})}
+  else issues.push({scanIndex:null,error,unavailableReason:'錯誤沒有全輪掃描索引'});
+ }
+ const primary=[...indices][0]??null;
+ const serialize=(row,index)=>{
+  if(!row)return null;
+  const native=sourceFor(row);
+  let compare=null;
+  if(row.role==='ai'&&native?.reason==='available'&&native.text){
+   try{
+    const examined=core.compareNativeParagraphs(row.text,native.text,{
+     source:row.eventType==='event'?'whif-event-content':'whif-message-content',
+     event:row.eventType==='event',
+     verifiedUntimedNative:row.role==='ai'&&!core.parseGameTime(row.text)
+    });
+    compare={contentEqual:examined.comparison?.contentEqual??null,
+     clockEqual:examined.comparison?.clockEqual??null,
+     exactDifference:examined.comparison?.firstDifference||null,
+     remainingUnexplained:examined.comparison?.remainingUnexplained||null,
+     localContext:examined.localContext||null,
+     reason:examined.text===null?'native-text-or-clock-not-proven':'native-content-matched'};
+   }catch(error){compare={error:String(error.message||error)}}
+  }
+  return {scanIndex:index,role:row.role,eventType:row.eventType||null,
+   domText:row.text,nativeText:native?.reason==='available'?native.text:null,
+   nativeUnavailableReason:native?.reason==='available'?null:native?.reason||'not-captured',
+   sourceMessageId:native?.messageId||null,
+   playerSources:row.formatSource?.playerSources||[],
+   sourceEvidence:native?.eventEvidence||null,
+   classificationBasis:row.eventType==='event'?'WHIF event header + source evidence':
+    row.role==='ai'?'WHIF reply header + reaction toolbar':'between adjacent WHIF AI toolbars',
+   originalTimeHeader:core.clean(row.text).split('\n').slice(0,12),
+   parsedTime:core.parseGameTime(row.text)||null,
+   nativeParsedTime:native?.text?core.parseGameTime(native.text):null,
+   explicitUnknown:core.isExplicitUnknownGameTime(row.text),compare};
+ };
+ return issues.map(({scanIndex,error,unavailableReason})=>({
+  scanIndex,error,
+  cascadePossible:primary!==null&&scanIndex!==null&&scanIndex>primary,
+  cascadeExplanation:primary!==null&&scanIndex>primary?
+   '前方第 '+(primary+1)+' 則已經失敗；本訊息配對可能是連鎖異常':null,
+  unavailableReason:unavailableReason||null,
+  message:scanIndex!==null&&rows[scanIndex]?serialize(rows[scanIndex],scanIndex):null,
+  context:scanIndex===null?[]:
+   rows.slice(Math.max(0,scanIndex-3),Math.min(rows.length,scanIndex+4))
+    .map((row,j)=>serialize(row,Math.max(0,scanIndex-3)+j))
+ }));
+}
+
 function saveProgressSnapshot(){
  const rows=activeScanRows;
  if(!rows?.length){
@@ -1249,8 +1365,10 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  try{
   if(managed){
    await fetchCurrentBinding(profile);
-   const response=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
+   const response=await chrome.runtime.sendMessage({type:'gal-run-start',...run,
+    scannerVersion:SCANNER_VERSION});
    if(!response?.ok)throw Error(response?.error||'背景程式未登記掃描工作');
+   run.batchFolder=response.status?.batchFolder||null;
    registered=true;
   }
   const first=snapshot();diagnostic=inspect();
@@ -1529,6 +1647,10 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   const scrollAtFailure=root?.isConnected?{
    scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight}:null;
   if(root?.isConnected)root.scrollTop=lastGoodY;
+  lastFailureIndices=(failedValidation?.errors||[]).map(text=>{
+   const match=String(text).match(/第\s*(\d+)\s*則/);
+   return match?Number(match[1])-1:null;
+  }).filter(Number.isInteger);
   diagnostic={...(diagnostic||inspect()),...run,scanMode,error:failure,trustedCount:collected.length,paragraphCheck,unpairedReply,bottomProof,
    scrollStall,scrollAtFailure,
    autoContinueCandidates:continuedPositions.map(({scanIndex})=>scanIndex),autoContinueAudit,
@@ -1536,12 +1658,28 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    eventAudit:summarizeEventAudit(eventAudit,collected,
     failedValidation||{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
+  diagnostic.errorContexts=failureContexts(collected,failedValidation,failure);
   status((cancelled?'已取消：':paused?'已暫停：':'⛔ 安全停止：')+failure+'\n可信訊息 '+collected.length+
    ' 則，未輸出半份正史；可按「📋 複製版面診斷」。');
-  if(registered)await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
-   state:cancelled?'cancelled':paused?'paused':'failed',scanned:collected.length,
-   reason:cancelled?'使用者取消':paused?'使用者暫停':'掃描或寫入失敗，請讀取診斷檔',
-   diagnostic:JSON.stringify(diagnostic,null,2)}).catch(()=>{});
+  if(registered){
+   const unverified=collected.length?
+    JSON.stringify(unverifiedEvidence(collected,run,failure,diagnostic)):null;
+   const response=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
+    state:cancelled?'cancelled':paused?'paused':'failed',scanned:collected.length,
+    reason:failure,
+    unverified,
+    diagnostic:JSON.stringify(diagnostic,null,2)}).catch(error=>({error:String(error)}));
+   if(response?.ok){
+    const files=response.status?.files||{};
+    status('⚠ '+(target?.cycleTitle||'輪迴')+' 掃描未通過正式驗證，已讀 '+
+     collected.length+' 則。\n'+failure+
+     '\n批次：'+(run.batchFolder||'請查下載目錄')+
+     '\n已完成下載：'+Object.keys(files).join('、')+
+     '\n未驗證資料禁止匯入。');
+   }else status('⚠ '+failure+'\n背景保全未確認：'+
+    (response?.error||'正在等待 Chrome 下載')+
+    '\n可按「保全已讀進度（不可匯入）」立即本機保存。');
+  }
  }finally{
   busy=false;
   // A valid in-page canonical result survives a stale background run.
