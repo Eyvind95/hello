@@ -14,7 +14,8 @@ let modal=null,buckets=new Map();
 function labelWorld(id){return settings.index.worldLabels[id]||id||'未知世界觀'}
 function getIndex(){
  settings.index=core.build(bridge.records(),{
-  worlds:bridge.worlds(),storyTimeline:bridge.storyTimeline,
+  worlds:bridge.worlds(),cycleComparator:bridge.cycleComparator,
+  storyTimeline:bridge.storyTimeline,
   dialogueAudit:bridge.dialogueAudit,galTimeContext:bridge.galTimeContext,
   parseStoryClock:bridge.parseStoryClock,parseEventClock:bridge.parseEventClock
  });
@@ -186,7 +187,7 @@ function renderTimeline(){
    '<strong>'+esc(group.cycle.title)+'</strong>'+
    '<span class="ob-chip">'+num(total)+' 則</span></div>'+
    '<div class="ob-small">'+esc(labelWorld(group.cycle.world))+
-   ' · 只在同一輪迴內依日期排序，不強行混合世界觀</div>';
+   ' · 輪迴順序沿用左側列表；各輪迴內按日期排序</div>';
   for(const day of group.days){
    const key='ob-bucket-'+(n++);
    buckets.set(key,day.items);
@@ -205,7 +206,7 @@ function renderTimeline(){
   '<p class="ob-note">'+(settings.clock==='story'?
    '按各輪迴自己的 Gal AI 劇情日期分組；玩家與 Gal AI 只有存在可靠同回合時間時才會共用日期。':
    '只使用來源發言時間 sourceCreatedAt，不拿劇情時間、首次擷取或雲端接收時間來補。')+
-   ' 不同世界觀的年份不代表同一條共同故事時間。點開日期查看逐則內容；每次最多載入 60 則。</p>'+
+   ' 輪迴排列沿用左側列表目前的排序選項；不同世界觀的年份不代表同一條共同故事時間。點開日期查看逐則內容；每次最多載入 60 則。</p>'+
   (html||'<div class="ob-placeholder">沒有符合條件的已匯入正史。可以取消「只看有時間」或清除搜尋。</div>');
  setStatus('已索引 '+num(results.total)+' 則，分為 '+
   num(results.groups.reduce((sum,g)=>sum+g.days.length,0))+' 個日期群組。');
