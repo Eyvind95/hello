@@ -553,6 +553,16 @@ function galNativeVerify(obj,r){
   }
  }
  if(obj?.validation?.ok!==true)fail.push('來源掃描未通過原始回合完整性檢查');
+ // From V0.8.40 forward the structural audit and native-format audit are
+ // independent mandatory conditions. Rescue imports built from old snapshots
+ // continue under their separate provenance-review rules.
+ if(/^0\.8\.(?:[4-9]\d|\d{3,})$/.test(String(obj?.scannerVersion||''))){
+  if(obj.validation?.integrityOk!==true||
+    obj.validation?.nativeFormatComplete!==true||
+    obj.nativeFormatAudit?.complete!==true||
+    obj.nativeFormatAudit?.failed!==0)
+   fail.push('原生格式尚未全部驗收：禁止把完整性通過當成正史全數通過');
+ }
  if(obj?.target?.cycleId!==r.id)fail.push('目標輪迴 ID 不一致：禁止跨輪迴覆蓋');
  const selectedWorld=WORLDS.find(x=>x.id===r.world)?.name||'';
  if(!obj?.target?.worldName||galNativeWorld(obj.target.worldName)!==galNativeWorld(selectedWorld))
