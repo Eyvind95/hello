@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.3: adventure quoted-location HUD and bounded context blank lines. */
+/* Independent Gal AI page scanner. v0.9.4: adventure minute suffix, bounded visible prefixes, multiple code blocks, dialogue quotes and overlap diagnostics. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.3';
+const SCANNER_VERSION='0.9.4';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -1173,7 +1173,7 @@ function recoveryNativeId(row){
 function trustedRecoveryAnchor(root,shot,locate){
  const row=shot.rows.at(-1),id=recoveryNativeId(row);
  return {top:root.scrollTop,height:root.scrollHeight,id,
-  relativeTop:id?locate(id):null};
+  relativeTop:id?locate(id):null,windowRows:shot.rows.map(recoveryDiagnosticRow)};
 }
 function recoveryMarkerTop(root,id){
  const nodes=root.querySelectorAll('[data-selection-copy-message-id="'+CSS.escape(id)+'"]');
@@ -1181,23 +1181,55 @@ function recoveryMarkerTop(root,id){
  const y=nodes[0].getBoundingClientRect().top;
  return y-(isDocumentRoot(root)?0:root.getBoundingClientRect().top);
 }
-function proveRecoveryOverlap(shot,all){
- if(!all.length||!shot.rows.length)return false;
+function recoveryDiagnosticRow(row){
+ const nativeId=recoveryNativeId(row);
+ const playerIds=(row.formatSource?.playerSources||[]).filter(x=>x.id&&x.sender==='user'&&x.nativeReason==='available'&&x.nativeSender==='user'&&x.nativeMessageId===x.id).map(x=>x.id);
+ return {id:nativeId,playerIds,sourceIds:nativeId?[nativeId]:playerIds,domId:row.domId||row.id||null,role:row.role,eventType:row.eventType||null};
+}
+function proveRecoveryOverlap(shot,all,detail=null){
+ const reject=reason=>{if(detail)detail.reason=reason;return false};
+ if(detail){
+  detail.trustedTail=all.slice(-Math.max(shot.rows.length,20)).map(recoveryDiagnosticRow);
+  detail.candidateRows=shot.rows.map(recoveryDiagnosticRow);
+  const ids=detail.candidateRows.flatMap(r=>r.sourceIds);
+  detail.candidateMissingIds=detail.candidateRows.filter(r=>!r.sourceIds.length).length;
+  detail.candidateDuplicateIds=[...new Set(ids.filter((id,i)=>ids.indexOf(id)!==i))];
+  const known=new Set(all.flatMap(row=>recoveryDiagnosticRow(row).sourceIds));
+  detail.sharedNativeIds=ids.filter(id=>known.has(id));
+  // Include per-ID mismatch flags even when appendSample cannot find an anchor.
+  const stored=new Map();
+  for(const row of all)for(const id of recoveryDiagnosticRow(row).sourceIds){
+   if(!stored.has(id))stored.set(id,[]);
+   stored.get(id).push(row);
+  }
+  detail.sharedIdChecks=shot.rows.flatMap((row,candidateIndex)=>recoveryDiagnosticRow(row).sourceIds.flatMap(id=>
+   (stored.get(id)||[]).map(prior=>({id,candidateIndex,textEqual:prior.text===row.text,
+    roleEqual:prior.role===row.role,eventEqual:(prior.eventType||null)===(row.eventType||null),
+    storedOccurrences:stored.get(id).length}))));
+  detail.trustedMissingIds=detail.trustedTail.filter(r=>!r.sourceIds.length).length;
+  const tailIds=detail.trustedTail.flatMap(r=>r.sourceIds);
+  detail.trustedDuplicateIds=[...new Set(tailIds.filter((id,i)=>tailIds.indexOf(id)!==i))];
+ }
+ if(!all.length||!shot.rows.length)return reject('empty-window');
  const copies=all.map(row=>({...row}));
  let proof;
- try{proof=appendSample(shot,copies)}catch{return false}
- if(!proof.repeated)return false;
+ try{proof=appendSample(shot,copies)}catch(error){if(detail)detail.appendError=String(error?.message||error);return reject(detail?.sharedNativeIds.length?'shared-id-but-append-rejected':'no-proven-ordered-overlap')}
+ if(detail)detail.alignment=proof;
+ if(!proof.repeated)return reject('no-overlap');
  const tail=all.slice(-proof.repeated),overlap=shot.rows.slice(proof.anchorPosition,proof.anchorPosition+proof.repeated);
  // An ID is evidence only when unique on both sides and the entire
  // overlapping rendered text and classification still agree.
- if(!tail.every((row,i)=>row.text===overlap[i].text&&sameRow(row,overlap[i])))return false;
+ if(detail)detail.overlapChecks=tail.map((row,i)=>({id:recoveryNativeId(row),candidateId:recoveryNativeId(overlap[i]),textEqual:row.text===overlap[i].text,roleEqual:row.role===overlap[i].role,eventEqual:(row.eventType||null)===(overlap[i].eventType||null),sameRow:sameRow(row,overlap[i])}));
+ if(!tail.every((row,i)=>row.text===overlap[i].text&&sameRow(row,overlap[i])))return reject('overlap-content-or-classification-mismatch');
  const id=recoveryNativeId(tail.at(-1));
  if(!id||id!==recoveryNativeId(overlap.at(-1))||
     all.filter(row=>recoveryNativeId(row)===id).length!==1||
-    shot.rows.filter(row=>recoveryNativeId(row)===id).length!==1)return false;
+    shot.rows.filter(row=>recoveryNativeId(row)===id).length!==1)return reject('anchor-id-missing-or-not-unique');
  const known=new Set(all.map(recoveryNativeId).filter(Boolean));
  const extras=shot.rows.slice(proof.anchorPosition+proof.repeated).map(recoveryNativeId).filter(Boolean);
- return extras.every(id=>!known.has(id))&&new Set(extras).size===extras.length;
+ const ok=extras.every(id=>!known.has(id))&&new Set(extras).size===extras.length;
+ if(detail){detail.extraNativeIds=extras;detail.reason=ok?'proven':'extra-id-duplicate-or-already-collected'}
+ return ok;
 }
 async function recoverScanOverlap(root,trusted,all,sample,locate,wait=sleep,guard=()=>{}){
  const attempts=[],seen=new Set();
@@ -1223,9 +1255,10 @@ async function recoverScanOverlap(root,trusted,all,sample,locate,wait=sleep,guar
   await wait(WAIT_MS+STABLE_MS);guard();
   if(!root.isConnected)throw Error('捲動復原期間 WHIF 更換了訊息容器；已停止避免漏掃');
   const shot=sample();
-  const proven=proveRecoveryOverlap(shot,all);
+  const detail={trustedWindow:trusted.windowRows||[],trustedAnchorId:trusted.id||null};
+  const proven=proveRecoveryOverlap(shot,all,detail);
   attempts.push({requested:candidate,actual:root.scrollTop,heightBefore:beforeHeight,
-   heightAfter:root.scrollHeight,proven});
+   heightAfter:root.scrollHeight,proven,detail});
   if(proven)return {ok:true,shot,attempts};
   seen.add(Math.round(root.scrollTop));
  }

@@ -1630,3 +1630,70 @@ test('V0.9.03 quoted adventure location only joins the bounded HUD heading; pres
  for(const bad of [native.replace('07:20','07:21'),native.replace('「碎瓶」','「其他」'),native.replace('保留「引號」','保留引號'),native.replace(prefix,'{{甲}}\n{{乙}}\n'),native.replace(prefix,'{{user|role}}\n\n'),native.replace(prefix,'{{甲}}\n\n\n\n\n')])assert.equal(core.compareNativeParagraphs(dom,bad,opts).text,null);
  assert.equal(core.compareNativeParagraphs(dom,native,{...opts,codeBlocks:[]}).text,null);
 });
+
+
+test('V0.9.04 minute suffix, bounded world label, adjacent code blocks and post-HUD context preserve all native tokens',()=>{
+ const core=context.GalArchiveCore,f='\x60\x60\x60',wrap=x=>f+'\n'+x+'\n'+f;
+ const hud=['**3000年01月02日 07:20分 I 測試地點**','🔹【基礎】🔹','等級：3 I 10%','血量：25/25','🔹【共鳴契】🔹','對象：無','深度：無','🔹【狀態】🔹','測試狀態'].join('\n');
+ const a='**共鳴契對象階段變化！**\n變化：測試',b='**冒險者階級考核結果！**\n結果：通過',c='**系統對話框**\n系統通知';
+ const label='身為冒-就可以這樣那樣:',pre='{{測試上下文}}',post='{{測試後置上下文}}';
+ const body='\n正文甲「測試對話」正文乙\n';
+ const visibleBody='\n正文甲\n測試對話\n正文乙\n';
+ const dom=label+'\n'+hud+visibleBody+a+'\n'+b+'\n'+c;
+ const native=label+' '+pre+'\n'+wrap(hud)+body+wrap(a)+'\n\n'+wrap(b)+'\n\n'+wrap(c);
+ const opts={source:'whif-message-content',codeBlocks:[hud,a,b,c].map(x=>x.replace(/^\*\*(.*?)\*\*/,'$1'))};
+ const compare=(d=dom,n=native,o=opts)=>core.compareNativeParagraphs(d,n,o).text;
+ assert.equal(core.parseGameTime(dom).civil,'3000/01/02 07:20');
+ assert.equal(core.parseGameTime(native).civil,'3000/01/02 07:20');
+ assert.equal(compare(),native);
+ const postNative=wrap(hud)+'\n\n'+post+'\n\n正文甲「測試對話」正文乙\n'+wrap(a);
+ const postDom=hud+visibleBody+a;
+ const postOpts={...opts,codeBlocks:opts.codeBlocks.slice(0,2)};
+ assert.equal(compare(postDom,postNative,postOpts),postNative);
+ for(const bad of [native.replace('07:20','07:21'),native.replace('變化：測試','變化：錯誤'),native.replace(label,'其他標題:'),native.replace(pre,'{{user|role}}'),native.replace('正文乙','正文丙'),native.replace(wrap(a)+'\n\n'+wrap(b),wrap(b)+'\n\n'+wrap(a))])assert.equal(compare(dom,bad),null);
+ assert.equal(compare(dom.replace('正文甲\n測試對話\n正文乙','正文甲測試對話正文乙')),null);
+ assert.equal(compare(dom.replace('測試對話','「測試對話')),null);
+ assert.equal(compare(dom,native,{...opts,codeBlocks:opts.codeBlocks.slice(0,3)}),null);
+ assert.equal(compare(dom,native,{...opts,source:'unknown'}),null);
+ assert.equal(compare(postDom,postNative.replace(post,'{{img:bad}}'),postOpts),null);
+ assert.equal(compare(postDom,postNative.replace(post,post+'\n{{第二個}}'),postOpts),null);
+ assert.equal(compare(postDom,postNative.replace(post+'\n\n正文甲','正文甲\n'+post),postOpts),null);
+ assert.equal(core.parseGameTime(dom.replace('07:20分','07:20秒')),null);
+});
+
+test('V0.9.04 state HUD marker variant and literal malformed visible template are preserved exactly',()=>{
+ const core=context.GalArchiveCore,f='\x60\x60\x60';
+ const hud=['**3000年01月02日 07:20分 I 測試地點**','🔹【基礎】🔹','等級：3 I 10%','血量：25/25','🔹【共鳴契】🔹','對象：無','深度：無','🔹【狀態】','測試狀態'].join('\n');
+ const n=f+'\n'+hud+'\n'+f+'\n測試正文。',d=hud+'\n測試正文。',o={source:'whif-message-content',codeBlocks:[hud.replace(/^\*\*(.*?)\*\*/,'$1')]};
+ assert.equal(core.parseGameTime(n).civil,'3000/01/02 07:20');
+ assert.equal(core.compareNativeParagraphs(d,n,o).text,n);
+ assert.equal(core.compareNativeParagraphs(d,n.replace('🔹【狀態】','🔹【狀態】🔹'),o).text,null);
+ assert.equal(core.parseGameTime(n.replace('🔹【狀態】','其他')),null);
+ const marker='{{測試上下文】】\n';
+ assert.equal(core.parseGameTime(marker+d).civil,'3000/01/02 07:20');
+ assert.equal(core.compareNativeParagraphs(marker+d,marker+n,o).text,marker+n);
+ assert.equal(core.compareNativeParagraphs(d,marker+n,o).text,null);
+ assert.equal(core.compareNativeParagraphs(marker+d,marker.replace('測試','其他')+n,o).text,null);
+ assert.equal(core.parseGameTime('{{user|role】】\n'+d),null);
+});
+
+test('V0.9.04 recovery diagnostics distinguish missing overlap, mismatched content, duplicate IDs and proven anchors without relaxing proof',()=>{
+ const code=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const a=code.slice(code.indexOf('function sameRow('),code.indexOf('function observeEventAudit('));
+ const b=code.slice(code.indexOf('function recoveryNativeId('),code.indexOf('async function recoverScanOverlap('));
+ const prove=new Function(a+'\n'+b+'\nreturn proveRecoveryOverlap;')();
+ const ai=(id,text)=>({role:'ai',id,text,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:id}}});
+ const me={role:'me',text:'測試玩家',formatSource:{playerSources:[{id:'player-1',sender:'user',nativeReason:'available',nativeSender:'user',nativeMessageId:'player-1'}]}};
+ const all=[me,ai('anchor-1','測試回覆')],tail=ai('next-1','下一則');
+ let detail={};
+ assert.equal(prove({rows:[me,all[1],tail]},all,detail),true);
+ assert.equal(detail.reason,'proven');
+ assert.equal(detail.candidateRows[0].sourceIds[0],'player-1');
+ assert.equal(all.length,2);
+ detail={};assert.equal(prove({rows:[tail]},all,detail),false);
+ assert.equal(detail.reason,'no-proven-ordered-overlap');
+ detail={};assert.equal(prove({rows:[me,ai('anchor-1','不同正文'),tail]},all,detail),false);
+ assert.equal(detail.sharedIdChecks.some(x=>x.id==='anchor-1'&&!x.textEqual),true);
+ detail={};assert.equal(prove({rows:[me,all[1],ai('anchor-1','重複來源')]},all,detail),false);
+ assert.equal(detail.candidateDuplicateIds.includes('anchor-1'),true);
+});
