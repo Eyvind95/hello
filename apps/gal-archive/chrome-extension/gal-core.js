@@ -722,6 +722,53 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   }
  }
 
+
+ // Historic untimed WHIF AI reply containing a hidden chapter/context token
+ // near the beginning, one bare fenced block and a terminal image marker.
+ // All three must be independently recognizable. This branch is only entered
+ // after the ordinary validator verified a unique native WHIF source ID.
+ // Commit NOTHING unless the ENTIRE resulting non-whitespace text equals the
+ // DOM. Do not remove arbitrary prose or infer a game clock.
+ let untimedWrappedProjection=null;
+ if(options.verifiedUntimedNative===true&&
+    options.source==='whif-message-content'&&!options.event&&!options.opening&&
+    !parseGameTime(scanned)&&!parseGameTime(original)&&
+    !isExplicitUnknownGameTime(scanned)&&!isExplicitUnknownGameTime(original)&&
+    markers.some(item=>item.kind==='terminal-image-marker')&&
+    unspaced(scanned)!==unspaced(text)){
+  const wrappedTokens=[...text.matchAll(/\{\{([^{}\n]{1,300})\}\}/gu)];
+  const eligible=wrappedTokens.filter(match=>{
+   const label=match[1].trim();
+   return match.index<=160&&
+    !/^(?:user|char|character|img(?:age)?\s*:)/i.test(label)&&
+    !/https?:\/\//i.test(label);
+  });
+  if(wrappedTokens.length===1&&eligible.length===1){
+   const token=eligible[0];
+   const withoutTemplate=text.slice(0,token.index)+text.slice(token.index+token[0].length);
+   // Bare backticks only. Never strip a language-tagged fence or arbitrary
+   // inline code: doing so could silently change real story content.
+   const bareFence=/^[ \t]*\x60{3}[ \t]*\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm;
+   const blocks=[...withoutTemplate.matchAll(bareFence)];
+   if(blocks.length===1&&blocks[0][1].trim()&&
+      token.index<withoutTemplate.indexOf(String.fromCharCode(96).repeat(3))){
+    const block=blocks[0];
+    const candidate=withoutTemplate.slice(0,block.index)+block[1]+
+     withoutTemplate.slice(block.index+block[0].length);
+    if(unspaced(candidate)===unspaced(scanned)){
+     record('untimed-verified-hidden-context',1,text,withoutTemplate);
+     record('untimed-verified-bare-fence',2,withoutTemplate,candidate);
+     text=candidate;
+     untimedWrappedProjection={
+      templateCount:1,bareFencePairs:1,
+      terminalImageMarker:true,
+      identicalVisibleNonWhitespace:true,
+      restoredFromUniqueNativeSource:true
+     };
+    }
+   }
+  }
+ }
  const comparableText=openingQuoteProjection?.comparableText??
   (legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text));
  const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(comparableText)];
@@ -750,7 +797,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const comparison={scannedLength:[...scanned].length,nativeLength:[...nativeCopy].length,
   scannedNonWhitespace:scanChars.length,nativeNonWhitespace:count(original),
   comparableNativeNonWhitespace:nativeChars.length,whitespaceOnlyEqual,contentEqual,clockEqual,
-  preambleMetadata,verifiedNoClock,formatMarkers:markers,formatMarkerCount:markers.reduce((sum,m)=>sum+m.tokens,0),
+  preambleMetadata,verifiedNoClock,untimedWrappedProjection,formatMarkers:markers,formatMarkerCount:markers.reduce((sum,m)=>sum+m.tokens,0),
   explainedNonWhitespace:markers.reduce((sum,m)=>sum+m.nonWhitespaceChars,0),
   remainingUnexplained:{scanned:0,native:0},
   nativeBodyParagraphs:bodyOffset===undefined?null:text.slice(bodyOffset).split(/\n(?:[ \t]*\n)+/).length,
@@ -843,5 +890,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.34'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.35'};
 })();
