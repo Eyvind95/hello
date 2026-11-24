@@ -109,12 +109,15 @@ test('no automatic sync is performed without account authentication, and only se
  assert.match(html,/window\.ArchiveAutoSyncBridge=/);
  assert.match(html,/archiveManualBusy=true/);
  assert.match(html,/!window\.__archiveAutoApplyingCloud/);
- assert.match(html,/downloadText\('輪迴檔案館_V5\.67_網站\.html'/);
+ const version=html.match(/<h1>輪迴檔案館 V(\d+)\.(\d+)<\/h1>/);
+ assert.ok(version&&(Number(version[1])>5||(Number(version[1])===5&&Number(version[2])>=67)),'auto sync website version must be V5.67 or newer');
+ assert.ok(html.includes(`downloadText('輪迴檔案館_V${version[1]}.${version[2]}_網站.html'`),'standalone HTML filename must match website version');
 });
 test('PWA and self contained HTML download both include automatic sync code',()=>{
  const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
- assert.match(sw,/gal-archive-pwa-v100/);
+ const cache=sw.match(/^const CACHE='gal-archive-pwa-v([1-9]\d*)';$/m);
+ assert.ok(cache&&Number(cache[1])>=100,'auto sync cache generation must be v100 or newer');
  assert.match(sw,/archive-auto-sync-core\.js/);
  assert.match(sw,/archive-auto-sync\.js/);
  assert.match(html,/for\(const asset of \[.*'archive-auto-sync-core\.js\?v=1','archive-auto-sync\.js\?v=1'/);
