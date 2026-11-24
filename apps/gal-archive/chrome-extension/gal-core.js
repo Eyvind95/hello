@@ -25,9 +25,15 @@ function adventureClockEvidence(input){
  return lines.some((line,i)=>/^(?:\*\*)?\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}[：:]\d{2}/u.test(line.trim())&&
   (/[ \t]+[I｜|][ \t]+\S/u.test(line)||lines[i+1]?.trim()==='🔹【基礎】🔹'));
 }
+// A single, bounded context marker immediately before the fenced HUD.
+function adventureContextLine(line){
+ const m=String(line||'').trim().match(/^\{\{([^{}\n]{1,200})\}\}$/u);
+ return !!m&&!!m[1].trim()&&!/^(?:user|char|character|img|image)(?:\s*(?:[:|=]|$))/iu.test(m[1].trim());
+}
 function parseAdventureClock(input){
  let lines=clean(input).split('\n').map(line=>line.trim());
  if(isEvent(lines[0])){lines.shift();while(lines[0]==='')lines.shift()}
+ if(adventureContextLine(lines[0])&&lines[1]===ADVENTURE_FENCE)lines.shift();
  const fenced=lines[0]===ADVENTURE_FENCE;
  if(fenced)lines.shift();
  const match=adventureHeader(lines[0]);
@@ -65,7 +71,15 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
  const fenceLines=original.split('\n').filter(l=>l.trim().startsWith(ADVENTURE_FENCE));
  const validFences=fenceLines.length===blocks.length*2&&blocks.length>0;
  const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
- let matched=false,omitted=0,headings=0,offset=0,sourceOffset=0;
+ let matched=false,omitted=0,headings=0,offset=0,sourceOffset=0,hiddenContext='';
+ // Project only a single standalone leading context immediately before a
+ // proven HUD fence from a bounded native reply, never a body marker.
+ const firstLine=original.split('\n')[0];
+ if(options.source==='whif-message-content'&&!options.event&&adventureContextLine(firstLine)&&
+    blocks[0]?.index===firstLine.length+1&&adventureHeader(blocks[0][1].split('\n')[0])&&
+    !actual.startsWith(compact(firstLine))&&!visible.includes(firstLine)){
+  hiddenContext=firstLine;sourceOffset=firstLine.length+1;
+ }
  const take=value=>{const v=compact(value);if(!actual.startsWith(v,offset))return false;offset+=v.length;return true};
  if(validFences&&proof.length===blocks.length){
   matched=true;
@@ -74,8 +88,12 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
    const knownBold=heading.startsWith('**')&&heading.endsWith('**')&&
     (i===0&&!!adventureHeader(heading)||/^\*\*(?:【[^】\n]+】|此次戰鬥損益！|系統對話框)\*\*$/u.test(heading));
    const stripped=knownBold?raw.replace(first,heading.slice(2,-2).trim()):raw;
-   const variants=[...new Set([raw,stripped])].filter(v=>compact(v)===compact(String(proof[i]??'')));
-   if(!variants.length||!take(original.slice(sourceOffset,b.index))){matched=false;break}
+   // DOM textContent and serialized Markdown are distinct projections.
+   // Prove the block with DOM text, then independently consume the
+   // serialized form, which can legitimately restore heading bold.
+   const variants=[...new Set([raw,stripped])];
+   const domProven=variants.some(v=>compact(v)===compact(String(proof[i]??'')));
+   if(!domProven||!take(original.slice(sourceOffset,b.index))){matched=false;break}
    let consumed=false;
    for(const v of variants){
     if(take(ADVENTURE_FENCE+'\n'+v+'\n'+ADVENTURE_FENCE)){consumed=true;if(v!==raw)headings++;break}
@@ -91,6 +109,7 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
  const literal=validFences&&actual===compact(original);
  const contentEqual=Boolean(literal||matched);
  const formatMarkers=[];
+ if(contentEqual&&!literal&&hiddenContext)formatMarkers.push({kind:'adventure-leading-context-template',tokens:1,nonWhitespaceChars:compact(hiddenContext).length});
  if(contentEqual&&!literal&&omitted)formatMarkers.push({kind:'adventure-ordered-dom-code-fence',tokens:omitted,nonWhitespaceChars:omitted*3});
  if(contentEqual&&!literal&&headings)formatMarkers.push({kind:'adventure-proven-code-heading-bold',tokens:headings*2,nonWhitespaceChars:headings*4});
  const comparison={scannedLength:[...visible].length,nativeLength:[...original].length,
