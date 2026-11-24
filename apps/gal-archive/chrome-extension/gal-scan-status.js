@@ -45,6 +45,7 @@ function installGalScanStatus(api){
    lateCompletionRecovered:run.lateCompletionRecovered||false,
    reason:run.reason||null,summary:run.summary||null,
    batchFolder:run.batchFolder,
+   progressMode:'live-extension-storage',statusFilePolicy:'start-terminal-manual-save',
    statusPath:run.statusPath||run.batchFolder+'/'+filenames.status,
    files:Object.fromEntries(Object.entries(run.files||{}).filter(([,f])=>f.path)
     .map(([k,f])=>[k,f.path])),
@@ -189,7 +190,7 @@ function installGalScanStatus(api){
       message.scanned>20000)throw Error('掃描進度不可倒退');
    run.scanned=message.scanned;
    run.at=now();await save(runs);
-   run.statusPath=await signal(run);await save(runs);
+   // Live progress stays in extension storage; only lifecycle and explicit evidence saves write the status file.
    return publicStatus(run);
   }
   if(message.type==='gal-run-manual-save'){
