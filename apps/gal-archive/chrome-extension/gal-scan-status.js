@@ -10,7 +10,7 @@ function installGalScanStatus(api){
  const uuidOk=x=>typeof x==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(x);
  const now=()=>new Date().toISOString();
  const timestamp=iso=>new Date(new Date(iso).getTime()+8*3600000).toISOString().slice(0,19).replace('T','_').replace(/:/g,'-');
- const clean=x=>String(x||'').trim().replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').replace(/\s+/g,' ').replace(/[. ]+$/g,'').slice(0,75);
+ const clean=x=>String(x||'').trim().replace(/[\\/／＼:*?"<>|\x00-\x1f]/g,'_').replace(/\s+/g,' ').replace(/[. ]+$/g,'').slice(0,75);
  function cycleFolder(title,cycleId){
   const n=String(title||'').match(/^第\s*(\d{1,4})\s*(?:周目|週目|輪迴)/u);
   return n?'第'+String(+n[1]).padStart(2,'0')+'輪迴':
