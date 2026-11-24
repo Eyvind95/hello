@@ -89,7 +89,8 @@ test('unknown observed markers or too many independently identified user source 
  assert.ok(result.problems.some(p=>p.scope==='history'&&p.errors.includes('more-observed-user-messages-than-player-rows')));
 });
 test('test helper validates the exact continuation audit implementation, not a copied approximation',()=>{
- assert.match(source,/autoContinueAudit=verifyAutoContinueAudit\(collected,continuedPositions,/);
+ assert.match(source,/autoContinueAudit=continuedPositions\.length/);
+ assert.match(source,/\?verifyAutoContinueAudit\(collected,continuedPositions,/);
  assert.match(source,/eventAudit.history,eventAudit.senders/);
  assert.doesNotMatch(source,/eventAudit\.history\.size!==collected\.length/);
 });
