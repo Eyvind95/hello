@@ -58,8 +58,12 @@ function archive(oldExport) {
     }),
     db:{
       transaction(){
-        const tx={objectStore:()=>({put:row=>records.set(row.id,structuredClone(row))})};
-        queueMicrotask(()=>tx.oncomplete());
+        const tx={objectStore:()=>({
+          get:id=>{const request={result:structuredClone(records.get(id))};queueMicrotask(()=>request.onsuccess?.());return request},
+          put:row=>records.set(row.id,structuredClone(row))
+        })};
+        // IndexedDB completes only after queued get callbacks have run.
+        setImmediate(()=>tx.oncomplete?.());
         return tx;
       }
     },
@@ -67,6 +71,7 @@ function archive(oldExport) {
     $:()=>({}), importStatus:()=>{}, notify:()=>{},
     refresh:async()=>{context.records=[...records.values()]}
   });
+  vm.runInContext(section('function archiveSpecialKey(', 'async function archiveSpecialReadDiagnostic('), context);
   vm.runInContext(section('function galNativeText(', 'function galNativeShowStatus('), context);
   vm.runInContext(section('function normalizeBackupCycle(', 'function importStatus('), context);
   vm.runInContext(section('function previewBackup(', "$('importBtn').onclick="), context);
