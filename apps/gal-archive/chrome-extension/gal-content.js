@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.47: module preflight, bare HUD native formatting, responsive finalization. */
+/* Independent Gal AI page scanner. v0.8.48: module preflight, bare HUD native formatting, responsive finalization. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.47';
+const SCANNER_VERSION='0.8.48';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -1148,6 +1148,74 @@ async function advanceScanScroll(root,stepPx,wait=sleep){
  }
  return {moved:false,atBottom:false,geometryShift:false,attempts};
 }
+// Recovery is a search for a proven ordered overlap, not a geometric
+// assertion. Never append tentative probes to the real collected rows.
+function recoveryNativeId(row){
+ const n=row?.formatSource?.nativeReply;
+ return n?.reason==='available'&&n.markerCount===1&&n.messageId?n.messageId:null;
+}
+function trustedRecoveryAnchor(root,shot,locate){
+ const row=shot.rows.at(-1),id=recoveryNativeId(row);
+ return {top:root.scrollTop,height:root.scrollHeight,id,
+  relativeTop:id?locate(id):null};
+}
+function recoveryMarkerTop(root,id){
+ const nodes=root.querySelectorAll('[data-selection-copy-message-id="'+CSS.escape(id)+'"]');
+ if(nodes.length!==1||!nodes[0].isConnected)return null;
+ const y=nodes[0].getBoundingClientRect().top;
+ return y-(isDocumentRoot(root)?0:root.getBoundingClientRect().top);
+}
+function proveRecoveryOverlap(shot,all){
+ if(!all.length||!shot.rows.length)return false;
+ const copies=all.map(row=>({...row}));
+ let proof;
+ try{proof=appendSample(shot,copies)}catch{return false}
+ if(!proof.repeated)return false;
+ const tail=all.slice(-proof.repeated),overlap=shot.rows.slice(proof.anchorPosition,proof.anchorPosition+proof.repeated);
+ // An ID is evidence only when unique on both sides and the entire
+ // overlapping rendered text and classification still agree.
+ if(!tail.every((row,i)=>row.text===overlap[i].text&&sameRow(row,overlap[i])))return false;
+ const id=recoveryNativeId(tail.at(-1));
+ if(!id||id!==recoveryNativeId(overlap.at(-1))||
+    all.filter(row=>recoveryNativeId(row)===id).length!==1||
+    shot.rows.filter(row=>recoveryNativeId(row)===id).length!==1)return false;
+ const known=new Set(all.map(recoveryNativeId).filter(Boolean));
+ const extras=shot.rows.slice(proof.anchorPosition+proof.repeated).map(recoveryNativeId).filter(Boolean);
+ return extras.every(id=>!known.has(id))&&new Set(extras).size===extras.length;
+}
+async function recoverScanOverlap(root,trusted,all,sample,locate,wait=sleep,guard=()=>{}){
+ const attempts=[],seen=new Set();
+ if(!trusted)return {ok:false,attempts};
+ // First try the current observed location, then a live marker offset,
+ // then height-delta estimates and the old coordinate. Recalculate geometry
+ // after each asynchronous layout update. At most six probes, no guessing.
+ for(let i=0;i<6;i++){
+  guard();
+  if(!root.isConnected)throw Error('捲動復原期間 WHIF 更換了訊息容器；已停止避免漏掃');
+  const live=trusted.id?locate(trusted.id):null;
+  const current=root.scrollTop,delta=root.scrollHeight-trusted.height;
+  const positions=[current,
+   Number.isFinite(live)&&Number.isFinite(trusted.relativeTop)?current+live-trusted.relativeTop:null,
+   trusted.top+delta,trusted.top,trusted.top+delta-root.clientHeight/4,trusted.top+delta+root.clientHeight/4];
+  const max=Math.max(0,root.scrollHeight-root.clientHeight);
+  const candidate=positions.filter(Number.isFinite).map(y=>Math.max(0,Math.min(max,y)))
+   .find(y=>!seen.has(Math.round(y)));
+  if(candidate===undefined)break;
+  seen.add(Math.round(candidate));
+  const beforeHeight=root.scrollHeight;
+  root.scrollTop=candidate;
+  await wait(WAIT_MS+STABLE_MS);guard();
+  if(!root.isConnected)throw Error('捲動復原期間 WHIF 更換了訊息容器；已停止避免漏掃');
+  const shot=sample();
+  const proven=proveRecoveryOverlap(shot,all);
+  attempts.push({requested:candidate,actual:root.scrollTop,heightBefore:beforeHeight,
+   heightAfter:root.scrollHeight,proven});
+  if(proven)return {ok:true,shot,attempts};
+  seen.add(Math.round(root.scrollTop));
+ }
+ return {ok:false,attempts};
+}
+
 function hash(str){let h1=2166136261,h2=0x811c9dc5;for(let i=0;i<str.length;i++){
  h1=Math.imul(h1^str.charCodeAt(i),16777619)>>>0;h2=Math.imul(h2^str.charCodeAt(i),2246822519)>>>0;
  }return h1.toString(16).padStart(8,'0')+h2.toString(16).padStart(8,'0');}
@@ -1512,7 +1580,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  exportButton.disabled=true;
  exportButton.textContent=preview?'下載三則測試 JSON':'下載原生正史 JSON';
  const collected=[];activeScanRows=collected;let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,geometryReanchors=0,scanMode='auto',bottomProof=null;
- const recoveryLog=[];
+ const recoveryLog=[];let trustedScroll=null;
  const phaseHistory=[];let phase='scan',bottomRetries=0;
  const phaseStatus=(name,msg)=>{phase=name;phaseHistory.push({phase:name,at:new Date().toISOString()});diagnostic={...(diagnostic||{}),phase,phaseHistory:phaseHistory.slice(-30)};status(msg);};
  const yieldUi=()=>sleep(0);
@@ -1549,7 +1617,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   stepPx=nominal;
   while(!cancelled&&!paused&&stepCount<12000){
    if(!root.isConnected)throw Error('頁面替換了原捲動容器，為避免漏掃已停止');
-   const shot=snapshot(root,scanMode,!firstTimedTrace,true);
+   let shot=snapshot(root,scanMode,!firstTimedTrace,true);
    firstTimedTrace||=shot.firstTimedTrace;
    let info;
    try{info=appendSample(shot,collected)}
@@ -1564,21 +1632,23 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
       currentFirstRole:shot.rows[0]?.role||null};
     if(recovery>9||stepPx<=12)
      throw Error('第 '+stepCount+' 步無法對上前後視窗，縮至 '+stepPx+'px 仍失敗，已保護正史並停止');
-    root.scrollTop=lastGoodY;
-    await sleep(WAIT_MS+STABLE_MS);
-    if(Math.abs(root.scrollTop-lastGoodY)>4)
-     throw Error('無法退回上一可信捲動位置，拒絕猜測中間訊息');
+    const recovered=await recoverScanOverlap(root,trustedScroll,collected,
+     ()=>snapshot(root,scanMode,false,true),id=>recoveryMarkerTop(root,id),sleep,ensureRunning);
+    recoveryLog.push({step:stepCount,kind:'native-overlap-recovery',
+     success:recovered.ok,attempts:recovered.attempts});
+    diagnostic={...(diagnostic||{}),recoveryLog:recoveryLog.slice(-12)};
+    if(!recovered.ok)
+     throw Error('無法重新證明上一可信視窗的原生ID及順序重疊，拒絕猜測中間訊息');
     stepPx=Math.max(12,Math.floor(stepPx/2));
-    const next=Math.min(root.scrollHeight-root.clientHeight,lastGoodY+stepPx);
-    if(next<=lastGoodY)throw Error('縮小步距後無法前進，停止避免死循環');
-    root.scrollTop=next;
-    status('⚠ 第 '+stepCount+' 步找不到重疊訊息，已返回上個可信位置並改為 '+stepPx+
-     'px 微捲動（重試 '+recovery+'/9）。目前保留 '+collected.length+' 則。');
-    await sleep(WAIT_MS+STABLE_MS);
-    continue;
+    bottomFrames=0;
+    shot=recovered.shot;
+    info=appendSample(shot,collected);
+    status('↻ 第 '+stepCount+' 步已重新證明原生訊息重疊，改為 '+stepPx+'px 微捲動。');
+
    }
    observeEventAudit(eventAudit,shot,collected,info);
    recovery=0;lastGoodY=root.scrollTop;
+   trustedScroll=trustedRecoveryAnchor(root,shot,id=>recoveryMarkerTop(root,id));
    for(let index=Math.max(2,collected.length-info.added);index<collected.length;index++){
     const row=collected[index],prior=collected[index-1];
     if(row.role!=='ai'||prior.role!=='ai'||row.eventType||prior.eventType||
