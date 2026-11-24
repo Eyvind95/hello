@@ -73,7 +73,33 @@
   return {text:raw,comparison:{...result.comparison,contentEqual:true,clockEqual:true,renderProjection:{kind:'verified-whif-terminal-fence-tail-not-rendered',sourceId:id,probeRunId:probe.scanRunId,originalRun:cp.scanRunId,line:ta.line,tailLength:tail.length,nativeHash:hash(raw),domHash:hash(row.domText)},formatMarkers:[...(result.comparison.formatMarkers||[]),{kind:'verified-whif-terminal-fence-tail-not-rendered',tokens:1,nonWhitespaceChars:norm(tail).length}]}};
  }
  // Independent source-only traversal: replay the saved viewport overlap chain, not the checkpoint order.
- function verifyHistorySupplement(cp,proof,playerLabels,autoIndices,details=null){
+ // Local evidence must prove the actual image node and every text fragment.
+ function validNativeImageUrl(value){
+  if(typeof value!=='string'||value.length>1000)return false;
+  try{const u=new URL(value);return u.origin==='https://img.whif.io'&&!u.username&&!u.password&&!u.search&&!u.hash&&/^\/[A-Za-z0-9_-]+\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\/(?:320|768)$/i.test(u.pathname)&&u.href===value}catch{return false}
+ }
+ function capturedPlayerImage(cp,row,a,proof,detail){
+  const p=a.player,id=a.id;
+  if(!detail||detail.sourceId!==id||detail.url!==cp.source.url||!Number.isFinite(Date.parse(detail.capturedAt))||!Number.isFinite(Date.parse(proof.generatedAt))||Date.parse(detail.capturedAt)<Date.parse(proof.generatedAt)||typeof DOMParser!=='function'||typeof detail.outerHTML!=='string'||detail.outerHTML.length>100000||typeof detail.textContent!=='string'||typeof detail.innerText!=='string'||!Array.isArray(detail.media)||detail.media.length!==1)return null;
+  const doc=new DOMParser().parseFromString(detail.outerHTML,'text/html'),root=doc.body.firstElementChild;
+  if(doc.body.children.length!==1||doc.body.textContent!==detail.textContent||root?.getAttribute('data-selection-copy-message-id')!==id||root.querySelector('[data-selection-copy-message-id]')||root.children.length!==1||root.querySelector('script,style,iframe,object,embed,svg,video,audio,[data-attachment-id]'))return null;
+  const body=root.firstElementChild,parts=[...body.children],media=root.querySelectorAll('img');
+  if(!body.matches('div.w-full.space-y-2')||media.length!==1||parts.length!==p.bodyParts+1||!parts[0].matches('div.flex.justify-end')||!parts[0].contains(media[0])||parts[0].textContent||!validNativeImageUrl(media[0].getAttribute('src'))||media[0].outerHTML!==detail.media[0])return null;
+  const img=media[0],src=img.getAttribute('src'),srcset=img.getAttribute('srcset')||'';
+  if(srcset.split(',').some(x=>{const m=x.trim().match(/^(\S+) (320|768)w$/);return !m||!validNativeImageUrl(m[1])||m[1].replace(/\/\d+$/,'')!==src.replace(/\/\d+$/,'')||!m[1].endsWith('/'+m[2])}))return null;
+  const fragments=[];
+  for(const part of parts.slice(1)){
+   const spans=part.querySelectorAll('span.message-bubble-text.TemplatedText');
+   if(!part.matches('div.flex.w-full.flex-col.justify-end')||spans.length!==1||part.querySelector('img')||part.textContent!==spans[0].textContent||!spans[0].textContent)return null;
+   const span=spans[0],quoted=span.classList.contains('bg-bg-brand-primary-weak');
+   if(span.children.length!==1||!span.firstElementChild.matches('span.z-10[dir="auto"]')||span.firstElementChild.children.length)return null;
+   fragments.push({text:span.textContent,quoted});
+  }
+  const plain=fragments.map(x=>x.text).join(''),projected=fragments.map(x=>x.quoted?'「'+x.text+'」':x.text).join('');
+  if(plain!==detail.textContent||fragments.map(x=>x.text).join('\n')!==detail.innerText||hash(norm(plain))!==p.bodyNormHash||p.markerNormHash!==p.bodyNormHash||norm(projected)!==norm(row.nativeText)||hash(row.nativeText)!==a.nativeHash)return null;
+  return {kind:'verified-whif-player-image-reference',sourceId:id,scanIndex:row.scanIndex,url:src,capturedAt:detail.capturedAt,nativeHash:a.nativeHash,bodyNormHash:p.bodyNormHash,historySupplementRunId:proof.scanRunId,storage:'remote-reference-only'};
+ }
+ function verifyHistorySupplement(cp,proof,playerLabels,autoIndices,details=null,mediaDetails=[]){
   if(!proof||proof.format!=='gal-ai-history-source-proof'||proof.version!==1||proof.forensicOnly!==true||proof.importable!==false||proof.complete!==true||proof.reason||proof.scope!=='independent-live-source-inventory'||proof.scanRunId===cp.scanRunId||!proof.scanRunId||proof.scannerVersion!==proof.coreVersion||!/^0\.9\.(?:1[4-9]|[2-9]\d|\d{3,})$/.test(proof.scannerVersion)||proof.source?.url!==cp.source.url)return false;
   if(!['cycleId','cycleTitle','worldName','worldKey','cycleNumber','archiveKey'].every(k=>proof.target?.[k]===cp.target[k]&&cp.target[k]!==undefined))return false;
   const entries=proof.entries,windows=proof.windows;
@@ -98,14 +124,14 @@
   }
   if(expected.length!==entries.length)return false;
   const labels=new Map(playerLabels.map(l=>[l.i,l.label]));
-  const playerIssues=[],labelProofIndices=[];
+  const playerIssues=[],labelProofIndices=[],imageProofs=[];
   for(let i=0;i<entries.length;i++){
    const a=entries[i],b=expected[i];
    if(a.id!==b.id||a.kind!==b.kind||a.sender!==b.sender||a.accepted!==b.accepted||a.nativeHash!==hash(b.raw)||a.nativeNormHash!==hash(norm(b.raw))||a.nativeLength!==b.raw.length)return false;
    if(a.sender==='user'){
     const p=a.player,idx=b.row.scanIndex;
     if(!p||p.ownerId!==a.id||!Number.isInteger(p.bodyParts)||p.bodyParts<1||typeof p.hasMedia!=='boolean'){playerIssues.push({scanIndex:idx,reason:'player-owner-or-body-unverified'});continue;}
-    if(p.hasMedia){playerIssues.push({scanIndex:idx,reason:'live-player-media-present'});continue;}
+    if(p.hasMedia){const matches=mediaDetails.filter(d=>d.sourceId===a.id);const image=matches.length===1?capturedPlayerImage(cp,b.row,a,proof,matches[0]):null;if(!image){playerIssues.push({scanIndex:idx,reason:'live-player-media-present'});continue;}imageProofs.push(image);}
     // Exact old prefix/body plus independently identical raw source. A live
     // label outside the player marker is a separate structural proof, not a
     // claim that Markdown rendering preserves literal native punctuation.
@@ -121,11 +147,12 @@
   const expectedAuto=autoIndices.map(i=>cp.rows[i].sourceMessageId);
   const derived=entries.filter((r,i)=>i>1&&['character','assistant'].includes(r.sender)&&['character','assistant'].includes(entries[i-1].sender)).map(r=>r.id);
   const autoOk=eq(derived,expectedAuto)&&eq(proof.autoContinueIds,derived);
-  if(details)Object.assign(details,{orderedSourceProofOk:true,autoContinueOk:autoOk,playerIssues,labelProofIndices});
-  return autoOk&&playerIssues.length===0;
+  if(details)Object.assign(details,{orderedSourceProofOk:true,autoContinueOk:autoOk,playerIssues,labelProofIndices,imageProofs});
+  return autoOk&&playerIssues.length===0&&imageProofs.length===mediaDetails.length;
  }
 
- function replay(cp,diag,state,core,evidence,probes=[],historyProof=null){
+ function replay(cp,diag,state,core,evidence,probes=[],historyProof=null,mediaDetails=[]){
+  assert(Array.isArray(mediaDetails)&&mediaDetails.length<=32&&new Set(mediaDetails.map(d=>d?.sourceId)).size===mediaDetails.length,'玩家圖片證據重複或超過限制');
   assert(core?.validate&&core?.compareNativeParagraphs&&evidence?.summarize&&core.version===evidence.version,'核心及格式模組未載入或版本不同，請強制更新');
   assert(cp?.format==='gal-ai-unverified-scan'&&cp.version===1&&cp.importable===false&&cp.validated===false&&cp.complete===false&&cp.forensicOnly===true&&cp.scope==='unverified-read-progress','只接受原始未驗證保全 JSON');
   const n=cp.rows?.length,run=cp.scanRunId,id=cp.target?.cycleId,version=cp.scannerVersion;
@@ -204,8 +231,8 @@
   // Independent live identity inventory is required for promotion. Counts alone cannot prove identity.
   const manifestOk=early&&eq(cp.historySourceManifest,manifest)&&Array.isArray(manifest)&&manifest.length===ids.size&&new Set(manifest.map(x=>x.id)).size===ids.size&&manifest.every(m=>{const r=sourceKinds.get(m.id);return r&&m.kind===r.kind&&m.sender===r.sender&&eq(m.playerRows,r.sender==='user'?[r.scanIndex]:[])})&&!merged.length&&!playerLabels.length;
   const supplementDetails={orderedSourceProofOk:false,autoContinueOk:false,playerIssues:[],labelProofIndices:[]};
-  const supplementOk=early&&!merged.length&&verifyHistorySupplement(cp,historyProof,playerLabels,autoIndices,supplementDetails);
-  const sourceAuditOk=!early||manifestOk||supplementOk;
+  const supplementOk=early&&!merged.length&&verifyHistorySupplement(cp,historyProof,playerLabels,autoIndices,supplementDetails,mediaDetails);
+  const sourceAuditOk=(!early||manifestOk||supplementOk)&&(!mediaDetails.length||supplementOk);
   const checks=[],restored=[],opening={role:'ai',scanIndex:0,text:v.opening,gameTime:core.parseGameTime(v.opening)?.iso||null};
   for(const entry of [opening,...v.messages.filter(x=>x.role==='ai'),...v.events]){
    const r=rows[entry.scanIndex],fs=r.formatSource,source=fs.nativeReply,event=r.eventType==='event';
@@ -248,6 +275,8 @@
    if(m.nativeInvalidDateEvidence){row.nativeClockEvidence='verified-original-invalid-calendar-date';row.nativeInvalidDateEvidence=m.nativeInvalidDateEvidence;row.nativeSourceMessageId=m.nativeInvalidDateEvidence.sourceMessageId;}
    if(m.nativePairedInvalidDate)row.nativePairedInvalidDate=m.nativePairedInvalidDate;
    if(m.nativeUserSegments){row.nativeUserSegments=m.nativeUserSegments;row.nativeUserMergeVerified=true}
+   const image=supplementOk?supplementDetails.imageProofs?.find(x=>x.scanIndex===m.scanIndex):null;
+   if(image)row.nativeImageReferences=[image];
    return row;
   });
   v.messages.forEach((m,i)=>{if(m.autoContinue)messages[i].autoContinue={kind:'whif-adjacent-character-replies',previousSourceEventId:messages[i-1].sourceEventId}});
@@ -287,12 +316,14 @@
     assert(files.every((f,i)=>f.size<=(i===0?100:20)*1024*1024),'檔案超過安全大小限制');
     const [cp,diag,state]=await Promise.all(files.map(async f=>JSON.parse(await f.text())));
     if(t!==ticket)return;
-    const probes=await Promise.all(probeFiles.map(async f=>JSON.parse(await f.text())));
+    const localDetails=await Promise.all(probeFiles.map(async f=>JSON.parse(await f.text())));
+    const mediaDetails=localDetails.filter(p=>p&&typeof p.sourceId==='string'&&Array.isArray(p.media)&&typeof p.outerHTML==='string');
+    const probes=localDetails.filter(p=>!mediaDetails.includes(p));
     const historyProof=historyFile?JSON.parse(await historyFile.text()):null;
     inputHashes=await Promise.all([...files,...probeFiles,...(historyFile?[historyFile]:[])].map(async f=>({name:f.name,bytes:f.size,sha256:[...new Uint8Array(await crypto.subtle.digest('SHA-256',await f.arrayBuffer()))].map(v=>v.toString(16).padStart(2,'0')).join('')})));
     if(t!==ticket)return;
     replayRunId=crypto.randomUUID();
-    result=replay(cp,diag,state,host.GalArchiveCore,host.GalArchiveFormatEvidence,probes,historyProof);Object.assign(result.report,{replayRunId,inputHashes});
+    result=replay(cp,diag,state,host.GalArchiveCore,host.GalArchiveFormatEvidence,probes,historyProof,mediaDetails);Object.assign(result.report,{replayRunId,inputHashes});
     if(result.canonical)Object.assign(result.canonical.offlineRecovery,{replayRunId,inputHashes});
     const r=result.report;
     // Run the ordinary site's own import gate before enabling download.
@@ -314,5 +345,5 @@
   $('archiveReplayDownload').onclick=()=>{if(result?.canonical)download(result.canonical,'Gal_AI_離線重驗正史_'+result.canonical.target.cycleTitle+'.json')};
   $('archiveReplayReport').onclick=()=>{if(result?.report)download(result.report,'保全資料重驗診斷_'+(result.report.replayRunId||'failed')+'.json')};
  }
- return {replay,mount,hash,capturedEventProjection,verifyHistorySupplement};
+ return {replay,mount,hash,capturedEventProjection,verifyHistorySupplement,capturedPlayerImage,validNativeImageUrl};
 });
