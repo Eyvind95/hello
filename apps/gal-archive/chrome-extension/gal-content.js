@@ -268,7 +268,7 @@ async function saveProgressSnapshot(){
  return true;
 }
 async function downloadJson(prefix,data){
- const meta={worldName:target?.worldName||null,cycleTitle:target?.cycleTitle||null,cycleId:target?.cycleId||null};
+ const meta={worldName:data.target?.worldName||data.worldName||target?.worldName||null,cycleTitle:data.target?.cycleTitle||data.cycleTitle||target?.cycleTitle||null,cycleId:data.target?.cycleId||data.cycleId||target?.cycleId||null};
  const payload={...data,...meta};
  const kind=prefix.includes('保全')?'unverified':'diagnostic';
  try{
@@ -282,7 +282,7 @@ async function downloadJson(prefix,data){
   // remains non-importable and is conspicuously labelled for review.
  }
  const a=document.createElement('a');
- const blob=new Blob([JSON.stringify({...payload,cycleNumber:null,archiveKey:null,classificationPending:true},null,2)],{type:'application/json;charset=utf-8'});
+ const blob=new Blob([JSON.stringify({...payload,cycleNumber:data.cycleNumber??data.target?.cycleNumber??activeRun?.cycleNumber??null,archiveKey:null,classificationPending:true},null,2)],{type:'application/json;charset=utf-8'});
  const url=URL.createObjectURL(blob);
  a.href=url;
  a.download='待分類_緊急保全_'+(target?.worldName||'世界觀待確認')+'_'+(target?.cycleTitle||'輪迴').replace(/[\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.json';
@@ -1437,6 +1437,7 @@ async function positionSevenProbe(mode){
   if(!managed)throw Error('指定位置測試僅支援正式 WHIF 分頁');
   const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
   if(!reg?.ok)throw Error(reg?.error||'無法建立獨立指定位置測試批次');
+  Object.assign(run,{worldName:reg.status?.worldName||run.worldName,cycleNumber:reg.status?.cycleNumber??null,worldKey:reg.status?.worldKey||null,archiveKey:reg.status?.archiveKey||null});
   run.batchFolder=reg.status?.batchFolder;
   run.statusPath=reg.status?.statusPath;
   registered=true;activeRun=run;
@@ -1501,6 +1502,7 @@ async function eventThreeRowProbe(profile){
   await fetchCurrentBinding(profile);
   const response=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
   if(!response?.ok)throw Error(response?.error||'無法建立事件測試批次');
+  Object.assign(run,{worldName:response.status?.worldName||run.worldName,cycleNumber:response.status?.cycleNumber??null,worldKey:response.status?.worldKey||null,archiveKey:response.status?.archiveKey||null});
   run.batchFolder=response.status?.batchFolder;registered=true;activeRun=run;
   const shot=snapshot(null,'auto',false,true);
   diagnostic=inspect();
@@ -1620,6 +1622,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    const response=await chrome.runtime.sendMessage({type:'gal-run-start',...run,
     scannerVersion:SCANNER_VERSION});
    if(!response?.ok)throw Error(response?.error||'背景程式未登記掃描工作');
+   Object.assign(run,{worldName:response.status?.worldName||run.worldName,cycleNumber:response.status?.cycleNumber??null,worldKey:response.status?.worldKey||null,archiveKey:response.status?.archiveKey||null});
    run.batchFolder=response.status?.batchFolder||null;
    run.statusPath=response.status?.statusPath||null;
    registered=true;

@@ -120,6 +120,7 @@ async function openBinding(){
     '<div style="margin:6px 0 12px;color:#c9c0ef">第一次綁定直接在 WHIF 頁面完成。Browser Use 不需要再點 Chrome 工具列。</div>'+
     '<div id="gal-bind-notice" style="white-space:pre-wrap;margin:8px 0;padding:9px;border:1px solid #4d5f87;border-radius:9px;background:#1d2944">請填入第 '+esc((state.profile?.cycleTitle||'新周目').replace(/^第?/,'').trim()||'新周目')+' 的檔案館資料。</div>'+
     (presets.length?'<label style="display:block;margin:10px 0 4px">沿用既有設定（選用）</label><select id="gal-bind-preset" style="width:100%;padding:10px;background:#1a2743;color:#fff;border:1px solid #56658f;border-radius:8px"><option value="">— 不沿用，自己填 —</option>'+presets.map((p,i)=>'<option value="'+i+'">'+esc(label(p))+'</option>').join('')+'</select>':'')+
+    '<button id="gal-bind-paste" type="button" style="margin:8px 0;padding:8px">📋 貼上檔案館完整掃描綁定</button>'+
     '<label style="display:block;margin:10px 0 4px">當前世界觀（必填）</label><input id="gal-bind-world" autocomplete="off" placeholder="例如：全員精神穩定，感情除外">'+
     '<label style="display:block;margin:10px 0 4px">輪迴名稱（僅供辨識）</label><input id="gal-bind-title" autocomplete="off" placeholder="例如：第13周目・凱文">'+
     '<label style="display:block;margin:10px 0 4px">檔案館輪迴文件 ID（必填）</label><input id="gal-bind-cycle" autocomplete="off" placeholder="從檔案館複製，不要自行猜">'+
@@ -133,9 +134,21 @@ async function openBinding(){
   field('gal-bind-close').onclick=removePanel;field('gal-bind-cancel').onclick=removePanel;
   const select=field('gal-bind-preset');
   if(select)select.onchange=()=>{const i=select.value;if(i!=='')fill(presets[Number(i)]||{},state.defaultUid||'')};
+  field('gal-bind-paste').onclick=async()=>{
+   try{
+    let raw='';try{raw=await navigator.clipboard.readText()}catch{raw=prompt('貼上檔案館完整掃描綁定 JSON')||''}
+    const p=JSON.parse(raw);
+    if(p.format!=='gal-archive-binding'||typeof p.worldName!=='string'||!p.worldName.trim()||
+      typeof p.cycleId!=='string'||!p.cycleId.trim()||typeof p.cycleTitle!=='string'||!p.cycleTitle.trim())throw Error('不是檔案館完整綁定');
+    field('gal-bind-world').value=p.worldName;field('gal-bind-cycle').value=p.cycleId;field('gal-bind-title').value=p.cycleTitle;
+    field('gal-bind-save').dataset.confirm='';notice('已填入 '+p.worldName+'／'+p.cycleTitle+'，請確認目前 WHIF 聊天與目標相符後儲存。');
+   }catch(e){notice('貼上失敗：'+e.message,true)}
+  };
   field('gal-bind-save').onclick=()=>saveAndOpen(field('gal-bind-save').dataset.confirm==='1');
   field('gal-bind-world').focus();
 }
+button.oncontextmenu=event=>{event.preventDefault();openBinding()};
+button.title='左鍵開啟助手；右鍵重新編輯目前 WHIF 綁定';
 button.onclick=async()=>{
   if(button.disabled)return;
   if(!extensionContextAlive()){

@@ -42,3 +42,32 @@ test('can still list older state file names without pretending failed raw eviden
  assert.equal(result[0].legacy,true);
  assert.deepEqual(result[0].files,{});
 });
+
+test('world-scoped index reads same ordinal independently, preserves old unknown and rejects conflicting evidence',t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'gal-world-batches-'));
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const worlds=['《全員精神穩定，感情除外》','《身為冒險者就可以這樣那樣》'];
+ const put=(n,worldName,sourceWorld,legacy=false)=>{
+  const run='00000000-0000-4000-8000-'+String(n).padStart(12,'0'),cycleId='cycle-'+n;
+  const folder=path.join(root,...(legacy?[]:[worldName.slice(1,-1)]),'第01輪迴','完整掃描','2026-11-25_01-00-00_'+run);
+  fs.mkdirSync(folder,{recursive:true});
+  const raw=path.join(folder,'原生正史.json'),source='https://www.whif.io/chat/test-'+n;
+  fs.writeFileSync(raw,JSON.stringify({scanRunId:run,source:{url:source},target:{cycleId,cycleTitle:'第一輪迴',worldName:sourceWorld}}));
+  fs.writeFileSync(path.join(folder,'掃描狀態.json'),JSON.stringify({format:'gal-archive-scan-status',version:2,scanRunId:run,cycleId,cycleTitle:'第一輪迴',worldName,state:'completed',scope:'full',source,startedAt:'2026-11-24T17:00:00Z',files:{result:raw}}));
+ };
+ put(1,worlds[0],worlds[0]);put(2,worlds[1],worlds[1]);
+ put(3,undefined,undefined,true);put(4,worlds[1],worlds[0]);
+ put(5,undefined,worlds[1],true);
+ const all=findScanBatches(root),index=require('./find-scan-batches').latestWorldIndex(all);
+ assert.equal(all.length,5);assert.equal(index.latestByWorldCycleScope.length,3);assert.equal(index.pendingReview.length,2);
+ assert.equal(findScanBatches(root,{world:'sentinel',cycle:'第一輪迴'}).length,1);
+ assert.equal(index.ordinalConflicts.length,1);
+ const dest=fs.mkdtempSync(path.join(os.tmpdir(),'gal-world-cloud-'));t.after(()=>fs.rmSync(dest,{recursive:true,force:true}));
+ const {syncWorldBatches}=require('./sync-scan-batches');
+ const plan=syncWorldBatches(root,dest);assert.equal(plan.plan.filter(p=>p.action==='copy-plan').length,2);assert.deepEqual(fs.readdirSync(dest),[]);
+ const result=syncWorldBatches(root,dest,{apply:true});assert.equal(result.index.latestByWorldCycleScope.length,2);
+ const next=syncWorldBatches(root,dest,{apply:true});assert.equal(next.index.latestByWorldCycleScope.length,2);
+ const copied=next.index.latestByWorldCycleScope[0];fs.writeFileSync(copied.files.result,'different');
+ const conflict=syncWorldBatches(root,dest,{apply:true});assert.equal(conflict.plan.filter(p=>p.action==='conflict').length,1);assert.equal(fs.readFileSync(copied.files.result,'utf8'),'different');
+ assert.equal(findScanBatches(root).length,5);
+});
