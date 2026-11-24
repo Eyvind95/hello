@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.9.11",
-  "version_name": "V0.9.11 即時事件取證",
-  "description": "輪迴檔案館 V0.9.11：新增唯一目標事件即時原生與 DOM 證據，保留掃描安全驗收。",
+  "version": "0.9.12",
+  "version_name": "V0.9.12 冒險者驗收與即時取證",
+  "description": "輪迴檔案館 V0.9.12：合併冒險者格式、無效日期及即時事件取證，保留未證明正文缺失的拒絕規則。",
   "permissions": [
     "storage",
     "activeTab",

@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.83｜Gal AI</title>
+<title>輪迴檔案館 V5.84｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -125,7 +125,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.83</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.9.11.zip" download title="下載雙掃描助手 V0.9.11：指定原生錨點局部復原取證、原生格式修復、世界觀隔離、啟動前驗收模組檢查、頁尾倒數、分批驗收、普通狀態欄格式修復及最新進度保全，失敗仍下載診斷，依輪迴及掃描批次分類；未驗證資料不能匯入正史。">🧩 雙掃描助手 V0.9.11</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="archiveReplayOpen" type="button">🧪 保全資料重新驗收</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.84</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.9.12.zip" download title="下載雙掃描助手 V0.9.12：指定原生錨點局部復原取證、原生格式修復、世界觀隔離、啟動前驗收模組檢查、頁尾倒數、分批驗收、普通狀態欄格式修復及最新進度保全，失敗仍下載診斷，依輪迴及掃描批次分類；未驗證資料不能匯入正史。">🧩 雙掃描助手 V0.9.12</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="archiveReplayOpen" type="button">🧪 保全資料重新驗收</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><label for="cycleSort" class="note" style="display:block;margin-top:12px">輪迴列表排序</label><select id="cycleSort" class="search" aria-label="輪迴列表排序"><option value="number-desc">輪迴數字：由大到小（預設）</option><option value="number-asc">輪迴數字：由小到大</option><option value="updated">最近修改優先</option></select><div id="cycles"></div><div class="divider"></div><div class="sectionhead"><h2>📚 交接稿</h2><button id="newHandover" type="button" class="btn small primary" title="新增交接對話">＋新增</button></div><p class="note">依目前世界觀分類；每個交接對話可上傳多份檔案。</p><button type="button" id="handoverSharedReviews" class="cycle handover-thread" style="width:100%;margin:4px 0 12px;text-align:left"><strong>💬 大家的評語（共用）</strong><span>這個世界觀只需貼一次，所有交接對話皆可閱讀</span></button><div id="handoverThreads" aria-live="polite"><p class="note">正在載入交接稿…</p></div><div class="actions topsp"><button type="button" class="btn small" id="handoverExport">備份此世界觀（.ghb）</button><button type="button" class="btn small" id="handoverImport">匯入交接稿備份</button><button type="button" class="btn small" id="handoverStorage">檢查本機儲存空間</button></div><p class="note" id="handoverStorageStatus" role="status"></p><input id="handoverImportFile" type="file" accept=".ghb,.json,application/json,application/octet-stream" hidden><p class="note">交接稿與附件已支援手動 Firebase 雲端同步，也包含於上方「完整備份（.gab）」。此區仍可單獨下載 .ghb 備份。</p></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -485,7 +485,8 @@ function archiveNativePairedClock(previous,ai,clock){
  return typeof previous.gameTime==='string'&&typeof ai.gameTime==='string'&&Date.parse(previous.gameTime)===clock.ms&&Date.parse(ai.gameTime)===clock.ms;
 }
 function archiveNativeTimeReadback(expected,actual){
- return ['messages','events'].every(key=>Array.isArray(actual[key])&&expected[key].length===actual[key].length&&expected[key].every((x,i)=>x.id===actual[key][i].id&&x.gameTime===actual[key][i].gameTime));
+ return ['messages','events'].every(key=>Array.isArray(actual[key])&&expected[key].length===actual[key].length&&expected[key].every((x,i)=>x.id===actual[key][i].id&&x.gameTime===actual[key][i].gameTime&&
+  ['nativeClockEvidence','nativeInvalidDateEvidence','nativePairedInvalidDate','nativeSourceMessageId'].every(field=>JSON.stringify(x[field])===JSON.stringify(actual[key][i][field]))));
 }
 const archiveExtraDrafts=new Map();
 function renderArchiveExtras(r,key){
@@ -654,7 +655,7 @@ function archiveHasExplicitUnknownGalClock(row){
 function galNativeVerify(obj,r){
  const fail=[],warn=[];
  if(!r){fail.push('請先在檔案館左側選擇要覆蓋的輪迴');return {fail,warn}}
- if(globalThis.GalArchiveCore?.version!=='0.9.11'||typeof globalThis.GalArchiveCore?.parseGameTime!=='function')return {fail:['共用劇情時間核心未載入或版本不一致，請強制更新檔案館後再匯入'],warn};
+ if(globalThis.GalArchiveCore?.version!=='0.9.12'||typeof globalThis.GalArchiveCore?.parseGameTime!=='function')return {fail:['共用劇情時間核心未載入或版本不一致，請強制更新檔案館後再匯入'],warn};
  if(!obj||obj.format!=='gal-ai-authoritative-scan'||obj.version!==1||obj.scope!=='entire-opening-to-bottom'
    ||obj.readOnlyUntilImported!==true)fail.push('不是完整開場到結尾的 Gal AI 原生正史掃描檔');
  if(obj?.reconciliation){
@@ -704,7 +705,9 @@ function galNativeVerify(obj,r){
  if(sourceMessages.length<2||sourceMessages.length>20000)fail.push('完整對話數量異常');
  if(!Array.isArray(obj?.events)||obj.events.length>5000)fail.push('事件清單格式或數量異常');
  const ids=new Set(),messages=[],events=[];
- let previous=null,pendingPlayerClock=null,pairs=0,autoContinues=0,unknownGameTimeCount=0;
+ let previous=null,pendingPlayerClock=null,pairs=0,autoContinues=0,unknownGameTimeCount=0,invalidDateReplyCount=0,invalidDateRowCount=0;
+ const sourceIdCounts=new Map();
+ for(const row of [...sourceMessages,...(Array.isArray(obj?.events)?obj.events:[])])if(row?.nativeSourceMessageId)sourceIdCounts.set(row.nativeSourceMessageId,(sourceIdCounts.get(row.nativeSourceMessageId)||0)+1);
  for(let i=0;i<sourceMessages.length;i++){
   const raw=sourceMessages[i],role=raw?.role;
   if(role!=='me'&&role!=='ai')fail.push('第 '+(i+1)+' 則身份不是皮卡或 Gal AI');
@@ -716,13 +719,30 @@ function galNativeVerify(obj,r){
   if(role==='ai'){
    const explicitlyUnknown=archiveHasExplicitUnknownGalClock(raw);
    const sourceUnclocked=raw?.nativeClockEvidence==='verified-original-without-game-time';
+   const sourceInvalid=raw?.nativeClockEvidence==='verified-original-invalid-calendar-date';
+   if(raw?.nativePairedInvalidDate||raw?.nativeInvalidDateEvidence&&!sourceInvalid||raw?.nativeClockEvidence&&!sourceUnclocked&&!sourceInvalid)
+    fail.push('第 '+(i+1)+' 則 AI 原生日期證據種類不符');
+   if(sourceInvalid){
+    const proof=raw.nativeInvalidDateEvidence,header=globalThis.GalArchiveCore?.invalidAdventureDate?.(raw.text);
+    if(!adventure||!modern||raw.sourceKind!=='gal-ai-native'||!raw.sourceEventId||clock!==null||explicitlyUnknown||!header||
+     proof?.kind!=='verified-original-invalid-calendar-date'||proof.markerCount!==1||proof.sender!=='character'||proof.sourceKind!=='ordinary-message'||
+     !proof.sourceMessageId||proof.sourceMessageId!==raw.nativeSourceMessageId||sourceIdCounts.get(proof.sourceMessageId)!==1||
+     proof.header!==header.header||proof.civil!==header.civil)
+     fail.push('第 '+(i+1)+' 則原生無效日期證據不完整或不一致');
+    if(previous?.role==='me'&&(previous.nativePairedInvalidDate?.sourceMessageId!==proof?.sourceMessageId||previous.nativePairedInvalidDate?.civil!==proof?.civil||previous.gameTime!==null))
+     fail.push('第 '+(i+1)+' 則無效日期的玩家配對證據不一致');
+   }else if(previous?.role==='me'&&previous.nativePairedInvalidDate)
+    fail.push('第 '+(i+1)+' 則玩家無效日期配對未對上 AI 原文');
    if(sourceUnclocked&&(!raw?.sourceEventId||raw?.sourceKind!=='gal-ai-native'))
     fail.push('第 '+(i+1)+' 則無時間回覆的原生證據欄位不完整');
    if(sourceUnclocked&&explicitlyUnknown)
     fail.push('第 '+(i+1)+' 則原文明示時間不詳，不應標成完全沒有時間欄');
    if(sourceUnclocked&&(archiveParseGalAIClock(raw,true)||globalThis.GalArchiveCore?.adventureClockEvidence(raw?.text)))
     fail.push('第 '+(i+1)+' 則宣告原生無時間，但正文包含可解析的時間');
-   if(explicitlyUnknown){
+   if(sourceInvalid){
+    invalidDateReplyCount++;invalidDateRowCount++;
+    warn.push('第 '+(i+1)+' 則原生日期無效，保留原日期與掃描位置，不推定其他日期');
+   }else if(explicitlyUnknown){
     if(clock!==null)fail.push('第 '+(i+1)+' 則原文明示日期／時間不詳，JSON 劇情時間必須為 null');
     else{
      unknownGameTimeCount++;
@@ -741,8 +761,12 @@ function galNativeVerify(obj,r){
     if(!header||header.ms!==clockMs)fail.push('第 '+(i+1)+' 則 Gal AI 正文時間與 JSON 時間不一致');
    }
   }else if(role==='me'){
-   if(raw?.nativeClockEvidence)fail.push('第 '+(i+1)+' 則玩家訊息不應帶 AI 原生時間來源標記');
-   if(clock===null)unknownGameTimeCount++;
+   if(raw?.nativeClockEvidence||raw?.nativeInvalidDateEvidence)fail.push('第 '+(i+1)+' 則玩家訊息不應帶 AI 原生時間來源標記');
+   if(raw?.nativePairedInvalidDate){
+    const paired=raw.nativePairedInvalidDate;
+    if(clock!==null||typeof paired.civil!=='string'||!paired.sourceMessageId||!adventure||!modern||raw.sourceKind!=='gal-ai-native')fail.push('第 '+(i+1)+' 則玩家無效日期配對資料不完整');
+    invalidDateRowCount++;
+   }else if(clock===null)unknownGameTimeCount++;
    else if(!Number.isFinite(clockMs))fail.push('第 '+(i+1)+' 則玩家訊息沒有可靠的 Gal AI 劇情時間');
   }
   if(role==='me'){
@@ -785,6 +809,8 @@ function galNativeVerify(obj,r){
    Number(obj.validation.unknownGameTimeCount)!==unknownGameTimeCount)
   fail.push('未知劇情時間筆數與來源驗證報告不符：網站核對 '+unknownGameTimeCount+
    '，來源 '+obj.validation.unknownGameTimeCount);
+ if(Number(obj?.validation?.invalidDateReplyCount??0)!==invalidDateReplyCount||Number(obj?.validation?.invalidDateRowCount??0)!==invalidDateRowCount)
+  fail.push('原生無效日期筆數與來源驗證報告不符');
  const confirmedUntimed=messages.filter(m=>m.role==='ai'&&m.nativeClockEvidence==='verified-original-without-game-time').length;
  if(obj?.validation?.verifiedUntimedCount!==undefined&&
    Number(obj.validation.verifiedUntimedCount)!==confirmedUntimed)
@@ -822,7 +848,7 @@ function galNativeVerify(obj,r){
    fail.push('這份舊掃描檔沒有完整的原始訊息順序，事件無法安全定位；請使用 V0.7.6 重新掃描後匯入，避免把事件移到最後');
  if(Array.isArray(obj?.validation?.errors)&&obj.validation.errors.length)fail.push('來源報告仍有錯誤，不能覆蓋');
  if(Array.isArray(obj?.validation?.warnings))warn.push(...obj.validation.warnings.slice(0,8));
- return {fail,warn,opening,messages,events,selectedWorld,pairs,autoContinues,unknownGameTimeCount};
+ return {fail,warn,opening,messages,events,selectedWorld,pairs,autoContinues,unknownGameTimeCount,invalidDateReplyCount,invalidDateRowCount};
 }
 function galNativeBuildPlan(obj,r){
  const v=galNativeVerify(obj,r);
@@ -846,6 +872,7 @@ function galNativeBuildPlan(obj,r){
  const sameLegacySource=(a,b)=>a?.id&&a.gameTime===b.gameTime&&contentKey(a)===contentKey(b);
  const mergeSource=(old,row)=>{
   const merged={...old,...row,id:old.id};
+  for(const key of ['nativeClockEvidence','nativeInvalidDateEvidence','nativePairedInvalidDate'])if(!Object.hasOwn(row,key))delete merged[key];
   // Source content is refreshed, while archive corrections and metadata
   // belong to the existing record.
   for(const key of ['sourceCreatedAt','sourceTimeOrigin','sourceTimePrecision',
@@ -927,7 +954,7 @@ function galNativeBuildPlan(obj,r){
  const check=archiveCheckDialoguePairs(archiveStoryTimeline(updated));
  const ok=untouched&&!check.issues.length;
  return {...v,ok,updated,matched,acceptedUnmatched,
-   sourceCounts:{opening:v.opening.length,messages:v.messages.length,events:v.events.length,pairs:v.pairs,autoContinues:v.autoContinues,unknownGameTimeCount:v.unknownGameTimeCount},
+   sourceCounts:{opening:v.opening.length,messages:v.messages.length,events:v.events.length,pairs:v.pairs,autoContinues:v.autoContinues,unknownGameTimeCount:v.unknownGameTimeCount,invalidDateReplyCount:v.invalidDateReplyCount,invalidDateRowCount:v.invalidDateRowCount},
    previousCounts:{opening:(r.opening||'').length,messages:(r.messages||[]).length,events:oldEvents.length},
    afterOrange:check.timeIssues.length,afterRoleIssues:check.issues.length,untouched};
 }
@@ -968,7 +995,7 @@ function galNativePreview(){
  ];
  if(plan.ok){
   lines.push('輪迴開場：'+plan.previousCounts.opening+' → '+plan.sourceCounts.opening+' 字',
-   '完整對話：'+plan.previousCounts.messages+' → '+plan.sourceCounts.messages+' 則（'+plan.sourceCounts.pairs+' 組「我／他」＋'+plan.sourceCounts.autoContinues+' 次自動繼續；劇情時間不詳 '+plan.sourceCounts.unknownGameTimeCount+' 則）',
+   '完整對話：'+plan.previousCounts.messages+' → '+plan.sourceCounts.messages+' 則（'+plan.sourceCounts.pairs+' 組「我／他」＋'+plan.sourceCounts.autoContinues+' 次自動繼續；劇情時間不詳 '+plan.sourceCounts.unknownGameTimeCount+' 則；原生日期無效 '+(plan.sourceCounts.invalidDateRowCount||0)+' 則）',
    '已核對劇情時間：'+plan.updated.messages.filter(m=>typeof m.gameTime==='string'&&Number.isFinite(Date.parse(m.gameTime))).length+' 則對話（其餘保留 null）；已知事件時間 '+plan.updated.events.filter(m=>typeof m.gameTime==='string'&&Number.isFinite(Date.parse(m.gameTime))).length+' 件',
    '事件簿：'+plan.previousCounts.events+' → '+plan.sourceCounts.events+' 件',
    '舊事件狀態唯一對應：'+plan.matched+' 件',
@@ -1250,7 +1277,10 @@ function archiveTimeDisplay(m,galContext=null,storyEvent=false){
   const render=iso=>new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',
     year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
   const lines=[];
-  if(gal)lines.push((storyEvent?'Gal AI 事件劇情時間：':gal.basis==='gal-paired'?'本回合「我」共用 Gal AI 劇情時間：':'Gal AI 回覆劇情時間：')+render(gal.ms));
+  if(m.nativeInvalidDateEvidence||m.nativePairedInvalidDate){
+   const invalid=m.nativeInvalidDateEvidence||m.nativePairedInvalidDate;
+   lines.push('Gal AI 原生日期無效：'+invalid.civil+'（保留原文及掃描位置，不推測）');
+  }else if(gal)lines.push((storyEvent?'Gal AI 事件劇情時間：':gal.basis==='gal-paired'?'本回合「我」共用 Gal AI 劇情時間：':'Gal AI 回覆劇情時間：')+render(gal.ms));
   else if(m.sourceKind==='gal-ai-native'&&m.gameTime===null)lines.push('Gal AI 劇情時間：原生未標記或不詳（不推測）');
   if(source)lines.push((m.sourceTimeOrigin==='manual'?'手動標註現實時間：':m.sourceTimeOrigin==='reply-inferred'?'依 GPT 回覆推定現實時間（分鐘）：':m.sourceTimePrecision==='minute'?'ChatGPT 選單發言時間（分鐘）：':'ChatGPT 原始發言：')+render(source));
   else lines.push('ChatGPT 原始發言時間：未知');
@@ -2651,7 +2681,7 @@ $('downloadSite').onclick=async()=>{
   if(page.querySelector('#archiveReplayStatus'))page.querySelector('#archiveReplayStatus').textContent='尚未選擇檔案。';
   let html='<!DOCTYPE html>\n'+page.outerHTML;
   const closing='</scr'+'ipt>';
-  for(const asset of ['chrome-extension/gal-core.js?v=0.9.11','chrome-extension/gal-format-evidence.js?v=0.9.11','archive-replay.js?v=3','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=1']){
+  for(const asset of ['chrome-extension/gal-core.js?v=0.9.12','chrome-extension/gal-format-evidence.js?v=0.9.12','archive-replay.js?v=4','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=1']){
    const response=await fetch(new URL('./'+asset,location.href),{cache:'no-store'});
    if(!response.ok)throw Error('程式讀取失敗：'+asset+'，HTTP '+response.status);
    const script=await response.text();
@@ -2668,7 +2698,7 @@ $('downloadSite').onclick=async()=>{
   const cssLink='<link rel="stylesheet" href="./'+cssAsset+'">';
   if(!html.includes(cssLink))throw Error('獨立網站找不到健康中心 CSS 連結');
   html=html.replace(cssLink,'<style>'+cssText+'</style>');
-  downloadText('輪迴檔案館_V5.83_網站.html',html);
+  downloadText('輪迴檔案館_V5.84_網站.html',html);
   notify('已下載包含交接稿與雲端同步程式的獨立 HTML；私人資料與附件請另外下載完整 .gab 備份');
  }catch(err){alert('下載完整網站失敗：'+String(err?.message||err))}
 };
@@ -2863,7 +2893,7 @@ function archiveParseGalAIClock(m,forceNative=false){
    then adjacent ChatGPT orders, then genuinely adjacent canonical turns. Do NOT
    write inferred world timestamps into stored sourceCreatedAt/manual labels. */
 function archiveGalTimeContext(messages){
-  const context=new Map(),players=messages.filter(m=>m?.role==='me');
+  const context=new Map(),players=messages.filter(m=>m?.role==='me'&&!m.nativePairedInvalidDate);
   const positions=new Map(messages.map((m,i)=>[m,i]));
   for(const ai of messages){
     const clock=archiveParseGalAIClock(ai);
@@ -2882,7 +2912,7 @@ function archiveGalTimeContext(messages){
     const sameChat=players.filter(m=>m.chatKey&&ai.chatKey&&m.chatKey===ai.chatKey
       &&Number.isInteger(m.messageOrder)&&Number.isInteger(ai.messageOrder)
       &&m.messageOrder+1===ai.messageOrder&&!context.has(m));
-    const validAdjacent=previous?.role==='me'&&!context.has(previous)
+    const validAdjacent=previous?.role==='me'&&!previous.nativePairedInvalidDate&&!context.has(previous)
       &&!(previous.chatKey&&ai.chatKey&&previous.chatKey!==ai.chatKey)
       &&!(previous.sourceEventId&&ai.sourceEventId&&previous.sourceEventId!==ai.sourceEventId
         &&!(previous.chatKey&&ai.chatKey&&previous.chatKey===ai.chatKey))
@@ -2907,12 +2937,14 @@ function archiveRealChronologyTime(m){
   return {ms:0,domain:'real',basis:'unknown'};
 }
 function archiveChronologyTime(m,galContext=null){
+  if(m?.nativeInvalidDateEvidence||m?.nativePairedInvalidDate)return {ms:0,domain:'story',basis:'invalid-native-date'};
   return galContext?.get(m)||archiveRealChronologyTime(m);
 }
 /* If both have in-world time, compare it. If one lacks in-world time,
    compare their best available REAL clock instead. Never subtract
    in-world 2026-08 from ChatGPT real 2026-11. */
 function archiveComparableChronology(a,b,galContext=null){
+  if(a?.nativeInvalidDateEvidence||a?.nativePairedInvalidDate||b?.nativeInvalidDateEvidence||b?.nativePairedInvalidDate)return null;
   const ga=galContext?.get(a),gb=galContext?.get(b);
   if(ga&&gb)return {a:ga,b:gb,domain:'story'};
   const ra=archiveRealChronologyTime(a),rb=archiveRealChronologyTime(b);
@@ -3216,6 +3248,7 @@ function archiveHasManualSortTime(message){
 function archiveIsTrustedAdjacentTurn(me,ai,gal){
   if(me?.role!=='me'||ai?.role!=='ai')return false;
   if(gal?.get(me)?.pairedWith===ai)return true;
+  if(me.nativePairedInvalidDate?.sourceMessageId&&me.nativePairedInvalidDate.sourceMessageId===ai.nativeInvalidDateEvidence?.sourceMessageId&&me.nativePairedInvalidDate.civil===ai.nativeInvalidDateEvidence.civil&&me.chatKey===ai.chatKey)return true;
   if(me.sourceEventId&&ai.sourceEventId&&me.sourceEventId===ai.sourceEventId
     &&Number.isInteger(me.sourcePartIndex)&&Number.isInteger(ai.sourcePartIndex)
     &&me.sourcePartIndex+1===ai.sourcePartIndex)return true;
@@ -3225,6 +3258,7 @@ function archiveIsTrustedAdjacentTurn(me,ai,gal){
   return !me.sourceEventId&&!ai.sourceEventId&&!me.chatKey&&!ai.chatKey;
 }
 function archiveSortableUnitClock(members,gal){
+  if(members.some(m=>m.nativeInvalidDateEvidence||m.nativePairedInvalidDate))return {tier:'pinned',ms:0};
   const isAllowed=m=>m.sourceEventId||archiveHasManualSortTime(m)||gal?.has(m);
   if(!members.every(isAllowed))return {tier:'pinned',ms:0};
   const clocks=members.map(m=>gal?.get(m)).filter(Boolean);
@@ -5119,5 +5153,5 @@ window.ArchiveAutoSyncBridge={
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
   }
 })();
-</script><script src="./chrome-extension/gal-core.js?v=0.9.11"></script><script src="./chrome-extension/gal-format-evidence.js?v=0.9.11"></script><script src="./archive-replay.js?v=3"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=1"></script>
+</script><script src="./chrome-extension/gal-core.js?v=0.9.12"></script><script src="./chrome-extension/gal-format-evidence.js?v=0.9.12"></script><script src="./archive-replay.js?v=4"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=1"></script>
 </body></html>

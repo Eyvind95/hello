@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.11: target-only live forensic event evidence; preserve scan acceptance. */
+/* Independent Gal AI page scanner. v0.9.12: combined adventure verification and live forensic event evidence. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.11';
+const SCANNER_VERSION='0.9.12';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -1719,6 +1719,12 @@ function canonical(rows,valid,preview){
  const messages=valid.messages.map((m,i)=>build(m,i,'message'));
  for(const [i,row] of valid.messages.entries()){
   if(row.verifiedUntimedNative)messages[i].nativeClockEvidence='verified-original-without-game-time';
+  if(row.nativeInvalidDateEvidence){
+   messages[i].nativeClockEvidence='verified-original-invalid-calendar-date';
+   messages[i].nativeInvalidDateEvidence=row.nativeInvalidDateEvidence;
+   messages[i].nativeSourceMessageId=row.nativeInvalidDateEvidence.sourceMessageId;
+  }
+  if(row.nativePairedInvalidDate)messages[i].nativePairedInvalidDate=row.nativePairedInvalidDate;
   if(Array.isArray(row.nativeUserSegments)){
    messages[i].nativeUserSegments=row.nativeUserSegments;
    messages[i].nativeUserMergeVerified=true;
@@ -1740,6 +1746,7 @@ function canonical(rows,valid,preview){
     ...(valid.autoContinues?{autoContinues:valid.autoContinues}:{}),
     openingChars:valid.opening.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,
     unknownGameTimeCount:valid.unknownGameTimeCount||0,verifiedUntimedCount:valid.verifiedUntimedCount||0,
+    invalidDateReplyCount:valid.invalidDateReplyCount||0,invalidDateRowCount:valid.invalidDateRowCount||0,
     warnings:valid.warnings,errors:valid.errors},rawRows:rows.length,
   readOnlyUntilImported:!preview,note:preview?'僅供三則測試驗收。':'原生來源對完整對話及事件具有優先權；不會更動副駕駛聊天、世界觀或補充筆記。覆蓋前需在檔案館確認備份。'
  };
@@ -1769,7 +1776,9 @@ function applyNativeFormat(entry,rows,sourceCounts,scanMode,nativeCopy='',event=
    source:nativeCopy?'native-copy':event?'whif-event-content':'whif-message-content',
    statusText:metadata?.statusText,codeBlocks:metadata?.codeBlocks,
    chapterTitle:nativeCopy?undefined:source?.chapterTitle,event,opening,
-   verifiedUntimedNative:entry.verifiedUntimedNative===true,eventTitle:event?entry.title:undefined
+   verifiedUntimedNative:entry.verifiedUntimedNative===true,eventTitle:event?entry.title:undefined,
+   allowInvalidNativeDate:!nativeCopy&&!event&&!opening&&!!entry.nativeInvalidDateEvidence&&source?.markerCount===1&&uniqueSource&&matchedRow&&
+    entry.nativeInvalidDateEvidence.sourceMessageId===source?.messageId&&source?.eventEvidence?.sender==='character'&&source?.eventEvidence?.kind==='ordinary-message'
   });
   check.comparison=result.comparison;
   if(result.text!==null){

@@ -1918,3 +1918,71 @@ test('Live anchor evidence saves actual native/DOM/serialized fields and detects
  assert.equal(r.tails[0].text,tail);assert.equal(r.tails[0].native,true);assert.equal(r.tails[0].boundaryText,false);assert.equal(r.tails[0].serialized,false);
  assert.deepEqual(capture(root,id,{...expected,textHash:'changed'},run).missing,['live-serialization-changed']);
 });
+
+// Synthetic regression fixtures only; no private transcript is committed.
+function adventureRepairFixture(date='3000年01月04日 13:35',color='🔹'){
+ const f='\x60\x60\x60',wrap=x=>f+'\n'+x+'\n'+f;
+ const hud=[`**${date} I 測試地點**`,color+'【基礎】'+color,'等級：8 I 5%','血量：36/36',color+'【共鳴契】'+color,'對象：無','深度：無',color+'【狀態】'+color,'測試狀態'].join('\n');
+ return {f,wrap,hud,plain:hud.replace(/^\*\*(.*?)\*\*/,'$1')};
+}
+test('adventure orange HUD accepts only observed complete section names and preserves raw symbols',()=>{
+ const core=context.GalArchiveCore,{hud,wrap,plain}=adventureRepairFixture(undefined,'🔸');
+ const opts={source:'whif-message-content',codeBlocks:[plain]};
+ assert.equal(core.parseAdventureClock(hud).civil,'3000/01/04 13:35');
+ assert.equal(core.compareNativeParagraphs(hud,wrap(hud),opts).text,wrap(hud));
+ for(const bad of [hud.replace('🔸【共鳴契】🔸','🔹【共鳴契】🔹'),hud.replace('【基礎】','【其他】'),hud.replace('【狀態】','【其他】'),hud.replace('血量：36/36','其他欄位')])assert.equal(core.parseAdventureClock(bad),null);
+});
+test('adventure system-box rich text projection must preserve serialized stars and ordered exact block content',()=>{
+ const core=context.GalArchiveCore,{hud,wrap,plain}=adventureRepairFixture();
+ const system='**系統對話框**\n**測試標題**\n☆*ヾ(•ω•*)ノ*☆ 測試 (*/ω＼*)';
+ const projected='系統對話框\n測試標題\n☆ヾ(•ω•)ノ*☆ 測試 (/ω＼)';
+ for(const title of ['本次委託結果！','冒險者階級考核進行中！']){
+  const result='**'+title+'**\n測試結果：成功';
+  const native=wrap(hud)+'\n\n'+wrap(system)+'\n\n'+wrap(result),dom=hud+'\n'+system+'\n'+result;
+  const opts={source:'whif-message-content',codeBlocks:[plain,projected,result.replace(/^\*\*(.*?)\*\*/,'$1')]};
+  assert.equal(core.compareNativeParagraphs(dom,native,opts).text,native);
+  for(const bad of [dom.replace('**測試標題**','測試標題'),dom.replace('*/ω＼*','/ω＼'),dom.replace('測試結果：成功','測試結果：失敗'),dom.replace(system+'\n'+result,result+'\n'+system)])assert.equal(core.compareNativeParagraphs(bad,native,opts).text,null);
+  assert.equal(core.compareNativeParagraphs(dom,native,{...opts,codeBlocks:[plain,projected.replace('測試標題','其他標題'),opts.codeBlocks[2]]}).text,null);
+ }
+});
+test('adventure incomplete final fence requires ordered earlier blocks and literal visible tail',()=>{
+ const core=context.GalArchiveCore,{hud,wrap,plain,f}=adventureRepairFixture();
+ const tail=f+'\n**系統對話框**\n未閉合的測試尾段 *原有標記*';
+ const native='{{測試模板}}\n'+wrap(hud)+'\n\n'+tail,dom=hud+'\n'+tail;
+ const opts={source:'whif-message-content',codeBlocks:[plain]};
+ assert.equal(core.compareNativeParagraphs(dom,native,opts).text,native);
+ for(const bad of [dom.replace(f,''),dom+'\n'+f,dom.replace('測試尾段','其他尾段'),dom.replace('*原有標記*','原有標記')])assert.equal(core.compareNativeParagraphs(bad,native,opts).text,null);
+ assert.equal(core.compareNativeParagraphs(dom,native,{...opts,codeBlocks:[]}).text,null);
+});
+test('adventure timed event control wrapper is exact; visible unclosed HUD retains time; closing-line prose loss fails',()=>{
+ const core=context.GalArchiveCore,{hud,wrap,plain,f}=adventureRepairFixture();
+ const world='身為冒險者就可以這樣那樣',label=world+':';
+ const control='{{Below context is an event which has just occurred. '+world+' should not skip this moment — chime in naturally as '+world+' would react. This event is to make the story dynamic and fresh.}}';
+ const prefix=control+'\n'+label+' {{測試情境}}\n';
+ const native=prefix+wrap(hud),dom=label+'\n'+hud;
+ const opts={source:'whif-event-content',event:true,eventTitle:label,codeBlocks:[plain]};
+ assert.equal(core.compareNativeParagraphs(dom,native,opts).text,native);
+ const unclosed=prefix+f+'\n'+hud,visible=label+'\n'+f+'\n'+hud;
+ assert.equal(core.parseAdventureClock(visible).civil,'3000/01/04 13:35');
+ assert.equal(core.compareNativeParagraphs(visible,unclosed,{...opts,codeBlocks:[]}).text,unclosed);
+ for(const bad of [native+'正文不能丟失',native.replace('dynamic and fresh','unexpected'),native.replace('13:35','13:36'),native.replace('{{測試情境}}','{{user}}')])assert.equal(core.compareNativeParagraphs(dom,bad,opts).text,null);
+ assert.equal(core.compareNativeParagraphs(visible.replace(f,''),unclosed,{...opts,codeBlocks:[]}).text,null);
+ assert.equal(core.parseAdventureClock(f+'\n'+hud),null);
+});
+test('invalid adventure calendar date requires unique matching original and remains a separate null-date state',()=>{
+ const core=context.GalArchiveCore,world='身為冒險者就可以這樣那樣';
+ const {hud,wrap,plain}=adventureRepairFixture('3000年02月29日 00:00');
+ const opening=adventureRepairFixture('3000年01月01日 08:00').hud.replace('測試地點','冒險者公會');
+ const source={reason:'available',text:wrap(hud),scannedText:hud,markerCount:1,messageId:'synthetic-invalid-id',eventEvidence:{messageId:'synthetic-invalid-id',sender:'character',kind:'ordinary-message'}};
+ const row={role:'ai',text:hud,formatSource:{nativeReply:source,codeBlocks:[plain]}};
+ const rows=[{role:'ai',text:opening},{role:'me',text:'測試玩家'},row];
+ assert.equal(core.parseGameTime(hud),null);
+ assert.equal(core.compareNativeParagraphs(hud,wrap(hud),{source:'whif-message-content',codeBlocks:[plain]}).text,null);
+ const v=core.validate(rows,world);assert.equal(v.ok,true);assert.equal(v.invalidDateReplyCount,1);assert.equal(v.invalidDateRowCount,2);assert.equal(v.unknownGameTimeCount,0);assert.equal(v.verifiedUntimedCount,0);
+ assert.equal(v.messages[1].gameTime,null);assert.equal(v.messages[0].gameTime,null);assert.equal(v.messages[1].nativeInvalidDateEvidence.civil,'3000/02/29 00:00');assert.equal(v.messages[0].nativePairedInvalidDate.sourceMessageId,source.messageId);
+ for(const change of [r=>r.formatSource.nativeReply.markerCount=2,r=>r.formatSource.nativeReply.eventEvidence.sender='user',r=>r.formatSource.nativeReply.text=r.formatSource.nativeReply.text.replace('00:00','00:01'),r=>r.formatSource.nativeReply.text=r.formatSource.nativeReply.text.replace('測試狀態','其他狀態'),r=>r.formatSource.codeBlocks=[]]){
+  const bad=structuredClone(rows);change(bad[2]);assert.equal(core.validate(bad,world).ok,false);
+ }
+ const duplicate=structuredClone(rows);duplicate[1].formatSource={playerSources:[{id:source.messageId}]};assert.equal(core.validate(duplicate,world).ok,false);
+ assert.equal(core.invalidAdventureDate(hud.replace('02月29日','03月01日')),null);
+});
