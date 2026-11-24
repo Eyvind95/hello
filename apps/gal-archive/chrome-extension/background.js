@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ...Object.values(data.profilesByChat||{})
       ].filter(p=>p?.cycleId&&p?.worldName);
       const presets=[...new Map(pool.map(p=>[
-        JSON.stringify([String(p.uid||''),String(p.cycleId||''),String(p.manager||''),JSON.stringify(p.managerNames||[])]),
+        JSON.stringify([String(p.uid||''),String(p.worldName||''),String(p.cycleId||''),String(p.cycleTitle||''),String(p.manager||''),JSON.stringify(p.managerNames||[])]),
         {uid:String(p.uid||''),worldName:String(p.worldName||''),cycleTitle:String(p.cycleTitle||''),
          cycleId:String(p.cycleId||''),manager:String(p.manager||''),managerNames:Array.isArray(p.managerNames)?p.managerNames:[]}
       ])).values()].slice(0,60);
@@ -54,6 +54,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         managerNames:[...new Set(managerNames)],manager:[...new Set(managerNames)].join('、')
       };
       if(!profile.worldName) return {ok:false,error:'請填寫世界觀名稱'};
+      if(!profile.cycleTitle) return {ok:false,error:'請填寫檔案館實際輪迴名稱'};
+      if(!galBatchIdentity(profile).worldKey)return {ok:false,error:'世界觀無法辨識，請填寫完整世界觀名稱'};
       if(!/^[A-Za-z0-9_-]{5,160}$/.test(profile.cycleId))
         return {ok:false,error:'輪迴文件 ID 格式無效；請從檔案館複製，不要自行猜'};
       if(profile.managerNames.length<1||profile.managerNames.length>2)
@@ -63,7 +65,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const data=await storageGet(['galProfilesByPage']);
       const map=data.galProfilesByPage||{};
       const old=map[source];
-      if(old&&(old.cycleId!==profile.cycleId||old.worldName!==profile.worldName)&&message.confirmReplace!==true)
+      if(old&&(old.cycleId!==profile.cycleId||old.worldName!==profile.worldName||old.cycleTitle!==profile.cycleTitle)&&message.confirmReplace!==true)
         return {ok:false,needsConfirm:true,error:'這個 WHIF 頁面已綁定不同輪迴／世界觀'};
       map[source]=profile;
       await storageSet({galProfilesByPage:map});

@@ -13,8 +13,8 @@ const RUN2='22222222-2222-4222-8222-222222222222';
 const RUN3='33333333-3333-4333-8333-333333333333';
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function harness(){
- const store={galProfilesByPage:{[A]:{cycleId:CYCLE_A,cycleTitle:'第5輪迴'},
-  [B]:{cycleId:CYCLE_B,cycleTitle:'第9周目'}}};
+ const store={galProfilesByPage:{[A]:{cycleId:CYCLE_A,cycleTitle:'第5輪迴',worldName:'《全員精神穩定，感情除外》'},
+  [B]:{cycleId:CYCLE_B,cycleTitle:'第9周目',worldName:'《身為冒險者就可以這樣那樣》'}}};
  const items=[],shown=[],events={};
  let seq=1,listen,interrupt,alarm,updated,removed,changed,emergencySnapshot=null;
  const api={
@@ -94,17 +94,17 @@ test('Taiwan batch paths are unique, frozen, sanitized and support special cycle
  const h=harness();
  const batch=h.helpers.batchPath;
  const a=batch('第9周目',CYCLE_B,'full','2026-11-24T08:31:29.000Z',RUN1);
- assert.equal(a,'GalArchive/第09輪迴/完整掃描/2026-11-24_16-31-29_'+RUN1);
+ assert.equal(a,'GalArchive/世界觀待確認/第09輪迴/完整掃描/2026-11-24_16-31-29_'+RUN1);
  assert.equal(batch('第9周目',CYCLE_B,'full','2026-11-24T08:31:29.000Z',RUN2)
   .split('/').slice(-1)[0].endsWith(RUN2),true);
  assert.match(batch('支線／洛恩',CYCLE_A,'event-three','2026-11-24T08:31:29.000Z',RUN1),
-  /GalArchive\/自訂_支線_洛恩_a20b0ddc\/事件三則測試\//);
+  /GalArchive\/世界觀待確認\/自訂_支線_洛恩_a20b0ddc\/事件三則測試\//);
  assert.equal(batch('第3輪迴',CYCLE_A,'preview','2026-11-24T08:31:29.000Z',RUN1)
-  .split('/')[2],'三則測試');
+  .split('/')[3],'三則測試');
  assert.equal(batch('第3輪迴',CYCLE_A,'position-seven','2026-11-24T08:31:29.000Z',RUN1)
-  .split('/')[2],'指定位置測試');
+  .split('/')[3],'指定位置測試');
  assert.equal(batch('第3輪迴',CYCLE_A,'missing','2026-11-24T08:31:29.000Z',RUN1)
-  .split('/')[2],'缺漏診斷');
+  .split('/')[3],'缺漏診斷');
 });
 test('three same-day full scans get distinct batch folders and one status filename each',async()=>{
  const h=harness();
@@ -306,4 +306,29 @@ test('background refuses a full canonical export when independent native audit i
   assert.equal(r.ok,false);assert.match(r.error,/原生格式/);
  }
  assert.equal(h.items.filter(x=>x.filename.endsWith('/原生正史.json')).length,0);
+});
+
+test('V0.9.01 world isolation and explicit identity for equal cycle numbers',async()=>{
+ const h=harness(),b=h.sender(B,29);
+ h.store.galProfilesByPage[A].cycleTitle='第1輪迴';
+ h.store.galProfilesByPage[B].cycleTitle='第一輪迴';
+ const a=await h.start(RUN1,'preview'),v=await h.start(RUN2,'preview',b);
+ assert.equal(a.ok,true);assert.equal(v.ok,true);
+ assert.match(a.status.batchFolder,/GalArchive\/全員精神穩定，感情除外\/第01輪迴\/三則測試/);
+ assert.match(v.status.batchFolder,/GalArchive\/身為冒險者就可以這樣那樣\/第01輪迴\/三則測試/);
+ assert.notEqual(a.status.archiveKey,v.status.archiveKey);assert.equal(v.status.cycleNumber,1);
+ assert.equal((await h.finish('completed',RUN2,b,'preview')).ok,true);
+ const data=JSON.parse(h.result(RUN2,b,'preview'));
+ const enriched=JSON.parse(h.helpers.attachIdentity(h.liveStatus(RUN2),JSON.stringify(data)));
+ assert.equal(enriched.target.worldKey,'adventure');assert.equal(enriched.cycleNumber,1);
+ assert.throws(()=>h.helpers.attachIdentity(h.liveStatus(RUN2),JSON.stringify({...data,worldName:'《全員精神穩定，感情除外》'})),/世界觀/);
+ assert.throws(()=>h.helpers.attachIdentity(h.liveStatus(RUN2),JSON.stringify({...data,cycleNumber:3})),/輪迴編號/);
+});
+test('unknown world and stale ordinal cannot create new batch',async()=>{
+ const h=harness();
+ h.store.galProfilesByPage[A].worldName='未知世界';
+ assert.equal((await h.start()).ok,false);assert.equal(h.items.length,0);
+ h.store.galProfilesByPage[A].worldName='《身為冒險者就可以這樣那樣》';
+ const result=await h.dispatch({type:'gal-run-start',scanRunId:RUN1,cycleId:CYCLE_A,scope:'preview',cycleTitle:'第1輪迴',worldName:'《身為冒險者就可以這樣那樣》'});
+ assert.equal(result.ok,false);assert.equal(h.items.length,0);
 });
