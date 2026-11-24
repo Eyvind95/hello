@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.8: independent bounded native anchor recovery probe; no change to scan acceptance. */
+/* Independent Gal AI page scanner. v0.9.9: independent bounded native anchor recovery probe; no change to scan acceptance. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.8';
+const SCANNER_VERSION='0.9.9';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -1327,6 +1327,57 @@ function anchorHistoryStep(sample,direction){
 function anchorHistorySignature(s){
  return JSON.stringify([Math.round(s.top),s.height,s.clientHeight,s.rawIds]);
 }
+// Fast navigation only: old bottom distance survives most prepended history.
+function anchorFastPlan(sample,decision,targetMs,oldY,oldHeight,previous,visited){
+ const max=Math.max(0,sample.height-sample.clientHeight),h=Math.max(1,sample.clientHeight);
+ const clamp=x=>Math.max(0,Math.min(max,x));
+ const key=x=>sample.height+':'+sample.clientHeight+':'+Math.round(clamp(x));
+ const fresh=x=>!visited.has(key(x))&&Math.abs(clamp(x)-sample.top)>2;
+ const at=(x,mode)=>({top:clamp(x),mode});
+ const distance=oldHeight===null?null:Math.max(0,oldHeight-oldY);
+ const estimated=distance===null?null:sample.height-distance;
+ // If the desired bottom-relative position is not loaded, request older
+ // history immediately at the top, not by scrolling every intervening row.
+ if(distance!==null&&estimated<0&&!(decision.max!==null&&targetMs!==null&&decision.max<targetMs)){
+  if(sample.top>2||!previous||previous.height!==sample.height)return at(0,'preload-history');
+ }
+ if(estimated!==null&&estimated>=0&&(!previous||previous.height!==sample.height||previous.clientHeight!==sample.clientHeight)&&fresh(estimated))
+  return at(estimated,'bottom-relative-jump');
+ const earlier=targetMs!==null&&decision.min!==null&&decision.min>targetMs+15*60000;
+ const later=targetMs!==null&&decision.max!==null&&decision.max<targetMs-15*60000;
+ const direction=earlier?-1:later?1:(previous?.direction||-1);
+ const far=earlier?decision.min-targetMs:later?targetMs-decision.max:0;
+ // Crossing the time hint means slow down and examine the bracket, not
+ // assume monotonic game time or claim source continuity.
+ const crossed=previous&&previous.height===sample.height&&previous.clientHeight===sample.clientHeight&&previous.direction!==direction;
+ const factors=crossed?[.7,1.4,3]:far>120*60000?[8,4,2,.7]:far>30*60000?[3,1.4,.7]:[.7,1.4,3];
+ if(crossed){
+  const mid=(sample.top+previous.top)/2;
+  if(Math.abs(sample.top-previous.top)>h*1.4&&fresh(mid))return {...at(mid,'bracket-refine'),direction};
+ }
+ for(const sign of [direction,-direction])for(const factor of factors){
+  const dest=sample.top+sign*h*factor;
+  if(fresh(dest))return {...at(dest,far>30*60000&&!crossed?'coarse-jump':'nearby-search'),direction:sign};
+ }
+ // Revisit the top on a stale layout to give lazy loading a chance.
+ if(earlier&&sample.top<=2)return {...at(0,'preload-history'),direction:-1};
+ return {...at(sample.top,'retry-layout'),direction};
+}
+async function anchorFastSample(root,requested,guard,edgeWait){
+ const beforeHeight=root.scrollHeight;
+ root.scrollTop=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,requested));
+ let first=null,last=null,stable=false,elapsed=0;
+ const limit=edgeWait?2400:900;
+ // Poll IDs and geometry; no copying/formatting of intervening messages.
+ while(elapsed<limit){
+  await sleep(100);elapsed+=100;guard();
+  last=anchorHistorySample(root);
+  stable=!!first&&anchorHistorySignature(first)===anchorHistorySignature(last)&&last.rawIds.length>0;
+  if(stable&&(!edgeWait||last.height!==beforeHeight||elapsed>=limit))break;
+  first=last;
+ }
+ return {sample:last,stable,elapsed,beforeHeight};
+}
 function anchorHistorySample(root){
  const nodes=[...root.querySelectorAll(nativeMessageSelector)],rawIds=[],clocks=[];
  for(const n of nodes){
@@ -1430,45 +1481,40 @@ async function anchorRecoveryProbe(){
   if(!reg?.ok)throw Error(reg?.error||'無法建立錨點取證批次');
   Object.assign(run,{worldName:reg.status?.worldName||run.worldName,worldKey:reg.status?.worldKey||null,cycleNumber:reg.status?.cycleNumber??null,archiveKey:reg.status?.archiveKey||null,batchFolder:reg.status?.batchFolder});
   registered=true;
-  // Walk the live history from the current viewport, including prepended
-  // batches. Never clamp all future positions to the initial scrollHeight.
-  // 320 lightweight location samples, then at most 16 detailed probes.
-  // Repeated coordinates are allowed after geometry or raw IDs change.
+  // Navigation is not scanning. Jump using current geometry and old
+  // bottom-relative position; only detailed probes use scan-grade waits.
   const locateLimit=320;
-  let previous=null,repeat=0,direction=null,reversed=false,requested=root.scrollTop;
-  let clockHintObserved=false,decision=null,sample=null;
-  const locatorSeen=new Set();
+  let requested=root.scrollTop,mode='initial',previous=null,repeat=0,lastSig=null;
+  let clockHintObserved=false,decision=null,sample=null,direction=-1;
+  const locatorSeen=new Set(),visited=new Set();
   for(let i=0;i<locateLimit;i++){
    guard();
-   const beforeHeight=root.scrollHeight;
-   root.scrollTop=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,requested));
-   await sleep(WAIT_MS+STABLE_MS);guard();
-   const first=anchorHistorySample(root);
-   await sleep(STABLE_MS);guard();
-   sample=anchorHistorySample(root);
-   const stable=anchorHistorySignature(first)===anchorHistorySignature(sample);
+   const edgeWait=mode==='preload-history';
+   const fast=await anchorFastSample(root,requested,guard,edgeWait);
+   sample=fast.sample;
+   const stable=fast.stable;
    decision=anchorHistoryDecision(sample,anchorId,neighbors,targetMs);
    clockHintObserved||=!!decision.near||decision.kind==='clock-hint-only';
-   history.push({requested,beforeHeight,stable,...sample,decision});
+   history.push({requested,beforeHeight:fast.beforeHeight,stable,mode,waitMs:fast.elapsed,...sample,decision});
    if(stable&&decision.kind!=='target-interval-unconfirmed')break;
    const sig=anchorHistorySignature(sample);
-   const repeated=sig===previous;repeat=repeated?repeat+1:0;previous=sig;
+   repeat=sig===lastSig?repeat+1:0;lastSig=sig;
    locatorSeen.add(sig);
-   if(direction===null){
-    // Time can guide initial direction only; it does not prove history order.
-    direction=targetMs!==null&&decision.max!==null&&decision.max<targetMs-15*60000?1:-1;
+   if(!stable){
+    requested=sample.top;mode='retry-layout';
+    if(repeat>=5)break;
+    continue;
    }
-   if(repeat>=4){
-    if(reversed)break;
-    // One bounded reverse search when a real edge remains unchanged.
-    // If history grew, the signature changes and this branch is not taken.
-    reversed=true;direction=-direction;repeat=0;
-   }
-   requested=anchorHistoryStep(sample,direction);
-   status('🧭 歷史定位 '+(i+1)+'/'+locateLimit+'；高度 '+sample.height+'；'+(decision.matches.length?'已見參考ID':'尚未確認目標區間'));
+   visited.add(sample.height+':'+sample.clientHeight+':'+Math.round(sample.top));
+   const plan=anchorFastPlan(sample,decision,targetMs,y,oldHeight,previous,visited);
+   previous={top:sample.top,height:sample.height,clientHeight:sample.clientHeight,direction};
+   direction=plan.direction||direction;
+   if(repeat>=5&&Math.abs(plan.top-sample.top)<=2)break;
+   requested=plan.top;mode=plan.mode;
+   status('🧭 快速歷史定位 '+(i+1)+'/'+locateLimit+'；高度 '+sample.height+'；'+mode+'；尚未確認目標區間');
   }
   localization={decision,clockHintObserved,samples:history.length,distinctLayouts:locatorSeen.size,
-   stopped:history.at(-1)?.stable&&decision?.kind!=='target-interval-unconfirmed'?'located':'limit-or-stalled'};
+   navigation:'fast-bottom-relative-coarse',waitMs:history.reduce((n,x)=>n+(x.waitMs||0),0),stopped:history.at(-1)?.stable&&decision?.kind!=='target-interval-unconfirmed'?'located':'limit-or-stalled'};
   // If there is no evidence of the neighborhood, preserve localization
   // evidence and stop instead of pretending the target was absent.
   if(localization.stopped==='located'){
