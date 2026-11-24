@@ -1,0 +1,48 @@
+/* Read-only chronicle health center + multi-cycle timeline */
+#archiveObservatoryModal{position:fixed;inset:0;background:#020614e8;z-index:106;display:flex;align-items:center;justify-content:center;padding:12px}
+#archiveObservatoryModal[hidden]{display:none!important}
+#archiveObservatoryModal .ob-shell{width:min(1140px,100%);max-height:94vh;display:flex;flex-direction:column;min-width:0;background:#151d32;border:1px solid #536488;border-radius:17px;box-shadow:0 14px 70px #000b}
+#archiveObservatoryModal .ob-head{padding:16px 18px 12px;border-bottom:1px solid #435272;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+#archiveObservatoryModal .ob-title{font-size:1.13rem;font-weight:750}
+#archiveObservatoryModal .ob-scroll{padding:14px 18px 20px;overflow:auto;min-height:0;overscroll-behavior:contain}
+#archiveObservatoryModal .ob-mode{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+#archiveObservatoryModal .ob-mode button[aria-pressed="true"]{background:#6253c7;color:white;border-color:#978aff}
+#archiveObservatoryModal .ob-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 12px}
+#archiveObservatoryModal .ob-filters label{margin:0;color:#c6d2ea;font-size:.81rem}
+#archiveObservatoryModal select,#archiveObservatoryModal input{width:100%;margin-top:5px}
+#archiveObservatoryModal .ob-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}
+#archiveObservatoryModal .ob-metric{background:#192841;border:1px solid #415372;padding:10px;border-radius:11px}
+#archiveObservatoryModal .ob-value{font-size:1.25rem;font-weight:800;display:block;font-variant-numeric:tabular-nums}
+#archiveObservatoryModal .ob-sub{font-size:.76rem;color:#b6c3d9}
+#archiveObservatoryModal .ob-note{font-size:.82rem;color:#c4cee0;line-height:1.65;margin:10px 0}
+#archiveObservatoryModal .ob-list{display:grid;gap:8px;margin-top:12px}
+#archiveObservatoryModal .ob-item{background:#101b30;border:1px solid #344664;border-radius:10px;padding:10px 12px}
+#archiveObservatoryModal .ob-issue{border-left:4px solid #8797b5}
+#archiveObservatoryModal .ob-issue[data-level="error"]{border-left-color:#ff8f9d}
+#archiveObservatoryModal .ob-issue[data-level="warning"]{border-left-color:#edb971}
+#archiveObservatoryModal .ob-issue[data-level="info"]{border-left-color:#85b4c5}
+#archiveObservatoryModal .ob-row{display:flex;align-items:flex-start;gap:10px;justify-content:space-between;flex-wrap:wrap}
+#archiveObservatoryModal .ob-row strong{overflow-wrap:anywhere}
+#archiveObservatoryModal .ob-actions{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}
+#archiveObservatoryModal .ob-actions button{padding:6px 9px;font-size:.83rem}
+#archiveObservatoryModal .ob-cycle{border:1px solid #425675;border-radius:11px;padding:10px 12px;margin:8px 0;background:#141f35;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+#archiveObservatoryModal .ob-small{font-size:.79rem;color:#bac7dc;overflow-wrap:anywhere}
+#archiveObservatoryModal .ob-day{border:1px solid #465975;border-radius:10px;background:#121e33;margin:8px 0}
+#archiveObservatoryModal .ob-day>summary{padding:10px 12px;cursor:pointer;list-style:revert;font-weight:650}
+#archiveObservatoryModal .ob-day-list{display:grid;gap:6px;padding:0 12px 12px}
+#archiveObservatoryModal .ob-entry{border:1px solid #354868;border-radius:9px;padding:9px 10px;background:#1b2841}
+#archiveObservatoryModal .ob-entry[data-kind="event"]{border-left:4px solid #e8bd57}
+#archiveObservatoryModal .ob-entry[data-kind="me"]{border-left:4px solid #79a9f8}
+#archiveObservatoryModal .ob-entry[data-kind="ai"]{border-left:4px solid #b09bff}
+#archiveObservatoryModal .ob-snippet{color:#d2dbee;font-size:.85rem;white-space:normal;overflow-wrap:anywhere;margin-top:4px}
+#archiveObservatoryModal .ob-placeholder{text-align:center;padding:22px 12px;color:#b5c2d5}
+#archiveObservatoryModal .ob-chip{font-size:.7rem;display:inline-block;background:#303958;border-radius:50px;padding:2px 9px}
+#archiveObservatoryModal button{max-width:100%;overflow-wrap:anywhere}
+@media(max-width:700px){
+ #archiveObservatoryModal{padding:5px}
+ #archiveObservatoryModal .ob-shell{max-height:98dvh}
+ #archiveObservatoryModal .ob-head{padding:12px}
+ #archiveObservatoryModal .ob-scroll{padding:12px}
+ #archiveObservatoryModal .ob-filters{grid-template-columns:1fr 1fr}
+ #archiveObservatoryModal .ob-metrics{grid-template-columns:1fr 1fr}
+}
