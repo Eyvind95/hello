@@ -1240,7 +1240,7 @@ test('cycle 11 rejects modified event body, time, status, misplaced context, unb
   x.native.replace('：「第3項已查證。」','：第3項已查證。」'),
   x.native.replace('「現場原有可見的引號」','現場原有可見的引號'),
   x.native+'附加被刪除的劇情',
-  x.native.replace(x.leading,'')
+  x.native.replace(x.leading,'{{user}}\n')
  ];
  for(const original of reject){
   const cmp=context.GalArchiveCore.compareNativeParagraphs(x.dom,original,opts);
