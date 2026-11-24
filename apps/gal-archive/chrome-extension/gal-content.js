@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.6: independent bounded native anchor recovery probe; no change to scan acceptance. */
+/* Independent Gal AI page scanner. v0.9.7: independent bounded native anchor recovery probe; no change to scan acceptance. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.6';
+const SCANNER_VERSION='0.9.7';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -1475,7 +1475,7 @@ async function anchorRecoveryProbe(){
    const reference=decision.kind==='anchor-id-observed'?anchorId:decision.matches[0];
    const markerY=reference?recoveryMarkerTop(root,reference):null;
    if(Number.isFinite(markerY))center+=markerY-root.clientHeight/3;
-   let planned=anchorProbeOffsets(center,root.clientHeight,root.scrollHeight-root.clientHeight);
+   let planned=[root.scrollTop,...anchorProbeOffsets(center,root.clientHeight,root.scrollHeight-root.clientHeight)];
    if(oldHeight!==null&&Math.abs(root.scrollHeight-oldHeight)<root.clientHeight)
     planned.push(...anchorProbeOffsets(y,root.clientHeight,root.scrollHeight-root.clientHeight));
    for(let i=0;i<planned.length&&attempts.length<16;i++){
