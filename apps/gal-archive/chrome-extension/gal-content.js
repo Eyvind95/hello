@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.0: module preflight, bare HUD native formatting, responsive finalization. */
+/* Independent Gal AI page scanner. v0.9.1: module preflight, bare HUD native formatting, responsive finalization. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.0';
+const SCANNER_VERSION='0.9.1';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -21,7 +21,9 @@ function bindingStateIssue(requested,state,currentSource){
  const bound=state.profile;
  if(!bound?.cycleId||!bound?.worldName)
   return '目前 WHIF 聊天尚未儲存輪迴綁定。請使用右下角「🧭 開啟輪迴掃描助手」完成綁定。';
- if(requested?.cycleId&&requested.cycleId!==bound.cycleId)
+ if(requested?.cycleId&&(requested.cycleId!==bound.cycleId||
+    requested.worldName&&requested.worldName!==bound.worldName||
+    requested.cycleTitle&&requested.cycleTitle!==bound.cycleTitle))
   return '掃描面板的輪迴「'+(requested.cycleTitle||requested.cycleId)+
    '」與目前 WHIF 頁面綁定「'+(bound.cycleTitle||bound.cycleId)+
    '」不一致。請按「🔄 重新讀取目前綁定」確認後再掃描；本次未匯出任何正史。';
@@ -42,7 +44,7 @@ async function refreshBoundTarget(){
   if(!names.length||names.length>2)throw Error('目前綁定的副駕駛欄位無效，請重新儲存');
   target={uid:String(p.uid||''),worldName:p.worldName,cycleId:p.cycleId,
    cycleTitle:String(p.cycleTitle||''),managerNames:names};
-  status('✅ 已重新讀取這個 WHIF 聊天的輪迴綁定：'+(target.cycleTitle||target.cycleId)+
+  status('✅ 已重新讀取這個 WHIF 聊天的輪迴綁定：'+target.worldName+'／'+(target.cycleTitle||target.cycleId)+
    '\n尚未開始掃描。請確認名稱正確，再按「▶ 開始／重新掃描」。');
  }catch(error){status('⛔ '+String(error?.message||error))}
 }
@@ -122,7 +124,8 @@ function mount(){
  $('gal-scan-save-progress').onclick=()=>saveProgressSnapshot();
  $('gal-scan-export').onclick=()=>{if(!lastResult||!lastResult.validation?.ok||(!lastResult.validation.nativeFormatComplete&&lastResult.scope!=='opening-first-pair-preview'))return;
    const preview=lastResult.scope==='opening-first-pair-preview';
-   downloadJson(preview?'Gal_AI_三則測試_':'Gal_AI_原生正史_',lastResult);
+   if(activeRun?.scanRunId&&activeRun?.batchFolder){$('gal-scan-open-folder').click();return;}
+   status('沒有已核對批次，請重新掃描；不在下載根目錄重複建立正式正史。');return;
    status(preview?'已下載三則測試 JSON，供格式驗收。':'已請瀏覽器下載原生正史 JSON。這一步不會修改檔案館或 Firebase；請到輪迴檔案館「Gal AI 原生匯入」核對後套用。');
  };
  return p;
@@ -264,12 +267,25 @@ async function saveProgressSnapshot(){
  status('🧷 已請 Chrome 緊急下載 '+data.collectedCount+' 則未驗證保全；請核對下載完成。原始批次仍保留。');
  return true;
 }
-function downloadJson(prefix,data){
+async function downloadJson(prefix,data){
+ const meta={worldName:target?.worldName||null,cycleTitle:target?.cycleTitle||null,cycleId:target?.cycleId||null};
+ const payload={...data,...meta};
+ const kind=prefix.includes('保全')?'unverified':'diagnostic';
+ try{
+  await fetchCurrentBinding(target);
+  const result=await chrome.runtime.sendMessage({type:'gal-run-download-extra',kind,cycleId:meta.cycleId,scanRunId:crypto.randomUUID(),text:JSON.stringify(payload)});
+  if(result?.ok){status('已下載獨立證據批次：'+result.status.filePath);return true;}
+  throw Error(result?.error||'背景下載無回應');
+ }catch(error){
+  if(kind!=='unverified'){status('無法分類下載：'+String(error.message||error));return false;}
+  // Only emergency evidence can fall back to a flat browser download. It
+  // remains non-importable and is conspicuously labelled for review.
+ }
  const a=document.createElement('a');
- const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
+ const blob=new Blob([JSON.stringify({...payload,cycleNumber:null,archiveKey:null,classificationPending:true},null,2)],{type:'application/json;charset=utf-8'});
  const url=URL.createObjectURL(blob);
  a.href=url;
- a.download=prefix+(target?.cycleTitle||'輪迴').replace(/[\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.json';
+ a.download='待分類_緊急保全_'+(target?.worldName||'世界觀待確認')+'_'+(target?.cycleTitle||'輪迴').replace(/[\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.json';
  document.documentElement.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
 }
 function status(msg){const n=$('gal-scan-info');if(n)n.textContent=String(msg);}
@@ -1368,6 +1384,7 @@ async function positionSevenProbe(mode){
   status('沒有本分頁前次掃描的全輪來源索引。不能把目前 DOM 排列位置冒充 scanIndex。');return;
  }
  const previous=activeRun,rows=activeScanRows;
+ try{await fetchCurrentBinding(target);if(previous?.cycleId!==target.cycleId||previous?.worldName!==target.worldName||previous?.cycleTitle!==target.cycleTitle)throw Error('前次掃描與目前世界觀／輪迴綁定不一致');}catch(error){status(String(error.message||error));return}
  let index=null,sourceId=null,run=null,registered=false,probeRows=[];
  try{
   if(mode==='index'){
@@ -1415,7 +1432,7 @@ async function positionSevenProbe(mode){
     explicitUnknownClock:core.isExplicitUnknownGameTime(row.text)};
   });
   run={scanRunId:crypto.randomUUID(),cycleId:target.cycleId,
-   scope:'position-seven',scannerVersion:SCANNER_VERSION};
+   scope:'position-seven',worldName:target.worldName,cycleTitle:target.cycleTitle,scannerVersion:SCANNER_VERSION};
   const managed=['whif.io','www.whif.io'].includes(location.hostname);
   if(!managed)throw Error('指定位置測試僅支援正式 WHIF 分頁');
   const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
@@ -1477,7 +1494,7 @@ async function eventThreeRowProbe(profile){
  if(busy)return {ok:false,error:'正在掃描中'};
  if(core?.version!==SCANNER_VERSION||!formatEvidenceReady()){const error='掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面';status(error);return {ok:false,error};}
  busy=true;cancelled=false;paused=false;target=profile;mount();localDifferences.clear();
- const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'event-three',scannerVersion:SCANNER_VERSION};
+ const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'event-three',worldName:profile.worldName,cycleTitle:profile.cycleTitle,scannerVersion:SCANNER_VERSION};
  let registered=false,localRows=[];
  $('gal-scan-difference').hidden=true;$('gal-scan-difference-label').hidden=true;
  try{
@@ -1568,7 +1585,7 @@ async function eventThreeRowProbe(profile){
 async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.randomUUID()){
  if(busy)return {ok:false,error:'正在掃描中'};
  if(core?.version!==SCANNER_VERSION||!formatEvidenceReady()){const error='掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面';status(error);return {ok:false,error};}
- const run={scanRunId,cycleId:profile.cycleId,scope:preview?'preview':'full'};
+ const run={scanRunId,cycleId:profile.cycleId,scope:preview?'preview':'full',worldName:profile.worldName,cycleTitle:profile.cycleTitle};
  const managed=['whif.io','www.whif.io'].includes(location.hostname)&&location.protocol==='https:'&&
   typeof chrome.runtime.sendMessage==='function';
  activeRun=run;
@@ -2040,7 +2057,7 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
   target={uid:String(p.uid||''),worldName:p.worldName,cycleId:p.cycleId,
     cycleTitle:String(p.cycleTitle||''),managerNames:managerNames.map(name=>name.trim())};
   mount();
-  status('✅ 已從 WHIF 頁面開啟掃描助手。\n目標：'+(target.cycleTitle||target.cycleId)+
+  status('✅ 已從 WHIF 頁面開啟掃描助手。\n目標：'+target.worldName+'／'+(target.cycleTitle||target.cycleId)+
    '\n尚未開始掃描；Browser Use 可直接操作本頁助手。');
   respond({ok:true,opened:true});return false;
  }

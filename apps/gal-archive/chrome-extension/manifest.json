@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.9.0",
-  "version_name": "V0.9.00 雙世界觀",
-  "description": "輪迴檔案館 V0.9.00：冒險者世界狀態欄、時間、原生多程式碼框驗收，保留第一世界觀的安全規則。",
+  "version": "0.9.1",
+  "version_name": "V0.9.01 世界觀隔離",
+  "description": "輪迴檔案館 V0.9.01：世界觀隔離批次及原生掃描驗收。",
   "permissions": [
     "storage",
     "activeTab",

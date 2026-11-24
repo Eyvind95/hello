@@ -1,6 +1,32 @@
 'use strict';
 /* WHIF batch downloads. All paths are frozen at registration; never
  * use the current date to determine a later file's destination. */
+
+const GAL_BATCH_WORLDS=[
+ {worldKey:'sentinel',worldName:'《全員精神穩定，感情除外》',worldFolder:'全員精神穩定，感情除外'},
+ {worldKey:'adventure',worldName:'《身為冒險者就可以這樣那樣》',worldFolder:'身為冒險者就可以這樣那樣'},
+ {worldKey:'road',worldName:'《公路求生－我是求生者！》',worldFolder:'公路求生－我是求生者！'}
+];
+const galWorldNorm=x=>String(x||'').normalize('NFKC').replace(/[《》〈〉「」『』\s，,。．·・！!－—–-]/gu,'');
+function galCycleNumber(title){
+ const value=String(title||'').normalize('NFKC').trim();
+ const m=value.match(/^第\s*(\d{1,4}|[零〇一二兩三四五六七八九十百千]+)\s*(?:周目|週目|輪迴|輪目|周|週)/u);
+ if(!m)return null;
+ if(/^\d+$/.test(m[1]))return +m[1]>0?+m[1]:null;
+ const digits={'零':0,'〇':0,'一':1,'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9},units={'十':10,'百':100,'千':1000};
+ let n=0,pending=0;
+ for(const ch of m[1]){if(Object.hasOwn(digits,ch))pending=digits[ch];else{n+=(pending||1)*units[ch];pending=0}}
+ return n+pending>0?n+pending:null;
+}
+function galBatchIdentity(profile){
+ const worldName=String(profile?.worldName||'').trim(),cycleTitle=String(profile?.cycleTitle||'').trim(),cycleId=String(profile?.cycleId||'');
+ const world=GAL_BATCH_WORLDS.find(w=>galWorldNorm(w.worldName)===galWorldNorm(worldName));
+ const cycleNumber=galCycleNumber(cycleTitle);
+ if(profile?.cycleNumber!=null&&(!Number.isInteger(profile.cycleNumber)||profile.cycleNumber!==cycleNumber))throw Error('輪迴編號與綁定名稱不一致，請重新核對檔案館');
+ return {worldName,worldKey:world?.worldKey||null,worldFolder:world?.worldFolder||'世界觀待確認',
+  cycleId,cycleTitle,cycleNumber,archiveKey:world&&cycleId?world.worldKey+'::'+cycleId:null};
+}
+
 function installGalScanStatus(api){
  const KEY='galScanRuns',ALARM='gal-scan-deadline:';
  const DEADLINE={full:240,preview:45,'event-three':45,'position-seven':45,missing:45};
@@ -12,15 +38,15 @@ function installGalScanStatus(api){
  const timestamp=iso=>new Date(new Date(iso).getTime()+8*3600000).toISOString().slice(0,19).replace('T','_').replace(/:/g,'-');
  const clean=x=>String(x||'').trim().replace(/[\\/／＼:*?"<>|\x00-\x1f]/g,'_').replace(/\s+/g,' ').replace(/[. ]+$/g,'').slice(0,75);
  function cycleFolder(title,cycleId){
-  const n=String(title||'').match(/^第\s*(\d{1,4})\s*(?:周目|週目|輪迴)/u);
-  return n?'第'+String(+n[1]).padStart(2,'0')+'輪迴':
+  const n=galCycleNumber(title);
+  return n!==null?'第'+String(n).padStart(2,'0')+'輪迴':
    '自訂_'+(clean(title)||'未命名輪迴')+'_'+String(cycleId).slice(0,8);
  }
  const typeFolder={full:'完整掃描',preview:'三則測試','event-three':'事件三則測試',
   'position-seven':'指定位置測試',missing:'缺漏診斷'};
- function batchPath(title,cycleId,scope,startedAt,scanRunId){
+ function batchPath(title,cycleId,scope,startedAt,scanRunId,worldName){
   if(!idOk(cycleId)||!uuidOk(scanRunId)||!typeFolder[scope])throw Error('批次綁定無效');
-  return 'GalArchive/'+cycleFolder(title,cycleId)+'/'+typeFolder[scope]+'/'+timestamp(startedAt)+'_'+scanRunId;
+  return 'GalArchive/'+galBatchIdentity({worldName,cycleTitle:title,cycleId}).worldFolder+'/'+cycleFolder(title,cycleId)+'/'+typeFolder[scope]+'/'+timestamp(startedAt)+'_'+scanRunId;
  }
  const filenames={status:'掃描狀態.json',diagnostic:'掃描診斷.json',result:'原生正史.json',
   unverified:'未驗證掃描資料.json',eventResult:'事件三則測試.json',
@@ -39,6 +65,7 @@ function installGalScanStatus(api){
  function publicStatus(run){
   return {format:'gal-archive-scan-status',version:2,
    scanRunId:run.scanRunId,cycleId:run.cycleId,cycleTitle:run.cycleTitle,
+   worldName:run.worldName??null,worldKey:run.worldKey??null,cycleNumber:run.cycleNumber??null,archiveKey:run.archiveKey??null,
    scannerVersion:run.scannerVersion||null,state:run.state,startedAt:run.startedAt,
    endedAt:run.endedAt||null,at:run.at,scope:run.scope,scanned:run.scanned,
    source:run.source,deadlineMinutes:run.deadlineMinutes,
@@ -78,10 +105,27 @@ function installGalScanStatus(api){
   run.statusId=id;
   return confirmedDownload(id);
  }
+ function attachIdentity(run,text){
+  const data=JSON.parse(text);
+  if(!data||typeof data!=='object'||Array.isArray(data))throw Error('掃描 JSON 非物件');
+  if(!run.worldKey)return text; // existing legacy in-flight runs retain their original path
+  for(const source of [data,data.target].filter(Boolean)){
+   if(source.cycleId!=null&&source.cycleId!==run.cycleId)throw Error('輸出輪迴 ID 與批次不一致');
+   if(source.worldName!=null&&galWorldNorm(source.worldName)!==galWorldNorm(run.worldName))throw Error('輸出世界觀與批次不一致');
+   if(source.worldKey!=null&&source.worldKey!==run.worldKey)throw Error('輸出世界觀識別碼與批次不一致');
+   if(source.cycleTitle!=null&&galCycleNumber(source.cycleTitle)!==run.cycleNumber)throw Error('輸出輪迴名稱與批次不一致');
+   if(source.cycleNumber!=null&&source.cycleNumber!==run.cycleNumber)throw Error('輸出輪迴編號與批次不一致');
+  }
+  const meta={worldName:run.worldName,worldKey:run.worldKey,cycleId:run.cycleId,
+   cycleTitle:run.cycleTitle,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey};
+  return JSON.stringify({...data,...meta,...(data.target?{target:{...data.target,...meta}}:{})},null,2);
+ }
  async function makeFile(run,kind,text){
   if(!filenames[kind]||kind==='status'||typeof text!=='string'||!text||
      new TextEncoder().encode(text).length>40*1024*1024)
    throw Error('輸出檔格式或大小不安全');
+  text=attachIdentity(run,text);
+  if(new TextEncoder().encode(text).length>40*1024*1024)throw Error('輸出檔大小超過安全上限');
   if(!(await api.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT'],documentUrls:[offscreenUrl]})).length)
    await api.offscreen.createDocument({url:'gal-scan-files.html',reasons:['BLOBS'],justification:'Save raw Gal AI scan evidence'});
   const url=await api.runtime.sendMessage({type:'gal-run-blob-create',text});
@@ -155,24 +199,45 @@ function installGalScanStatus(api){
    return match?publicStatus(runs[match.scanRunId]):{state:'idle',scanRunId:null,cycleId:message.cycleId,scanned:0};
   }
   const src=safeUrl(sender.url);
+  if(message.type==='gal-run-download-extra'){
+   if(!src||sender.frameId!==0||!sender.tab||!uuidOk(message.scanRunId))throw Error('手動下載來源無效');
+   const binding=((await api.storage.local.get('galProfilesByPage')).galProfilesByPage||{})[src];
+   if(!binding||binding.cycleId!==message.cycleId)throw Error('手動下載輪迴綁定不一致');
+   const identity=galBatchIdentity(binding);
+   if(!identity.worldKey)throw Error('世界觀待確認，禁止分類下載');
+   const kind=message.kind;
+   if(!['diagnostic','unverified'].includes(kind))throw Error('手動證據類型無效');
+   const run={...identity,scanRunId:message.scanRunId,batchFolder:batchPath(identity.cycleTitle,identity.cycleId,'missing',now(),message.scanRunId,identity.worldName)};
+   const data=JSON.parse(message.text);
+   if(kind==='unverified'&&(data.format!=='gal-ai-unverified-scan'||data.importable!==false))throw Error('手動保全不得為正式正史');
+   const file=await makeFile(run,kind,message.text);
+   const filePath=await confirmedDownload(file.id,80);
+   await api.runtime.sendMessage({type:'gal-run-blob-release',url:file.url}).catch(()=>{});
+   return {batchFolder:run.batchFolder,filePath};
+  }
   if(!src||!Number.isInteger(sender.tab?.id)||sender.frameId!==0||!sender.documentId||
      !idOk(message.cycleId)||!uuidOk(message.scanRunId))
    throw Error('掃描來源或工作識別碼無效');
   if(message.type==='gal-run-start'){
+
    if(runs[message.scanRunId]||Object.values(runs).some(r=>r.state==='running'&&
     (r.tabId===sender.tab.id||r.source===src)))
     throw Error('同一來源已有掃描工作執行');
    if(!Object.hasOwn(DEADLINE,message.scope))throw Error('掃描類型不支援');
    const binding=((await api.storage.local.get('galProfilesByPage')).galProfilesByPage||{})[src];
    if(!binding||binding.cycleId!==message.cycleId)throw Error('WHIF 來源綁定不一致');
+   const identity=galBatchIdentity(binding);
+   if(!identity.worldKey)throw Error('世界觀無法辨識：請確認綁定名稱，不得預設歸入其他世界觀');
+   if(message.worldName&&galWorldNorm(message.worldName)!==galWorldNorm(identity.worldName)||
+      message.cycleTitle&&galCycleNumber(message.cycleTitle)!==identity.cycleNumber||
+      message.cycleNumber!=null&&message.cycleNumber!==identity.cycleNumber)throw Error('掃描面板世界觀／輪迴編號與已儲存綁定不一致');
    const startedAt=now();
-   const run=record(runs,{scanRunId:message.scanRunId,cycleId:message.cycleId,
-    cycleTitle:String(binding.cycleTitle||'輪迴').slice(0,160),
+   const run=record(runs,{scanRunId:message.scanRunId,...identity,
     scannerVersion:String(message.scannerVersion||api.runtime.getManifest?.().version||''),
     tabId:sender.tab.id,documentId:sender.documentId,source:src,scope:message.scope,
     startedAt,endedAt:null,scanned:0,
     deadlineMinutes:DEADLINE[message.scope],batchFolder:batchPath(binding.cycleTitle,message.cycleId,
-     message.scope,startedAt,message.scanRunId),files:{}},{state:'running'});
+     message.scope,startedAt,message.scanRunId,identity.worldName),files:{}},{state:'running'});
    const old=Object.values(runs).filter(r=>terminal.has(r.state))
     .sort((a,b)=>b.at.localeCompare(a.at)).slice(79);
    for(const entry of old)delete runs[entry.scanRunId];
@@ -197,7 +262,7 @@ function installGalScanStatus(api){
   }
   if(message.type==='gal-run-manual-save'){
    if(run.exportPending)throw Error('正在整理終態下載，請等下載完成再操作');
-   const data=JSON.parse(message.unverified);
+   const data=JSON.parse(attachIdentity(run,message.unverified));
    if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||
       data.scanRunId!==run.scanRunId||data.target?.cycleId!==run.cycleId||
       !Array.isArray(data.rows)||data.rows.length!==data.collectedCount)
@@ -230,11 +295,11 @@ function installGalScanStatus(api){
   if(!terminal.has(message.state)||!Number.isInteger(message.scanned)||
      message.scanned<0||message.scanned>20000||message.scanned<run.scanned)
     throw Error('終態掃描數不得小於已確認進度');
-  const diagnostic=JSON.parse(message.diagnostic);
+  const diagnostic=JSON.parse(attachIdentity(run,message.diagnostic));
   if(diagnostic.scanRunId!==run.scanRunId||diagnostic.cycleId!==run.cycleId)throw Error('診斷來源不一致');
   let completedResult=null;
   if(message.state==='completed'){
-   completedResult=JSON.parse(message.result);
+   completedResult=JSON.parse(attachIdentity(run,message.result));
    if(completedResult.scanRunId!==run.scanRunId||
       completedResult.target?.cycleId!==run.cycleId||
       safeUrl(completedResult.source?.url)!==run.source)
@@ -270,7 +335,7 @@ function installGalScanStatus(api){
      run.scope==='position-seven'?'positionResult':run.scope==='missing'?'missingResult':'result';
     next.files[kind]=await makeFile(run,kind,message.result);await save(runs);
    }else if(message.unverified){
-    const data=JSON.parse(message.unverified);
+    const data=JSON.parse(attachIdentity(run,message.unverified));
     if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||
        data.scanRunId!==run.scanRunId||data.target?.cycleId!==run.cycleId||
        !Array.isArray(data.rows)||data.rows.length!==message.scanned)
@@ -283,7 +348,7 @@ function installGalScanStatus(api){
   return publicStatus(runs[run.scanRunId]);
  }
  api.runtime.onMessage.addListener((message,sender,reply)=>{
-  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save','gal-run-progress'].includes(message?.type))return false;
+  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save','gal-run-progress','gal-run-download-extra'].includes(message?.type))return false;
   serial(()=>handle(message,sender)).then(s=>reply({ok:true,status:s}),
    error=>reply({ok:false,error:String(error.message||error)}));
   return true;
@@ -339,6 +404,6 @@ function installGalScanStatus(api){
  api.runtime.onStartup.addListener(()=>interrupt(()=>true,'Chrome 已重新啟動，前次掃描中斷'));
  api.runtime.onInstalled.addListener(()=>interrupt(()=>true,'擴充功能已重新載入，前次掃描中斷'));
  api.alarms.onAlarm.addListener(a=>interrupt(r=>a.name===ALARM+r.scanRunId,'掃描或下載逾時'));
- return {batchPath,cycleFolder,publicStatus};
+ return {batchPath,cycleFolder,publicStatus,attachIdentity};
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={installGalScanStatus};
+if(typeof module!=='undefined'&&module.exports)module.exports={installGalScanStatus,galBatchIdentity,galCycleNumber};

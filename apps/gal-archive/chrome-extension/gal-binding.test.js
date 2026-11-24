@@ -51,3 +51,8 @@ test('full and event preview scans check binding before reading the WHIF DOM',()
  const snapshot=source.indexOf("const shot=snapshot(null,'auto',false,true)",registered);
  assert.ok(event>=0&&bound>event&&registered>bound&&snapshot>registered);
 });
+
+test('stale world or cycle title for same document ID is blocked',()=>{
+ assert.match(issue({...bound,worldName:'《身為冒險者就可以這樣那樣》'},{ok:true,source:url,profile:bound},url),/不一致/);
+ assert.match(issue({...bound,cycleTitle:'第1輪迴'},{ok:true,source:url,profile:bound},url),/不一致/);
+});
