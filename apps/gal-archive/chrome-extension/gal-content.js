@@ -9,6 +9,7 @@ const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIR
 let busy=false,cancelled=false,paused=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
 let activeRun=null,activeScanRows=null,lastFailureIndices=[];
 const localDifferences=new Map();
+const nativePlayerTextCache=new Map(); // One React bridge read per WHIF user source.
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const $=id=>document.getElementById(id);
 function bindingStateIssue(requested,state,currentSource){
@@ -137,9 +138,15 @@ function unverifiedEvidence(rows,run,why,fullDiagnostic){
   return {scanIndex,role:row.role,eventType:row.eventType||null,
    worldName:row.worldName||null,autoContinue:row.autoContinue===true,
    domText:row.text,originalText:row.text,
-   nativeText:native?.reason==='available'?native.text:null,
-   nativeTextUnavailableReason:native?.reason==='available'?null:
-    native?.reason||'native-reader-not-captured',
+   nativeText:native?.reason==='available'?native.text:
+    row.role==='me'&&row.formatSource?.playerSources?.length&&
+    row.formatSource.playerSources.every(x=>x.nativeReason==='available')?
+     row.formatSource.playerSources.map(x=>x.nativeText).join('\n\n'):null,
+   nativeTextUnavailableReason:native?.reason==='available'||(
+    row.role==='me'&&row.formatSource?.playerSources?.length&&
+    row.formatSource.playerSources.every(x=>x.nativeReason==='available'))?
+    null:native?.reason||(
+     row.role==='me'?'native-user-message-source-unavailable':'native-reader-not-captured'),
    sourceMessageId:native?.messageId||null,
    sourceEvidence:native?.eventEvidence||null,
    nativeMarkerCount:native?.markerCount??null,
@@ -175,14 +182,17 @@ function failureContexts(rows,validation,reason){
  const primary=[...indices][0]??null;
  const serialize=(row,index)=>{
   if(!row)return null;
-  const native=sourceFor(row);
+  const native=sourceFor(row),users=row.formatSource?.playerSources||[];
+  const nativeText=native?.reason==='available'?native.text:
+   row.role==='me'&&users.length&&users.every(x=>x.nativeReason==='available')?
+    users.map(x=>x.nativeText).join('\n\n'):null;
   let compare=null;
-  if(row.role==='ai'&&native?.reason==='available'&&native.text){
+  if(typeof nativeText==='string'&&nativeText){
    try{
-    const examined=core.compareNativeParagraphs(row.text,native.text,{
+    const examined=core.compareNativeParagraphs(row.text,nativeText,{
      source:row.eventType==='event'?'whif-event-content':'whif-message-content',
      event:row.eventType==='event',
-     verifiedUntimedNative:row.role==='ai'&&!core.parseGameTime(row.text)
+     verifiedUntimedNative:!core.parseGameTime(row.text)
     });
     compare={contentEqual:examined.comparison?.contentEqual??null,
      clockEqual:examined.comparison?.clockEqual??null,
@@ -193,8 +203,9 @@ function failureContexts(rows,validation,reason){
    }catch(error){compare={error:String(error.message||error)}}
   }
   return {scanIndex:index,role:row.role,eventType:row.eventType||null,
-   domText:row.text,nativeText:native?.reason==='available'?native.text:null,
-   nativeUnavailableReason:native?.reason==='available'?null:native?.reason||'not-captured',
+   domText:row.text,nativeText,
+   nativeUnavailableReason:nativeText!==null?null:native?.reason||(
+    row.role==='me'?'player-native-source-unavailable':'not-captured'),
    sourceMessageId:native?.messageId||null,
    playerSources:row.formatSource?.playerSources||[],
    sourceEvidence:native?.eventEvidence||null,
@@ -202,7 +213,7 @@ function failureContexts(rows,validation,reason){
     row.role==='ai'?'WHIF reply header + reaction toolbar':'between adjacent WHIF AI toolbars',
    originalTimeHeader:core.clean(row.text).split('\n').slice(0,12),
    parsedTime:core.parseGameTime(row.text)||null,
-   nativeParsedTime:native?.text?core.parseGameTime(native.text):null,
+   nativeParsedTime:nativeText?core.parseGameTime(nativeText):null,
    explicitUnknown:core.isExplicitUnknownGameTime(row.text),compare};
  };
  return issues.map(({scanIndex,error,unavailableReason})=>({
@@ -589,17 +600,20 @@ function nativePlayerSourcesBetween(start,end){
  };
  if(base.matches?.(nativeMessageSelector))take(base);
  for(const node of base.querySelectorAll(nativeMessageSelector))take(node);
- // Most user gaps contain ONE message. Avoid repeatedly reading entire
- // React content for those on every scrolling snapshot.
+ // Save each native user message in page memory once. This also preserves
+ // exact per-source player text for ordinary one-source player turns.
  for(const item of out.values()){
-  if(out.size>1){
+  let proof=nativePlayerTextCache.get(item.id);
+  if(!proof){
    const original=readNativeNode(item.sourceNode);
-   item.nativeReason=original?.reason||'unavailable';
-   item.nativeText=original?.reason==='available'?original.text:null;
-   item.nativeSender=original?.eventEvidence?.sender||null;
-   item.nativeMessageId=original?.eventEvidence?.messageId||null;
+   proof={nativeReason:original?.reason||'unavailable',
+    nativeText:original?.reason==='available'?original.text:null,
+    nativeSender:original?.eventEvidence?.sender||null,
+    nativeMessageId:original?.eventEvidence?.messageId||null};
+   nativePlayerTextCache.set(item.id,proof);
   }
-  delete item.sourceNode; // Never retain live DOM nodes in long-running checkpoints.
+  Object.assign(item,proof);
+  delete item.sourceNode; // Never retain DOM node pointers in snapshots.
  }
  return [...out.values()];
 }
