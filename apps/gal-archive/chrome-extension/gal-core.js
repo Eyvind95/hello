@@ -12,7 +12,7 @@ const ADVENTURE_WORLD='身為冒險者就可以這樣那樣';
 const ADVENTURE_OPENING_ISO='3000-01-01T00:00:00.000Z';
 const ADVENTURE_FENCE='\x60\x60\x60';
 const isAdventureWorld=world=>normalizedWorld(world)===normalizedWorld(ADVENTURE_WORLD);
-const adventureHeaderPattern=/^(\d{4})年(\d{1,2})月(\d{1,2})日[ \t]+(\d{1,2})[：:](\d{2})(?:（[^（）\n]+）)?[ \t]+[I｜|][ \t]+(\S.*)$/u;
+const adventureHeaderPattern=/^(\d{4})年(\d{1,2})月(\d{1,2})日[ \t]+(\d{1,2})[：:](\d{2})分?(?:（[^（）\n]+）)?[ \t]+[I｜|][ \t]+(\S.*)$/u;
 function adventureHeader(line){
  const t=clean(line);
  if(t.startsWith('**')!==t.endsWith('**'))return null;
@@ -32,6 +32,12 @@ function adventureContextLine(line){
 }
 // WHIF renders a quoted place name on its own line inside a bold HUD title.
  // Only reassemble quote-adjacent boundaries before the first named HUD section.
+// Exact observed WHIF world-label variants. The label itself is visible
+// and must survive projection; only an adjacent bounded context may be hidden.
+function adventureWorldPrefix(line){
+ const m=String(line||'').trim().match(/^(身為冒(?:險者|-冒險者|-|者|憂者)就可以這樣那樣[:：])(?:[ \t]*(\{\{[^{}\n]{1,200}\}\}))?$/u);
+ return m&&(!m[2]||adventureContextLine(m[2]))?{label:m[1],context:m[2]||''}:null;
+}
 function adventureClockTitle(lines){
  const direct=adventureHeader(lines[0]);
  if(direct&&lines[1]==='🔹【基礎】🔹')return {match:direct,headerRows:1};
@@ -49,10 +55,11 @@ function adventureClockTitle(lines){
 function parseAdventureClock(input){
  let lines=clean(input).split('\n').map(line=>line.trim());
  if(isEvent(lines[0])){lines.shift();while(lines[0]==='')lines.shift()}
- if(adventureContextLine(lines[0])){
+ const prefix=adventureWorldPrefix(lines[0]);
+ if(adventureContextLine(lines[0])||prefix){
   let at=1;
   while(at<=3&&lines[at]==='')at++;
-  if(lines[at]===ADVENTURE_FENCE)lines=lines.slice(at);
+  if(lines[at]===ADVENTURE_FENCE||(prefix&&!prefix.context&&adventureClockTitle(lines.slice(at))))lines=lines.slice(at);
  }
  const fenced=lines[0]===ADVENTURE_FENCE;
  if(fenced)lines.shift();
@@ -92,23 +99,63 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
  const fenceLines=original.split('\n').filter(l=>l.trim().startsWith(ADVENTURE_FENCE));
  const validFences=fenceLines.length===blocks.length*2&&blocks.length>0;
  const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
- let matched=false,omitted=0,headings=0,offset=0,sourceOffset=0,hiddenContext='';
+ let matched=false,omitted=0,headings=0,offset=0,sourceOffset=0,hiddenContext='',postContext='',quotePairs=0;
+ const bounded=options.source==='whif-message-content'&&!options.event;
+ // Only whole visible dialogue lines may prove omission of a paired
+ // native quote. Never apply to HUD/other code blocks or unknown sources.
+ const lineStarts=new Set(),lineEnds=new Set();
+ let lineOffset=0;
+ for(const line of visible.split('\n')){
+  const value=compact(line);
+  if(value){lineStarts.add(lineOffset);lineOffset+=value.length;lineEnds.add(lineOffset);}
+ }
+ const leadingWorld=adventureWorldPrefix(original.split('\n')[0]);
  // Project only a single standalone leading context immediately before a
  // proven HUD fence from a bounded native reply, never a body marker.
  const firstLine=original.split('\n')[0];
- if(options.source==='whif-message-content'&&!options.event&&adventureContextLine(firstLine)&&
+ if(bounded&&(adventureContextLine(firstLine)||leadingWorld?.context)&&
     blocks[0]&&/^\n(?:[ \t]*\n){0,2}$/u.test(original.slice(firstLine.length,blocks[0].index))&&
     adventureHeader(blocks[0][1].split('\n')[0])&&
-    !actual.startsWith(compact(firstLine))&&!visible.includes(firstLine)){
-  hiddenContext=firstLine;sourceOffset=blocks[0].index;
+    !visible.includes(leadingWorld?.context||firstLine)&&
+    (leadingWorld?visible.split('\n')[0].trim()===leadingWorld.label:!actual.startsWith(compact(firstLine)))){
+  hiddenContext=leadingWorld?.context||firstLine;sourceOffset=blocks[0].index;
+  if(leadingWorld)offset=compact(leadingWorld.label).length;
  }
- const take=value=>{const v=compact(value);if(!actual.startsWith(v,offset))return false;offset+=v.length;return true};
+ const take=(value,prose=false)=>{
+  const v=compact(value);
+  if(actual.startsWith(v,offset)){offset+=v.length;return true}
+  if(!prose||!bounded)return false;
+  let pos=offset,from=0,pairs=0;
+  const eat=str=>{const q=compact(str);if(!actual.startsWith(q,pos))return false;pos+=q.length;return true};
+  for(const m of value.matchAll(/「([^「」\n]+)」/gu)){
+   if(!eat(value.slice(from,m.index)))return false;
+   if(!eat(m[0])){
+    const q=compact(m[1]);
+    if(!q||!lineStarts.has(pos)||!lineEnds.has(pos+q.length)||!eat(m[1]))return false;
+    pairs++;
+   }
+   from=m.index+m[0].length;
+  }
+  if(!pairs||!eat(value.slice(from)))return false;
+  offset=pos;quotePairs+=pairs;return true;
+ };
+ // A single hidden marker in the gap immediately after the proven HUD,
+ // before any narrative. Keep all visible tokens, including any later marker.
+ const gap=(value,afterHud=false)=>{
+  if(afterHud&&bounded&&!hiddenContext){
+   const m=value.match(/^\n(?:[ \t]*\n){0,2}[ \t]*(\{\{[^{}\n]{1,200}\}\})[ \t]*\n(?:[ \t]*\n){0,2}(?=\S)/u);
+   if(m&&adventureContextLine(m[1])&&!visible.includes(m[1])&&!/^\s*\{\{/u.test(value.slice(m[0].length))){
+    if(take(value.slice(m[0].length),true)){postContext=m[1];return true}
+   }
+  }
+  return take(value,true);
+ };
  if(validFences&&proof.length===blocks.length){
   matched=true;
   for(let i=0;i<blocks.length;i++){
    const b=blocks[i],raw=b[1],first=raw.split('\n')[0],heading=first.trim();
    const knownBold=heading.startsWith('**')&&heading.endsWith('**')&&
-    (i===0&&!!adventureHeader(heading)||/^\*\*(?:【[^】\n]+】|此次戰鬥損益！|系統對話框)\*\*$/u.test(heading));
+    (i===0&&!!adventureHeader(heading)||/^\*\*(?:【[^】\n]+】|此次戰鬥損益！|系統對話框|共鳴契對象階段變化！|冒險者階級考核結果！)\*\*$/u.test(heading));
    const stripped=knownBold?raw.replace(first,heading.slice(2,-2).trim()):raw;
    // DOM textContent and serialized Markdown are distinct projections.
    // Prove the block with DOM text, then independently consume the
@@ -116,7 +163,7 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
    const domKey=compact(String(proof[i]??''));
    const domProven=[raw,stripped].some(v=>compact(v)===domKey);
    const variants=[...new Set([raw,...(compact(stripped)===domKey?[stripped]:[])])];
-   if(!domProven||!take(original.slice(sourceOffset,b.index))){matched=false;break}
+   if(!domProven||!gap(original.slice(sourceOffset,b.index),i===1)){matched=false;break}
    let consumed=false;
    for(const v of variants){
     if(take(ADVENTURE_FENCE+'\n'+v+'\n'+ADVENTURE_FENCE)){consumed=true;if(v!==raw)headings++;break}
@@ -125,7 +172,7 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
    if(!consumed){matched=false;break}
    sourceOffset=b.index+b[0].length;
   }
-  matched=matched&&take(original.slice(sourceOffset))&&offset===actual.length;
+  matched=matched&&gap(original.slice(sourceOffset),blocks.length===1)&&offset===actual.length;
  }
  // Exact native text needs no removed-delimiter evidence; malformed or
  // unmatched fences are still rejected, even on an otherwise equal body.
@@ -133,6 +180,8 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
  const contentEqual=Boolean(literal||matched);
  const formatMarkers=[];
  if(contentEqual&&!literal&&hiddenContext)formatMarkers.push({kind:'adventure-leading-context-template',tokens:1,nonWhitespaceChars:compact(hiddenContext).length});
+ if(contentEqual&&!literal&&postContext)formatMarkers.push({kind:'adventure-post-hud-context-template',tokens:1,nonWhitespaceChars:compact(postContext).length});
+ if(contentEqual&&!literal&&quotePairs)formatMarkers.push({kind:'adventure-proven-dialogue-quote-pair',tokens:quotePairs*2,nonWhitespaceChars:quotePairs*2});
  if(contentEqual&&!literal&&omitted)formatMarkers.push({kind:'adventure-ordered-dom-code-fence',tokens:omitted,nonWhitespaceChars:omitted*3});
  if(contentEqual&&!literal&&headings)formatMarkers.push({kind:'adventure-proven-code-heading-bold',tokens:headings*2,nonWhitespaceChars:headings*4});
  const comparison={scannedLength:[...visible].length,nativeLength:[...original].length,
