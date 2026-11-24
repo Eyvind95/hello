@@ -109,7 +109,7 @@ test('no automatic sync is performed without account authentication, and only se
  assert.match(html,/window\.ArchiveAutoSyncBridge=/);
  assert.match(html,/archiveManualBusy=true/);
  assert.match(html,/!window\.__archiveAutoApplyingCloud/);
- assert.match(html,/downloadText\('輪迴檔案館_V5\.66_網站\.html'/);
+ assert.match(html,/downloadText\('輪迴檔案館_V5\.67_網站\.html'/);
 });
 test('PWA and self contained HTML download both include automatic sync code',()=>{
  const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
