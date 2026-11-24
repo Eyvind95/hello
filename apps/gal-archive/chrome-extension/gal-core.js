@@ -20,8 +20,10 @@ function adventureHeader(line){
 }
 function adventureClockEvidence(input){
  const lines=clean(input).split('\n');
+ const markers=new Set(lines.map(line=>line.trim()));
+ if(markers.has('🔹【基礎】🔹')&&markers.has('🔹【共鳴契】🔹')&&markers.has('🔹【狀態】🔹'))return true;
  return lines.some((line,i)=>/^(?:\*\*)?\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}[：:]\d{2}/u.test(line.trim())&&
-  lines[i+1]?.trim()==='🔹【基礎】🔹');
+  (/[ \t]+[I｜|][ \t]+\S/u.test(line)||lines[i+1]?.trim()==='🔹【基礎】🔹'));
 }
 function parseAdventureClock(input){
  let lines=clean(input).split('\n').map(line=>line.trim());

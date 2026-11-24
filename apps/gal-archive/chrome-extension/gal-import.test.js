@@ -46,7 +46,7 @@ function archive(oldExport) {
   };
   const records = new Map([[original.id, structuredClone(original)]]);
   const context = vm.createContext({
-    structuredClone, WORLDS:[{id:original.world,name:oldExport.target.worldName}],
+    structuredClone, GalArchiveCore, WORLDS:[{id:original.world,name:oldExport.target.worldName}],
     validWorldId:id=>id===original.world,
     archiveParseGalAIClock:row=>{
       const time=GalArchiveCore.parseGameTime(row.text);
@@ -265,4 +265,26 @@ test('website requires original no-time provenance for AI only; explicit unknown
  illegalPlayer.messages[0].nativeClockEvidence='verified-original-without-game-time';
  illegalPlayer.validation.verifiedUntimedCount=0;
  assert.equal(context.galNativeBuildPlan(illegalPlayer,original).ok,false);
+});
+
+test('V0.9.00 adventure import requires explicit versions, complete native count and event audit',()=>{
+ const x=fixture(),world='《身為冒險者就可以這樣那樣》',f='\x60\x60\x60';
+ const hud=(time,location)=>f+'\n**'+time+' I '+location+'**\n　🔹【基礎】🔹\n等級：1 I 0%\n血量：10/10\n　🔹【共鳴契】🔹\n對象：無\n深度：無\n　🔹【狀態】🔹\n測試\n'+f+'\n測試正文。';
+ x.target.worldName=world;x.opening=hud('3000年01月01日 08:00','冒險者公會');
+ x.messages[1].text=hud('9999年12月31日 23:59','測試地點');
+ for(const m of x.messages)m.gameTime='9999-12-31T15:59:00.000Z';
+ x.events[0].text='事件通知\n測試事件';x.events[0].gameTime=null;
+ x.scannerVersion=x.coreVersion='0.9.0';x.rawRows=4;
+ Object.assign(x.validation,{integrityOk:true,nativeFormatComplete:true});
+ x.nativeFormatAudit={complete:true,checked:3,verified:3,failed:0};
+ x.eventAudit={complete:true,exportedEvents:1,ordinaryAiTotal:1,ordinaryAiVerified:1,unresolvedAccepted:0,unresolvedHeaders:0,unreadableHistoryMarkers:0,unverifiedCards:[]};
+ const {context,original}=archive(x),verify=o=>context.galNativeVerify(o,original);
+ assert.deepEqual(asJSON(verify(x).fail),[]);
+ for(const mutate of [
+  o=>delete o.scannerVersion,o=>delete o.coreVersion,o=>delete o.nativeFormatAudit,
+  o=>o.nativeFormatAudit.verified=2,o=>o.eventAudit.unresolvedAccepted=1,
+  o=>o.rawRows=3,o=>o.messages[1].scanIndex=2,
+  o=>o.messages[1].gameTime='2026-01-01T00:00:00.000Z',
+  o=>{o.messages[1].text=o.messages[1].text.replace('🔹【基礎】🔹','破損');o.messages.forEach(m=>m.gameTime=null);o.messages[1].nativeClockEvidence='verified-original-without-game-time'}
+ ]){const o=structuredClone(x);mutate(o);assert.ok(verify(o).fail.length>0);}
 });

@@ -1562,6 +1562,8 @@ test('V0.9.00 adventure timed opening, far future and long inventory are indepen
  assert.equal(core.parseGameTime(wrap(hud('3000年02月30日 08:00'))),null);
  assert.equal(core.parseGameTime(wrap(hud('3000年01月01日 24:00'))),null);
  assert.equal(core.parseGameTime('正文中的日期\n'+reply),null);
+ assert.equal(core.parseGameTime(reply.replace('🔹【基礎】🔹','破損')),null);
+ assert.equal(core.adventureClockEvidence(reply.replace('🔹【基礎】🔹','破損')),true);
  assert.equal(core.isAllowedOpeningRow({role:'ai',text:opening},world),true);
  assert.equal(core.isAllowedOpeningRow({role:'ai',text:opening},'《全員精神穩定，感情除外》'),false);
  assert.equal(core.isAllowedOpeningRow({role:'ai',text:reply},world),false);

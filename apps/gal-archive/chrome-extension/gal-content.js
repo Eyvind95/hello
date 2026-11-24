@@ -1249,7 +1249,7 @@ function canonical(rows,valid,preview){
  const events=valid.events.map((e,i)=>({...build(e,e.scanIndex,'event'),role:'ai',
   status:'accepted',title:e.title,worldName:e.worldName||null,scanIndex:e.scanIndex}));
  return {
-  format:'gal-ai-authoritative-scan',version:1,generatedAt:new Date().toISOString(),
+  format:'gal-ai-authoritative-scan',version:1,scannerVersion:SCANNER_VERSION,coreVersion:core.version,generatedAt:new Date().toISOString(),
   scope:preview?'opening-first-pair-preview':'entire-opening-to-bottom',source:{url:location.origin+location.pathname,origin:location.origin,
     path:location.pathname,gameClockOnly:true},target:{cycleId:target.cycleId,worldName:target.worldName,
     cycleTitle:target.cycleTitle,uid:target.uid||'',manager:target.managerNames.join('、'),managerNames:target.managerNames},

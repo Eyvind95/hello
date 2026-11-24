@@ -584,6 +584,10 @@ function galNativeVerify(obj,r){
   fail.push('世界觀不一致：來源「'+(obj?.target?.worldName||'未填')+'」，目前為「'+selectedWorld+'」');
  const opening=galNativeText(obj?.opening);
  const adventure=galNativeWorld(selectedWorld)===galNativeWorld('《身為冒險者就可以這樣那樣》');
+ const modernVersion=v=>/^(?:0\.(?:9|[1-9]\d+)\.\d+|[1-9]\d*\.\d+\.\d+)$/.test(String(v||''));
+ const modern=modernVersion(obj?.scannerVersion);
+ if(adventure&&!modern)fail.push('冒險者正史必須由 V0.9.00 或更新掃描器產生，不能省略版本欄位');
+ if(modern&&!modernVersion(obj?.coreVersion))fail.push('新版正史缺少相容的核心版本');
  if(adventure&&!globalThis.GalArchiveCore?.isAllowedOpeningRow({role:'ai',text:opening},selectedWorld))fail.push('冒險者開場不符原作者預設時間及公會狀態欄，請使用V0.9.00完整掃描');
  if(opening.length<8||opening.length>300000)fail.push('輪迴開場為空、不完整或超過安全上限');
  const sourceMessages=Array.isArray(obj?.messages)?obj.messages:[];
@@ -606,7 +610,7 @@ function galNativeVerify(obj,r){
     fail.push('第 '+(i+1)+' 則無時間回覆的原生證據欄位不完整');
    if(sourceUnclocked&&explicitlyUnknown)
     fail.push('第 '+(i+1)+' 則原文明示時間不詳，不應標成完全沒有時間欄');
-   if(sourceUnclocked&&archiveParseGalAIClock(raw))
+   if(sourceUnclocked&&(archiveParseGalAIClock(raw)||globalThis.GalArchiveCore?.adventureClockEvidence(raw?.text)))
     fail.push('第 '+(i+1)+' 則宣告原生無時間，但正文包含可解析的時間');
    if(explicitlyUnknown){
     if(clock!==null)fail.push('第 '+(i+1)+' 則原文明示日期／時間不詳，JSON 劇情時間必須為 null');
@@ -693,6 +697,14 @@ function galNativeVerify(obj,r){
     sourceCreatedAt:null,sourceTimeOrigin:null,capturedAt:null,receivedAt:null});
  }
  if(events.length!==obj?.validation?.events)fail.push('事件數量與來源驗證報告不同');
+ if(modern||adventure){
+  const aiCount=messages.filter(m=>m.role==='ai').length,nativeCount=1+aiCount+events.length;
+  const all=[...messages,...events].map(row=>row.scanIndex).sort((a,b)=>a-b);
+  const audit=obj?.nativeFormatAudit,ev=obj?.eventAudit;
+  if(obj?.rawRows!==1+all.length||all.some((index,i)=>index!==i+1))fail.push('新版正史完整掃描筆數／索引不一致');
+  if(obj?.validation?.integrityOk!==true||obj?.validation?.nativeFormatComplete!==true||audit?.complete!==true||audit?.checked!==nativeCount||audit?.verified!==nativeCount||audit?.failed!==0)fail.push('新版正史原生格式驗收筆數不一致或尚未通過');
+  if(ev?.complete!==true||ev?.exportedEvents!==events.length||ev?.ordinaryAiTotal!==aiCount||ev?.ordinaryAiVerified!==aiCount||ev?.unresolvedAccepted!==0||ev?.unresolvedHeaders!==0||ev?.unreadableHistoryMarkers!==0||!Array.isArray(ev?.unverifiedCards)||ev.unverifiedCards.length!==0||events.some(row=>row.status!=='accepted'))fail.push('新版正史事件與原生來源稽核尚未通過');
+ }
  if(events.length&&messages.some(m=>!Number.isInteger(m.scanIndex)))
    fail.push('這份舊掃描檔沒有完整的原始訊息順序，事件無法安全定位；請使用 V0.7.6 重新掃描後匯入，避免把事件移到最後');
  if(Array.isArray(obj?.validation?.errors)&&obj.validation.errors.length)fail.push('來源報告仍有錯誤，不能覆蓋');
