@@ -49,6 +49,8 @@ function installGalScanStatus(api){
    statusPath:run.statusPath||run.batchFolder+'/'+filenames.status,
    files:Object.fromEntries(Object.entries(run.files||{}).filter(([,f])=>f.path)
     .map(([k,f])=>[k,f.path])),
+   unverifiedCount:run.unverifiedCount??null,
+   exportPending:run.exportPending===true,
    pendingFiles:Object.entries(run.files||{}).filter(([,f])=>!f.path).map(([kind])=>kind)
   };
  }
@@ -200,12 +202,15 @@ function installGalScanStatus(api){
       data.scanRunId!==run.scanRunId||data.target?.cycleId!==run.cycleId||
       !Array.isArray(data.rows)||data.rows.length!==data.collectedCount)
     throw Error('手動已讀保全來源驗證失敗');
-   if(run.files?.unverified?.path)return publicStatus(run);
+   if(run.files?.unverified?.path&&(terminal.has(run.state)||data.collectedCount<=(run.unverifiedCount??0)))return publicStatus(run);
+   const previousFile=run.files?.unverified;
    const file=await makeFile(run,'unverified',message.unverified);
    file.path=await confirmedDownload(file.id,80);
    run.files={...(run.files||{}),unverified:file};
+   run.unverifiedCount=data.collectedCount;
    run.scanned=Math.max(run.scanned||0,data.collectedCount);
    await save(runs);
+   if(previousFile?.url)await api.runtime.sendMessage({type:'gal-run-blob-release',url:previousFile.url}).catch(()=>{});
    // Status stays in this run's one fixed location.
    run.statusPath=await signal(run);await save(runs);
    return publicStatus(run);
@@ -240,6 +245,8 @@ function installGalScanStatus(api){
       completedResult.rawRows!==message.scanned)
      throw Error('正式正史格式或完整性驗證不通過');
     if(run.scope==='full'){
+     if(completedResult.validation?.nativeFormatComplete!==true||completedResult.nativeFormatAudit?.complete!==true)
+      throw Error('原生格式驗收尚未全部通過，禁止正式正史下載');
      const previous=Object.values(runs).filter(r=>r.scanRunId!==run.scanRunId&&
        r.state==='completed'&&r.scope==='full'&&r.cycleId===run.cycleId&&r.source===run.source)
       .sort((a,b)=>b.scanned-a.scanned)[0];
@@ -268,7 +275,7 @@ function installGalScanStatus(api){
        data.scanRunId!==run.scanRunId||data.target?.cycleId!==run.cycleId||
        !Array.isArray(data.rows)||data.rows.length!==message.scanned)
      throw Error('未驗證原生資料格式／工作 ID／數量不符');
-    next.files.unverified=await makeFile(run,'unverified',message.unverified);await save(runs);
+    next.files.unverified=await makeFile(run,'unverified',message.unverified);next.unverifiedCount=data.collectedCount;await save(runs);
    }
    next.files.diagnostic=await makeFile(run,'diagnostic',message.diagnostic);await save(runs);
    await reconcile(runs,next);
