@@ -86,7 +86,9 @@ function mount(){
  $('gal-scan-copy-folder').onclick=()=>{
   const path=activeRun?.batchFolder;
   if(!path)return status('尚無固定批次路徑');
-  const full='下載\\'+path.replaceAll('/','\\');
+  const full=activeRun?.statusPath?
+    activeRun.statusPath.replace(/[/\\][^/\\]+$/,''):
+    '下載\\'+path.replaceAll('/','\\');
   if(navigator.clipboard?.writeText)
    navigator.clipboard.writeText(full).then(()=>status('已複製批次路徑：'+full))
     .catch(()=>status(full));
@@ -1478,6 +1480,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     scannerVersion:SCANNER_VERSION});
    if(!response?.ok)throw Error(response?.error||'背景程式未登記掃描工作');
    run.batchFolder=response.status?.batchFolder||null;
+   run.statusPath=response.status?.statusPath||null;
    registered=true;
   }
   const first=snapshot();diagnostic=inspect();
@@ -1825,6 +1828,10 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  if(msg?.type==='gal-run-page-status'&&sender.id===chrome.runtime.id&&
     msg.status?.scanRunId===activeRun?.scanRunId){
   const result=msg.status;
+  if(activeRun?.scanRunId===result.scanRunId){
+   activeRun.statusPath=result.statusPath||activeRun.statusPath||null;
+   activeRun.batchFolder=result.batchFolder||activeRun.batchFolder||null;
+  }
   const duration=result.endedAt&&result.startedAt
    ?Math.max(0,Math.round((Date.parse(result.endedAt)-Date.parse(result.startedAt))/1000)):null;
   const files=Object.entries(result.files||{}).map(([kind,path])=>kind+'：'+path);
