@@ -21,7 +21,10 @@
   const n=cp.rows?.length,run=cp.scanRunId,id=cp.target?.cycleId,version=cp.scannerVersion;
   assert(Number.isInteger(n)&&n>=3&&n<=20000&&cp.collectedCount===n&&cp.rawRows===n,'保全筆數不符');
   assert(typeof run==='string'&&run&&typeof id==='string'&&id&&cp.target.worldName&&cp.target.cycleTitle,'缺少批次或輪迴歸屬');
-  assert(/^0\.8\.(?:4[0-9]|[5-9]\d|\d{3,})$/.test(version)&&version===cp.coreVersion&&Number(version.split('.')[2])<=Number(core.version.split('.')[2]),'不支援此舊版或更新版本保全');
+  const versionParts=x=>String(x||'').split('.').map(Number);
+  const a=versionParts(version),b=versionParts(core.version);
+  const noNewer=a.length===3&&b.length===3&&(a[0]<b[0]||a[0]===b[0]&&(a[1]<b[1]||a[1]===b[1]&&a[2]<=b[2]));
+  assert(/^0\.(?:8\.(?:4[0-9]|[5-9]\d|\d{3,})|9\.\d+)$/.test(version)&&version===cp.coreVersion&&noNewer,'不支援此舊版或更新版本保全');
   assert(diag?.scanRunId===run&&diag.cycleId===id&&diag.scope==='full'&&diag.scannerVersion===version&&diag.coreVersion===version&&diag.trustedCount===n,'診斷與保全批次、版本或筆數不符');
   assert(state?.format==='gal-archive-scan-status'&&state.version===2&&state.scanRunId===run&&state.cycleId===id&&state.cycleTitle===cp.target.cycleTitle&&state.scannerVersion===version&&state.scope==='full'&&state.state==='failed'&&state.scanned===n&&state.unverifiedCount===n&&state.exportPending===false&&empty(state.pendingFiles)&&state.files?.unverified&&state.files?.diagnostic,'狀態檔不是同批次已完成保全的失敗終態');
   const url=new URL(cp.source?.url);

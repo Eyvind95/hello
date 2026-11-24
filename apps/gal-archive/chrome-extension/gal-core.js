@@ -5,9 +5,107 @@ if(globalThis.GalArchiveCore)return;
 const txt=x=>String(x==null?'':x);
 const clean=x=>txt(x).replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').trim();
 const normalizedWorld=x=>clean(x).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase();
+
+// Adventure-world profile: a single clock/location line and three named HUD sections.
+// Do not parse an arbitrary date in narrative prose, or cap a large inventory line.
+const ADVENTURE_WORLD='身為冒險者就可以這樣那樣';
+const ADVENTURE_OPENING_ISO='3000-01-01T00:00:00.000Z';
+const ADVENTURE_FENCE='\x60\x60\x60';
+const isAdventureWorld=world=>normalizedWorld(world)===normalizedWorld(ADVENTURE_WORLD);
+const adventureHeaderPattern=/^(\d{4})年(\d{1,2})月(\d{1,2})日[ \t]+(\d{1,2})[：:](\d{2})(?:（[^（）\n]+）)?[ \t]+[I｜|][ \t]+(\S.*)$/u;
+function adventureHeader(line){
+ const t=clean(line);
+ if(t.startsWith('**')!==t.endsWith('**'))return null;
+ return (t.startsWith('**')?t.slice(2,-2).trim():t).match(adventureHeaderPattern);
+}
+function adventureClockEvidence(input){
+ const lines=clean(input).split('\n');
+ return lines.some((line,i)=>/^(?:\*\*)?\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}[：:]\d{2}/u.test(line.trim())&&
+  lines[i+1]?.trim()==='🔹【基礎】🔹');
+}
+function parseAdventureClock(input){
+ let lines=clean(input).split('\n').map(line=>line.trim());
+ if(isEvent(lines[0])){lines.shift();while(lines[0]==='')lines.shift()}
+ const fenced=lines[0]===ADVENTURE_FENCE;
+ if(fenced)lines.shift();
+ const match=adventureHeader(lines[0]);
+ if(!match||lines[1]!=='🔹【基礎】🔹')return null;
+ const end=lines.indexOf(ADVENTURE_FENCE,2);
+ if(fenced&&end<0)return null;
+ const hud=lines.slice(2,end<0?undefined:end),co=hud.indexOf('🔹【共鳴契】🔹'),st=hud.indexOf('🔹【狀態】🔹');
+ if(co<0||st<=co||!hud.slice(0,co).some(x=>/^等級[：:]/u.test(x))||
+  !hud.slice(0,co).some(x=>/^血量[：:]/u.test(x))||
+  !hud.slice(co+1,st).some(x=>/^對象[：:]/u.test(x))||
+  !hud.slice(co+1,st).some(x=>/^深度[：:]/u.test(x)))return null;
+ const [year,month,day,hour,minute]=match.slice(1,6).map(Number);
+ const local=new Date(Date.UTC(year,month-1,day,hour,minute));
+ if(year<100||local.getUTCFullYear()!==year||local.getUTCMonth()+1!==month||local.getUTCDate()!==day||
+  local.getUTCHours()!==hour||local.getUTCMinutes()!==minute)return null;
+ const pad=n=>String(n).padStart(2,'0');
+ return {iso:new Date(local.getTime()-8*3600000).toISOString(),
+  civil:year+'/'+pad(month)+'/'+pad(day)+' '+pad(hour)+':'+pad(minute),
+  year,month,day,hour,minute,second:0,location:match[6],profile:'adventure'};
+}
+function adventureOpening(text){
+ const clock=parseAdventureClock(text);
+ return clock?.iso===ADVENTURE_OPENING_ISO&&clock.location==='冒險者公會';
+}
+// Only remove proven visual block delimiters. A block may be rendered as a
+// monospace box or as a literal fenced block. Every block and all surrounding
+// prose must match in order. Return native text including original fences,
+// titles, placeholder tokens, punctuation, and all inventory characters.
+function compareAdventureParagraphs(scanned,nativeCopy,options){
+ const visible=clean(scanned),original=clean(nativeCopy),compact=v=>v.replace(/\s/gu,'');
+ const actual=compact(visible),nativeClock=parseAdventureClock(original),clock=parseAdventureClock(visible);
+ const clockEqual=Boolean(clock&&nativeClock&&clock.iso===nativeClock.iso&&
+  (!options.opening||(adventureOpening(visible)&&adventureOpening(original))));
+ const blocks=[...original.matchAll(/^[ \t]*\x60{3}[ \t]*\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm)];
+ const fenceLines=original.split('\n').filter(l=>l.trim().startsWith(ADVENTURE_FENCE));
+ const validFences=fenceLines.length===blocks.length*2&&blocks.length>0;
+ const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
+ let matched=false,omitted=0,headings=0,offset=0,sourceOffset=0;
+ const take=value=>{const v=compact(value);if(!actual.startsWith(v,offset))return false;offset+=v.length;return true};
+ if(validFences&&proof.length===blocks.length){
+  matched=true;
+  for(let i=0;i<blocks.length;i++){
+   const b=blocks[i],raw=b[1],first=raw.split('\n')[0],heading=first.trim();
+   const knownBold=heading.startsWith('**')&&heading.endsWith('**')&&
+    (i===0&&!!adventureHeader(heading)||/^\*\*(?:【[^】\n]+】|此次戰鬥損益！|系統對話框)\*\*$/u.test(heading));
+   const stripped=knownBold?raw.replace(first,heading.slice(2,-2).trim()):raw;
+   const variants=[...new Set([raw,stripped])].filter(v=>compact(v)===compact(String(proof[i]??'')));
+   if(!variants.length||!take(original.slice(sourceOffset,b.index))){matched=false;break}
+   let consumed=false;
+   for(const v of variants){
+    if(take(ADVENTURE_FENCE+'\n'+v+'\n'+ADVENTURE_FENCE)){consumed=true;if(v!==raw)headings++;break}
+    if(take(v)){consumed=true;omitted+=2;if(v!==raw)headings++;break}
+   }
+   if(!consumed){matched=false;break}
+   sourceOffset=b.index+b[0].length;
+  }
+  matched=matched&&take(original.slice(sourceOffset))&&offset===actual.length;
+ }
+ // Exact native text needs no removed-delimiter evidence; malformed or
+ // unmatched fences are still rejected, even on an otherwise equal body.
+ const literal=validFences&&actual===compact(original);
+ const contentEqual=Boolean(literal||matched);
+ const formatMarkers=[];
+ if(contentEqual&&!literal&&omitted)formatMarkers.push({kind:'adventure-ordered-dom-code-fence',tokens:omitted,nonWhitespaceChars:omitted*3});
+ if(contentEqual&&!literal&&headings)formatMarkers.push({kind:'adventure-proven-code-heading-bold',tokens:headings*2,nonWhitespaceChars:headings*4});
+ const comparison={scannedLength:[...visible].length,nativeLength:[...original].length,
+  scannedNonWhitespace:[...actual].length,nativeNonWhitespace:[...compact(original)].length,
+  comparableNativeNonWhitespace:contentEqual?[...actual].length:[...compact(original)].length,
+  whitespaceOnlyEqual:literal,contentEqual,clockEqual,formatMarkers,
+  formatMarkerCount:formatMarkers.reduce((n,x)=>n+x.tokens,0),
+  explainedNonWhitespace:formatMarkers.reduce((n,x)=>n+x.nonWhitespaceChars,0),
+  remainingUnexplained:{scanned:contentEqual?0:Math.max(0,actual.length-offset),native:contentEqual?0:Math.max(0,compact(original).length-offset)},
+  ignoredDifferences:formatMarkers.map(x=>x.kind),adventureProjection:{nativeBlocks:blocks.length,domBlocks:proof.length,allOrdered:contentEqual}};
+ return {text:contentEqual&&clockEqual?original:null,comparison};
+}
+
 // A clock-shaped HUD anywhere is evidence against an untimed classification,
 // even when the bounded primary parser cannot resolve its location or value.
 function hasHudClockEvidence(input){
+ if(adventureClockEvidence(input))return true;
  const lines=clean(input).split('\n').map(line=>line.trim());
  return lines.some((line,i)=>{
   if(!/^[｜|│]\s*\d{4}\s*(?:年|[-/])/u.test(line))return false;
@@ -69,6 +167,8 @@ function structuredNewsPrefix(prefix){
  return n>=2;
 }
 function parseGameTime(input){
+ const adventure=parseAdventureClock(input);
+ if(adventure||adventureClockEvidence(input))return adventure;
   let lines=clean(input).split('\n');
   const lead=lines[0]?.match(/^\{\{([^{}\n]{1,200})\}\}$/u);
   if(lead&&!/^(?:(?:user|char|character)(?:\s*(?:\||:|=|$))|(?:img|image)\s*:)/iu.test(lead[1].trim())){
@@ -139,9 +239,11 @@ function isExplicitUnknownGameTime(input){
 // Only the first AI item may use this historical timed opener (2026/08/22 18:42 UTC+8).
 // Do not treat other timed AI replies as openings or change their game clocks.
 const LEGACY_OPENING_ISO='2026-08-22T10:42:00.000Z';
-function isAllowedOpeningRow(row){
+function isAllowedOpeningRow(row,expectedWorld){
  if(row?.role!=='ai'||isEvent(row.text)||isExplicitUnknownGameTime(row.text))return false;
  const clock=parseGameTime(row.text);
+ if(isAdventureWorld(expectedWorld))return adventureOpening(row.text);
+ if(clock?.profile==='adventure')return !expectedWorld&&adventureOpening(row.text);
  return (!clock&&!hasHudClockEvidence(row.text))||clock?.iso===LEGACY_OPENING_ISO;
 }
 
@@ -179,8 +281,8 @@ function validate(rows,expectedWorld){
  const errors=[],warnings=[],canon=[],events=[];
  if(!Array.isArray(rows)||!rows.length)return {ok:false,errors:['沒有掃到任何可辨識訊息'],warnings,opening:'',messages:[],events:[],pairs:0};
  const opener=rows[0];
- if(!isAllowedOpeningRow(opener))
-   errors.push('首則不是可辨識的輪迴開場（原則無劇情時間；僅允許 2026年8月22日 18:42 的舊式開場）；請回到真正的開場重新掃描');
+ if(!isAllowedOpeningRow(opener,expectedWorld))
+   errors.push('首則不是可辨識的輪迴開場（依綁定世界觀驗收：原有開場規則或冒險者3000/01/01 08:00公會開場）；請回到真正的開場重新掃描');
  const opening=opener.role==='ai'?clean(opener.text):'';
  if(opening.length<8)errors.push('輪迴開場過短，可能選到工具列或不完整訊息');
  let pending=null,pairs=0,previousMs=null,autoContinues=0,unknownGameTimeCount=0,verifiedUntimedCount=0;
@@ -192,6 +294,7 @@ function validate(rows,expectedWorld){
     errors.push('第 '+(i+1)+' 則事件／世界名稱「'+domain+'」與綁定世界觀「'+expectedWorld+'」不符；不能覆蓋其他世界觀');
   if(role==='ai'&&(row.eventType==='event'||isEvent(t))){
    const eventTime=parseGameTime(t);
+   if(eventTime&&expectedWorld&&isAdventureWorld(expectedWorld)!==(eventTime.profile==='adventure'))errors.push('第 '+(i+1)+' 則事件的時間格式與綁定世界觀不一致');
    if(!eventTime&&hasHudClockEvidence(t))errors.push('第 '+(i+1)+' 則事件含有日期及時鐘欄位，但無法解析；禁止當成無時間事件');
    if(!eventTime)warnings.push('第 '+(i+1)+' 則 Gal AI 事件沒有可確認的劇情時間，保留原文但不推測時間');
    events.push({role:'ai',text:t,title:(t.split('\n').find(Boolean)||'事件').slice(0,70),
@@ -211,6 +314,7 @@ function validate(rows,expectedWorld){
    errors.push('第 '+(i+1)+' 則同時存在未知時間與明確時鐘欄位，無法安全判定');continue;
   }
   const clock=explicitlyUnknown?null:parseGameTime(t);
+  if(clock&&expectedWorld&&isAdventureWorld(expectedWorld)!==(clock.profile==='adventure')){errors.push('第 '+(i+1)+' 則時間格式與綁定世界觀不一致');continue;}
   const nativeUntimed=!clock&&!explicitlyUnknown?verifiedUnclockedReply(row,rows):null;
   if(!clock&&!explicitlyUnknown&&!nativeUntimed?.ok){
    errors.push('第 '+(i+1)+' 則 Gal AI 回覆沒有可辨識劇情時間，原生無時間來源未通過（'+
@@ -360,6 +464,10 @@ function markdownFromDom(node,options={}){
   const nextItalic=inItalic||italicNow||italicStyle(n)==='italic';
   const boldNow=(tag==='strong'||tag==='b'||isBoldWeight(fontWeight(n)))&&
     (n===node||!isBoldWeight(fontWeight(n.parentElement)));
+  if(options.metadata&&isAdventureWorld(options.worldName)&&tag==='pre'&&!n.querySelector?.(status)){
+   (options.metadata.codeBlocks??=[]).push(n.textContent);
+   if(parseAdventureClock(n.textContent))options.metadata.statusText||=n.textContent;
+  }
   if(options.metadata&&n.matches(status)&&/^(?:pre|pre-wrap)$/.test(whiteSpace(n))){
    (options.metadata.codeBlocks??=[]).push(n.textContent);
    if(parseGameTime(n.textContent))options.metadata.statusText||=n.textContent;
@@ -441,6 +549,7 @@ function markdownFromDom(node,options={}){
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
 }
 function compareNativeParagraphs(scanned,nativeCopy,options={}){
+ if(adventureClockEvidence(scanned)||adventureClockEvidence(nativeCopy))return compareAdventureParagraphs(scanned,nativeCopy,options);
  const statusFence=/^[ \t]*\x60{3}[ \t]*(?:[a-z][\w+-]*)?[ \t]*\n([\s\S]+?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/i;
  const imageMarker=/(?:[ \t]*\n)?\{\{(?:img|image):+[^{}\n]+\}\}[ \t]*$/i;
  const preamble=/^\{\{([^{}\n]{1,200})\}\}[ \t]*\n(?:[ \t]*\n)*/u;
@@ -1515,5 +1624,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.48'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseAdventureClock,adventureClockEvidence,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.9.0'};
 })();

@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.48: module preflight, bare HUD native formatting, responsive finalization. */
+/* Independent Gal AI page scanner. v0.9.0: module preflight, bare HUD native formatting, responsive finalization. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.48';
+const SCANNER_VERSION='0.9.0';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -574,7 +574,7 @@ function boundaryFragmentText(start,end,role='ai',trace,metadata,event=false){
  }
  // Controls embedded in an incomplete DOM fragment are not game narration.
  holder.querySelectorAll('button,[role="button"],[role="toolbar"],svg,style,script,textarea,input').forEach(n=>n.remove());
- const text=core.markdownFromDom(holder,{role,trace,metadata,event}).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
+ const text=core.markdownFromDom(holder,{role,trace,metadata,event,worldName:target?.worldName}).trim().replace(/^(?:回到最初|前往最新訊息|前往最新消息)\s*$/gm,'').trim();
  if(metadata){
   const base=range.commonAncestorContainer;
   const markers=[...(base.querySelectorAll?.(nativeMessageSelector)||[])].filter(node=>range.intersectsNode(node));
@@ -718,7 +718,7 @@ function messageText(node,role='ai',trace,metadata){
  const body=node.querySelector('[data-message-content],[data-testid*="message-content"],.markdown,.prose,.message-content,.bubble-content')
   ||node;
  const event=role==='ai'&&core.isEvent(body.innerText||'');
- const text=core.markdownFromDom(body,{role,trace,metadata,event}).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
+ const text=core.markdownFromDom(body,{role,trace,metadata,event,worldName:target?.worldName}).replace(/\n(?:複製訊息|編輯訊息|新增書籤|點讚|點踩)\s*$/gm,'').trim();
  if(metadata){
   const markers=[...node.querySelectorAll(nativeMessageSelector)];
   if(node.matches(nativeMessageSelector))markers.unshift(node);
@@ -1610,8 +1610,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   const first=snapshot();diagnostic=inspect();
   if(!first.rows.length)throw Error('找不到完整訊息。世界觀界線與舊版泡泡辨識都沒有結果；請複製版面診斷。');
   scanMode=first.method==='world-header-reaction-bar'?'bounded':'legacy';
-  if(!core.isAllowedOpeningRow(first.rows[0]))
-   throw Error('第一則不是左側輪迴開場：只有無時間開場或 2026年8月22日 18:42 的舊式開場可通過');
+  if(!core.isAllowedOpeningRow(first.rows[0],target.worldName))
+   throw Error('第一則不是綁定世界觀的可驗證輪迴開場，請回到最初訊息');
   root=first.root;lastGoodY=root.scrollTop;
   const nominal=Math.max(12,Math.min(MAX_SCROLL_PX,Math.floor(root.clientHeight*SCROLL_RATIO)));
   stepPx=nominal;
@@ -1768,7 +1768,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     const native=row.formatSource?.nativeReply;
     return {index,role:row.role,eventType:row.eventType||null,
      characters:visible.length,firstLineLength:firstLine.length,
-     beginsWithDateStatus:/^[｜|│]\s*(?:\d{4}年|\d{4}[-/]|日期不詳)/u.test(firstLine),
+     beginsWithDateStatus:/^[｜|│]\s*(?:\d{4}年|\d{4}[-/]|日期不詳)/u.test(firstLine)||parsed?.profile==='adventure',
      explicitUnknownTime:core.isExplicitUnknownGameTime(row.text),
      clock:parsed?.iso||null,
      acceptedOpening:index===0?core.isAllowedOpeningRow(row):null,

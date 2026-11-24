@@ -1547,3 +1547,48 @@ test('V0.8.48 combined clock/location line proves multiline HUD including litera
  for(const wrong of [{...opts,codeBlocks:[]},{...opts,statusText:''},{...opts,codeBlocks:[visibleHud.replace('37%','38%')]}])
  assert.equal(core.compareNativeParagraphs(dom,native,wrong).text,null);
 });
+
+
+test('V0.9.00 adventure timed opening, far future and long inventory are independent of legacy HUD',()=>{
+ const core=context.GalArchiveCore,world='《身為冒險者就可以這樣那樣》',f='\x60\x60\x60';
+ const hud=(clock,where='冒險者公會')=>[
+  '**'+clock+' I '+where+' **','　🔹【基礎】🔹','等級：1 I 0%','種族：{k}','血量：10/10',
+  '過載：0% I低過載','物品：'+('物品x1、'.repeat(800)),'　🔹【共鳴契】🔹','對象：無','深度：無','過載：無','　🔹【狀態】🔹','測試'].join('\n');
+ const wrap=x=>f+'\n'+x+'\n'+f;
+ const opening=wrap(hud('3000年01月01日 08:00'))+'\n測試開場。';
+ const reply=wrap(hud('9999年12月31日 23:59（測試月）','測試地點'))+'\n測試正文。';
+ assert.equal(core.parseGameTime(opening).iso,'3000-01-01T00:00:00.000Z');
+ assert.equal(core.parseGameTime(reply).iso,'9999-12-31T15:59:00.000Z');
+ assert.equal(core.parseGameTime(wrap(hud('3000年02月30日 08:00'))),null);
+ assert.equal(core.parseGameTime(wrap(hud('3000年01月01日 24:00'))),null);
+ assert.equal(core.parseGameTime('正文中的日期\n'+reply),null);
+ assert.equal(core.isAllowedOpeningRow({role:'ai',text:opening},world),true);
+ assert.equal(core.isAllowedOpeningRow({role:'ai',text:opening},'《全員精神穩定，感情除外》'),false);
+ assert.equal(core.isAllowedOpeningRow({role:'ai',text:reply},world),false);
+ const rows=[{role:'ai',text:opening},{role:'me',text:'!COMM'},{role:'ai',text:reply}];
+ const v=core.validate(rows,world);assert.equal(v.ok,true);assert.equal(v.messages[0].gameTime,v.messages[1].gameTime);
+ assert.equal(core.validate(rows,'《全員精神穩定，感情除外》').ok,false);
+ assert.equal(core.validate([rows[0],rows[1],{role:'ai',text:'｜2026年8月22日｜\n｜🕒18:45｜'}],world).ok,false);
+ const noTime={role:'ai',text:'事件通知\n測試事件',eventType:'event',worldName:world};
+ const ev=core.validate([rows[0],noTime,rows[1],rows[2]],world);
+ assert.equal(ev.ok,true);assert.equal(ev.events[0].gameTime,null);
+});
+test('V0.9.00 ordered multi-code-block evidence preserves original fences and rejects content or order changes',()=>{
+ const core=context.GalArchiveCore,f='\x60\x60\x60',wrap=x=>f+'\n'+x+'\n'+f;
+ const status=['**3000年01月08日 12:05 I 測試地點**','　🔹【基礎】🔹','等級：21 I 08%','血量：100/100',
+ '物品：'+('測試物品x1、'.repeat(400))+'尾端物品x9','　🔹【共鳴契】🔹','對象：無','深度：無','　🔹【狀態】🔹','戰鬥後'].join('\n');
+ const battle='**此次戰鬥損益！**\n經驗：+20%\n物品：測試戰利品x4',system='**系統對話框**\n測試升級。',body='\n\n「測試對話。」\n\n';
+ const raw=wrap(status)+body+wrap(battle)+'\n\n'+wrap(system);
+ const blocks=[status,battle,system],dom=status+body+battle+'\n\n'+system;
+ const compare=(d=dom,n=raw,b=blocks)=>core.compareNativeParagraphs(d,n,{source:'whif-message-content',codeBlocks:b,statusText:b[0]});
+ assert.equal(compare().text,raw);
+ assert.equal(compare(dom,raw,blocks.slice(0,2)).text,null);
+ assert.equal(compare(dom,raw.replace('尾端物品x9','尾端物品x8')).text,null);
+ assert.equal(compare(dom,raw.replace('測試對話','其他正文')).text,null);
+ assert.equal(compare(dom,wrap(status)+body+wrap(system)+'\n\n'+wrap(battle)).text,null);
+ assert.equal(compare(dom,raw.slice(0,-3)).text,null);
+ assert.equal(compare(raw,raw,[]).text,raw);
+ const stripped=blocks.map(x=>x.replace(/^\*\*(.*?)\*\*/,'$1'));
+ assert.equal(compare(stripped[0]+body+stripped[1]+'\n\n'+stripped[2],raw,stripped).text,raw);
+ assert.equal(compare(dom,raw,blocks.map((x,i)=>i===1?x+'異常':x)).text,null);
+});
