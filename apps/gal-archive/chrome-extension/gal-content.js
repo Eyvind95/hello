@@ -1593,8 +1593,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
       (collected.length-progressLastCount>=80||
        Date.now()-progressLastAt>=120000)){
     progressLastCount=collected.length;progressLastAt=Date.now();
-    // This updates one status file in the same batch. A connection error
-    // must not interrupt a valid ongoing WHIF scan.
+    // Live progress is persisted by the extension without a Chrome download.
+    // A connection error must not interrupt a valid ongoing WHIF scan.
     chrome.runtime.sendMessage({type:'gal-run-progress',...run,
      scanned:collected.length}).catch(()=>{});
    }
