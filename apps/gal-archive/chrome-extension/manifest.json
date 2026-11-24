@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.45",
-  "version_name": "V0.8.45 彈窗版本自動顯示",
-  "description": "輪迴檔案館 V0.8.45：兩個彈窗自動顯示實際擴充功能版本，保留 V0.8.44 掃描與驗收修正。",
+  "version": "0.8.46",
+  "version_name": "V0.8.46 原生格式與劇情時間修正",
+  "description": "輪迴檔案館 V0.8.46：修復多行狀態欄、未閉合原生圍欄與熱搜時間漏判，保留嚴格驗收。",
   "permissions": [
     "storage",
     "activeTab",

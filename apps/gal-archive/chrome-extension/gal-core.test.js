@@ -1414,3 +1414,54 @@ test('bare HUD quote wrapping is proven across lines without changing the clock 
  assert.equal(parseGameTime(v.text).civil,'2026/08/25 17:18');
  assert.equal(core.compareNativeParagraphs(dom,native.replace('嚮導值：30','嚮導值：31'),{source:'whif-message-content'}).text,null);
 });
+
+
+test('V0.8.46 late structured news clock and player pairing, no separator needed',()=>{
+ const core=context.GalArchiveCore;
+ const hud='｜2026年8月27日（星期四）｜\n｜🕒06:22｜晴朗｜\n｜📍測試房間｜\n｜🍿暴走值：0｜';
+ const prefix='【基甫納熱搜】\n'+Array.from({length:5},(_,i)=>
+  '#'+(i+1)+' 測試新聞\n🔥熱度：100\n💬匿名留言：測試內容\n').join('\n')+'\n\n';
+ const full=prefix+hud+'\n正文。',iso='2026-08-26T22:22:00.000Z',fence=String.fromCharCode(96).repeat(3);
+ for(const t of [full,full.replace('晴朗','☀️晴朗'),'{{測試上下文}}\n'+full,
+  prefix+'{{測試上下文}}\n'+fence+'\n'+hud+'\n'+fence+'\n正文。'])assert.equal(parseGameTime(t).iso,iso);
+ const checked=validate([{role:'ai',text:'輪迴測試開場正文。'},{role:'me',text:'測試玩家。'},{role:'ai',text:full}]);
+ assert.equal(checked.ok,true);assert.equal(checked.messages[0].gameTime,iso);assert.equal(checked.messages[1].gameTime,iso);
+ assert.equal(checked.verifiedUntimedCount,0);
+ for(const t of [prefix+'一般正文\n'+hud,prefix.replace('#3 測試新聞','#8 測試新聞')+hud,prefix.replace('🔥熱度：100','不明欄位')+hud])assert.equal(parseGameTime(t),null);
+ assert.equal(parseGameTime(prefix+'***\n'+hud.replace('06:22','17:18')).civil,'2026/08/27 17:18');
+ assert.equal(core.compareNativeParagraphs(full,full,{source:'whif-message-content'}).comparison.clockEqual,true);
+});
+test('V0.8.46 independent HUD evidence rejects falsely untimed source, but preserves genuinely absent clock',()=>{
+ const core=context.GalArchiveCore;
+ const hud='｜2026年8月27日｜\n｜🕒06:22｜晴朗｜\n｜📍測試房間｜';
+ const late=Array(25).fill('一般敘述。').join('\n')+'\n'+hud,ordinary='真正無時間的普通測試正文。';
+ const row=text=>({role:'ai',text,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:'test-id',scannedText:text,text}}});
+ const prefix=[{role:'ai',text:'輪迴測試開場正文。'},{role:'me',text:'測試玩家。'}];
+ assert.equal(parseGameTime(late),null);assert.equal(validate([...prefix,row(late)]).ok,false);
+ assert.equal(core.compareNativeParagraphs(late,late,{source:'whif-message-content',verifiedUntimedNative:true}).text,null);
+ assert.equal(core.isAllowedOpeningRow(row(late)),false);
+ assert.equal(validate([...prefix,row(ordinary),{role:'ai',eventType:'event',text:late}]).ok,false);
+ const genuine=validate([...prefix,row(ordinary)]);
+ assert.equal(genuine.ok,true);assert.equal(genuine.messages[0].gameTime,null);assert.equal(genuine.messages[1].gameTime,null);assert.equal(genuine.verifiedUntimedCount,1);
+});
+test('V0.8.46 multiline HUD requires complete status and code evidence, keeps literal title and HUD quotes',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const label='《測試-世界》:',hud='｜2026年8月23日｜\n｜🕒08:27｜晴朗｜\n｜📍測試地點｜\n｜🐆嚮導值：95｜「收到。」｜\n｜🐿️暴走值：0｜';
+ const visibleHud=hud.replace('「收到。」','\n「收到。」\n'),dom=label+'\n'+visibleHud+'\n通報。\n正文。';
+ const native=label+' {{測試上下文}}\n'+fence+'\n'+hud+'\n'+fence+'\n\n「通報。」正文。';
+ const options={source:'whif-message-content',statusText:visibleHud,codeBlocks:[visibleHud]},v=core.compareNativeParagraphs(dom,native,options);
+ assert.equal(v.comparison.prefixedHudProjection.legacyBoundary,'multiline-hud');assert.equal(v.comparison.clockEqual,true);
+ assert.ok(v.text.startsWith(label));assert.ok(v.text.includes('｜🐆嚮導值：95｜「收到。」｜'));assert.ok(v.text.includes('「通報。」'));assert.equal(v.text.includes(fence),false);
+ for(const wrong of [native.replace('通報。','改動。'),native.replace('08:27','08:28'),native.replace('95','96'),native.replace('「收到。」','收到。'),native.replace('「通報。」','「通報。'),native.replace('測試-世界','測試世界'),native.replace('{{測試上下文}}','{{user|role}}'),native.replace('{{測試上下文}}','{{甲}}{{乙}}')])assert.equal(core.compareNativeParagraphs(dom,wrong,options).text,null);
+ for(const wrong of [{...options,codeBlocks:[]},{...options,statusText:visibleHud.replace('95','96')},{...options,codeBlocks:[visibleHud,'other']}])assert.equal(core.compareNativeParagraphs(dom,native,wrong).text,null);
+ assert.equal(core.compareNativeParagraphs(dom.replace(':','：'),native.replace(':','：'),options).comparison.clockEqual,true);
+});
+test('V0.8.46 unmatched literal fence is preserved exactly',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const hud='｜2026年8月22日｜\n｜🕒19:10｜晴朗｜\n｜📍測試地點｜\n｜🍿暴走值：8%｜';
+ const dom=fence+'\n'+hud+'\n【測試公告】\n正文。\n通報。',native='{{測試上下文}}\n'+fence+'\n'+hud+'\n\n【測試公告】\n正文。\n\n「通報。」',opts={source:'whif-message-content'};
+ const v=core.compareNativeParagraphs(dom,native,opts);
+ assert.equal(v.comparison.prefixedHudProjection.legacyBoundary,'unclosed-fence');assert.equal(v.text.split(fence).length,2);assert.ok(v.text.startsWith(fence+'\n'));assert.ok(v.text.includes('「通報。」'));
+ for(const wrong of [native+'\n'+fence,native.replace('19:10','19:11'),native.replace('8%','9%'),native.replace('正文。','不符。'),native.replace('「通報。」','「通報。'),native.replace('{{測試上下文}}','{{user}}')])assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
+ assert.equal(core.compareNativeParagraphs(dom.slice(fence.length+1),native,opts).text,null);
+});

@@ -35,7 +35,12 @@ function structuredNewsPrefix(prefix){
  return true;
 }
 function parseGameTime(input){
-  const lines=clean(input).split('\n');
+  let lines=clean(input).split('\n');
+  const lead=lines[0]?.match(/^\{\{([^{}\n]{1,200})\}\}$/u);
+  if(lead&&!/^(?:(?:user|char|character)(?:\s*(?:\||:|=|$))|(?:img|image)\s*:)/iu.test(lead[1].trim())){
+   const first=lines.findIndex((line,i)=>i>0&&line.trim());
+   if(first>0&&lines[first].trim()==='【基甫納熱搜】')lines=lines.slice(first);
+  }
   let head=lines.slice(0,18).join('\n').slice(0,1600);
   // Recognized notification/news headers may precede a real HUD by many
   // lines. Extend only for a unique consecutive date/time/location header.
@@ -166,6 +171,9 @@ function validate(rows,expectedWorld){
   }
   if(role!=='ai'){errors.push('第 '+(i+1)+' 則左右身份不明');continue}
   const explicitlyUnknown=isExplicitUnknownGameTime(t);
+  if(explicitlyUnknown&&(hasHudClockEvidence(t)||hasHudClockEvidence(row.formatSource?.nativeReply?.text))){
+   errors.push('第 '+(i+1)+' 則同時存在未知時間與明確時鐘欄位，無法安全判定');continue;
+  }
   const clock=explicitlyUnknown?null:parseGameTime(t);
   const nativeUntimed=!clock&&!explicitlyUnknown?verifiedUnclockedReply(row,rows):null;
   if(!clock&&!explicitlyUnknown&&!nativeUntimed?.ok){
@@ -1258,6 +1266,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  // source and rendered text must contain the same leading unknown-clock HUD;
  // no other missing-clock reply can pass the native paragraph audit.
  const explicitUnknownClock=!clock&&!nativeClock&&
+  !hasHudClockEvidence(scanned)&&!hasHudClockEvidence(original)&&
   isExplicitUnknownGameTime(scanned)&&isExplicitUnknownGameTime(text);
  const verifiedNoClock=options.verifiedUntimedNative===true&&!clock&&!nativeClock&&
   !hasHudClockEvidence(scanned)&&!hasHudClockEvidence(original)&&!hasHudClockEvidence(text)&&
@@ -1402,5 +1411,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.45'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.46'};
 })();
