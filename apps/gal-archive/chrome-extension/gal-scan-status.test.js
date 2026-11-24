@@ -193,7 +193,7 @@ test('same frozen scan status has monotonic progress and only one final filename
   cycleId:CYCLE_A,scanned:180})).ok,false);
  const ok=await h.finish('failed',RUN1,h.sender(),'full',382);
  assert.equal(ok.status.scanned,382);
- assert.equal(h.statuses().length,3);
+ assert.equal(h.statuses().length,2);
  assert.equal(new Set(h.statuses().map(x=>x.filename)).size,1);
  const terminal=JSON.parse(decodeURIComponent(h.statuses().at(-1).url.split(',')[1]));
  assert.equal(terminal.state,'failed');assert.equal(terminal.scanned,382);
@@ -267,4 +267,23 @@ test('scan script includes original text, native text, 3+3 context, and source-a
   'errorContexts=failureContexts(','scanIndex+4','positionSevenProbe(',
   'selectedSourceId:sourceId','matches.length!==1','gal-run-manual-save',
   'gal-scan-emergency-snapshot'])assert.ok(s.includes(q),q);
+});
+
+test('repeated progress checkpoints stay in extension storage without browser download entries',async()=>{
+ const h=harness();const first=await h.start();
+ assert.equal(first.status.statusFilePolicy,'start-terminal-manual-save');
+ for(let i=1;i<=40;i++){
+  const result=await h.dispatch({type:'gal-run-progress',scanRunId:RUN1,cycleId:CYCLE_A,scanned:i*80});
+  assert.equal(result.ok,true);
+  assert.equal(result.status.scanned,i*80);
+  assert.equal(h.liveStatus().scanned,i*80);
+ }
+ assert.equal(h.statuses().length,1);
+ const final=await h.finish('failed',RUN1,h.sender(),'full',3200);
+ assert.equal(final.status.state,'failed');
+ assert.equal(h.statuses().length,2);
+ const saved=JSON.parse(decodeURIComponent(h.statuses().at(-1).url.split(',')[1]));
+ assert.equal(saved.scanned,3200);
+ assert.ok(saved.files.diagnostic);
+ assert.ok(saved.files.unverified);
 });
