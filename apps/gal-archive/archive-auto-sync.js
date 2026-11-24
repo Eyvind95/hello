@@ -95,6 +95,22 @@ async function syncOnce(){
    source:{url:'private Firebase auto-sync; previous local version'}
   });
  }
+ // World settings are not part of a cycle's time-machine snapshot.
+ // Preserve them separately before any newer remote world document is merged.
+ const changedWorldIds=new Set(plan.changes.filter(x=>
+  x.kind==='world'&&x.choice==='remote-newer').map(x=>x.id));
+ if(changedWorldIds.size){
+  const backup=app.localWorlds().filter(x=>changedWorldIds.has(x.id));
+  if(backup.length){
+   const key='gal-archive-world-pre-cloud:'+currentUid+':'+Date.now();
+   try{localStorage.setItem(key,JSON.stringify({
+    format:'gal-archive-world-before-auto-sync',createdAt:new Date().toISOString(),
+    worlds:backup
+   }))}catch(e){
+    throw Error('無法保全合併前的本機世界觀設定，已停止自動更新：'+String(e.message||e));
+   }
+  }
+ }
  // Cloud operations may save to local IndexedDB. Ignore these writes for
  // local-dirty triggers; queue only changes from the user's interactions.
  app.setApplyingCloud(true);
