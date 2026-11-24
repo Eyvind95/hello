@@ -42,5 +42,6 @@ test('explicitly refreshing binding updates target without starting scan',()=>{
 });
 test('full and event preview scans verify binding before any page content scan',()=>{
  assert.match(source,/if\(managed\)\{\s*await fetchCurrentBinding\(profile\);\s*const response=await chrome.runtime.sendMessage\(\{type:'gal-run-start'/);
- assert.match(source,/await fetchCurrentBinding\(profile\);\s*const response=await chrome.runtime.sendMessage\(\{type:'gal-run-start'/);\n assert.match(source,/run.batchFolder=response.status\?\.batchFolder;registered=true;activeRun=run;\s*const shot=snapshot\(null,'auto',false,true\)/);
+ assert.match(source,/await fetchCurrentBinding\(profile\);\s*const response=await chrome.runtime.sendMessage\(\{type:'gal-run-start'/);
+ assert.match(source,/run.batchFolder=response.status\?\.batchFolder;registered=true;activeRun=run;\s*const shot=snapshot\(null,'auto',false,true\)/);
 });
