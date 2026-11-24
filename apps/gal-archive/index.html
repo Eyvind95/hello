@@ -4637,6 +4637,17 @@ window.ArchiveAutoSyncBridge={
    root.collection('cycles').get({source:'server'}),
    root.collection('worlds').get({source:'server'})
   ]);
+  if(!cycles.size&&!worlds.size){
+   // Old accounts may contain canonical records under users/{uid}. Do not
+   // silently initialize a new empty galArchive over legacy history.
+   const legacy=cloudDb.collection('users').doc(user.uid);
+   const [oldCycles,oldWorlds]=await Promise.all([
+    legacy.collection('cycles').limit(1).get({source:'server'}),
+    legacy.collection('worlds').limit(1).get({source:'server'})
+   ]);
+   if(!oldCycles.empty||!oldWorlds.empty)
+    throw Error('發現舊版 Firebase users 資料，但新版 galArchive 尚無正史。為避免兩套資料互相覆蓋，請先人工核對一次舊資料遷移。');
+  }
   return {cycles:cycles.docs.map(d=>({...d.data(),id:d.id})),
    worlds:worlds.docs.map(d=>({...d.data(),id:d.id}))};
  },
