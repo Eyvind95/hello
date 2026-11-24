@@ -1900,3 +1900,21 @@ test('Live anchor detail refuses duplicate IDs, foreign owners and nonaccepted n
  assert.deepEqual(capture([make(id)],()=>({reason:'available',text:'text',eventEvidence:{messageId:'foreign',sender:'deg_event',kind:'event-message',accepted:true}})).missing,['unique-accepted-native-event-not-proven']);
  assert.match(src,/stable&&!liveDetail&&before\.state==='anchor-collected'&&after\.state==='anchor-collected'/);
 });
+
+test('Live anchor evidence saves actual native/DOM/serialized fields and detects missing tail without accepting it',()=>{
+ const src=fs.readFileSync(require.resolve('./gal-content.js'),'utf8'),part=src.slice(src.indexOf('function anchorClosingTails('),src.indexOf('async function anchorRecoveryProbe('));
+ const id='target-1',fence=String.fromCharCode(96).repeat(3),tail='尾端測試文字',original=fence+'\n框內容\n'+fence+tail,visible='框內容';
+ const attrs={'data-selection-copy-message-id':id,'data-message-id':id};
+ const node={nodeType:1,isConnected:true,textContent:visible,innerText:visible,outerHTML:'<div>框內容</div>',getAttribute:k=>attrs[k]||null,closest:()=>node,querySelectorAll:()=>[],contains:()=>true};
+ const start={...node,outerHTML:'<span>事件標題</span>'},end={...node,outerHTML:'<div>工具列</div>'};
+ const proof={messageId:id,kind:'event-message',sender:'deg_event',accepted:true},native={reason:'available',text:original,eventEvidence:proof};
+ const row={eventType:'event',text:visible,formatSource:{nativeReply:{...native,messageId:id,markerCount:1},codeBlocks:[visible]},probeBoundary:{start,end}};
+ const holder={innerHTML:node.outerHTML,textContent:visible,append(){}};
+ const doc={createRange:()=>({setStartAfter(){},setEndBefore(){},intersectsNode:()=>true,cloneContents:()=>({}),toString:()=>visible}),createElement:()=>holder,createTreeWalker:()=>({nextNode:()=>null})};
+ const capture=new Function('SCANNER_VERSION','core','nativeMessageSelector','readNativeNode','boundaryRead','hash','boundaryFollows','document','NodeFilter','getComputedStyle','anchorProbeElement',part+'\nreturn anchorDetailedEvidence')('0.9.11',{version:'0.9.11'},'[data-selection-copy-message-id]',()=>native,()=>({rows:[row]}),v=>v,()=>true,doc,{SHOW_TEXT:4},()=>({}),()=>({}));
+ const root={querySelectorAll:()=>[node]},expected={textHash:visible,textLength:visible.length},run={scanRunId:'run',cycleId:'cycle',worldName:'world'};
+ const r=capture(root,id,expected,run);
+ assert.equal(r.complete,true);assert.equal(r.importable,false);assert.equal(r.native.text,original);assert.equal(r.dom.marker.outerHTML,node.outerHTML);assert.equal(r.serialized.text,visible);
+ assert.equal(r.tails[0].text,tail);assert.equal(r.tails[0].native,true);assert.equal(r.tails[0].boundaryText,false);assert.equal(r.tails[0].serialized,false);
+ assert.deepEqual(capture(root,id,{...expected,textHash:'changed'},run).missing,['live-serialization-changed']);
+});
