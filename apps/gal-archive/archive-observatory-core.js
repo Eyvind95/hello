@@ -43,6 +43,7 @@
    const cycles=[],issues=[],entries=[];
    const worlds=arrays(config.worlds).map(w=>({id:w.id,name:w.name||w.id}));
    const worldLabels=new Map(worlds.map(w=>[w.id,w.name]));
+   const worldOrder=new Map(worlds.map((w,i)=>[w.id,i]));
    for(const raw of arrays(records).filter(r=>r&&typeof r==='object')){
      const c={id:str(raw.id),world:str(raw.world),title:str(raw.title)||'未命名輪迴',
        hero:str(raw.hero),partner:str(raw.partner),count:0,accepted:0,pending:0,
@@ -158,7 +159,19 @@
        if(realMs!=null)c.realTimed++;
      }
    }
-   cycles.sort(compareCycles);
+   // Same sequence as the archive sidebar: preserve world-tab order and
+   // delegate the selected cycle sort mode to the existing sidebar comparator.
+   // The timeline and health center must not invent another ranking.
+   cycles.sort((a,b)=>{
+     if(a.world!==b.world){
+       const aa=worldOrder.has(a.world)?worldOrder.get(a.world):Number.MAX_SAFE_INTEGER;
+       const bb=worldOrder.has(b.world)?worldOrder.get(b.world):Number.MAX_SAFE_INTEGER;
+       return aa-bb||a.world.localeCompare(b.world,'zh-Hant');
+     }
+     return typeof config.cycleComparator==='function'
+       ?config.cycleComparator(a.raw,b.raw)
+       :compareCycles(a,b);
+   });
    return {cycles,entries,issues,worlds,worldLabels:Object.fromEntries(worldLabels),
     counts:{cycles:cycles.length,messages:cycles.reduce((n,c)=>n+arrays(c.raw.messages).length,0),
       acceptedEvents:cycles.reduce((n,c)=>n+c.accepted,0),
