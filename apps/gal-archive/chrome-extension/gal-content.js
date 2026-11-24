@@ -1429,6 +1429,8 @@ async function eventThreeRowProbe(profile){
   const previousFormat=applyNativeFormat(previousEntry,rows,sourceCounts,scanMode,'',false);
   const eventFormat=applyNativeFormat(eventEntry,rows,sourceCounts,scanMode,'',true);
   showLocalDifferences([previousFormat,eventFormat]);
+  const probeNativeFormatAudit=formatEvidence.summarize(
+   rows,[previousFormat,eventFormat],core,true);
   const eventTestId=crypto.randomUUID();
   const result={
    format:'gal-ai-event-three-row-test',version:1,generatedAt:new Date().toISOString(),
@@ -1448,9 +1450,15 @@ async function eventThreeRowProbe(profile){
     previousAi:summarizeNativeFormats([previousFormat]),
     event:summarizeNativeFormats([eventFormat],true)
    },
+   nativeFormatAudit:{complete:probeNativeFormatAudit.nativeFormatComplete,
+    failedNativeRows:probeNativeFormatAudit.failedNativeRows,
+    checkedNativeRows:probeNativeFormatAudit.checkedNativeRows},
    note:'局部事件三則測試：只讀目前畫面附近的上一則 Gal AI、事件、下一則玩家回應；不匯入、不覆蓋正式正史。'
   };
   diagnostic={...diagnostic,...run,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+   nativeFormatAudit:probeNativeFormatAudit,
+   validationPhases:{integrity:'local-three-row-only',
+    nativeFormatting:probeNativeFormatAudit.nativeFormatComplete?'passed':'failed'},
    eventThreeRowTest:{eventTestId,selection:result.selection,
     previousAi:previousFormat.check,event:eventFormat.check,
     localDifferences:{previousAi:previousFormat.localContext||null,event:eventFormat.localContext||null}}};
@@ -1459,13 +1467,14 @@ async function eventThreeRowProbe(profile){
    diagnostic:JSON.stringify(diagnostic)});
   if(!saved?.ok)throw Error(saved?.error||'事件測試下載尚未完成');
   const diff=eventFormat.localContext;
-  status('✅ 事件三則測試完成，不會修改正式正史。\n'+
+  status((probeNativeFormatAudit.nativeFormatComplete?'✅ 事件三則格式驗收通過。':'⚠ 事件三則鑑識已完成，但原生格式尚未全部通過！完整原生／DOM／來源 ID 已寫入診斷，不得匯入正史。')+'\n'+
    '上一則 Gal AI：'+previousFormat.check.reason+'\n事件：'+eventFormat.check.reason+
    '\n下一則玩家回應：已擷取'+
    (diff?'\n事件首個差異：掃描「'+diff.scanned+'」／native「'+diff.native+'」':'')+
    '\n已建立事件測試批次：'+(run.batchFolder||'未知')+
    '\n下載狀態：'+(saved.status?.state==='completed'?'已核對完成':'等待 Chrome 實際下載')+'。');
-  return {ok:true,eventTestId,eventReason:eventFormat.check.reason};
+  return {ok:true,eventTestId,eventReason:eventFormat.check.reason,
+   nativeFormatComplete:probeNativeFormatAudit.nativeFormatComplete};
  }catch(error){
   const message=String(error?.message||error);
   diagnostic={...(diagnostic||inspect()),...run,scannerVersion:SCANNER_VERSION,
