@@ -666,6 +666,7 @@ function observeEventAudit(audit,shot,collected,alignment){
   if(evidence?.kind==='ordinary-message')audit.probes.set(node,evidence);
   if(id&&(!audit.history.has(id)||evidence?.kind!=='unknown-message'&&evidence?.kind))
    audit.history.set(id,evidence?.kind||'unreadable');
+  if(id&&evidence?.sender)audit.senders.set(id,evidence.sender);
   remember(evidence,node);
  }
  // WHIF's pending event card uses the reject/accept action row; it may not
@@ -679,6 +680,80 @@ function observeEventAudit(audit,shot,collected,alignment){
   else audit.unverifiedCards.set(group,position(group));
  }
 }
+
+/*
+ * Prove each WHIF continuation independently. A global comparison of
+ * history.size versus collected.length is invalid: source markers describe
+ * original WHIF message nodes whereas bounded scan rows include synthesized
+ * player gaps. Count disagreement alone is diagnostic, NOT proof of a
+ * missing player message. Fail closed if a locally observed user marker or a
+ * native assistant/event message is truly unaccounted for.
+ *
+ * Never infer an auto-continue from a timestamp or from text similarity.
+ */
+function verifyAutoContinueAudit(collected,candidates,history,senders){
+ const sourceRows=new Map();
+ const identities=new Map();
+ for(const [scanIndex,row] of collected.entries()){
+  const native=row.formatSource?.nativeReply;
+  const id=native?.messageId;
+  if(!id)continue;
+  if(!sourceRows.has(id))sourceRows.set(id,[]);
+  sourceRows.get(id).push({scanIndex,role:row.role,eventType:row.eventType||null});
+  if(native.eventEvidence?.sender)identities.set(id,native.eventEvidence.sender);
+ }
+ const problems=[];
+ const gaps=candidates.map(candidate=>{
+  const index=candidate.scanIndex;
+  const prev=collected[index-1],curr=collected[index];
+  const pId=prev?.formatSource?.nativeReply?.messageId;
+  const cId=curr?.formatSource?.nativeReply?.messageId;
+  const evidence=curr?.formatSource?.playerGap;
+  const errors=[];
+  const forbid=(check,label)=>{if(check)errors.push(label)};
+  forbid(!Number.isInteger(index)||index<2||index>=collected.length,'index-invalid');
+  forbid(prev?.role!=='ai'||curr?.role!=='ai'||!!prev?.eventType||!!curr?.eventType,'not-adjacent-ordinary-ai');
+  forbid(curr?.autoContinue!==true,'not-explicitly-proven-in-scan');
+  forbid(!pId||!cId||pId===cId,'missing-or-duplicate-pair-ids');
+  forbid(candidate.previousId!==pId||candidate.currentId!==cId,'candidate-pair-id-mismatch');
+  forbid(!pId||sourceRows.get(pId)?.length!==1,'previous-native-source-not-unique');
+  forbid(!cId||sourceRows.get(cId)?.length!==1,'current-native-source-not-unique');
+  forbid(!evidence||evidence.previousId!==pId||evidence.currentId!==cId,'local-gap-source-id-mismatch');
+  forbid(evidence?.previous!=='character'||evidence?.current!=='character','local-native-sender-not-character');
+  forbid(!Array.isArray(evidence?.markers)||evidence.markers.length!==0,'player-or-other-source-marker-in-gap');
+  forbid(evidence?.loading!==false,'gap-still-loading');
+  forbid(history.get(pId)!=='ordinary-message'||history.get(cId)!=='ordinary-message','history-source-kind-not-ordinary');
+  const pSender=senders.get(pId)||identities.get(pId);
+  const cSender=senders.get(cId)||identities.get(cId);
+  forbid(pSender!=='character'||cSender!=='character','history-sender-not-character');
+  if(errors.length)problems.push({scanIndex:index,errors});
+  return {scanIndex:index,ok:errors.length===0,errors,
+   previousSourceHash:pId?hash(pId):null,currentSourceHash:cId?hash(cId):null,
+   bothOrdinary:history.get(pId)==='ordinary-message'&&history.get(cId)==='ordinary-message',
+   noGapMarkers:Array.isArray(evidence?.markers)&&evidence.markers.length===0,
+   notLoading:evidence?.loading===false};
+ });
+ const unknown=[...history].filter(([,kind])=>kind==='unknown-message'||kind==='unreadable')
+  .map(([id,kind])=>({sourceHash:hash(id),kind}));
+ if(unknown.length)problems.push({scope:'history',errors:['unreadable-or-unknown-native-message-markers']});
+ const missingObserved=[...history].filter(([id])=>{
+  const sender=senders.get(id)||identities.get(id);
+  return ['character','assistant','deg_event'].includes(sender)&&sourceRows.get(id)?.length!==1;
+ }).map(([id,kind])=>({sourceHash:hash(id),kind,sender:senders.get(id)||identities.get(id),
+  collectedMatches:sourceRows.get(id)?.length||0}));
+ if(missingObserved.length)problems.push({scope:'history',errors:['observed-ai-or-event-source-not-uniquely-collected']});
+ const playerMarkers=[...history.keys()].filter(id=>(senders.get(id)||identities.get(id))==='user').length;
+ const playerRows=collected.filter(row=>row.role==='me').length;
+ if(playerMarkers>playerRows)problems.push({scope:'history',errors:['more-observed-user-messages-than-player-rows']});
+ return {ok:problems.length===0,candidateIndices:candidates.map(x=>x.scanIndex),
+  gaps,problems,observedNativeMarkers:history.size,scannedRows:collected.length,
+  markerCountDifference:history.size-collected.length,
+  unaccountedAIOrEvents:missingObserved,
+  unknownMarkers:unknown,
+  observedUserMessages:playerMarkers,playerRows,
+  explanation:'A global marker/row cardinality mismatch is not itself a missed player. Each continuation must pass native ID, sender, local between-message markers and loading checks; independently observed missing character/event IDs still fail.'};
+}
+
 function summarizeEventAudit(audit,collected,validation,complete){
  const eventPositions=new Set(validation.events.map(event=>event.scanIndex));
  const nativePositions=new Map();
@@ -973,12 +1048,13 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  const recoveryLog=[];
  let unpairedReply=null,scrollStall=null;
  const continuedPositions=[];
- const eventAudit={headers:new Map(),native:new Map(),unverifiedCards:new Map(),probes:new WeakMap(),history:new Map()};
+ const eventAudit={headers:new Map(),native:new Map(),unverifiedCards:new Map(),probes:new WeakMap(),history:new Map(),senders:new Map()};
  let firstTimedTrace=null;
  let registered=false;
  // Preserve any partially valid event classifications in failure diagnostics.
  // A missing-clock AI must not erase previously observed accepted events.
  let failedValidation=null;
+ let autoContinueAudit=null;
  let paragraphCheck={scannerVersion:SCANNER_VERSION,coreVersion:core.version,
   source:'rendered-dom',reason:'first-reply-not-validated'};
  try{
@@ -1161,11 +1237,11 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    const id=row.formatSource?.nativeReply?.messageId;
    if(id)sourceCounts.set(id,(sourceCounts.get(id)||0)+1);
   }
-  if(continuedPositions.length&&(eventAudit.history.size!==collected.length||
-    [...eventAudit.history.values()].some(kind=>kind==='unreadable'||kind==='unknown-message')||
-    continuedPositions.some(gap=>[gap.previousId,gap.currentId].some(id=>
-     sourceCounts.get(id)!==1||eventAudit.history.get(id)!=='ordinary-message'))))
-   throw Error('疑似自動繼續，但原生標記數量、角色或來源 ID 無法核對；請檢查是否漏掃');
+  autoContinueAudit=verifyAutoContinueAudit(collected,continuedPositions,
+   eventAudit.history,eventAudit.senders);
+  if(!autoContinueAudit.ok)
+   throw Error('自動繼續逐筆來源驗證未通過（'+autoContinueAudit.problems
+    .map(p=>p.scanIndex??p.scope).join('、')+'）；請依診斷 autoContinueAudit 核對，不得猜測漏失訊息');
   // The independent opening is not part of validation.messages. It must
   // have its OWN source-ID-checked native paragraph pass before serialization.
   // In particular, an untimed opening cannot rely on the AI timestamp gate.
@@ -1201,7 +1277,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   paragraphCheck.exportedBlankLines=(firstReply?.text.match(/\n[ \t]*\n/g)||[]).length;
   if(preview)lastResult.paragraphCheck=paragraphCheck;
   diagnostic={...diagnostic,scanMode,scannerVersion:SCANNER_VERSION,coreVersion:core.version,nativeParagraphsApplied:nativeApplied,bottomProof,
-   openingCheck:openingFormat.check,
+   openingCheck:openingFormat.check,autoContinueAudit,
    firstTimedReply:firstTimedTrace,export:{generatedAt:lastResult.generatedAt,
     firstReplyScanIndex:firstReply?.scanIndex,
     firstReplyQuotes:(firstReply?.text.match(/「/g)||[]).length,
@@ -1236,7 +1312,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   if(root?.isConnected)root.scrollTop=lastGoodY;
   diagnostic={...(diagnostic||inspect()),...run,scanMode,error:failure,trustedCount:collected.length,paragraphCheck,unpairedReply,bottomProof,
    scrollStall,scrollAtFailure,
-   autoContinueCandidates:continuedPositions.map(({scanIndex})=>scanIndex),
+   autoContinueCandidates:continuedPositions.map(({scanIndex})=>scanIndex),autoContinueAudit,
    eventAudit:summarizeEventAudit(eventAudit,collected,
     failedValidation||{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
