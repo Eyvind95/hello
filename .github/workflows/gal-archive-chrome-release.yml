@@ -26,7 +26,9 @@ jobs:
       - name: Verify scanner tests and production JavaScript syntax
         run: |
           node --test apps/gal-archive/chrome-extension/gal-core.test.js apps/gal-archive/chrome-extension/gal-import.test.js apps/gal-archive/chrome-extension/gal-binding.test.js apps/gal-archive/chrome-extension/gal-scroll.test.js apps/gal-archive/chrome-extension/gal-scan-status.test.js
+          node --test apps/gal-archive/tools/inspect-checkpoint.test.js
           node --check apps/gal-archive/chrome-extension/gal-core.js
+          node --check apps/gal-archive/tools/inspect-checkpoint.js
           node --check apps/gal-archive/chrome-extension/gal-content.js
           node --check apps/gal-archive/chrome-extension/content.js
           node --check apps/gal-archive/chrome-extension/gal-launcher.js
