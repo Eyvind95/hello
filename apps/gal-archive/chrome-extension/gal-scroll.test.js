@@ -183,3 +183,12 @@ test('cycle 5 timed opening and native-verified untimed first reply remain paire
  assert.match(content,/openingPreviewStructure:\{/);
  assert.match(content,/if\(!validation\.ok\)throw Error/);
 });
+
+test('bottom completion hands off to named responsive validation stages',()=>{
+ for(const stage of ['bottom-confirm','bottom-confirmed','integrity','source-audit','native-format','native-summary','serialize','download','failure'])
+  assert.ok(content.includes("phaseStatus('"+stage+"'"),stage);
+ assert.match(content,/checkedNative%8===0/);
+ assert.match(content,/await yieldUi\(\);ensureRunning\(\)/);
+ assert.match(content,/hash\(row\.text\)\]\.join/);
+ assert.match(content,/背景下載佇列等待超過 12 秒/);
+});
