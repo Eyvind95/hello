@@ -86,6 +86,8 @@ test('no automatic sync is performed without account authentication, and only se
  assert.match(js,/if\(!uid\|\|!localReady\|\|!enabled\|\|!app\.isSignedIn\(uid\)\)return/);
  assert.match(js,/checksAfterPlan\(plan\)/);
  assert.match(js,/plan\.snapshots/);
+ assert.match(js,/gal-archive-world-pre-cloud:/);
+ assert.match(js,/archive-world-before-auto-sync/);
  assert.match(js,/ArchiveTimeMachine\.captureBeforeNative/);
  assert.match(js,/safeAuto:true/);
  assert.match(js,/navigator\.locks\.request/);
@@ -93,6 +95,9 @@ test('no automatic sync is performed without account authentication, and only se
  assert.match(js,/lastAttempt/);
  assert.match(handover,/if\(safeAuto&&\(removedThreads\.length\|\|removedEntries\.length\)\)/);
  assert.match(html,/get\(\{source:'server'\}\)/);
+ assert.match(html,/users'\)\.doc\(user\.uid\)/);
+ assert.match(html,/舊版 Firebase users 資料/);
+ assert.match(html,/messageCount:\(r\.messages\|\|\[\]\)\.length/);
  assert.match(html,/id="archiveAutoSyncToggle"/);
  assert.match(html,/id="archiveAutoSyncNow"/);
  assert.match(html,/id="archiveAutoSyncStatus"/);
