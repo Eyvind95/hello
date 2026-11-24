@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.67｜Gal AI</title>
+<title>輪迴檔案館 V5.68｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -77,6 +77,11 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .archive-audit-mark.archive-audit-event-mark:hover,.archive-audit-mark.archive-audit-event-mark:focus-visible{height:16px;width:16px;background:#fff5a0;outline:2px solid #fff4ac;outline-offset:2px}
 .archive-audit-mark.archive-audit-auto-continue-mark{left:25%;right:auto;width:13px;height:13px;transform:translate(-50%,-50%);border-radius:50%;background:#55e58a;border:2px solid #126836;box-shadow:0 0 0 2px #0e1830,0 0 10px #42dd7d;z-index:4}
 .archive-audit-mark.archive-audit-auto-continue-mark:hover,.archive-audit-mark.archive-audit-auto-continue-mark:focus-visible{height:16px;width:16px;background:#a4ffc2;outline:2px solid #b9ffd0;outline-offset:2px}
+#archiveAuditTrack{flex-basis:44px}
+#archiveAuditTrack .archive-audit-event-mark{left:50%}
+#archiveAuditTrack .archive-audit-special-mark{left:84%;right:auto;width:12px;height:12px;transform:translate(-50%,-50%);border-radius:50%;background:#53aaff;border:2px solid #154880;box-shadow:0 0 0 2px #0e1830,0 0 8px #53aaff;z-index:5}
+#archiveAuditTrack .archive-audit-special-mark:hover,#archiveAuditTrack .archive-audit-special-mark:focus-visible{background:#a7d8ff;outline:2px solid #a7d8ff}
+.archive-special-flash .bubble{outline:3px solid #53aaff;outline-offset:2px}
 .archive-event-flash .bubble{outline:3px solid #ffe45f;outline-offset:2px}
 .archive-auto-continue-flash .bubble{outline:3px solid #55e58a;outline-offset:2px}
 .archive-audit-fault .bubble{border-color:#e97e91}
@@ -277,7 +282,7 @@ const $=id=>document.getElementById(id),safe=s=>String(s??'').replace(/[&<>"']/g
 const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2);
 function notify(t){$('toast').textContent=t;$('toast').classList.remove('hidden');clearTimeout(notify.timer);notify.timer=setTimeout(()=>$('toast').classList.add('hidden'),2700)}
 function openDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB,2);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(STORE))req.result.createObjectStore(STORE,{keyPath:'id'});if(!req.result.objectStoreNames.contains(WORLDSTORE))req.result.createObjectStore(WORLDSTORE,{keyPath:'id'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-function operation(mode,payload,store=STORE){return new Promise((resolve,reject)=>{const tx=db.transaction(store,mode),os=tx.objectStore(store);let r;if(payload?.type==='put')r=os.put(payload.item);else if(payload?.type==='delete')r=os.delete(payload.id);else r=os.getAll();tx.oncomplete=()=>{if(mode==='readwrite'&&!window.__archiveAutoApplyingCloud)window.dispatchEvent(new Event('archive:local-changed'));resolve(r?.result)};tx.onerror=()=>reject(tx.error)})}
+function operation(mode,payload,store=STORE){return new Promise((resolve,reject)=>{const tx=db.transaction(store,mode),os=tx.objectStore(store);let r;if(payload?.type==='put'&&store===STORE){const get=os.get(payload.item.id);get.onsuccess=()=>{const prior=get.result;if(prior?.specialReviews||payload.item.specialReviews)payload.item.specialReviews=archiveSpecialMerge(prior?.specialReviews,payload.item.specialReviews);r=os.put(payload.item)}}else if(payload?.type==='put')r=os.put(payload.item);else if(payload?.type==='delete')r=os.delete(payload.id);else r=os.getAll();tx.oncomplete=()=>{if(mode==='readwrite'&&!window.__archiveAutoApplyingCloud)window.dispatchEvent(new Event('archive:local-changed'));resolve(r?.result)};tx.onerror=()=>reject(tx.error)})}
 function parseCycleManagers(input){
   const values=Array.isArray(input)?input:[input||''],names=[];
   for(const v of values)for(const name0 of String(v||'').split(/[、，,;；\r\n]+/)){
@@ -1382,6 +1387,44 @@ function missingAuditRenderSkipped(){
       ||'<div class="note">本次沒有在可讀取的雲端來源找到提示。</div>')
     +'</div></details>';
 }
+function archiveSpecialKey(row){
+ const e=row?.entry;
+ if(!e||(row.type!=='event'&&(row.type!=='message'||e.role!=='ai')))return null;
+ const kind=row.type;
+ if(typeof e.sourceEventId==='string'&&e.sourceEventId)return JSON.stringify([kind,'source',e.chatKey||'',e.sourceEventId,e.sourcePartIndex??0]);
+ return typeof e.id==='string'&&e.id?JSON.stringify([kind,'record',e.id]):null;
+}
+function archiveSpecialMerge(...maps){
+ const out=Object.create(null);
+ for(const map of maps)for(const [key,value] of Object.entries(map||{})){
+  if(!key.startsWith('[')||!value||!['pending','resolved'].includes(value.status)||typeof value.updatedAt!=='string'||!Number.isFinite(Date.parse(value.updatedAt)))continue;
+  const old=out[key];
+  const latest=!old||value.updatedAt>old.updatedAt||(value.updatedAt===old.updatedAt&&value.status==='resolved')?value:old;
+  const evidence=[...new Set([...(Array.isArray(old?.evidence)?old.evidence:[]),...(Array.isArray(value.evidence)?value.evidence:[])].filter(x=>typeof x==='string'))].sort();
+  out[key]={...latest,evidence};
+ }
+ return out;
+}
+function archiveSpecialNext(previous,action,reason,now){
+ if(action==='resolve'&&!previous)return null;
+ const evidence=[...new Set([...(previous?.evidence||[]),...(reason?[reason]:[])])].sort();
+ return {...previous,status:action==='resolve'?'resolved':'pending',reason:reason||previous?.reason||'人工標記',evidence,source:'manual',updatedAt:now,resolvedAt:action==='resolve'?now:null};
+}
+function archiveSpecialState(record,row){
+ const key=archiveSpecialKey(row);
+ return key?record?.specialReviews?.[key]||null:null;
+}
+function archiveSpecialIssues(record,timeline){
+ return timeline.flatMap((row,index)=>{const mark=archiveSpecialState(record,row);return mark?.status==='pending'?[{index,text:mark.reason||'需人工核對'}]:[]});
+}
+function archiveSpecialTools(record,row){
+ const key=archiveSpecialKey(row);if(!key)return '';
+ const mark=archiveSpecialState(record,row);
+ const action=mark?.status==='pending'?'resolve':'mark';
+ const label=action==='resolve'?'已修正，關閉藍點':mark?'重新標記':'標為特殊';
+ return '<button type="button" data-special-key="'+safe(key)+'" data-special-action="'+action+'">'+label+'</button>'
+  +(mark?'<button type="button" data-special-key="'+safe(key)+'" data-special-action="detail">查看特殊原因</button>':'');
+}
 function archiveStoryBubble(row,i,record,galContext=null){
   const m=row.entry,story=row.type==='message';
   const label=story?(m.role==='me'?'我（皮卡）':'Gal AI'):'📨 已接事件 · '+(m.title||'事件到達');
@@ -1404,7 +1447,7 @@ function archiveStoryBubble(row,i,record,galContext=null){
     +(!story&&m.storyPlacement?' · 手動位置':'')+'</div>'
     +archiveTimeDisplay(m,galContext)+archiveImagesHtml(m,row.index)
     +archiveSkipNoticeHtml(story?m:null)+'<div class="body">'+(story?archiveSkipBodyHtml(m):safe(m.text||''))+'</div>'
-    +'<div class="msgtools">'+tools+'</div></div></div>';
+    +'<div class="msgtools">'+tools+archiveSpecialTools(record,row)+'</div></div></div>';
 }
 
 
@@ -1537,24 +1580,25 @@ function archiveCheckDialoguePairs(timeline){
     galCount:time.storyCount,galPairedCount:time.pairedCount,
     skippedCrossTier:time.skippedCrossTier};
 }
-function archiveAuditTotal(a){return a.issues.length+a.timeIssues.length}
+function archiveAuditTotal(a){return a.issues.length+a.timeIssues.length+(a.specialIssues||[]).length}
 function archiveAuditText(a){return '完整訊息 '+a.total+' 則（含已接事件 '+a.excluded+' 則）／完整來回 '+a.pairs+' 組／自動繼續 '+(a.autoContinues||[]).length+' 次／回合檢查 '+a.count+' 則／紅線（回合）'+a.issues.length
   +' 處／橘線（時間倒流）'+a.timeIssues.length+' 處（劇情 '+a.timeIssues.filter(x=>x.tier==='story').length+'／GPT或手動 '+a.timeIssues.filter(x=>x.tier==='real-source').length+'／擷取 '+a.timeIssues.filter(x=>x.tier==='real-captured').length+'／雲端 '+a.timeIssues.filter(x=>x.tier==='real-received').length+'）／深紅（疑似跳過）'+(a.skipIssues||[]).length+' 則／Gal AI 劇情時間 '+(a.galCount||0)+' 則（玩家同回合 '+(a.galPairedCount||0)+'）／已核對時間 '+a.checkedTime+' 則'
   +(a.unknownTime?'（原始時間未知 '+a.unknownTime+' 則，不判定）':'')
-  +(a.skippedCrossTier?'／跨時間類型略過 '+a.skippedCrossTier+' 次（不畫橘線）':'')}
+  +(a.skippedCrossTier?'／跨時間類型略過 '+a.skippedCrossTier+' 次（不畫橘線）':'')+'／藍點（特殊訊息）'+(a.specialIssues||[]).length+' 則'}
 function archiveAuditIssueList(a,target='chat'){
-  if(!archiveAuditTotal(a))return '<div class="note">目前未發現回合斷點或原始發言時間倒流。時間未知的訊息不會據此判定為正常。</div>';
+  if(!archiveAuditTotal(a))return '<div class="note">目前未發現回合斷點、原始發言時間倒流或待核對特殊訊息。時間未知的訊息不會據此判定為正常。</div>';
   const targetAttr=' data-audit-target="'+(target==='pilot'?'pilot':'chat')+'"';
   return a.issues.map(x=>
     '<button type="button" data-audit-jump="'+x.index+'" data-audit-kind="pair"'+targetAttr+'>🔴 回合異常：'+safe(x.text)+'</button>').join('')
     +a.timeIssues.map(x=>
-    '<button type="button" class="archive-time-issue" data-audit-jump="'+x.index+'" data-audit-kind="time"'+targetAttr+'>🟠 時間倒流：'+safe(x.text)+'</button>').join('');
+    '<button type="button" class="archive-time-issue" data-audit-jump="'+x.index+'" data-audit-kind="time"'+targetAttr+'>🟠 時間倒流：'+safe(x.text)+'</button>').join('')
+    +(target==='pilot'?[]:(a.specialIssues||[])).map(x=>'<button type="button" data-audit-jump="'+x.index+'" data-audit-kind="special"'+targetAttr+'>🔵 特殊訊息：'+safe(x.text)+'</button>').join('');
 }
 function archiveAuditJump(index,kind='pair',target='chat'){
   const chat=$(target==='pilot'?'pilotChatList':'chat'),node=chat?.querySelector('[data-dialogue-index="'+index+'"]');
   if(!node)return;
   chat.scrollTo({top:Math.max(0,node.offsetTop-chat.clientHeight*.23),behavior:'smooth'});
-  const cls=kind==='event'?'archive-event-flash':kind==='autoContinue'?'archive-auto-continue-flash':
+  const cls=kind==='special'?'archive-special-flash':kind==='event'?'archive-event-flash':kind==='autoContinue'?'archive-auto-continue-flash':
     kind==='skip'?'archive-skip-flash':kind==='time'?'archive-time-flash':'archive-audit-flash';
   node.classList.add(cls);
   setTimeout(()=>node.classList.remove(cls),2300);
@@ -1586,14 +1630,15 @@ function archiveAuditRail(a,target='chat'){
     ...a.timeIssues.map(issue=>({issue,kind:'time'})),
     ...(a.skipIssues||[]).map(issue=>({issue:{...issue,text:issue.cue},kind:'skip'})),
     ...(pilot?[]:(a.autoContinues||[]).map(issue=>({issue,kind:'autoContinue'}))),
-    ...acceptedEvents.map(issue=>({issue,kind:'event'}))
+    ...acceptedEvents.map(issue=>({issue,kind:'event'})),
+    ...(pilot?[]:(a.specialIssues||[])).map(issue=>({issue,kind:'special'}))
   ].map(({issue,kind})=>{
     const b=document.createElement('button');b.type='button';
-    b.className='archive-audit-mark '+(kind==='event'?'archive-audit-event-mark':
+    b.className='archive-audit-mark '+(kind==='special'?'archive-audit-special-mark':kind==='event'?'archive-audit-event-mark':
       kind==='autoContinue'?'archive-audit-auto-continue-mark':
       kind==='skip'?'archive-audit-skip-mark':kind==='time'?'archive-audit-time-mark':'archive-audit-pair-mark');
     b.dataset.auditJump=issue.index;b.dataset.auditKind=kind;
-    const label=kind==='event'?'已接事件':kind==='autoContinue'?'我按下自動繼續':
+    const label=kind==='special'?'特殊訊息':kind==='event'?'已接事件':kind==='autoContinue'?'我按下自動繼續':
       kind==='skip'?'疑似做愛跳過':kind==='time'?'時間倒流':'發言斷點';
     b.setAttribute('aria-label',label+'：跳到完整對話第 '+(issue.index+1)+' 則：'+issue.text);
     b.title=label+' · 第 '+(issue.index+1)+' 則 · '+issue.text;rail.appendChild(b);
@@ -1719,7 +1764,7 @@ function archivePilotTimeRefresh(r){
 }
 function archiveAuditRefresh(r){
   if(tab!=='chat'||!$('chat'))return;
-  const a=archiveCheckDialoguePairs(archiveStoryTimeline(r));
+  const timeline=archiveStoryTimeline(r),a=archiveCheckDialoguePairs(timeline);a.specialIssues=archiveSpecialIssues(r,timeline);
   const count=document.querySelector('#tabBody .sectionhead .stat');
   if(count)count.textContent='（'+archiveCompleteMessageCount(r)+' 則，含已接事件 '+(r.events||[]).filter(e=>e.status==='accepted').length+' 則）';
   const status=$('archiveAuditSummary'),list=$('archiveAuditIssues'),toggle=$('archiveAuditToggle');
@@ -1732,7 +1777,7 @@ function archiveAuditRefresh(r){
   archiveAuditRail(a);
 }
 
-function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages),galContext=archiveGalTimeContext(r.messages||[]);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveTimeForensicsExport" class="btn small">🧭 匯出時間診斷 JSON（唯讀）</button><button id="archiveSortCurrentChat" class="btn small">🔧 修復已確認錯序（預覽＋備份）</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：只有同類時間發生倒流才標示。Gal AI 劇情時間（同回合「我／他」相同）、ChatGPT 原始＝手動、首次擷取、雲端接收按優先級辨識；不同類型不能直接比大小（略過並計數）。擷取與接收時間僅是低可信線索。已接事件不參與橘線比較。**版本更新只更新檢查邏輯，並不會自動整理以前已排錯的訊息；請先用「🧭 匯出時間診斷 JSON（唯讀）」找出原因。** 🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。🟢 綠色光點：原生掃描已證實「我按下自動繼續」，因此合法出現 Gal AI → Gal AI，不視為漏掉玩家發言；沒有完整證據的連續 Gal AI 仍畫紅線。🟥 深紅線：皮卡原句包含 made in heaven／做愛跳過，提示可能主動省略的劇情（不計為漏回合）。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div>${archiveSkipPanelHtml(audit.skipIssues,'chat')}<div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r,galContext)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件，深紅線為疑似做愛跳過；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
+function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages),galContext=archiveGalTimeContext(r.messages||[]);audit.specialIssues=archiveSpecialIssues(r,messages);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveTimeForensicsExport" class="btn small">🧭 匯出時間診斷 JSON（唯讀）</button><button id="archiveSortCurrentChat" class="btn small">🔧 修復已確認錯序（預覽＋備份）</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：只有同類時間發生倒流才標示。Gal AI 劇情時間（同回合「我／他」相同）、ChatGPT 原始＝手動、首次擷取、雲端接收按優先級辨識；不同類型不能直接比大小（略過並計數）。擷取與接收時間僅是低可信線索。已接事件不參與橘線比較。**版本更新只更新檢查邏輯，並不會自動整理以前已排錯的訊息；請先用「🧭 匯出時間診斷 JSON（唯讀）」找出原因。** 🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。🟢 綠色光點：原生掃描已證實「我按下自動繼續」，因此合法出現 Gal AI → Gal AI，不視為漏掉玩家發言；沒有完整證據的連續 Gal AI 仍畫紅線。🟥 深紅線：皮卡原句包含 made in heaven／做愛跳過，提示可能主動省略的劇情（不計為漏回合）。🔵 藍色光點：已標記的原生格式或特殊訊息，需人工核對；可在卡片上關閉或重新標記。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div>${archiveSkipPanelHtml(audit.skipIssues,'chat')}<div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r,galContext)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件，深紅線為疑似做愛跳過，藍點為待核對特殊訊息；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
@@ -1967,6 +2012,19 @@ if(b.id==='archiveAuditRun'){archiveAuditRefresh(r);notify('完整對話的回�
 if(b.id==='archiveAuditToggle'){archiveAuditOpen=!archiveAuditOpen;archiveAuditRefresh(r);return}
 if(b.id==='pilotAuditRun'){archivePilotTimeRefresh(r);notify('副駕駛聊天時間檢查完成（不檢查發言回合）');return}
 if(b.id==='pilotAuditToggle'){archivePilotTimeOpen=!archivePilotTimeOpen;archivePilotTimeRefresh(r);return}
+if(b.dataset.specialKey!==undefined){
+ if(tab!=='chat'||!r)return;
+ const key=b.dataset.specialKey,action=b.dataset.specialAction;
+ if(!archiveStoryTimeline(r).some(row=>archiveSpecialKey(row)===key))return;
+ const prior=r.specialReviews?.[key];
+ if(action==='detail'){if(prior)alert('狀態：'+prior.status+'\n原因：'+prior.reason+'\n證據：'+(prior.evidence||[]).join('\n')+'\n更新時間：'+prior.updatedAt);return}
+ if(action!=='resolve'&&action!=='mark')return;
+ let reason='';
+ if(action==='mark'){const answer=prompt('請輸入特殊訊息原因（不修改正文）',prior?.reason||'原生格式／官方複製異常');if(answer===null||!answer.trim())return;reason=answer.trim();}
+ const mark=archiveSpecialNext(prior,action,reason,new Date().toISOString());if(!mark)return;
+ const updated={...r,specialReviews:archiveSpecialMerge(r.specialReviews,{[key]:mark})};
+ await put(updated);notify(action==='resolve'?'藍點已關閉，證據仍保留':'已標為特殊訊息');return;
+}
 if(b.dataset.auditJump!==undefined){archiveAuditJump(Number(b.dataset.auditJump),b.dataset.auditKind||'pair',b.dataset.auditTarget||'chat');return}
 if(b.id==='archiveChooseImage'){archivePickImageFiles(archiveAddDraftFiles);return}
 if(b.dataset.draftImageRemove!==undefined){
@@ -2193,6 +2251,7 @@ function normalizeBackupCycle(source){
       ...(field!=='messages'?{manager:typeof m.manager==='string'?m.manager:''}:{})
     }));
   }
+  if(item.specialReviews)item.specialReviews=archiveSpecialMerge(item.specialReviews);
   if(!item.managers||typeof item.managers!=='object'||Array.isArray(item.managers))item.managers={quiz:'',changes:''};
   return {item};
 }
@@ -2234,7 +2293,7 @@ async function importBackupText(text){
   await new Promise((resolve,reject)=>{
     const tx=db.transaction([STORE,WORLDSTORE],'readwrite'),cs=tx.objectStore(STORE),ws=tx.objectStore(WORLDSTORE);
     for(const w of worlds)ws.put({id:w.id,text:w.text,updatedAt:w.updatedAt||new Date().toISOString()});
-    for(const r of valid)cs.put(r);
+    for(const r of valid){const get=cs.get(r.id);get.onsuccess=()=>{if(get.result?.specialReviews||r.specialReviews)r.specialReviews=archiveSpecialMerge(get.result?.specialReviews,r.specialReviews);cs.put(r)}}
     tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||Error('資料庫寫入失敗'));tx.onabort=()=>reject(tx.error||Error('資料庫交易取消'));
   });
   if(valid.length){world=valid[0].world;selected=valid[0].id;tab='chat';$('cycleSearch').value=''}
@@ -4591,8 +4650,9 @@ async function pushCloud(){
     const remote=cloudCycleMap.get(r.id);
     if(remote&&String(remote.updatedAt||'')>=String(r.updatedAt||'')){olderSkipped++;continue}
     const ref=root.collection('cycles').doc(r.id);
-    const parts=cloudParts(JSON.stringify(r));
     const oldParts=await ref.collection('parts').get();
+    if(remote){if(oldParts.size!==remote.partCount)throw Error('藍點合併前發現雲端片段數量不一致');const old=JSON.parse(oldParts.docs.slice().sort((a,b)=>Number(a.id)-Number(b.id)).map(d=>d.data().data).join(''));if(old.id!==r.id)throw Error('藍點合併前輪迴 ID 不符');if(old.specialReviews||r.specialReviews)r.specialReviews=archiveSpecialMerge(old.specialReviews,r.specialReviews);}
+    const parts=cloudParts(JSON.stringify(r));
     let batch=cloudDb.batch(),ops=0;
     const flushBatch=async()=>{if(ops===350){await batch.commit();batch=cloudDb.batch();ops=0}};
     for(let i=0;i<parts.length;i++){
@@ -4655,6 +4715,7 @@ async function pullCloud(){
       if(snap.size!==meta.partCount)throw Error(root.label+'：輪迴 '+d.id+' 的雲端片段數量不一致，已停止合併');
       const item=JSON.parse(snap.docs.map(x=>x.data().data).join(''));
       if(item.id!==d.id)throw Error(root.label+'：輪迴 ID 不符，已停止');
+      if(existing?.specialReviews||item.specialReviews)item.specialReviews=archiveSpecialMerge(existing?.specialReviews,item.specialReviews);
       await operation('readwrite',{type:'put',item});
       cycleMap.set(item.id,item);
       cyclesAdded++;
