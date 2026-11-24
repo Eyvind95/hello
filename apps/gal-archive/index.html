@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.69｜Gal AI</title>
+<title>輪迴檔案館 V5.70｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -114,6 +114,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .audit-skip-report h3{color:#ffc0cd}.audit-skip-report .archive-skip-list{max-height:260px}
 .handover-entry{border:1px solid var(--border);border-radius:13px;padding:14px;margin:12px 0;background:#141e33;overflow-wrap:anywhere}.handover-entry strong{word-break:break-word}.handover-entry .actions{margin-top:10px}.handover-note{white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0}.handover-thread{text-align:left;width:100%;margin:4px 0}.handover-thread strong{font-size:.91rem;display:block}.handover-warning{margin-top:24px;padding:12px;border:1px solid var(--border);border-radius:10px}.handover-warning strong{color:#e8e2ff}
 .handover-review-details{margin:9px 0;max-width:100%;border-top:1px solid var(--border);padding-top:8px}.handover-review-details summary{cursor:pointer;color:#d9d0ff;font-size:.87rem;padding:8px 4px}.handover-review-details .handover-note{max-height:65vh;overflow:auto;padding:12px;border-radius:9px;background:#0d1729}
+.adventure-native-block{margin:.65em 0;padding:12px;border:1px solid rgba(139,151,177,.3);border-radius:10px;background:rgba(85,99,125,.15);white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-width:100%;box-sizing:border-box;}
 </style>
 <link rel="stylesheet" href="./archive-observatory.css?v=1">
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -122,7 +123,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.69</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.48.zip" download title="下載雙掃描助手 V0.8.48：啟動前驗收模組檢查、頁尾倒數、分批驗收、普通狀態欄格式修復及最新進度保全，失敗仍下載診斷，依輪迴及掃描批次分類；未驗證資料不能匯入正史。">🧩 雙掃描助手 V0.8.48</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="archiveReplayOpen" type="button">🧪 保全資料重新驗收</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.70</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.9.0.zip" download title="下載雙掃描助手 V0.9.00：啟動前驗收模組檢查、頁尾倒數、分批驗收、普通狀態欄格式修復及最新進度保全，失敗仍下載診斷，依輪迴及掃描批次分類；未驗證資料不能匯入正史。">🧩 雙掃描助手 V0.9.00</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="archiveReplayOpen" type="button">🧪 保全資料重新驗收</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><label for="cycleSort" class="note" style="display:block;margin-top:12px">輪迴列表排序</label><select id="cycleSort" class="search" aria-label="輪迴列表排序"><option value="number-desc">輪迴數字：由大到小（預設）</option><option value="number-asc">輪迴數字：由小到大</option><option value="updated">最近修改優先</option></select><div id="cycles"></div><div class="divider"></div><div class="sectionhead"><h2>📚 交接稿</h2><button id="newHandover" type="button" class="btn small primary" title="新增交接對話">＋新增</button></div><p class="note">依目前世界觀分類；每個交接對話可上傳多份檔案。</p><button type="button" id="handoverSharedReviews" class="cycle handover-thread" style="width:100%;margin:4px 0 12px;text-align:left"><strong>💬 大家的評語（共用）</strong><span>這個世界觀只需貼一次，所有交接對話皆可閱讀</span></button><div id="handoverThreads" aria-live="polite"><p class="note">正在載入交接稿…</p></div><div class="actions topsp"><button type="button" class="btn small" id="handoverExport">備份此世界觀（.ghb）</button><button type="button" class="btn small" id="handoverImport">匯入交接稿備份</button><button type="button" class="btn small" id="handoverStorage">檢查本機儲存空間</button></div><p class="note" id="handoverStorageStatus" role="status"></p><input id="handoverImportFile" type="file" accept=".ghb,.json,application/json,application/octet-stream" hidden><p class="note">交接稿與附件已支援手動 Firebase 雲端同步，也包含於上方「完整備份（.gab）」。此區仍可單獨下載 .ghb 備份。</p></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -570,7 +571,7 @@ function galNativeVerify(obj,r){
  // From V0.8.40 forward the structural audit and native-format audit are
  // independent mandatory conditions. Rescue imports built from old snapshots
  // continue under their separate provenance-review rules.
- if(/^0\.8\.(?:[4-9]\d|\d{3,})$/.test(String(obj?.scannerVersion||''))){
+ if(/^0\.(?:8\.(?:[4-9]\d|\d{3,})|(?:9|[1-9]\d+)\.\d+)$/.test(String(obj?.scannerVersion||''))||/^[1-9]\d*\.\d+\.\d+$/.test(String(obj?.scannerVersion||''))){
   if(obj.validation?.integrityOk!==true||
     obj.validation?.nativeFormatComplete!==true||
     obj.nativeFormatAudit?.complete!==true||
@@ -582,6 +583,12 @@ function galNativeVerify(obj,r){
  if(!obj?.target?.worldName||galNativeWorld(obj.target.worldName)!==galNativeWorld(selectedWorld))
   fail.push('世界觀不一致：來源「'+(obj?.target?.worldName||'未填')+'」，目前為「'+selectedWorld+'」');
  const opening=galNativeText(obj?.opening);
+ const adventure=galNativeWorld(selectedWorld)===galNativeWorld('《身為冒險者就可以這樣那樣》');
+ const modernVersion=v=>/^(?:0\.(?:9|[1-9]\d+)\.\d+|[1-9]\d*\.\d+\.\d+)$/.test(String(v||''));
+ const modern=modernVersion(obj?.scannerVersion);
+ if(adventure&&!modern)fail.push('冒險者正史必須由 V0.9.00 或更新掃描器產生，不能省略版本欄位');
+ if(modern&&!modernVersion(obj?.coreVersion))fail.push('新版正史缺少相容的核心版本');
+ if(adventure&&!globalThis.GalArchiveCore?.isAllowedOpeningRow({role:'ai',text:opening},selectedWorld))fail.push('冒險者開場不符原作者預設時間及公會狀態欄，請使用V0.9.00完整掃描');
  if(opening.length<8||opening.length>300000)fail.push('輪迴開場為空、不完整或超過安全上限');
  const sourceMessages=Array.isArray(obj?.messages)?obj.messages:[];
  if(sourceMessages.length<2||sourceMessages.length>20000)fail.push('完整對話數量異常');
@@ -603,7 +610,7 @@ function galNativeVerify(obj,r){
     fail.push('第 '+(i+1)+' 則無時間回覆的原生證據欄位不完整');
    if(sourceUnclocked&&explicitlyUnknown)
     fail.push('第 '+(i+1)+' 則原文明示時間不詳，不應標成完全沒有時間欄');
-   if(sourceUnclocked&&archiveParseGalAIClock(raw))
+   if(sourceUnclocked&&(archiveParseGalAIClock(raw)||globalThis.GalArchiveCore?.adventureClockEvidence(raw?.text)))
     fail.push('第 '+(i+1)+' 則宣告原生無時間，但正文包含可解析的時間');
    if(explicitlyUnknown){
     if(clock!==null)fail.push('第 '+(i+1)+' 則原文明示日期／時間不詳，JSON 劇情時間必須為 null');
@@ -620,6 +627,7 @@ function galNativeVerify(obj,r){
    }else{
     if(!Number.isFinite(clockMs))fail.push('第 '+(i+1)+' 則沒有可靠的 Gal AI 劇情時間');
     const header=archiveParseGalAIClock(raw);
+    if(adventure&&!globalThis.GalArchiveCore?.parseAdventureClock(raw.text))fail.push('第 '+(i+1)+' 則不是冒險者劇情時間格式');
     if(!header||header.ms!==clockMs)fail.push('第 '+(i+1)+' 則 Gal AI 正文時間與 JSON 時間不一致');
    }
   }else if(role==='me'){
@@ -682,12 +690,21 @@ function galNativeVerify(obj,r){
   if(m&&galNativeWorld(m[1])!==galNativeWorld(selectedWorld))fail.push('第 '+(i+1)+' 件事件是另一個世界觀：「'+m[1]+'」');
   if(raw?.role!=='ai'||raw?.status!=='accepted')
     warn.push('第 '+(i+1)+' 件事件為舊版欄位，將校正為 Gal AI 左側／已接取');
+  if(adventure){const ec=globalThis.GalArchiveCore?.parseAdventureClock(raw?.text);if((ec?.iso||null)!==(raw?.gameTime||null)||(!ec&&globalThis.GalArchiveCore?.adventureClockEvidence(raw?.text)))fail.push('第 '+(i+1)+' 件冒險者事件劇情時間不一致');}
   if(!raw?.gameTime)
     warn.push('第 '+(i+1)+' 件事件缺少可核對的劇情時間；保留原始掃描位置，不推測時間');
   events.push({...raw,role:'ai',text:raw?.text||'',status:'accepted',
     sourceCreatedAt:null,sourceTimeOrigin:null,capturedAt:null,receivedAt:null});
  }
  if(events.length!==obj?.validation?.events)fail.push('事件數量與來源驗證報告不同');
+ if(modern||adventure){
+  const aiCount=messages.filter(m=>m.role==='ai').length,nativeCount=1+aiCount+events.length;
+  const all=[...messages,...events].map(row=>row.scanIndex).sort((a,b)=>a-b);
+  const audit=obj?.nativeFormatAudit,ev=obj?.eventAudit;
+  if(obj?.rawRows!==1+all.length||all.some((index,i)=>index!==i+1))fail.push('新版正史完整掃描筆數／索引不一致');
+  if(obj?.validation?.integrityOk!==true||obj?.validation?.nativeFormatComplete!==true||audit?.complete!==true||audit?.checked!==nativeCount||audit?.verified!==nativeCount||audit?.failed!==0)fail.push('新版正史原生格式驗收筆數不一致或尚未通過');
+  if(ev?.complete!==true||ev?.exportedEvents!==events.length||ev?.ordinaryAiTotal!==aiCount||ev?.ordinaryAiVerified!==aiCount||ev?.unresolvedAccepted!==0||ev?.unresolvedHeaders!==0||ev?.unreadableHistoryMarkers!==0||!Array.isArray(ev?.unverifiedCards)||ev.unverifiedCards.length!==0||events.some(row=>row.status!=='accepted'))fail.push('新版正史事件與原生來源稽核尚未通過');
+ }
  if(events.length&&messages.some(m=>!Number.isInteger(m.scanIndex)))
    fail.push('這份舊掃描檔沒有完整的原始訊息順序，事件無法安全定位；請使用 V0.7.6 重新掃描後匯入，避免把事件移到最後');
  if(Array.isArray(obj?.validation?.errors)&&obj.validation.errors.length)fail.push('來源報告仍有錯誤，不能覆蓋');
@@ -1341,6 +1358,15 @@ function archiveSkipCues(m){
   return [...new Set([...m.text.matchAll(archiveSkipCueRegex)].map(x=>x[0]))];
 }
 function archiveSkipMatches(m){return archiveSkipCues(m).length>0}
+function archiveAdventureBodyHtml(value){
+  const text=String(value||''),matches=[...text.matchAll(/^[ \t]*\x60{3}[ \t]*\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm)];
+  let html='',pos=0;
+  for(const block of matches){
+    html+=safe(text.slice(pos,block.index))+'<pre class="adventure-native-block">'+safe(block[1])+'</pre>';
+    pos=block.index+block[0].length;
+  }
+  return html+safe(text.slice(pos));
+}
 function archiveSkipBodyHtml(m){
   const str=String(m?.text||'');
   if(!archiveSkipMatches(m))return safe(str);
@@ -1563,7 +1589,7 @@ function archiveStoryBubble(row,i,record,galContext=null){
     +(story&&m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):'')
     +(!story&&m.storyPlacement?' · 手動位置':'')+'</div>'
     +archiveTimeDisplay(m,galContext)+archiveImagesHtml(m,row.index)
-    +archiveSkipNoticeHtml(story?m:null)+'<div class="body">'+(story?archiveSkipBodyHtml(m):safe(m.text||''))+'</div>'
+    +archiveSkipNoticeHtml(story?m:null)+'<div class="body">'+(record.world==='adventure'&&m.role==='ai'?archiveAdventureBodyHtml(m.text):story?archiveSkipBodyHtml(m):safe(m.text||''))+'</div>'
     +'<div class="msgtools">'+tools+archiveSpecialTools(record,row)+'</div></div></div>';
 }
 
@@ -1912,6 +1938,13 @@ function smartParse(text){
     const line=lines[i],explicit=line.match(/^\s*(?:我|玩家|皮卡|他|Gal\s*AI|AI)\s*[：:]\s*(.*)$/i);
     if(explicit){const label=line.match(/^\s*([^：:]+)[：:]/)[1].trim();begin(/^(我|玩家|皮卡)$/.test(label)?'me':'ai',explicit[1],'high','明確的說話者標記');continue}
     // 真正的 Gal AI 表格通常以日期為首行；只有後續狀態列不視為新訊息。
+    const adventureStart=/^(?:\*\*)?\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}[：:]\d{2}/u.test(line.trim())&&globalThis.GalArchiveCore?.parseAdventureClock(lines.slice(i,i+200).join('\n'));
+    if(adventureStart&&(!active||active.role!=='ai'||!active.text.trim())){
+      const fence=String.fromCharCode(96).repeat(3);
+      const priorFence=lines[i-1]?.trim()===fence;
+      if(priorFence&&active?.text.trimEnd().endsWith(fence))active.text=active.text.trimEnd().slice(0,-3).trimEnd();
+      begin('ai',(priorFence?fence+'\n':'')+line,'medium','偵測到冒險者日期狀態欄');continue;
+    }
     const statusDate=/^[｜|│]\s*(?:\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\d{4}[-/]\d{1,2}[-/]\d{1,2})/u.test(line.trim());
     if(statusDate&&(!active||active.role!=='ai'||!active.text.trim())){
       begin('ai',line,'medium','偵測到 Gal AI 日期狀態表');continue;
@@ -2502,7 +2535,7 @@ $('downloadSite').onclick=async()=>{
   if(page.querySelector('#archiveReplayStatus'))page.querySelector('#archiveReplayStatus').textContent='尚未選擇檔案。';
   let html='<!DOCTYPE html>\n'+page.outerHTML;
   const closing='</scr'+'ipt>';
-  for(const asset of ['chrome-extension/gal-core.js?v=0.8.48','chrome-extension/gal-format-evidence.js?v=0.8.48','archive-replay.js?v=1','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=1']){
+  for(const asset of ['chrome-extension/gal-core.js?v=0.9.0','chrome-extension/gal-format-evidence.js?v=0.9.0','archive-replay.js?v=2','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=1']){
    const response=await fetch(new URL('./'+asset,location.href),{cache:'no-store'});
    if(!response.ok)throw Error('程式讀取失敗：'+asset+'，HTTP '+response.status);
    const script=await response.text();
@@ -2519,7 +2552,7 @@ $('downloadSite').onclick=async()=>{
   const cssLink='<link rel="stylesheet" href="./'+cssAsset+'">';
   if(!html.includes(cssLink))throw Error('獨立網站找不到健康中心 CSS 連結');
   html=html.replace(cssLink,'<style>'+cssText+'</style>');
-  downloadText('輪迴檔案館_V5.69_網站.html',html);
+  downloadText('輪迴檔案館_V5.70_網站.html',html);
   notify('已下載包含交接稿與雲端同步程式的獨立 HTML；私人資料與附件請另外下載完整 .gab 備份');
  }catch(err){alert('下載完整網站失敗：'+String(err?.message||err))}
 };
@@ -2689,6 +2722,9 @@ function archiveReceivedMillis(v){
    Parse a status HEADER near the start of a canonical Gal AI reply only. */
 function archiveParseGalAIClock(m){
   if(m?.role!=='ai'||typeof m.text!=='string')return null;
+  const adventure=globalThis.GalArchiveCore?.parseAdventureClock(m.text);
+  if(adventure)return {ms:Date.parse(adventure.iso),basis:'gal',domain:'story',precision:'minute'};
+  if(globalThis.GalArchiveCore?.adventureClockEvidence(m.text))return null;
   const head=m.text.replace(/\r\n?/g,'\n').split('\n').slice(0,12).join('\n').slice(0,950);
   const date=head.match(/(?:^|\n)\s*[｜|│]?\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u)
     ||head.match(/(?:^|\n)\s*[｜|│]?\s*(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?=\D|$)/u);
@@ -4960,5 +4996,5 @@ window.ArchiveAutoSyncBridge={
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
   }
 })();
-</script><script src="./chrome-extension/gal-core.js?v=0.8.48"></script><script src="./chrome-extension/gal-format-evidence.js?v=0.8.48"></script><script src="./archive-replay.js?v=1"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=1"></script>
+</script><script src="./chrome-extension/gal-core.js?v=0.9.0"></script><script src="./chrome-extension/gal-format-evidence.js?v=0.9.0"></script><script src="./archive-replay.js?v=2"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=1"></script>
 </body></html>
