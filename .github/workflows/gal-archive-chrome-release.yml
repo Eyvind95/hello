@@ -25,9 +25,10 @@ jobs:
           node-version: '22'
       - name: Verify scanner tests and production JavaScript syntax
         run: |
-          node --test apps/gal-archive/chrome-extension/gal-core.test.js apps/gal-archive/chrome-extension/gal-import.test.js apps/gal-archive/chrome-extension/gal-binding.test.js apps/gal-archive/chrome-extension/gal-scroll.test.js apps/gal-archive/chrome-extension/gal-scan-status.test.js apps/gal-archive/chrome-extension/gal-continue-audit.test.js
+          node --test apps/gal-archive/chrome-extension/gal-core.test.js apps/gal-archive/chrome-extension/gal-format-evidence.test.js apps/gal-archive/chrome-extension/gal-import.test.js apps/gal-archive/chrome-extension/gal-binding.test.js apps/gal-archive/chrome-extension/gal-scroll.test.js apps/gal-archive/chrome-extension/gal-scan-status.test.js apps/gal-archive/chrome-extension/gal-continue-audit.test.js
           node --test apps/gal-archive/tools/inspect-checkpoint.test.js apps/gal-archive/tools/inspect-1685-projections.test.js apps/gal-archive/tools/revalidate-checkpoint.test.js apps/gal-archive/tools/find-scan-batches.test.js
           node --check apps/gal-archive/chrome-extension/gal-core.js
+          node --check apps/gal-archive/chrome-extension/gal-format-evidence.js
           node --check apps/gal-archive/tools/inspect-checkpoint.js
           node --check apps/gal-archive/tools/inspect-1685-projections.js
           node --check apps/gal-archive/tools/revalidate-checkpoint.js
@@ -48,7 +49,7 @@ jobs:
               if p.is_file() and p.suffix in {".js",".html",".json",".txt"}
               and ".test." not in p.name and p.name!="verify-cycle17.js")
           required={"manifest.json","background.js","content.js","gal-core.js",
-              "gal-content.js","gal-launcher.js","popup.html"}
+              "gal-content.js","gal-format-evidence.js","gal-launcher.js","popup.html"}
           assert required.issubset({p.name for p in selected}), "missing production file"
           with ZipFile(target,"w",ZIP_DEFLATED,compresslevel=9) as archive:
               for item in selected: archive.write(item,item.name)
