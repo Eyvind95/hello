@@ -222,7 +222,8 @@ function installGalScanStatus(api){
    !Object.values(runs).some(r=>r.scanRunId!==run.scanRunId&&r.state==='running'&&r.source===run.source);
   if((terminal.has(run.state)&&!late)||run.exportPending)return publicStatus(run);
   if(!terminal.has(message.state)||!Number.isInteger(message.scanned)||
-     message.scanned<0||message.scanned>20000)throw Error('終態無效');
+     message.scanned<0||message.scanned>20000||message.scanned<run.scanned)
+    throw Error('終態掃描數不得小於已確認進度');
   const diagnostic=JSON.parse(message.diagnostic);
   if(diagnostic.scanRunId!==run.scanRunId||diagnostic.cycleId!==run.cycleId)throw Error('診斷來源不一致');
   let completedResult=null;
