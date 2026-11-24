@@ -1364,15 +1364,20 @@ async function eventThreeRowProbe(profile){
  if(busy)return {ok:false,error:'正在掃描中'};
  if(core?.version!==SCANNER_VERSION)return {ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'};
  busy=true;cancelled=false;paused=false;target=profile;mount();localDifferences.clear();
+ const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'event-three',scannerVersion:SCANNER_VERSION};
+ let registered=false,localRows=[];
  $('gal-scan-difference').hidden=true;$('gal-scan-difference-label').hidden=true;
  try{
   await fetchCurrentBinding(profile);
+  const response=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
+  if(!response?.ok)throw Error(response?.error||'無法建立事件測試批次');
+  run.batchFolder=response.status?.batchFolder;registered=true;activeRun=run;
   const shot=snapshot(null,'auto',false,true);
   diagnostic=inspect();
   if(!shot.rows.length)throw Error('目前畫面沒有可讀取的訊息');
   const scanMode=shot.method==='world-header-reaction-bar'?'bounded':'legacy';
   const picked=pickVisibleEventTriple(shot.rows,shot.root);
-  const rows=[picked.previous,picked.event,picked.next];
+  const rows=[picked.previous,picked.event,picked.next];localRows=rows;
   const sourceCounts=new Map();
   for(const row of rows){
    const id=row.formatSource?.nativeReply?.messageId;
@@ -1387,7 +1392,7 @@ async function eventThreeRowProbe(profile){
   const eventTestId=crypto.randomUUID();
   const result={
    format:'gal-ai-event-three-row-test',version:1,generatedAt:new Date().toISOString(),
-   scannerVersion:SCANNER_VERSION,coreVersion:core.version,eventTestId,
+   scannerVersion:SCANNER_VERSION,coreVersion:core.version,eventTestId,scanRunId:run.scanRunId,importable:false,
    scope:'event-three-row-preview',
    source:{url:location.origin+location.pathname,origin:location.origin,path:location.pathname},
    target:{cycleId:profile.cycleId,worldName:profile.worldName,cycleTitle:profile.cycleTitle,
@@ -1405,23 +1410,35 @@ async function eventThreeRowProbe(profile){
    },
    note:'局部事件三則測試：只讀目前畫面附近的上一則 Gal AI、事件、下一則玩家回應；不匯入、不覆蓋正式正史。'
   };
-  diagnostic={...diagnostic,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+  diagnostic={...diagnostic,...run,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
    eventThreeRowTest:{eventTestId,selection:result.selection,
     previousAi:previousFormat.check,event:eventFormat.check,
     localDifferences:{previousAi:previousFormat.localContext||null,event:eventFormat.localContext||null}}};
-  downloadJson('Gal_AI_事件三則測試_',result);
-  downloadJson('輪迴檔案館_事件三則診斷_',diagnostic);
+  const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
+   state:'completed',scanned:3,result:JSON.stringify(result),
+   diagnostic:JSON.stringify(diagnostic)});
+  if(!saved?.ok)throw Error(saved?.error||'事件測試下載尚未完成');
   const diff=eventFormat.localContext;
   status('✅ 事件三則測試完成，不會修改正式正史。\n'+
    '上一則 Gal AI：'+previousFormat.check.reason+'\n事件：'+eventFormat.check.reason+
    '\n下一則玩家回應：已擷取'+
    (diff?'\n事件首個差異：掃描「'+diff.scanned+'」／native「'+diff.native+'」':'')+
-   '\n已下載三則測試 JSON 與三則診斷 JSON。');
+   '\n已建立事件測試批次：'+(run.batchFolder||'未知')+
+   '\n下載狀態：'+(saved.status?.state==='completed'?'已核對完成':'等待 Chrome 實際下載')+'。');
   return {ok:true,eventTestId,eventReason:eventFormat.check.reason};
  }catch(error){
   const message=String(error?.message||error);
-  diagnostic={...(diagnostic||inspect()),scannerVersion:SCANNER_VERSION,coreVersion:core.version,eventThreeRowError:message};
-  status('⛔ 事件三則測試失敗：'+message+'\n沒有啟動完整掃描，也沒有修改正式正史。');
+  diagnostic={...(diagnostic||inspect()),...run,scannerVersion:SCANNER_VERSION,
+   coreVersion:core.version,eventThreeRowError:message,
+   errorContexts:failureContexts(localRows,null,message)};
+  if(registered){
+   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:'failed',
+    scanned:localRows.length,reason:message,
+    unverified:localRows.length?JSON.stringify(unverifiedEvidence(localRows,run,message,diagnostic)):null,
+    diagnostic:JSON.stringify(diagnostic)}).catch(error=>({error:String(error)}));
+   status('⛔ 事件三則測試失敗：'+message+'\n批次：'+(run.batchFolder||'未知')+
+    '\n'+(saved?.ok?'已送出保全下載':'保全失敗：'+(saved?.error||'未知')));
+  }else status('⛔ 事件三則測試啟動失敗：'+message);
   return {ok:false,error:message};
  }finally{busy=false}
 }
