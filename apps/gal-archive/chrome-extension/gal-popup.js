@@ -65,10 +65,10 @@ async function start(preview){
    try { await chrome.scripting.executeScript({target:{tabId:tab.id},world:'MAIN',files:['gal-native-source.js']}); }
    catch { /* The scanner reports unavailable native source and supports pasted text. */ }
   }
-  await chrome.scripting.executeScript({target:{tabId:tab.id},files:['gal-core.js','gal-content.js']});
+  await chrome.scripting.executeScript({target:{tabId:tab.id},files:['gal-core.js','gal-format-evidence.js','gal-content.js']});
   const expected=chrome.runtime.getManifest().version;
   const loaded=await chrome.tabs.sendMessage(tab.id,{type:'gal-scan-ping'});
-  if(loaded?.version!==expected||loaded?.coreVersion!==expected)
+  if(loaded?.version!==expected||loaded?.coreVersion!==expected||loaded?.formatEvidenceVersion!==expected||loaded?.formatEvidenceReady!==true)
    throw Error('分頁的掃描器或核心版本與已安裝版本不一致');
   const resp=await chrome.tabs.sendMessage(tab.id,{type:'gal-scan-start',profile:{...p,managerNames},preview});
   if(!resp?.ok)throw Error(resp?.error||'頁面沒有接收到啟動訊號');
@@ -90,10 +90,10 @@ async function probeEvent(){
   if(['www.whif.io','whif.io'].includes(new URL(tab.url).hostname)){
    try{await chrome.scripting.executeScript({target:{tabId:tab.id},world:'MAIN',files:['gal-native-source.js']})}catch{}
   }
-  await chrome.scripting.executeScript({target:{tabId:tab.id},files:['gal-core.js','gal-content.js']});
+  await chrome.scripting.executeScript({target:{tabId:tab.id},files:['gal-core.js','gal-format-evidence.js','gal-content.js']});
   const expected=chrome.runtime.getManifest().version;
   const loaded=await chrome.tabs.sendMessage(tab.id,{type:'gal-scan-ping'});
-  if(loaded?.version!==expected||loaded?.coreVersion!==expected)throw Error('分頁的掃描器或核心版本與已安裝版本不一致');
+  if(loaded?.version!==expected||loaded?.coreVersion!==expected||loaded?.formatEvidenceVersion!==expected||loaded?.formatEvidenceReady!==true)throw Error('分頁的掃描器或核心版本與已安裝版本不一致');
   const resp=await chrome.tabs.sendMessage(tab.id,{type:'gal-scan-event-probe',profile:{...p,managerNames}});
   if(!resp?.ok)throw Error(resp?.error||'頁面沒有接收到事件三則測試訊號');
   write('已啟動事件三則測試。\n完成後會直接下載測試 JSON 與診斷 JSON。');

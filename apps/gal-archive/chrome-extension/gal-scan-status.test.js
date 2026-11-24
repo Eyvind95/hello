@@ -74,7 +74,7 @@ function harness(){
   scanRunId:runId,target:{cycleId:from.url===B?CYCLE_B:CYCLE_A},
   source:{url:from.url},
   scope:scope==='preview'?'opening-first-pair-preview':'entire-opening-to-bottom',
-  validation:{ok:true,pairs:1,autoContinues:0},
+  validation:{ok:true,nativeFormatComplete:true,pairs:1,autoContinues:0},nativeFormatAudit:{complete:true},
   rawRows:count,messages:[{role:'me'},{role:'ai'}],events:[]
  });
  const finish=(state='completed',runId=RUN1,from=sender(),scope='full',count=4)=>dispatch({
@@ -286,4 +286,24 @@ test('repeated progress checkpoints stay in extension storage without browser do
  assert.equal(saved.scanned,3200);
  assert.ok(saved.files.diagnostic);
  assert.ok(saved.files.unverified);
+});
+
+test('manual preservation refreshes newer evidence without re-downloading identical count',async()=>{
+ const h=harness();await h.start();
+ for(const length of [3,8,8,4]){
+  const r=await h.dispatch({type:'gal-run-manual-save',scanRunId:RUN1,cycleId:CYCLE_A,unverified:h.unverified(RUN1,h.sender(),length)});
+  assert.equal(r.ok,true);
+  assert.equal(r.status.unverifiedCount,length===3?3:8);
+ }
+ assert.equal(h.items.filter(x=>x.filename.endsWith('/未驗證掃描資料.json')).length,2);
+ assert.equal(h.liveStatus().scanned,8);
+});
+test('background refuses a full canonical export when independent native audit is missing or false',async()=>{
+ const h=harness();await h.start();
+ for(const value of [undefined,false]){
+  const d=JSON.parse(h.result());d.validation.nativeFormatComplete=value;d.nativeFormatAudit.complete=value;
+  const r=await h.dispatch({type:'gal-run-finish',scanRunId:RUN1,cycleId:CYCLE_A,state:'completed',scanned:4,result:JSON.stringify(d),diagnostic:h.diag()});
+  assert.equal(r.ok,false);assert.match(r.error,/原生格式/);
+ }
+ assert.equal(h.items.filter(x=>x.filename.endsWith('/原生正史.json')).length,0);
 });
