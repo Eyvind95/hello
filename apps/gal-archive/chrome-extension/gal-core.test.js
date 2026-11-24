@@ -1613,3 +1613,20 @@ test('V0.9.02 raw DOM code proof is independent of serialized bold and restores 
  for(const bad of [{...opts,codeBlocks:[]},{...opts,codeBlocks:[rawHud.replace('10/10','9/10')]},{...opts,source:'unknown'},{...opts,event:true}])assert.equal(core.compareNativeParagraphs(visible,native,bad).text,null);
  assert.equal(core.compareNativeParagraphs(visible,native.replace('報酬二','報酬二{{可見標記}}'),opts).text,null);
 });
+
+
+test('V0.9.03 quoted adventure location only joins the bounded HUD heading; preserves literal quotes and native context gaps',()=>{
+ const core=context.GalArchiveCore,f='\x60\x60\x60';
+ const h='**3000年01月02日 07:20 I 測試鎮「碎瓶」酒館**';
+ const hud=[h,'🔹【基礎】🔹','等級：3 I 10%','血量：25/25','🔹【共鳴契】🔹','對象：無','深度：無','🔹【狀態】🔹','測試狀態'].join('\n');
+ const split=hud.replace('「碎瓶」','\n「碎瓶」\n'),body='\n測試正文。\n\n**系統對話框**\n保留「引號」。';
+ const dom=split+body.replace(/\n\n/g,'\n'),prefix='{{測試上下文}}\n\n',native=prefix+f+'\n'+hud+'\n'+f+body;
+ const opts={source:'whif-message-content',codeBlocks:[split.replace(/^\*\*([\s\S]*?)\*\*/,'$1')]};
+ assert.equal(core.parseGameTime(dom).civil,'3000/01/02 07:20');
+ assert.equal(core.parseGameTime(dom).location,'測試鎮「碎瓶」酒館');
+ assert.equal(core.compareNativeParagraphs(dom,native,opts).text,native);
+ assert.equal(core.compareNativeParagraphs(hud+body,native,{...opts,codeBlocks:[hud.replace(/^\*\*(.*?)\*\*/,'$1')]}).text,native);
+ for(const bad of [dom.replace('「碎瓶」','碎瓶'),dom.replace('「碎瓶」','「碎瓶'),dom.replace('「碎瓶」','任意\n「碎瓶」'),dom.replace('07:20','24:20'),dom.replace('01月02日','02月30日'),dom.replace('🔹【基礎】🔹','其他')])assert.equal(core.parseGameTime(bad),null);
+ for(const bad of [native.replace('07:20','07:21'),native.replace('「碎瓶」','「其他」'),native.replace('保留「引號」','保留引號'),native.replace(prefix,'{{甲}}\n{{乙}}\n'),native.replace(prefix,'{{user|role}}\n\n'),native.replace(prefix,'{{甲}}\n\n\n\n\n')])assert.equal(core.compareNativeParagraphs(dom,bad,opts).text,null);
+ assert.equal(core.compareNativeParagraphs(dom,native,{...opts,codeBlocks:[]}).text,null);
+});
