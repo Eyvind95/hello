@@ -1594,3 +1594,22 @@ test('V0.9.00 ordered multi-code-block evidence preserves original fences and re
  assert.equal(compare(stripped[0]+body+stripped[1]+'\n\n'+stripped[2],raw,stripped).text,raw);
  assert.equal(compare(dom,raw,blocks.map((x,i)=>i===1?x+'異常':x)).text,null);
 });
+
+
+test('V0.9.02 raw DOM code proof is independent of serialized bold and restores bounded context/paragraphs',()=>{
+ const core=context.GalArchiveCore,f='\x60\x60\x60';
+ const hud=['**3000年01月01日 08:00 I 冒險者公會 **','🔹【基礎】🔹','等級：1 I 0%','種族：{k}','血量：10/10','🔹【共鳴契】🔹','對象：無','深度：無','🔹【狀態】🔹','測試狀態'].join('\n');
+ const rawHud=hud.replace(/^\*\*(.*?)\*\*/,'$1');
+ const body='\n測試正文。\n\n**測試委託**\n任務一\n報酬一\n\n任務二\n報酬二';
+ const visible=hud.replace(' **','**')+'\n'+body.replace(/\n+/g,'');
+ const wrap=f+'\n'+hud+'\n'+f+body;
+ const prefix='{{測試觀察布告欄}}\n',native=prefix+wrap;
+ const opts={source:'whif-message-content',codeBlocks:[rawHud],statusText:rawHud};
+ assert.equal(core.compareNativeParagraphs(visible,wrap,{...opts,opening:true}).text,wrap);
+ assert.equal(core.compareNativeParagraphs(visible,native,opts).text,native);
+ assert.equal(core.compareNativeParagraphs(visible.replace(/^\*\*(.*?)\*\*/,'$1'),wrap,{...opts,codeBlocks:[hud]}).text,null);
+ assert.equal(core.parseGameTime(native).civil,'3000/01/01 08:00');
+ for(const bad of [native.replace('報酬二','報酬三'),native.replace('08:00','08:01'),native.replace('種族：{k}','種族：其他'),native.replace('**測試委託**','測試委託'),native.replace(prefix,'{{user|role}}\n'),native.replace(prefix,'{{img:foo}}\n'),native.replace(prefix,'{{甲}}{{乙}}\n'),native.replace(prefix,'正文\n'+prefix),native.replace(prefix,'{{甲}}\n{{乙}}\n'),native.replace(f+'\n'+hud,f+'js\n'+hud)])assert.equal(core.compareNativeParagraphs(visible,bad,opts).text,null);
+ for(const bad of [{...opts,codeBlocks:[]},{...opts,codeBlocks:[rawHud.replace('10/10','9/10')]},{...opts,source:'unknown'},{...opts,event:true}])assert.equal(core.compareNativeParagraphs(visible,native,bad).text,null);
+ assert.equal(core.compareNativeParagraphs(visible,native.replace('報酬二','報酬二{{可見標記}}'),opts).text,null);
+});
