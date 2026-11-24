@@ -38,7 +38,11 @@ async function transaction(stores,mode,work){
    tx=db.transaction(stores,mode);
    output=work(tx);
   }catch(err){if(tx)try{tx.abort()}catch(_){}reject(err);return}
-  tx.oncomplete=()=>resolve(output?.result);
+  tx.oncomplete=()=>{
+   if(mode==='readwrite'&&!window.__archiveAutoApplyingCloud)
+    window.dispatchEvent(new CustomEvent('archive:handover-changed'));
+   resolve(output?.result);
+  };
   tx.onerror=()=>reject(tx.error||Error('交接稿儲存失敗'));
   tx.onabort=()=>reject(tx.error||Error('交接稿儲存中斷'));
  });
