@@ -1456,20 +1456,71 @@ function archiveSpecialDiagnosticPlan(record,timeline,diagnostic,now){
  }
  return {updates,unmatched,already};
 }
+// Commit only review metadata against the latest IndexedDB record, never a stale
+// copy of the canonical dialogue, events, ordering, clock or images.
+async function archiveSpecialSaveReview(cycleId,apply){
+ let changed=0;
+ await new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE,'readwrite'),store=tx.objectStore(STORE),request=store.get(cycleId);
+  let failure;
+  request.onsuccess=()=>{
+   try{
+    const record=request.result;if(!record)throw Error('輪迴已不存在，取消標記');
+    const updates=apply(record);changed=Object.keys(updates||{}).length;
+    if(changed){record.specialReviews=archiveSpecialMerge(record.specialReviews,updates);record.updatedAt=new Date().toISOString();store.put(record)}
+   }catch(e){failure=e;tx.abort()}
+  };
+  tx.oncomplete=()=>resolve();tx.onerror=()=>reject(failure||tx.error||Error('藍點寫入失敗'));
+  tx.onabort=()=>reject(failure||tx.error||Error('藍點寫入取消'));
+ });
+ if(changed){window.dispatchEvent(new Event('archive:local-changed'));await refresh()}
+ return changed;
+}
+function archiveSpecialPreviewEvidence(diagnostic,plan,summary,count){
+ return new Promise(resolve=>{
+  const dialog=document.createElement('dialog');dialog.style.cssText='width:min(92vw,850px);max-height:85vh;overflow:auto;background:#12213a;color:#e5ecff;border:1px solid #50607e;border-radius:12px;padding:16px';
+  const h=document.createElement('h3');h.textContent='🔵 原生格式異常・私人唯讀鑑識';
+  const p=document.createElement('p');p.textContent=summary;
+  const note=document.createElement('p');note.className='note';note.textContent='此處的完整 DOM／原生文字只留在本機預覽，關閉即移除；無法唯一核對的來源不建立藍點。請保留原始診斷 JSON。';
+  dialog.append(h,p,note);
+  const failures=diagnostic.nativeFormatAudit.failures;
+  for(const failure of failures){
+   const details=document.createElement('details'),head=document.createElement('summary');
+   const index=failure?.scanIndex;
+   const state=plan.unmatched.includes(index)?'未能唯一核對':plan.already.includes(index)?'已有人工狀態':'候選藍點';
+   head.textContent=(Number.isInteger(index)?'第 '+(index+1)+' 則':'未知位置')+' · '+state+' · '+String(failure?.reason||'格式異常');
+   details.append(head);
+   for(const [label,value] of [['來源 ID',failure?.sourceMessageId],['DOM 原文',failure?.originalDomText],['原生文字',failure?.originalNativeText]]){
+    const title=document.createElement('strong');title.textContent=label;
+    const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:#0e1830;padding:8px';pre.textContent=typeof value==='string'?value:'未取得';
+    details.append(title,pre);
+   }
+   dialog.append(details);
+  }
+  const actions=document.createElement('div');actions.className='actions topsp';
+  const cancel=document.createElement('button');cancel.className='btn';cancel.textContent='關閉／不標記';
+  const ok=document.createElement('button');ok.className='btn primary';ok.textContent='確認新增 '+count+' 則藍點';ok.disabled=!count;
+  actions.append(cancel,ok);dialog.append(actions);document.body.append(dialog);
+  const finish=result=>{dialog.remove();resolve(result)};
+  cancel.onclick=()=>finish(false);ok.onclick=()=>finish(true);
+  dialog.addEventListener('cancel',e=>{e.preventDefault();finish(false)});
+  if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');
+ });
+}
 async function archiveSpecialReadDiagnostic(record){
  const input=document.createElement('input');input.type='file';input.accept='.json,application/json';
  input.onchange=async()=>{
   try{
    const file=input.files?.[0];if(!file)return;
    if(current()?.id!==record.id||tab!=='chat')throw Error('輪迴已切換，取消讀取');
-   const latest=current(),diagnostic=JSON.parse((await readBackupFile(file)).replace(/^\uFEFF/,''));
-   if(current()?.id!==latest.id)throw Error('輪迴已切換，取消讀取');
+   const diagnostic=JSON.parse((await readBackupFile(file)).replace(/^\uFEFF/,''));
+   const latest=current();if(latest?.id!==record.id||tab!=='chat')throw Error('輪迴已切換，取消讀取');
    const plan=archiveSpecialDiagnosticPlan(latest,archiveStoryTimeline(latest),diagnostic,new Date().toISOString());
    const count=Object.keys(plan.updates).length;
    const summary='可對應既有訊息 '+count+' 則；已有人工狀態 '+plan.already.length+' 則；無法唯一核對 '+plan.unmatched.length+' 則。只新增藍點，不匯入或覆蓋任何正文。';
-   if(!count){alert(summary);return}
-   if(!confirm(summary+'\n確定新增藍點？'))return;
-   await put({...latest,specialReviews:archiveSpecialMerge(latest.specialReviews,plan.updates)});notify('已加入 '+count+' 則特殊訊息藍點');
+   // Read-only evidence drawer, not part of IndexedDB, Firebase, or canonical import.
+   if(!await archiveSpecialPreviewEvidence(diagnostic,plan,summary,count))return;
+   const written=await archiveSpecialSaveReview(latest.id,fresh=>archiveSpecialDiagnosticPlan(fresh,archiveStoryTimeline(fresh),diagnostic,new Date().toISOString()).updates);notify('已加入 '+written+' 則特殊訊息藍點');
   }catch(e){alert('診斷讀取停止：'+String(e.message||e))}
  };
  input.click();
@@ -2079,10 +2130,18 @@ if(b.dataset.specialKey!==undefined){
  if(action!=='resolve'&&action!=='mark')return;
  let reason='';
  if(action==='mark'){const answer=prompt('請輸入特殊訊息原因（不修改正文）',prior?.reason||'原生格式／官方複製異常');if(answer===null||!answer.trim())return;reason=answer.trim();}
- const mark=archiveSpecialNext(prior,action,reason,new Date().toISOString());if(!mark)return;
- mark.anchorText=prior?.anchorText??row.entry.text;mark.editedText=row.entry.text;
- const updated={...r,specialReviews:archiveSpecialMerge(r.specialReviews,{[key]:mark})};
- await put(updated);notify(action==='resolve'?'藍點已關閉，證據仍保留':'已標為特殊訊息');return;
+ try{
+  const written=await archiveSpecialSaveReview(r.id,fresh=>{
+   const target=archiveStoryTimeline(fresh).find(x=>archiveSpecialKey(x)===key);
+   if(!target||target.entry.text!==row.entry.text)throw Error('訊息內容或來源已變更，請重新核對');
+   const old=archiveSpecialState(fresh,target);
+   const mark=archiveSpecialNext(old,action,reason,new Date().toISOString());if(!mark)return {};
+   mark.anchorText=old?.anchorText??target.entry.text;mark.editedText=target.entry.text;
+   return {[key]:mark};
+  });
+  if(written)notify(action==='resolve'?'藍點已關閉，證據仍保留':'已標為特殊訊息');
+ }catch(e){notify(String(e.message||e))}
+ return;
 }
 if(b.dataset.auditJump!==undefined){archiveAuditJump(Number(b.dataset.auditJump),b.dataset.auditKind||'pair',b.dataset.auditTarget||'chat');return}
 if(b.id==='archiveChooseImage'){archivePickImageFiles(archiveAddDraftFiles);return}
