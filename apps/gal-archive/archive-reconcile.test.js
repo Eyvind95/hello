@@ -96,7 +96,7 @@ test('cannot accept other missing markers, untrusted events, inaccurate merged s
   x=>{x.diag.eventAudit.ordinaryAiVerified=1313},
   x=>{x.cp.rows[95].eventType=null},
   x=>{x.cp.rows[1536].autoContinue=false},
-  x=>{x.cp.rows[200].sourceMessageId=x.cp.rows[198].sourceMessageId}
+  x=>{x.cp.rows[201].sourceMessageId=x.cp.rows[199].sourceMessageId}
  ]){
   const x=fixture();tweak(x);
   assert.throws(()=>helper.verify(x.cp,x.diag,true),/拒絕/,tweak.toString());
