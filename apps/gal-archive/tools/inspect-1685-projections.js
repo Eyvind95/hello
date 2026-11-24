@@ -17,7 +17,7 @@ const hash=x=>crypto.createHash('sha256').update(String(x)).digest('hex').slice(
 const norm=x=>String(x||'').replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').trim();
 const compact=x=>[...norm(x).replace(/\s/gu,'')];
 const imageTail=/(?:[ \t]*\n)?\{\{(?:img|image):+[^{}\n]+\}\}[ \t]*$/i;
-const template=/\{\{([^{}\n]{1,300})\}\}/gu;
+const template=/\{\{([^{}]{1,1000})\}\}/gu;
 const fence=/^[ \t]*\x60{3}([^\n]*)\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm;
 const unsafe=/^(?:user|char|character|img(?:age)?\s*:|[\w.-]+\s*:\/{2})/i;
 const quoteChars=new Set(['「','」']);
@@ -126,6 +126,13 @@ function analyze(data){
   domHasClock:/\d{4}\s*年\s*\d{1,2}\s*月/.test(display),
   nativeHasClock:/\d{4}\s*年\s*\d{1,2}\s*月/.test(source),
   original:difference(display,source),
+  rawStructure:{
+   hiddenTemplateCount:[...source.matchAll(template)].filter(m=>!unsafe.test(m[1].trim())).length,
+   hiddenTemplatePositions:[...source.matchAll(template)].filter(m=>!unsafe.test(m[1].trim())).map(m=>m.index),
+   fenceBlockCount:[...source.matchAll(fence)].length,
+   terminalImageMarker:imageTail.test(source),
+   nativeLeadingCodePoint:source[0]?.codePointAt(0).toString(16)||null
+  },
   candidatesTested:all.length,exactCandidateCount:fully.length,
   candidates:selected,
   warning:'僅供離線找出確切格式差異，未驗證當時 DOM codeBlocks/statusText/chapterTitle；即使 exact=true 仍不得跳過來源驗證、重新簽發正史或填入假時間。'};
