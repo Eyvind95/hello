@@ -16,7 +16,7 @@ function harness(){
  const store={galProfilesByPage:{[A]:{cycleId:CYCLE_A,cycleTitle:'第5輪迴'},
   [B]:{cycleId:CYCLE_B,cycleTitle:'第9周目'}}};
  const items=[],shown=[],events={};
- let seq=1,listen,interrupt,alarm,updated,removed,changed;
+ let seq=1,listen,interrupt,alarm,updated,removed,changed,emergencySnapshot=null;
  const api={
   runtime:{
    id,getURL:s=>'chrome-extension://'+id+'/'+s,getManifest:()=>({version:'0.8.38'}),
@@ -32,7 +32,7 @@ function harness(){
   alarms:{create:async()=>{},clear:async()=>{},onAlarm:{addListener:f=>alarm=f}},
   offscreen:{createDocument:async()=>{}},
   tabs:{
-   sendMessage:async()=>null,
+   sendMessage:async(tab,msg)=>msg?.type==='gal-scan-emergency-snapshot'?emergencySnapshot:null,
    onUpdated:{addListener:f=>updated=f},onRemoved:{addListener:f=>removed=f}
   },
   downloads:{
@@ -85,6 +85,7 @@ function harness(){
  },from);
  const statuses=()=>items.filter(x=>x.filename.endsWith('/掃描狀態.json'));
  return {store,items,shown,start,finish,dispatch,sender,diag,unverified,result,statuses,helpers,
+  provideEmergency:x=>emergencySnapshot=x,
   install:async()=>{events.installed();for(let i=0;i<6;i++)await new Promise(ok=>setImmediate(ok))},
   alarm:async name=>{alarm({name});for(let i=0;i<6;i++)await new Promise(ok=>setImmediate(ok))},
   liveStatus(runId=RUN1){return store.galScanRuns[runId]}};
@@ -205,6 +206,48 @@ test('interruption on reload retains frozen batch and records terminal failure',
  assert.equal(h.liveStatus().batchFolder,path);
  assert.ok(h.statuses().at(-1).filename.includes(path));
 });
+
+test('paused and cancelled runs retain raw data with per-run status, never a fake canonical scan',async()=>{
+ for(const state of ['paused','cancelled']){
+  const h=harness();
+  await h.start();
+  const result=await h.finish(state,RUN1,h.sender(),'full',6);
+  assert.equal(result.ok,true);
+  assert.equal(result.status.state,state);
+  assert.ok(result.status.files.unverified);
+  assert.ok(result.status.files.diagnostic);
+  assert.equal(result.status.files.result,undefined);
+  assert.equal(new Set(h.statuses().map(x=>x.filename)).size,1);
+ }
+});
+test('four-hour timeout requests emergency page memory and writes nonimportable evidence before failed status',async()=>{
+ const h=harness();await h.start();
+ h.provideEmergency({scanRunId:RUN1,scanned:3,diagnostic:h.diag(),unverified:h.unverified()});
+ await h.alarm('gal-scan-deadline:'+RUN1);
+ assert.equal(h.liveStatus().state,'failed');
+ assert.equal(h.liveStatus().scanned,3);
+ assert.ok(h.liveStatus().files.unverified?.path);
+ assert.ok(h.liveStatus().files.diagnostic?.path);
+ assert.ok(!h.liveStatus().files.result?.path);
+});
+test('interrupted original timer can be recovered only with same scan ID and strictly validated canonical result',async()=>{
+ const h=harness();await h.start();
+ await h.alarm('gal-scan-deadline:'+RUN1);
+ assert.equal(h.liveStatus().reason,'掃描或下載逾時');
+ const recovered=await h.finish('completed');
+ assert.equal(recovered.ok,true,JSON.stringify(recovered));
+ assert.equal(recovered.status.state,'completed');
+ assert.equal(recovered.status.lateCompletionRecovered,true);
+ const second=await h.start(RUN2);
+ assert.equal(second.ok,true);
+});
+test('download folder shortcut opens a verified file, not an invented directory path',async()=>{
+ const h=harness();await h.start();await h.finish('failed',RUN1,h.sender(),'full',3);
+ const opened=await h.dispatch({type:'gal-run-open-folder',scanRunId:RUN1,cycleId:CYCLE_A});
+ assert.equal(opened.ok,true);
+ assert.ok(h.shown.length===1&&Number.isInteger(h.shown[0]));
+});
+
 test('unverified file cannot be represented as a completed authoritative scan',async()=>{
  const h=harness();await h.start();
  const request={type:'gal-run-finish',scanRunId:RUN1,cycleId:CYCLE_A,
