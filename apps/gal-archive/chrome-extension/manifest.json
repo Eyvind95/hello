@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.41",
-  "version_name": "V0.8.41 終端通知與事件引號修復",
-  "description": "輪迴檔案館 V0.8.41：終端通知與保留狀態欄圍欄的事件，經唯一來源、完整文字與時間驗證後還原原生中文引號及段落；保全格式異常，禁止未驗證正史匯入。",
+  "version": "0.8.42",
+  "version_name": "V0.8.42 掃描進度靜默更新",
+  "description": "輪迴檔案館 V0.8.42：即時進度儲存在擴充功能內，僅開始、結束及手動保全下載狀態；保留原生格式與完整性驗收。",
   "permissions": [
     "storage",
     "activeTab",
