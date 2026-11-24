@@ -1237,8 +1237,10 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    const id=row.formatSource?.nativeReply?.messageId;
    if(id)sourceCounts.set(id,(sourceCounts.get(id)||0)+1);
   }
-  autoContinueAudit=verifyAutoContinueAudit(collected,continuedPositions,
-   eventAudit.history,eventAudit.senders);
+  autoContinueAudit=continuedPositions.length
+   ?verifyAutoContinueAudit(collected,continuedPositions,eventAudit.history,eventAudit.senders)
+   :{ok:true,notApplicable:true,candidateIndices:[],observedNativeMarkers:eventAudit.history.size,
+     scannedRows:collected.length};
   if(!autoContinueAudit.ok)
    throw Error('自動繼續逐筆來源驗證未通過（'+autoContinueAudit.problems
     .map(p=>p.scanIndex??p.scope).join('、')+'）；請依診斷 autoContinueAudit 核對，不得猜測漏失訊息');
