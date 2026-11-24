@@ -31,7 +31,7 @@ function fixture(){
 }
 test('read-only replay validates 1685 as untimed without treating checkpoint as importable',()=>{
  const result=replay(fixture());
- assert.equal(result.scannerCore,'0.8.37');
+ assert.equal(result.scannerCore,'0.8.38');
  assert.equal(result.validationOkOffline,true,JSON.stringify(result.errors));
  assert.equal(result.problem1685.sourceVerifiedUntimedNative,true);
  assert.equal(result.problem1685.gameTime,null);
