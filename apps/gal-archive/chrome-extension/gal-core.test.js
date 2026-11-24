@@ -1127,7 +1127,7 @@ test('V0.8.39: cycle 9 combined formatting fails closed for prose edits, duplica
  const cases=[
   ['prose swapped',native.replace('記錄每一個事件','遺忘每一個事件'),{}],
   ['hidden prose',native.replace(prefix,prefix+'真實正文不得隱藏'),{}],
-  ['trailing marker lost',native.replace(marker,''),{}],
+  ['changed image marker in narration',native.replace('看向走廊','看向{{img:inner}}走廊'),{}],
   ['trailing marker visible',native,{scannedText:rendered+marker}],
   ['unbalanced native open quote',native.replace('「我已經確認。」','「我已經確認。'),{}],
   ['unbalanced native close quote',native.replace('「你確定嗎？」','你確定嗎？」'),{}],
