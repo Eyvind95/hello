@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.74｜Gal AI</title>
+<title>輪迴檔案館 V5.75｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -115,6 +115,8 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .handover-entry{border:1px solid var(--border);border-radius:13px;padding:14px;margin:12px 0;background:#141e33;overflow-wrap:anywhere}.handover-entry strong{word-break:break-word}.handover-entry .actions{margin-top:10px}.handover-note{white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0}.handover-thread{text-align:left;width:100%;margin:4px 0}.handover-thread strong{font-size:.91rem;display:block}.handover-warning{margin-top:24px;padding:12px;border:1px solid var(--border);border-radius:10px}.handover-warning strong{color:#e8e2ff}
 .handover-review-details{margin:9px 0;max-width:100%;border-top:1px solid var(--border);padding-top:8px}.handover-review-details summary{cursor:pointer;color:#d9d0ff;font-size:.87rem;padding:8px 4px}.handover-review-details .handover-note{max-height:65vh;overflow:auto;padding:12px;border-radius:9px;background:#0d1729}
 .adventure-native-block{margin:.65em 0;padding:12px;border:1px solid rgba(139,151,177,.3);border-radius:10px;background:rgba(85,99,125,.15);white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-width:100%;box-sizing:border-box;}
+
+.archive-extra-card{border:1px solid var(--border);background:var(--panel2);border-radius:12px;padding:14px;min-width:0}.archive-extra-cards{display:grid;gap:10px}.archive-extra-label{color:var(--accent);font-size:.82rem;margin-top:12px}.archive-extra-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}.archive-extra-graph{max-width:100%;overflow:auto;background:#10192b;border:1px solid var(--border);border-radius:12px;margin:12px 0}.archive-extra-graph svg{display:block;height:auto;margin:auto}.archive-extra-card strong{overflow-wrap:anywhere}.archive-extra-card textarea{min-height:140px}.archive-extra-card textarea.tall{min-height:260px}
 </style>
 <link rel="stylesheet" href="./archive-observatory.css?v=1">
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -123,7 +125,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.74</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.9.3.zip" download title="下載雙掃描助手 V0.9.03：冒險者引號地點時間修復、原生格式修復、世界觀隔離、啟動前驗收模組檢查、頁尾倒數、分批驗收、普通狀態欄格式修復及最新進度保全，失敗仍下載診斷，依輪迴及掃描批次分類；未驗證資料不能匯入正史。">🧩 雙掃描助手 V0.9.03</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="archiveReplayOpen" type="button">🧪 保全資料重新驗收</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.75</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.9.3.zip" download title="下載雙掃描助手 V0.9.03：冒險者引號地點時間修復、原生格式修復、世界觀隔離、啟動前驗收模組檢查、頁尾倒數、分批驗收、普通狀態欄格式修復及最新進度保全，失敗仍下載診斷，依輪迴及掃描批次分類；未驗證資料不能匯入正史。">🧩 雙掃描助手 V0.9.03</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="archiveReplayOpen" type="button">🧪 保全資料重新驗收</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><label for="cycleSort" class="note" style="display:block;margin-top:12px">輪迴列表排序</label><select id="cycleSort" class="search" aria-label="輪迴列表排序"><option value="number-desc">輪迴數字：由大到小（預設）</option><option value="number-asc">輪迴數字：由小到大</option><option value="updated">最近修改優先</option></select><div id="cycles"></div><div class="divider"></div><div class="sectionhead"><h2>📚 交接稿</h2><button id="newHandover" type="button" class="btn small primary" title="新增交接對話">＋新增</button></div><p class="note">依目前世界觀分類；每個交接對話可上傳多份檔案。</p><button type="button" id="handoverSharedReviews" class="cycle handover-thread" style="width:100%;margin:4px 0 12px;text-align:left"><strong>💬 大家的評語（共用）</strong><span>這個世界觀只需貼一次，所有交接對話皆可閱讀</span></button><div id="handoverThreads" aria-live="polite"><p class="note">正在載入交接稿…</p></div><div class="actions topsp"><button type="button" class="btn small" id="handoverExport">備份此世界觀（.ghb）</button><button type="button" class="btn small" id="handoverImport">匯入交接稿備份</button><button type="button" class="btn small" id="handoverStorage">檢查本機儲存空間</button></div><p class="note" id="handoverStorageStatus" role="status"></p><input id="handoverImportFile" type="file" accept=".ghb,.json,application/json,application/octet-stream" hidden><p class="note">交接稿與附件已支援手動 Firebase 雲端同步，也包含於上方「完整備份（.gab）」。此區仍可單獨下載 .ghb 備份。</p></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -292,7 +294,7 @@ const $=id=>document.getElementById(id),safe=s=>String(s??'').replace(/[&<>"']/g
 const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2);
 function notify(t){$('toast').textContent=t;$('toast').classList.remove('hidden');clearTimeout(notify.timer);notify.timer=setTimeout(()=>$('toast').classList.add('hidden'),2700)}
 function openDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB,2);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(STORE))req.result.createObjectStore(STORE,{keyPath:'id'});if(!req.result.objectStoreNames.contains(WORLDSTORE))req.result.createObjectStore(WORLDSTORE,{keyPath:'id'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-function operation(mode,payload,store=STORE){return new Promise((resolve,reject)=>{const tx=db.transaction(store,mode),os=tx.objectStore(store);let r;if(payload?.type==='put'&&store===STORE){const get=os.get(payload.item.id);get.onsuccess=()=>{const prior=get.result;if(prior?.specialReviews||payload.item.specialReviews)payload.item.specialReviews=archiveSpecialMerge(prior?.specialReviews,payload.item.specialReviews);r=os.put(payload.item)}}else if(payload?.type==='put')r=os.put(payload.item);else if(payload?.type==='delete')r=os.delete(payload.id);else r=os.getAll();tx.oncomplete=()=>{if(mode==='readwrite'&&!window.__archiveAutoApplyingCloud)window.dispatchEvent(new Event('archive:local-changed'));resolve(r?.result)};tx.onerror=()=>reject(tx.error)})}
+function operation(mode,payload,store=STORE){return new Promise((resolve,reject)=>{const tx=db.transaction(store,mode),os=tx.objectStore(store);let r;if(payload?.type==='put'&&store===STORE){const get=os.get(payload.item.id);get.onsuccess=()=>{const prior=get.result;if(prior?.specialReviews||payload.item.specialReviews)payload.item.specialReviews=archiveSpecialMerge(prior?.specialReviews,payload.item.specialReviews);archiveMergeExtras(payload.item,prior);r=os.put(payload.item)}}else if(payload?.type==='put')r=os.put(payload.item);else if(payload?.type==='delete')r=os.delete(payload.id);else r=os.getAll();tx.oncomplete=()=>{if(mode==='readwrite'&&!window.__archiveAutoApplyingCloud)window.dispatchEvent(new Event('archive:local-changed'));resolve(r?.result)};tx.onerror=()=>reject(tx.error)})}
 function parseCycleManagers(input){
   const values=Array.isArray(input)?input:[input||''],names=[];
   for(const v of values)for(const name0 of String(v||'').split(/[、，,;；\r\n]+/)){
@@ -416,8 +418,115 @@ window.ArchiveObservatoryBridge={
  }
 };
 
-function renderContent(){if(window.ArchiveHandover?.isActive(world)){window.ArchiveHandover.renderActive(world);return}const r=current();if(!r){$('content').innerHTML=`<div class="empty"><strong>${safe(WORLDS.find(w=>w.id===world)?.name||'')}</strong>先點左側「編輯目前世界觀」填入作品共用設定，或新增輪迴。</div>`;return}let tabs=[['chat','完整對話'],['events','事件簿'],['pilotChat','副駕駛聊天'],['opening','輪迴開場'],['lore','世界觀（唯讀）'],['notes','補充筆記'],['quiz','10題'],['changes','與皮卡修改記錄'],['personality','人格設定'],['easterEggs','這輪彩蛋'],['copilot','副駕駛閱讀']];$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">${safe(WORLDS.find(w=>w.id===r.world).name)}</div><h2>${safe(r.title)}</h2><div class="stat">${safe([r.hero&&'主角：'+r.hero,r.partner&&'重要角色：'+r.partner,cycleManagerLabel(r)&&'負責副駕駛：'+cycleManagerLabel(r)].filter(Boolean).join(' ／ '))}</div></div><div class="actions"><button class="btn small" id="copyCycleId">複製輪迴 ID</button><button class="btn small" id="copyScanBinding">複製完整掃描綁定</button><button class="btn small" id="editCycle">編輯資料</button><button class="btn small danger" id="deleteCycle">刪除輪迴</button></div></div><div class="tabs">${tabs.map(([id,name])=>`<button class="tab ${id===tab?'active':''}" data-tab="${id}">${name}</button>`).join('')}</div><div id="tabBody"></div>`;renderTab(r)}
-function renderTab(r){if(tab==='chat'){renderChat(r);mountArchiveComposerImages();return}if(tab==='events'){renderEvents(r);mountArchiveComposerImages();return}if(tab==='pilotChat'){renderPilotChat(r);mountArchiveComposerImages();return}if(tab==='quiz'||tab==='changes'){renderLog(r,tab);mountArchiveComposerImages();return}if(tab==='copilot')return renderCopilot(r);if(tab==='lore')return renderReadOnlyWorld(r);if(tab==='notes')return renderNotesSections(r);let names={opening:['輪迴開場','保存最初的角色、時間、地點、開場文字與設定。'],lore:['世界觀設定','可以寫規則、角色設定、能力、人物關係、重要限制。'],notes:['補充筆記','正史摘要、重大事件、前輩交接、尚待確認事項等。'],personality:['人格設定','記錄主角人格、個性、言行、心理、重要人際關係與本輪差異。'],easterEggs:['這輪彩蛋','記錄這輪彩蛋、伏筆、出處、對應原作與確認結果。']};let [title,hint]=names[tab];$('tabBody').innerHTML=`<h3>${title}</h3><p class="note">${hint}</p><textarea id="docEditor" class="tall" placeholder="在這裡貼入完整內容…">${safe(r[tab]||'')}</textarea><div class="actions topsp"><button id="saveDoc" class="btn primary">儲存${title}</button><button id="copyDoc" class="btn">複製文字</button></div>`}
+function renderContent(){if(window.ArchiveHandover?.isActive(world)){window.ArchiveHandover.renderActive(world);return}const r=current();if(!r){$('content').innerHTML=`<div class="empty"><strong>${safe(WORLDS.find(w=>w.id===world)?.name||'')}</strong>先點左側「編輯目前世界觀」填入作品共用設定，或新增輪迴。</div>`;return}let tabs=[['chat','完整對話'],['events','事件簿'],['pilotChat','副駕駛聊天'],['gptReview','GPT 評語與總結'],['relationships','角色關係圖鑑'],['opening','輪迴開場'],['lore','世界觀（唯讀）'],['notes','補充筆記'],['quiz','10題'],['changes','與皮卡修改記錄'],['personality','人格設定'],['easterEggs','這輪彩蛋'],['copilot','副駕駛閱讀']];$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">${safe(WORLDS.find(w=>w.id===r.world).name)}</div><h2>${safe(r.title)}</h2><div class="stat">${safe([r.hero&&'主角：'+r.hero,r.partner&&'重要角色：'+r.partner,cycleManagerLabel(r)&&'負責副駕駛：'+cycleManagerLabel(r)].filter(Boolean).join(' ／ '))}</div></div><div class="actions"><button class="btn small" id="copyCycleId">複製輪迴 ID</button><button class="btn small" id="copyScanBinding">複製完整掃描綁定</button><button class="btn small" id="editCycle">編輯資料</button><button class="btn small danger" id="deleteCycle">刪除輪迴</button></div></div><div class="tabs">${tabs.map(([id,name])=>`<button class="tab ${id===tab?'active':''}" data-tab="${id}">${name}</button>`).join('')}</div><div id="tabBody"></div>`;renderTab(r)}
+function renderTab(r){if(tab==='gptReview')return renderArchiveExtras(r,'gptEvaluations');if(tab==='relationships')return renderArchiveExtras(r,'characterRelations');if(tab==='chat'){renderChat(r);mountArchiveComposerImages();return}if(tab==='events'){renderEvents(r);mountArchiveComposerImages();return}if(tab==='pilotChat'){renderPilotChat(r);mountArchiveComposerImages();return}if(tab==='quiz'||tab==='changes'){renderLog(r,tab);mountArchiveComposerImages();return}if(tab==='copilot')return renderCopilot(r);if(tab==='lore')return renderReadOnlyWorld(r);if(tab==='notes')return renderNotesSections(r);let names={opening:['輪迴開場','保存最初的角色、時間、地點、開場文字與設定。'],lore:['世界觀設定','可以寫規則、角色設定、能力、人物關係、重要限制。'],notes:['補充筆記','正史摘要、重大事件、前輩交接、尚待確認事項等。'],personality:['人格設定','記錄主角人格、個性、言行、心理、重要人際關係與本輪差異。'],easterEggs:['這輪彩蛋','記錄這輪彩蛋、伏筆、出處、對應原作與確認結果。']};let [title,hint]=names[tab];$('tabBody').innerHTML=`<h3>${title}</h3><p class="note">${hint}</p><textarea id="docEditor" class="tall" placeholder="在這裡貼入完整內容…">${safe(r[tab]||'')}</textarea><div class="actions topsp"><button id="saveDoc" class="btn primary">儲存${title}</button><button id="copyDoc" class="btn">複製文字</button></div>`}
+
+function archiveExtraRows(rows){
+ const map=new Map();
+ for(const row of Array.isArray(rows)?rows:[]){
+  if(!row||typeof row.id!=='string'||!row.id)continue;
+  const prior=map.get(row.id),stamp=x=>String(x.updatedAt||'');
+  if(!prior||stamp(row)>stamp(prior)||(stamp(row)===stamp(prior)&&(Boolean(row.deleted)>Boolean(prior.deleted)||Boolean(row.deleted)===Boolean(prior.deleted)&&JSON.stringify(row)>JSON.stringify(prior))))map.set(row.id,row);
+ }
+ return [...map.values()].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+}
+function archiveMergeExtras(target,other){
+ if(!other||target.id!==other.id||target.world!==other.world)return false;
+ let changed=false;
+ for(const key of ['gptEvaluations','characterRelations']){
+  if(!Array.isArray(target[key])&&!Array.isArray(other[key]))continue;
+  const merged=archiveExtraRows([...(Array.isArray(target[key])?target[key]:[]),...(Array.isArray(other[key])?other[key]:[])]);
+  if(JSON.stringify(target[key])!==JSON.stringify(merged)){target[key]=merged;changed=true;}
+ }
+ return changed;
+}
+function archiveVisibleExtras(r,key){
+ return archiveExtraRows(r[key]).filter(x=>!x.deleted).sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||''))||a.id.localeCompare(b.id));
+}
+function archiveExtraText(r,key){
+ return archiveVisibleExtras(r,key).map((x,i)=>key==='gptEvaluations'
+  ?`【${i+1}｜${x.author||'未署名 GPT'}】\n評語：\n${x.review||'（未填寫）'}\n\n總結：\n${x.summary||'（未填寫）'}`
+  :`【${i+1}｜${x.from||''} — ${x.to||''}】\n關係：${x.relation||''}\n階段：${x.phase||'未指定'}\n說明：${x.description||'（未填寫）'}\n正史依據：${x.evidence||'（未填寫）'}${x.sourceId?'\n來源 ID：'+x.sourceId:''}`).join('\n\n')||'（尚未填寫）';
+}
+function archiveRelationshipGraph(rows){
+ const names=[...new Set(rows.flatMap(x=>[x.from,x.to]).filter(x=>typeof x==='string'&&x.trim()))];
+ if(!names.length)return '<p class="note">新增第一條角色關係後，這裡會顯示圖鑑。</p>';
+ const radius=Math.max(100,names.length*34),size=2*radius+150,c=size/2;
+ const nodes=new Map(names.map((name,i)=>{const angle=-Math.PI/2+i*2*Math.PI/names.length;return [name,{x:c+radius*Math.cos(angle),y:c+radius*Math.sin(angle)}]}));
+ const edges=new Map();
+ rows.forEach((row,i)=>{if(!nodes.has(row.from)||!nodes.has(row.to)||row.from===row.to)return;const pair=[row.from,row.to].sort(),key=JSON.stringify(pair);if(!edges.has(key))edges.set(key,{pair,indices:[]});edges.get(key).indices.push(i+1)});
+ const paths=[...edges.values()].map(({pair,indices})=>{
+  const a=nodes.get(pair[0]),b=nodes.get(pair[1]),label=indices.join('、');
+  return `<g><title>${safe(pair.join(' — ')+'：#'+label)}</title><line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#8795b7" stroke-width="2" opacity=".8"/><text x="${(a.x+b.x)/2}" y="${(a.y+b.y)/2-7}" text-anchor="middle" fill="#e3dcff" stroke="#151d32" stroke-width="4" paint-order="stroke" font-size="12">#${safe(label.length>25?label.slice(0,24)+'…':label)}</text></g>`;
+ }).join('');
+ const circles=[...nodes].map(([name,p])=>`<g><title>${safe(name)}</title><rect x="${p.x-57}" y="${p.y-17}" width="114" height="34" rx="12" fill="#303a59" stroke="#aa9cff"/><text x="${p.x}" y="${p.y+5}" fill="#eef2ff" text-anchor="middle" font-size="13">${safe(Array.from(name).length>8?Array.from(name).slice(0,7).join('')+'…':name)}</text></g>`).join('');
+ return `<div class="archive-extra-graph" tabindex="0" aria-label="角色關係圖，可橫向捲動"><svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(320,Math.min(size,2400))}" viewBox="0 0 ${size} ${size}" role="img" aria-label="本輪角色關係圖">${paths}${circles}</svg></div><p class="note">線上編號對應下方卡片；同一組角色可記錄不同階段。完整名稱及說明見卡片。</p>`;
+}
+async function archiveWriteExtra(cycleId,worldId,key,entry,expected){
+ if(!['gptEvaluations','characterRelations'].includes(key))throw Error('不支援的欄位');
+ await new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE,'readwrite'),os=tx.objectStore(STORE),get=os.get(cycleId);let failure;
+  get.onsuccess=()=>{
+   const latest=get.result;
+   if(!latest||latest.world!==worldId){failure=Error('輪迴已變更或不存在，未儲存');tx.abort();return;}
+   const rows=archiveExtraRows(latest[key]),prior=rows.find(x=>x.id===entry.id);
+   if((prior?.updatedAt||'')!==(expected||'')){failure=Error('這筆紀錄已在其他操作中更新，請重新讀取後編輯');tx.abort();return;}
+   const stamp=new Date(Math.max(Date.now(),(Date.parse(prior?.updatedAt||'')||0)+1,(Date.parse(latest.updatedAt||'')||0)+1)).toISOString();
+   const item={...entry,createdAt:prior?.createdAt||stamp,updatedAt:stamp};
+   latest[key]=archiveExtraRows([...rows.filter(x=>x.id!==item.id),item]);latest.updatedAt=stamp;os.put(latest);
+  };
+  tx.oncomplete=resolve;tx.onerror=()=>reject(failure||tx.error);tx.onabort=()=>reject(failure||tx.error||Error('儲存交易取消'));
+ });
+ if(!window.__archiveAutoApplyingCloud)window.dispatchEvent(new Event('archive:local-changed'));
+}
+function archiveNativePairedClock(previous,ai,clock){
+ if(previous?.role!=='me'||previous.sourceKind!=='gal-ai-native'||ai.sourceKind!=='gal-ai-native'||!previous.chatKey||previous.chatKey!==ai.chatKey)return false;
+ if(!Number.isInteger(previous.scanIndex)||!Number.isInteger(ai.scanIndex)||previous.scanIndex>=ai.scanIndex)return false;
+ return typeof previous.gameTime==='string'&&typeof ai.gameTime==='string'&&Date.parse(previous.gameTime)===clock.ms&&Date.parse(ai.gameTime)===clock.ms;
+}
+function archiveNativeTimeReadback(expected,actual){
+ return ['messages','events'].every(key=>Array.isArray(actual[key])&&expected[key].length===actual[key].length&&expected[key].every((x,i)=>x.id===actual[key][i].id&&x.gameTime===actual[key][i].gameTime));
+}
+const archiveExtraDrafts=new Map();
+function renderArchiveExtras(r,key){
+ const reviews=key==='gptEvaluations',title=reviews?'GPT 評語與總結':'角色關係圖鑑',draftKey=r.world+'::'+r.id+'::'+key;
+ const rows=archiveVisibleExtras(r,key),managers=cycleManagerNames(r),draft=archiveExtraDrafts.get(draftKey)||(reviews&&managers.length===1?{author:managers[0]}:{});
+ const fields=reviews?[['author','負責 GPT／前輩名稱',false],['review','評語',true],['summary','總結',true]]:
+ [['from','角色 A',false],['to','角色 B',false],['relation','關係（例如：合作、伴侶、敵對）',false],['phase','劇情階段／時間（選填）',false],['description','關係說明／變化',true],['evidence','正史依據（事件、時間等，選填）',true]];
+ const list=[...new Set((reviews?managers:[r.hero,r.partner,...rows.flatMap(x=>[x.from,x.to])]).filter(Boolean))];
+ const timeline=reviews?[]:archiveStoryTimeline(r);
+ const sources=timeline.map((row,i)=>({id:row.entry?.id,section:row.type==='event'?'events':'chat',index:row.type==='event'?row.index:i,label:'#'+(i+1)+'｜'+(row.type==='event'?'事件':row.entry?.role==='me'?'我':'Gal AI')+'｜'+String(row.entry?.text||'').replace(/\s+/g,' ').slice(0,65)})).filter(x=>x.id);
+ const sourceOptions='<option value="">不指定原文位置</option>'+sources.map(x=>`<option value="${safe(x.id)}" ${draft.sourceId===x.id?'selected':''}>${safe(x.label)}</option>`).join('')+(draft.sourceId&&!sources.some(x=>x.id===draft.sourceId)?`<option selected value="${safe(draft.sourceId)}">舊來源已不在目前正史，保留 ID</option>`:'');
+ $('tabBody').innerHTML=`<div class="sectionhead"><h3>${title} <span class="stat">（${rows.length} 筆）</span></h3><button type="button" class="btn small" id="archiveExtraCopy">複製全部</button></div>
+ <p class="note">${reviews?'保存負責此輪迴的 GPT 原評語及總結；多位副駕駛可分別保存。不是 Gal AI 正史，不會自動生成。':'依照你確認的正史建立角色及關係，支援同一對角色的多個階段。各輪迴與世界觀獨立保存，不自動推測。'}</p>
+ ${reviews?'':archiveRelationshipGraph(rows)}
+ <div class="archive-extra-cards">${rows.map((x,i)=>`<article class="archive-extra-card"><div class="sectionhead"><strong>#${i+1} ${safe(reviews?x.author:(x.from+' — '+x.to))}</strong><div class="actions"><button class="btn small" type="button" data-extra-edit="${safe(x.id)}">編輯</button><button class="btn small danger" type="button" data-extra-delete="${safe(x.id)}">刪除</button></div></div>
+ ${fields.slice(reviews?1:2).filter(([k])=>x[k]).map(([k,label])=>`<div class="archive-extra-label">${safe(label)}</div><div class="archive-extra-text">${safe(x[k])}</div>`).join('')}
+ ${!reviews&&x.sourceId?`<div class="topsp">${sources.some(y=>y.id===x.sourceId)?`<button type="button" class="btn small" data-extra-source="${safe(x.sourceId)}">查看正史原文</button>`:'<span class="note">舊來源目前不存在，原 ID 已保留。</span>'}</div>`:''}</article>`).join('')||'<p class="note">目前尚未填寫。</p>'}</div>
+ <form id="archiveExtraForm" class="archive-extra-card topsp"><h3>${draft.id?'編輯':'新增'}${reviews?'評語與總結':'角色關係'}</h3>
+ <datalist id="archiveExtraOptions">${list.map(n=>`<option value="${safe(n)}"></option>`).join('')}</datalist>
+ ${fields.map(([k,label,multi])=>`<label for="archiveExtra_${k}">${safe(label)}</label>${multi?`<textarea id="archiveExtra_${k}" ${reviews?'class="tall"':''}>${safe(draft[k]||'')}</textarea>`:`<input id="archiveExtra_${k}" maxlength="180" value="${safe(draft[k]||'')}" ${['author','from','to'].includes(k)?'list="archiveExtraOptions" required':''} ${k==='relation'?'required':''}>`}`).join('')}
+ ${reviews?'':`<label for="archiveExtraSource">連結目前輪迴的正史訊息或已接事件（選填）</label><select id="archiveExtraSource">${sourceOptions}</select>`}
+ <div class="actions topsp"><button class="btn primary" type="submit">儲存</button><button class="btn" type="button" id="archiveExtraCancel">清空／取消編輯</button></div></form>`;
+ const form=$('archiveExtraForm');
+ const capture=()=>{const next={...draft};for(const [k] of fields)next[k]=$('archiveExtra_'+k).value;if(!reviews)next.sourceId=$('archiveExtraSource').value;archiveExtraDrafts.set(draftKey,next);return next};
+ form.addEventListener('input',capture);form.addEventListener('change',capture);
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();const values=capture();for(const [k,,multi] of fields)if(!multi)values[k]=values[k].trim();
+  if(reviews?(!values.author||(!values.review.trim()&&!values.summary.trim())):(!values.from||!values.to||!values.relation||values.from===values.to)){notify(reviews?'請填寫 GPT 名稱及至少一項評語或總結':'請填寫兩位不同角色及關係');return;}
+  const button=form.querySelector('[type=submit]');button.disabled=true;
+  try{
+   const entry={id:draft.id||uid()};for(const [k] of fields)entry[k]=values[k];if(!reviews)entry.sourceId=values.sourceId;
+   await archiveWriteExtra(r.id,r.world,key,entry,draft.updatedAt);
+   archiveExtraDrafts.delete(draftKey);await refresh();notify('已儲存'+title);
+  }catch(err){notify('儲存失敗：'+(err.message||err));button.disabled=false;}
+ });
+ $('archiveExtraCancel').onclick=()=>{archiveExtraDrafts.delete(draftKey);renderArchiveExtras(r,key)};
+ $('archiveExtraCopy').onclick=async()=>{try{await navigator.clipboard.writeText(archiveExtraText(r,key));notify('已複製'+title)}catch(e){notify('複製失敗：'+e.message)}};
+ $('tabBody').querySelectorAll('[data-extra-edit]').forEach(button=>button.onclick=()=>{const item=rows.find(x=>x.id===button.dataset.extraEdit);if(!item)return;if(archiveExtraDrafts.has(draftKey)&&!confirm('放棄目前未儲存的編輯？'))return;archiveExtraDrafts.set(draftKey,{...item});renderArchiveExtras(r,key);$('archiveExtraForm').scrollIntoView({behavior:'smooth',block:'start'})});
+ $('tabBody').querySelectorAll('[data-extra-delete]').forEach(button=>button.onclick=async()=>{const item=rows.find(x=>x.id===button.dataset.extraDelete);if(!item||!confirm('確定刪除這筆'+title+'？'))return;button.disabled=true;try{await archiveWriteExtra(r.id,r.world,key,{id:item.id,deleted:true},item.updatedAt);if(archiveExtraDrafts.get(draftKey)?.id===item.id)archiveExtraDrafts.delete(draftKey);await refresh();notify('已刪除')}catch(e){notify('刪除失敗：'+e.message);button.disabled=false}});
+ $('tabBody').querySelectorAll('[data-extra-source]').forEach(button=>button.onclick=()=>{const source=sources.find(x=>x.id===button.dataset.extraSource);if(source)window.ArchiveObservatoryBridge.jump(r.id,source.section,source.index)});
+}
 
 function noteSectionsFor(record){
   if(Array.isArray(record.noteSections))return record.noteSections.filter(x=>x&&typeof x==='object').map((x,i)=>({
@@ -500,7 +609,7 @@ function renderReadOnlyWorld(r){
   $('tabBody').innerHTML=`<div class="sectionhead"><h3>作品共用世界觀 <span class="pill">唯讀</span></h3><span class="note">所有輪迴自動同步顯示同一份世界觀</span></div><p class="note">此處直接讀取左側「編輯目前世界觀」所儲存的內容，不會為輪迴建立另一份副本；需要修改時請回到作品總覽編輯。</p><div class="world-readonly" id="commonWorldText">${common?safe(common):'<span class="note">目前尚未填寫作品共用世界觀，請從左側「編輯目前世界觀」新增。</span>'}</div><div class="actions topsp"><button class="btn" id="copySharedWorld" ${common?'':'disabled'}>複製世界觀</button></div>${legacy?`<details class="topsp"><summary>查看舊版本輪迴專屬設定（保留資料，唯讀）</summary><p class="note">這是舊版填在輪迴內的資料，為防止遺失而保留；不會覆蓋作品共用世界觀。</p><div class="world-readonly">${safe(legacy)}</div></details>`:''}`;
 }
 function renderWorldEditor(){const w=WORLDS.find(w=>w.id===world),entry=worldDocs[world]||{};$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">共用資料／獨立於每一個輪迴</div><h2>${safe(w.name)}・世界觀總設定</h2></div><button class="btn small" id="backFromWorld">返回輪迴</button></div><p class="note">這裡是唯一可以編輯此作品世界觀的地方。儲存後，所有屬於此作品的輪迴都會自動顯示最新內容；輪迴內的世界觀分頁只供閱讀，無法修改。</p><label>世界觀總設定（可貼上長篇原文）</label><textarea class="tall worldtextarea" id="worldEditor" placeholder="例如：世界運作規則、職業和能力、地點、關鍵設定、禁止違反的世界硬規則…">${safe(entry.text||'')}</textarea><div class="actions topsp"><button class="btn primary" id="saveWorld">儲存共用世界觀</button><button class="btn" id="copyWorld">複製世界觀</button><button class="btn" id="renameWorld">重新命名世界觀</button></div>`}
-function buildCopilot(r){const eventText=(r.events||[]).map((ev,i)=>'【事件 '+(i+1)+'｜'+archiveEventStatusText(ev.status)+'｜'+(ev.title||'事件到達')+'】\n'+'原始發言時間：'+(ev.sourceCreatedAt||'未知')+'\n'+(ev.text||'')+archiveImageLabels(ev)).join('\n\n')||'（尚未填寫）';const noteText=formatNoteSections(r);const w=WORLDS.find(w=>w.id===r.world);const common=worldDocs[r.world]?.text||'';const incl=$('includeMessages')?.checked!==false,limit=+$('chunkSize')?.value||12000;let header=`【Gal AI 輪迴檔案館・副駕駛閱讀資料】\n作品：${w.name}\n輪迴：${r.title}\n主角：${r.hero||'未填'}\n重要角色：${r.partner||'未填'}\n負責副駕駛：${cycleManagerLabel(r)||'未填'}\n\n【作品共用世界觀】\n${common||'（尚未填寫）'}\n\n【此輪迴開場】\n${r.opening||'（尚未填寫）'}\n\n${r.lore?`【舊版輪迴專屬設定（僅保留歷史資料）】\n${r.lore}\n\n`:``}【補充筆記（分區）】\n${noteText}\n\n【人格設定】\n${r.personality||'（尚未填寫）'}\n\n【這輪彩蛋】\n${r.easterEggs||'（尚未填寫）'}\n\n【事件簿（含是否接取）】\n${eventText}\n\n【10題】\n${formatLogText(r.quizLogs||[])}\n\n【與皮卡修改記錄】\n${formatLogText(r.changeLogs||[])}\n\n【副駕駛聊天（獨立於 Gal AI 劇情）】\n${(r.pilotMessages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'皮卡':m.manager||'副駕駛 GPT'}】\n${m.text||''}${archiveImageLabels(m)}`).join('\n\n')||'（尚未填寫）'}\n\n【完整對話】\n`;let msgs=incl?archiveStoryTimeline(r).map(({entry:m,type},i)=>`【第 ${i+1} 則｜${type==='event'?'已接事件（皮卡）':m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n`).join('\n'):'（未包含對話）';let full=header+msgs;let chunks=[];if(full.length<=limit)chunks=[full];else{let segments=[header,...(incl?archiveStoryTimeline(r).map(({entry:m,type},i)=>`【第 ${i+1} 則｜${type==='event'?'已接事件（皮卡）':m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n\n`):[])];let cur='';for(let seg of segments){while(seg.length>limit){if(cur){chunks.push(cur);cur=''}chunks.push(seg.slice(0,limit));seg=seg.slice(limit)}if(cur.length+seg.length>limit&&cur){chunks.push(cur);cur=''}cur+=seg}if(cur)chunks.push(cur)}return {full,chunks}}
+function buildCopilot(r){const eventText=(r.events||[]).map((ev,i)=>'【事件 '+(i+1)+'｜'+archiveEventStatusText(ev.status)+'｜'+(ev.title||'事件到達')+'】\n'+'原始發言時間：'+(ev.sourceCreatedAt||'未知')+'\n'+(ev.text||'')+archiveImageLabels(ev)).join('\n\n')||'（尚未填寫）';const noteText=formatNoteSections(r);const w=WORLDS.find(w=>w.id===r.world);const common=worldDocs[r.world]?.text||'';const incl=$('includeMessages')?.checked!==false,limit=+$('chunkSize')?.value||12000;let header=`【Gal AI 輪迴檔案館・副駕駛閱讀資料】\n作品：${w.name}\n輪迴：${r.title}\n主角：${r.hero||'未填'}\n重要角色：${r.partner||'未填'}\n負責副駕駛：${cycleManagerLabel(r)||'未填'}\n\n【作品共用世界觀】\n${common||'（尚未填寫）'}\n\n【此輪迴開場】\n${r.opening||'（尚未填寫）'}\n\n${r.lore?`【舊版輪迴專屬設定（僅保留歷史資料）】\n${r.lore}\n\n`:``}【補充筆記（分區）】\n${noteText}\n\n【人格設定】\n${r.personality||'（尚未填寫）'}\n\n【這輪彩蛋】\n${r.easterEggs||'（尚未填寫）'}\n\n【事件簿（含是否接取）】\n${eventText}\n\n【10題】\n${formatLogText(r.quizLogs||[])}\n\n【與皮卡修改記錄】\n${formatLogText(r.changeLogs||[])}\n\n【副駕駛聊天（獨立於 Gal AI 劇情）】\n${(r.pilotMessages||[]).map((m,i)=>`【第 ${i+1} 則｜${m.role==='me'?'皮卡':m.manager||'副駕駛 GPT'}】\n${m.text||''}${archiveImageLabels(m)}`).join('\n\n')||'（尚未填寫）'}\n\n【GPT 評語與總結（非正史）】\n${archiveExtraText(r,'gptEvaluations')}\n\n【角色關係圖鑑（手動整理）】\n${archiveExtraText(r,'characterRelations')}\n\n【完整對話】\n`;let msgs=incl?archiveStoryTimeline(r).map(({entry:m,type},i)=>`【第 ${i+1} 則｜${type==='event'?'已接事件（皮卡）':m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n`).join('\n'):'（未包含對話）';let full=header+msgs;let chunks=[];if(full.length<=limit)chunks=[full];else{let segments=[header,...(incl?archiveStoryTimeline(r).map(({entry:m,type},i)=>`【第 ${i+1} 則｜${type==='event'?'已接事件（皮卡）':m.role==='me'?'我（玩家）':'Gal AI'}】\n${m.text||''}${archiveImageLabels(m)}\n\n`):[])];let cur='';for(let seg of segments){while(seg.length>limit){if(cur){chunks.push(cur);cur=''}chunks.push(seg.slice(0,limit));seg=seg.slice(limit)}if(cur.length+seg.length>limit&&cur){chunks.push(cur);cur=''}cur+=seg}if(cur)chunks.push(cur)}return {full,chunks}}
 function renderCopilot(r){$('tabBody').innerHTML=`<h3>副駕駛閱讀模式</h3><p class="note">自動整理作品共用世界觀、輪迴開場、歷史設定（如有）、分區補充筆記、人格設定、這輪彩蛋、事件簿及接取狀態、10題、皮卡修改記錄與依序排列的對話。可以直接複製給下一位 ChatGPT，也能下載全文；長篇紀錄可分段複製。匯出內容僅包含你已經實際填寫的資料。</p><div class="formrow"><label class="checklabel"><input type="checkbox" id="includeMessages" checked>包含完整對話</label><div><label>每段約多少字元</label><select id="chunkSize"><option value="6000">6,000</option><option value="12000" selected>12,000</option><option value="24000">24,000</option><option value="48000">48,000</option></select></div></div><div class="actions topsp"><button class="btn primary" id="copyCopilot">複製全文</button><button class="btn" id="downloadCopilot">下載 TXT</button></div><div id="copilotChunks" class="topsp"></div>`;renderCopilotChunks(r)}
 function renderCopilotChunks(r){let d=buildCopilot(r);$('copilotChunks').innerHTML=`<p class="note">全文 ${d.full.length.toLocaleString()} 字元，共 ${d.chunks.length} 段。</p><div class="actions">${d.chunks.map((_,i)=>`<button class="btn small" data-chunk="${i}">複製第 ${i+1}/${d.chunks.length} 段</button>`).join('')}</div><details class="topsp"><summary>預覽匯出內容</summary><pre class="archivepreview">${safe(d.full.slice(0,12000))}${d.full.length>12000?'\n……預覽僅顯示前 12,000 字元，下載檔案包含全部內容':''}</pre></details>`}
 function downloadText(filename,content){let blob=new Blob([content],{type:'text/plain;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename.replace(/[\\/:*?"<>|]/g,'_');a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
@@ -860,6 +969,7 @@ function galNativePreview(){
  if(plan.ok){
   lines.push('輪迴開場：'+plan.previousCounts.opening+' → '+plan.sourceCounts.opening+' 字',
    '完整對話：'+plan.previousCounts.messages+' → '+plan.sourceCounts.messages+' 則（'+plan.sourceCounts.pairs+' 組「我／他」＋'+plan.sourceCounts.autoContinues+' 次自動繼續；劇情時間不詳 '+plan.sourceCounts.unknownGameTimeCount+' 則）',
+   '已核對劇情時間：'+plan.updated.messages.filter(m=>typeof m.gameTime==='string'&&Number.isFinite(Date.parse(m.gameTime))).length+' 則對話（其餘保留 null）；已知事件時間 '+plan.updated.events.filter(m=>typeof m.gameTime==='string'&&Number.isFinite(Date.parse(m.gameTime))).length+' 件',
    '事件簿：'+plan.previousCounts.events+' → '+plan.sourceCounts.events+' 件',
    '舊事件狀態唯一對應：'+plan.matched+' 件',
    '舊已接事件找不到對應：'+plan.acceptedUnmatched+' 件'+(plan.acceptedUnmatched?'（需勾選額外確認才可覆蓋）':''),
@@ -931,7 +1041,7 @@ $('galNativeApply').onclick=async()=>{
   await put(fresh.updated);
   const result=current();
   if(!result||result.messages.length!==fresh.sourceCounts.messages||result.events.length!==fresh.sourceCounts.events
-    ||result.opening!==fresh.updated.opening)throw Error('本機回讀不一致，請立刻使用剛下載的備份還原');
+    ||result.opening!==fresh.updated.opening||!archiveNativeTimeReadback(fresh.updated,result))throw Error('本機回讀不一致（含劇情時間／原生 ID），請立刻使用剛下載的備份還原');
   let afterSnapshotNotice='✅ 正史時光機已保存覆蓋前後快照。';
   try{await window.ArchiveTimeMachine.captureAfterNative(result)}
   catch(snapshotError){afterSnapshotNotice='⚠ 覆蓋已成功，但覆蓋後快照儲存失敗：'+String(snapshotError?.message||snapshotError)+'。請立即匯出目前完整正史。'}
@@ -1134,19 +1244,21 @@ function archiveTimeInputHTML(id){
     <input type="datetime-local" step="60" id="${id}" aria-label="原始發言時間（台灣時間）">
     <div class="note">此欄是現實中的 ChatGPT 發言時間。最高優先採用 Gal AI 回覆的劇情日期／時間，同回合「我／他」共用；其次是 ChatGPT 原始時間＝手動時間，再依序首次擷取、雲端接收。兩種時間軸不直接相減。</div>`;
 }
-function archiveTimeDisplay(m,galContext=null){
-  const gal=galContext?.get(m);
+function archiveTimeDisplay(m,galContext=null,storyEvent=false){
+  const gal=galContext?.get(m)||(storyEvent?archiveParseGalAIClock({...m,role:'ai'},m.sourceKind==='gal-ai-native'):null);
   const source=archiveIsoTime(m.sourceCreatedAt),captured=archiveIsoTime(m.capturedAt),received=archiveIsoTime(m.receivedAt);
   const render=iso=>new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',
     year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
   const lines=[];
-  if(gal)lines.push((gal.basis==='gal-paired'?'本回合「我」共用 Gal AI 劇情時間：':'Gal AI 回覆劇情時間：')+render(gal.ms));
+  if(gal)lines.push((storyEvent?'Gal AI 事件劇情時間：':gal.basis==='gal-paired'?'本回合「我」共用 Gal AI 劇情時間：':'Gal AI 回覆劇情時間：')+render(gal.ms));
+  else if(m.sourceKind==='gal-ai-native'&&m.gameTime===null)lines.push('Gal AI 劇情時間：原生未標記或不詳（不推測）');
   if(source)lines.push((m.sourceTimeOrigin==='manual'?'手動標註現實時間：':m.sourceTimeOrigin==='reply-inferred'?'依 GPT 回覆推定現實時間（分鐘）：':m.sourceTimePrecision==='minute'?'ChatGPT 選單發言時間（分鐘）：':'ChatGPT 原始發言：')+render(source));
   else lines.push('ChatGPT 原始發言時間：未知');
   if(captured)lines.push('首次擷取：'+render(captured));
   if(received)lines.push('雲端接收：'+render(received));
   const basis=archiveChronologyTime(m,galContext).basis;
-  if(basis==='gal'||basis==='gal-paired')lines.push('排序優先：Gal AI 劇情時間');
+  if(storyEvent&&gal)lines.push('事件位置依原始掃描或手動定位保留');
+  else if(['gal','gal-paired','gal-auto-continue'].includes(basis))lines.push('排序優先：Gal AI 劇情時間');
   else if(basis==='source')lines.push(m.sourceTimeOrigin==='manual'?'排序依據：手動標註現實時間':'排序依據：ChatGPT 發言時間');
   else if(basis==='inferred')lines.push('排序依據：GPT 回覆推定的同回合分鐘');
   else if(basis==='captured')lines.push('排序依據：首次擷取');
@@ -1299,7 +1411,7 @@ function renderEvents(r){
       +'<div class="archive-event-head"><strong>'+safe(ev.title||'事件到達')+'</strong>'
       +'<span class="archive-event-status">'+archiveEventStatusText(ev.status)+'</span>'
       +'<span class="note">事件 #'+(i+1)+'</span></div>'
-      +archiveTimeDisplay(ev)+archiveImagesHtml(ev,i)
+      +archiveTimeDisplay(ev,null,true)+archiveImagesHtml(ev,i)
       +'<div class="body">'+safe(ev.text||'')+'</div>'
       +'<div class="msgtools">'+actions
       +'<button type="button" data-archive-attach="'+i+'">＋圖片</button>'
@@ -1592,7 +1704,7 @@ function archiveStoryBubble(row,i,record,galContext=null){
     +'<div class="who">'+safe(label)+' · #'+(i+1)
     +(story&&m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):'')
     +(!story&&m.storyPlacement?' · 手動位置':'')+'</div>'
-    +archiveTimeDisplay(m,galContext)+archiveImagesHtml(m,row.index)
+    +archiveTimeDisplay(m,galContext,!story)+archiveImagesHtml(m,row.index)
     +archiveSkipNoticeHtml(story?m:null)+'<div class="body">'+(record.world==='adventure'&&m.role==='ai'?archiveAdventureBodyHtml(m.text):story?archiveSkipBodyHtml(m):safe(m.text||''))+'</div>'
     +'<div class="msgtools">'+tools+archiveSpecialTools(record,row)+'</div></div></div>';
 }
@@ -2457,7 +2569,7 @@ async function importBackupText(text){
   await new Promise((resolve,reject)=>{
     const tx=db.transaction([STORE,WORLDSTORE],'readwrite'),cs=tx.objectStore(STORE),ws=tx.objectStore(WORLDSTORE);
     for(const w of worlds)ws.put({id:w.id,text:w.text,updatedAt:w.updatedAt||new Date().toISOString()});
-    for(const r of valid){const get=cs.get(r.id);get.onsuccess=()=>{if(get.result?.specialReviews||r.specialReviews)r.specialReviews=archiveSpecialMerge(get.result?.specialReviews,r.specialReviews);cs.put(r)}}
+    for(const r of valid){const get=cs.get(r.id);get.onsuccess=()=>{if(get.result?.specialReviews||r.specialReviews)r.specialReviews=archiveSpecialMerge(get.result?.specialReviews,r.specialReviews);archiveMergeExtras(r,get.result);cs.put(r)}}
     tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||Error('資料庫寫入失敗'));tx.onabort=()=>reject(tx.error||Error('資料庫交易取消'));
   });
   if(valid.length){world=valid[0].world;selected=valid[0].id;tab='chat';$('cycleSearch').value=''}
@@ -2556,7 +2668,7 @@ $('downloadSite').onclick=async()=>{
   const cssLink='<link rel="stylesheet" href="./'+cssAsset+'">';
   if(!html.includes(cssLink))throw Error('獨立網站找不到健康中心 CSS 連結');
   html=html.replace(cssLink,'<style>'+cssText+'</style>');
-  downloadText('輪迴檔案館_V5.74_網站.html',html);
+  downloadText('輪迴檔案館_V5.75_網站.html',html);
   notify('已下載包含交接稿與雲端同步程式的獨立 HTML；私人資料與附件請另外下載完整 .gab 備份');
  }catch(err){alert('下載完整網站失敗：'+String(err?.message||err))}
 };
@@ -2695,8 +2807,9 @@ $('writerRevoke').onclick=async()=>{
 async function uploadOneCycle(r){
   const user=await cloudSignedIn();
   const ref=cloudDb.collection('galArchive').doc(user.uid).collection('cycles').doc(r.id);
-  const parts=cloudParts(JSON.stringify(r));
   const oldParts=await ref.collection('parts').get();
+  if(oldParts.size){const meta=await ref.get();if(!meta.exists||meta.data().partCount!==oldParts.size)throw Error('雲端片段不完整，禁止覆蓋輪迴');const old=JSON.parse(oldParts.docs.slice().sort((a,b)=>Number(a.id)-Number(b.id)).map(d=>d.data().data).join(''));if(old.id!==r.id||old.world!==r.world)throw Error('輪迴或世界觀 ID 不符');if(archiveMergeExtras(r,old))await operation('readwrite',{type:'put',item:r});}
+  const parts=cloudParts(JSON.stringify(r));
   let batch=cloudDb.batch(),ops=0;
   const flushBatch=async()=>{if(ops===350){await batch.commit();batch=cloudDb.batch();ops=0}};
   for(let i=0;i<parts.length;i++){
@@ -2761,6 +2874,8 @@ function archiveGalTimeContext(messages){
       continue;
     }
     context.set(ai,clock);
+    // Native source pairs may span a separately stored event index. Both clocks must match the parsed AI HUD.
+    if(previous&&!context.has(previous)&&archiveNativePairedClock(previous,ai,clock)){context.set(previous,{...clock,basis:'gal-paired',pairedWith:ai});continue;}
     const sameSource=players.filter(m=>m.sourceEventId&&m.sourceEventId===ai.sourceEventId
       &&Number.isInteger(m.sourcePartIndex)&&Number.isInteger(ai.sourcePartIndex)
       &&m.sourcePartIndex+1===ai.sourcePartIndex&&!context.has(m));
@@ -4824,7 +4939,7 @@ async function pushCloud(){
     if(remote&&String(remote.updatedAt||'')>=String(r.updatedAt||'')){olderSkipped++;continue}
     const ref=root.collection('cycles').doc(r.id);
     const oldParts=await ref.collection('parts').get();
-    if(remote){if(oldParts.size!==remote.partCount)throw Error('藍點合併前發現雲端片段數量不一致');const old=JSON.parse(oldParts.docs.slice().sort((a,b)=>Number(a.id)-Number(b.id)).map(d=>d.data().data).join(''));if(old.id!==r.id)throw Error('藍點合併前輪迴 ID 不符');if(old.specialReviews||r.specialReviews){r.specialReviews=archiveSpecialMerge(old.specialReviews,r.specialReviews);await operation('readwrite',{type:'put',item:r});}}
+    if(remote){if(oldParts.size!==remote.partCount)throw Error('藍點合併前發現雲端片段數量不一致');const old=JSON.parse(oldParts.docs.slice().sort((a,b)=>Number(a.id)-Number(b.id)).map(d=>d.data().data).join(''));if(old.id!==r.id)throw Error('藍點合併前輪迴 ID 不符');const extrasChanged=archiveMergeExtras(r,old);if(old.specialReviews||r.specialReviews){r.specialReviews=archiveSpecialMerge(old.specialReviews,r.specialReviews);await operation('readwrite',{type:'put',item:r});}else if(extrasChanged)await operation('readwrite',{type:'put',item:r});}
     const parts=cloudParts(JSON.stringify(r));
     let batch=cloudDb.batch(),ops=0;
     const flushBatch=async()=>{if(ops===350){await batch.commit();batch=cloudDb.batch();ops=0}};
@@ -4889,6 +5004,7 @@ async function pullCloud(){
       const item=JSON.parse(snap.docs.map(x=>x.data().data).join(''));
       if(item.id!==d.id)throw Error(root.label+'：輪迴 ID 不符，已停止');
       if(existing?.specialReviews||item.specialReviews){const merged=archiveSpecialMerge(existing?.specialReviews,item.specialReviews);if(JSON.stringify(merged)!==JSON.stringify(archiveSpecialMerge(item.specialReviews)))item.updatedAt=new Date().toISOString();item.specialReviews=merged;}
+      if(archiveMergeExtras(item,existing))item.updatedAt=new Date(Math.max(Date.now(),(Date.parse(item.updatedAt||'')||0)+1)).toISOString();
       await operation('readwrite',{type:'put',item});
       cycleMap.set(item.id,item);
       cyclesAdded++;
