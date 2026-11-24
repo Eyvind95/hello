@@ -114,7 +114,7 @@ test('no automatic sync is performed without account authentication, and only se
 test('PWA and self contained HTML download both include automatic sync code',()=>{
  const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
- assert.match(sw,/gal-archive-pwa-v99/);
+ assert.match(sw,/gal-archive-pwa-v100/);
  assert.match(sw,/archive-auto-sync-core\.js/);
  assert.match(sw,/archive-auto-sync\.js/);
  assert.match(html,/for\(const asset of \[.*'archive-auto-sync-core\.js\?v=1','archive-auto-sync\.js\?v=1'/);
