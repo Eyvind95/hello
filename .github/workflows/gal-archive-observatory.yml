@@ -8,6 +8,11 @@ on:
       - 'apps/gal-archive/archive-observatory.js'
       - 'apps/gal-archive/archive-observatory.css'
       - 'apps/gal-archive/archive-observatory.test.js'
+      - 'apps/gal-archive/archive-auto-sync-core.js'
+      - 'apps/gal-archive/archive-auto-sync.js'
+      - 'apps/gal-archive/archive-auto-sync.test.js'
+      - 'apps/gal-archive/handover-cloud.js'
+      - 'apps/gal-archive/handover.js'
       - 'apps/gal-archive/index.html'
       - 'apps/gal-archive/sw.js'
       - 'main.html'
@@ -26,7 +31,12 @@ jobs:
         run: |
           node --check apps/gal-archive/archive-observatory-core.js
           node --check apps/gal-archive/archive-observatory.js
+          node --check apps/gal-archive/archive-auto-sync-core.js
+          node --check apps/gal-archive/archive-auto-sync.js
+          node --check apps/gal-archive/handover-cloud.js
+          node --check apps/gal-archive/handover.js
           node --test apps/gal-archive/archive-observatory.test.js
+          node --test apps/gal-archive/archive-auto-sync.test.js
           node - <<'NODE'
           const fs=require('fs');
           const html=fs.readFileSync('apps/gal-archive/index.html','utf8');
