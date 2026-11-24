@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.41: verified timed notification and literal-fenced event format projection; exact source proof required. */
+/* Independent Gal AI page scanner. v0.8.42: live progress without periodic status downloads. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.41';
+const SCANNER_VERSION='0.8.42';
 const core=globalThis.GalArchiveCore;
 const formatEvidence=globalThis.GalArchiveFormatEvidence;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
@@ -54,7 +54,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.41 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.42 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-save-progress">🧷 保全已讀進度（不可匯入）</button>'+
