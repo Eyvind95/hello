@@ -45,7 +45,7 @@ function installGalScanStatus(api){
    lateCompletionRecovered:run.lateCompletionRecovered||false,
    reason:run.reason||null,summary:run.summary||null,
    batchFolder:run.batchFolder,
-   statusPath:run.batchFolder+'/'+filenames.status,
+   statusPath:run.statusPath||run.batchFolder+'/'+filenames.status,
    files:Object.fromEntries(Object.entries(run.files||{}).filter(([,f])=>f.path)
     .map(([k,f])=>[k,f.path])),
    pendingFiles:Object.entries(run.files||{}).filter(([,f])=>!f.path).map(([kind])=>kind)
@@ -71,7 +71,8 @@ function installGalScanStatus(api){
    url:'data:application/json;charset=utf-8,'+encodeURIComponent(payload),
    filename,saveAs:false,conflictAction:'overwrite'
   });
-  // Never claim a successful status download before Chrome verifies it.
+  // Only this run's fixed status path is overwritten, never a historical batch.
+  run.statusId=id;
   return confirmedDownload(id);
  }
  async function makeFile(run,kind,text){
@@ -267,8 +268,30 @@ function installGalScanStatus(api){
    for(const run of Object.values(runs).filter(r=>r.state==='running'&&predicate(r))){
     // If a page remains available, ask it to download its last snapshot
     // before Chrome terminates the run.
-    await api.tabs.sendMessage(run.tabId,{type:'gal-scan-emergency-snapshot',reason},
-     {documentId:run.documentId}).catch(()=>{});
+    const snapshot=await api.tabs.sendMessage(run.tabId,
+     {type:'gal-scan-emergency-snapshot',reason},
+     {documentId:run.documentId}).catch(()=>null);
+    if(snapshot?.scanRunId===run.scanRunId&&
+       Number.isInteger(snapshot.scanned)&&snapshot.scanned>=0&&snapshot.scanned<=20000&&
+       typeof snapshot.diagnostic==='string'){
+     try{
+      const diag=JSON.parse(snapshot.diagnostic);
+      if(diag.scanRunId===run.scanRunId&&diag.cycleId===run.cycleId){
+       run.scanned=snapshot.scanned;run.files={};
+       if(snapshot.unverified){
+        const data=JSON.parse(snapshot.unverified);
+        if(data.format==='gal-ai-unverified-scan'&&data.importable===false&&
+         data.scanRunId===run.scanRunId&&data.rows?.length===run.scanned)
+         run.files.unverified=await makeFile(run,'unverified',snapshot.unverified);
+       }
+       run.files.diagnostic=await makeFile(run,'diagnostic',snapshot.diagnostic);
+       // Allow Chrome to confirm actual downloaded filenames.
+       for(const file of Object.values(run.files)){
+        file.path=await confirmedDownload(file.id,80);
+       }
+      }
+     }catch(error){run.reason='緊急保全失敗：'+String(error.message||error)}
+    }
     await finish(runs,run,'failed',reason);
    }
   });
