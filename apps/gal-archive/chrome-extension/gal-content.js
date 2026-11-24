@@ -464,9 +464,16 @@ function nativePlayerSourcesBetween(start,end){
   const id=node.getAttribute('data-selection-copy-message-id');
   if(!id||out.has(id))return;
   const evidence=readNativeNode(node,true).eventEvidence;
+  // Exact React content is required to prove a source-preserving merge.
+  // Keep text in this page's scan memory; diagnostics publish only hashes.
+  const original=readNativeNode(node);
   out.set(id,{id,sender:evidence?.sender||null,kind:evidence?.kind||null,
    hasText:Boolean(core.clean(node.textContent||'')),
-   hasMedia:Boolean(node.querySelector('img,video,audio,[data-attachment-id]'))});
+   hasMedia:Boolean(node.querySelector('img,video,audio,[data-attachment-id]')),
+   nativeReason:original?.reason||'unavailable',
+   nativeText:original?.reason==='available'?original.text:null,
+   nativeSender:original?.eventEvidence?.sender||null,
+   nativeMessageId:original?.eventEvidence?.messageId||null});
  };
  if(base.matches?.(nativeMessageSelector))take(base);
  for(const node of base.querySelectorAll(nativeMessageSelector))take(node);
@@ -529,7 +536,15 @@ function boundaryRead(root,traceFirst=false,captureNative=false){
    if(gap){
     rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1,
      formatSource:captureNative?{
-      playerSources:nativePlayerSourcesBetween(pairs[i-1].end,item.start)
+      playerSources:nativePlayerSourcesBetween(pairs[i-1].end,item.start),
+      playerGapHasMedia:(()=>{
+       const range=document.createRange();
+       range.setStartAfter(pairs[i-1].end);range.setEndBefore(item.start);
+       const base=range.commonAncestorContainer;
+       return [...(base.querySelectorAll?.('img,video,audio,[data-attachment-id]')||[])]
+        .some(node=>range.intersectsNode(node)&&
+         !node.closest('#'+PANEL+',button,[role="button"],[role="toolbar"]'));
+      })()
      }:undefined});
     debug.playerGaps++;
    }else if(item.metadata&&item.kind==='reply'&&pairs[i-1].kind==='reply'){
@@ -742,6 +757,46 @@ function observeEventAudit(audit,shot,collected,alignment){
  * This audit explains the units rather than declaring two missing turns
  * from a count difference alone. It never authorizes a canonical export.
  */
+
+/*
+ * Strict source-preserving merge. A player *turn* can contain consecutive
+ * WHIF user messages. We keep one me/AI turn for the canonical importer,
+ * but require complete ordered React content for EVERY native source.
+ * Media and any non-whitespace mismatch FAIL CLOSED, never guessed away.
+ */
+function proveMergedPlayerSources(row,expectedIds){
+ const sources=row?.formatSource?.playerSources;
+ const errors=[],expected=new Set(expectedIds||[]);
+ const check=(bad,error)=>{if(bad)errors.push(error)};
+ const current=Array.isArray(sources)?sources:[];
+ const ids=current.map(x=>x.id);
+ check(!Array.isArray(sources)||current.length<2,'native-user-sources-not-captured');
+ check(ids.length!==new Set(ids).size,'duplicate-native-source-id-in-gap');
+ check(ids.length!==expected.size||ids.some(id=>!expected.has(id)),'observed-gap-id-set-mismatch');
+ check(row?.formatSource?.playerGapHasMedia===true,'unverified-gap-media');
+ for(const source of current){
+  check(source.sender!=='user'||source.kind!=='ordinary-message','native-sender-not-user');
+  check(source.nativeReason!=='available'||typeof source.nativeText!=='string'||
+   !source.nativeText.trim(),'native-content-unavailable');
+  check(source.nativeMessageId!==source.id||source.nativeSender!=='user','native-content-id-or-sender-mismatch');
+  check(source.hasMedia===true||/\{\{\s*(?:img|image)\s*:/i.test(source.nativeText||'')||
+   /!\[[^\]]*\]\([^)]+\)/.test(source.nativeText||''),'source-media-needs-manual-verification');
+ }
+ const unspaced=value=>String(value||'').replace(/\s/gu,'');
+ const nativeText=current.map(x=>x.nativeText||'').join('');
+ const renderedText=String(row?.text||'');
+ const sourceKey=unspaced(nativeText),renderedKey=unspaced(renderedText);
+ check(!sourceKey||sourceKey!==renderedKey,'merged-player-text-not-exactly-preserved');
+ const ok=errors.length===0;
+ return {ok,errors,sourceCount:current.length,
+  nativeSourceHashes:ids.filter(Boolean).map(hash),
+  originalNonWhitespaceChars:[...sourceKey].length,
+  renderedNonWhitespaceChars:[...renderedKey].length,
+  originalContentHash:hash(sourceKey),renderedContentHash:hash(renderedKey),
+  exactNonWhitespaceMatch:sourceKey===renderedKey&&sourceKey.length>0,
+  mediaPresent:current.some(x=>x.hasMedia===true)||row?.formatSource?.playerGapHasMedia===true};
+}
+
 function analyzePlayerSourceDifference(collected,history,senders,links,nearby){
  const playerIndices=collected.flatMap((row,index)=>row.role==='me'?[index]:[]);
  const observed=[...history.keys()].filter(id=>senders.get(id)==='user');
@@ -768,7 +823,8 @@ function analyzePlayerSourceDifference(collected,history,senders,links,nearby){
  };
  const multiSourceRows=[...perRow].filter(([,ids])=>ids.size>1)
   .map(([scanIndex,ids])=>({scanIndex,nativeUserSourceCount:ids.size,
-   sourceHashes:[...ids].map(hash),...adjacentAi(scanIndex)}));
+   sourceHashes:[...ids].map(hash),...adjacentAi(scanIndex),
+   contentProof:proveMergedPlayerSources(collected[scanIndex],ids)}));
  const rowsWithoutProvenUserMarker=[...perRow].filter(([,ids])=>
   ![...ids].some(id=>observedSet.has(id))).map(([scanIndex])=>scanIndex);
  const multipleRows=[...(links||new Map())].filter(([id,indices])=>
@@ -778,9 +834,20 @@ function analyzePlayerSourceDifference(collected,history,senders,links,nearby){
  const notObserved=[...(links||new Map()).keys()]
   .filter(id=>!observedSet.has(id)).map(id=>({sourceHash:hash(id),
    scanIndices:[...(links?.get(id)||[])]}));
+ const extraNativeIds=observed.length-playerIndices.length;
+ const explanationFromMerges=multiSourceRows.reduce((total,row)=>
+  total+row.nativeUserSourceCount-1,0);
+ const safeSourceMerge=extraNativeIds>0&&
+  multiSourceRows.length>0&&explanationFromMerges===extraNativeIds&&
+  !unmapped.length&&!rowsWithoutProvenUserMarker.length&&
+  !multipleRows.length&&!notObserved.length&&
+  multiSourceRows.every(row=>row.contentProof.ok)&&
+  mapped.length===observed.length;
  return {
   originalUserMarkers:observed.length,renderedPlayerRows:playerIndices.length,
-  countDifference:observed.length-playerIndices.length,
+  countDifference:extraNativeIds,
+  safeSourceMerge,
+  explainedExtraNativeIds:explanationFromMerges,
   mappedNativeUserMarkers:mapped.length,unmappedNativeUserMarkers:unmapped.length,
   unmappedNativeUserDetails:unmapped.slice(0,30),
   rowsWithMultipleNativeUserSources:multiSourceRows.length,
@@ -847,7 +914,8 @@ function verifyAutoContinueAudit(collected,candidates,history,senders,playerLink
  const playerSourceAudit=analyzePlayerSourceDifference(collected,history,senders,playerLinks,userNearby);
  const playerMarkers=playerSourceAudit.originalUserMarkers;
  const playerRows=playerSourceAudit.renderedPlayerRows;
- if(playerMarkers>playerRows)problems.push({scope:'history',
+ if(playerMarkers>playerRows&&!playerSourceAudit.safeSourceMerge)
+  problems.push({scope:'history',
   errors:['more-observed-user-messages-than-player-rows'],
   extraNativeUserMarkers:playerMarkers-playerRows,
   candidateMultipleSourceRowIndices:playerSourceAudit.multipleNativeSourceDetails.map(x=>x.scanIndex),
@@ -956,6 +1024,10 @@ function canonical(rows,valid,preview){
  const messages=valid.messages.map((m,i)=>build(m,i,'message'));
  for(const [i,row] of valid.messages.entries()){
   if(row.verifiedUntimedNative)messages[i].nativeClockEvidence='verified-original-without-game-time';
+  if(Array.isArray(row.nativeUserSegments)){
+   messages[i].nativeUserSegments=row.nativeUserSegments;
+   messages[i].nativeUserMergeVerified=true;
+  }
  }
  for(const [i,row] of valid.messages.entries()){
   if(row.autoContinue)messages[i].autoContinue={
@@ -1348,7 +1420,9 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    const id=row.formatSource?.nativeReply?.messageId;
    if(id)sourceCounts.set(id,(sourceCounts.get(id)||0)+1);
   }
-  autoContinueAudit=continuedPositions.length
+  // For a full scan, player provenance must be verified even when there
+  // are NO AI auto-continuations. Preview keeps its original lighter scope.
+  autoContinueAudit=!preview&&eventAudit.history.size
    ?verifyAutoContinueAudit(collected,continuedPositions,eventAudit.history,eventAudit.senders,
     eventAudit.playerSourceRows,eventAudit.userNearby)
    :{ok:true,notApplicable:true,candidateIndices:[],observedNativeMarkers:eventAudit.history.size,
@@ -1362,6 +1436,23 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
      '（不等於已證實漏掃），AI 自動繼續均已通過；請核對診斷 autoContinueAudit.playerSourceAudit 的多來源玩家列及未定位標記');
    throw Error('來源完整性核對未通過（'+autoContinueAudit.problems
     .map(p=>p.scanIndex??p.scope).join('、')+'）；請依診斷 autoContinueAudit 核對，不得猜測漏失訊息');
+  }
+  // Preserve distinct native user messages within one rendered player turn.
+  // Do NOT split into unsupported me/me/ai rows. Keep every native source's
+  // original whitespace/paragraphs and the exact source boundaries.
+  if(autoContinueAudit?.playerSourceAudit?.safeSourceMerge){
+   for(const evidence of autoContinueAudit.playerSourceAudit.multipleNativeSourceDetails){
+    if(!evidence.contentProof?.ok)
+     throw Error('玩家多來源保留證據不完整：scanIndex '+evidence.scanIndex);
+    const row=collected[evidence.scanIndex],sources=row?.formatSource?.playerSources;
+    const entry=validation.messages.find(m=>m.role==='me'&&m.scanIndex===evidence.scanIndex);
+    if(!entry||sources?.length!==evidence.nativeUserSourceCount)
+     throw Error('原生玩家分段與匯出列無法對應：scanIndex '+evidence.scanIndex);
+    entry.text=sources.map(s=>s.nativeText).join('\n\n');
+    entry.nativeUserSegments=sources.map((s,index)=>({
+     position:index,sourceIdHash:hash(s.id),text:s.nativeText
+    }));
+   }
   }
   // The independent opening is not part of validation.messages. It must
   // have its OWN source-ID-checked native paragraph pass before serialization.
