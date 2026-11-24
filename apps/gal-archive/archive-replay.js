@@ -73,7 +73,7 @@
   return {text:raw,comparison:{...result.comparison,contentEqual:true,clockEqual:true,renderProjection:{kind:'verified-whif-terminal-fence-tail-not-rendered',sourceId:id,probeRunId:probe.scanRunId,originalRun:cp.scanRunId,line:ta.line,tailLength:tail.length,nativeHash:hash(raw),domHash:hash(row.domText)},formatMarkers:[...(result.comparison.formatMarkers||[]),{kind:'verified-whif-terminal-fence-tail-not-rendered',tokens:1,nonWhitespaceChars:norm(tail).length}]}};
  }
  // Independent source-only traversal: replay the saved viewport overlap chain, not the checkpoint order.
- function verifyHistorySupplement(cp,proof,playerLabels,autoIndices){
+ function verifyHistorySupplement(cp,proof,playerLabels,autoIndices,details=null){
   if(!proof||proof.format!=='gal-ai-history-source-proof'||proof.version!==1||proof.forensicOnly!==true||proof.importable!==false||proof.complete!==true||proof.reason||proof.scope!=='independent-live-source-inventory'||proof.scanRunId===cp.scanRunId||!proof.scanRunId||proof.scannerVersion!==proof.coreVersion||!/^0\.9\.(?:1[4-9]|[2-9]\d|\d{3,})$/.test(proof.scannerVersion)||proof.source?.url!==cp.source.url)return false;
   if(!['cycleId','cycleTitle','worldName','worldKey','cycleNumber','archiveKey'].every(k=>proof.target?.[k]===cp.target[k]&&cp.target[k]!==undefined))return false;
   const entries=proof.entries,windows=proof.windows;
@@ -98,23 +98,31 @@
   }
   if(expected.length!==entries.length)return false;
   const labels=new Map(playerLabels.map(l=>[l.i,l.label]));
+  const playerIssues=[],labelProofIndices=[];
   for(let i=0;i<entries.length;i++){
    const a=entries[i],b=expected[i];
    if(a.id!==b.id||a.kind!==b.kind||a.sender!==b.sender||a.accepted!==b.accepted||a.nativeHash!==hash(b.raw)||a.nativeNormHash!==hash(norm(b.raw))||a.nativeLength!==b.raw.length)return false;
    if(a.sender==='user'){
-    const p=a.player;if(!p||p.ownerId!==a.id||!Number.isInteger(p.bodyParts)||p.bodyParts<1||p.hasMedia!==false)return false;
-    // For old duplicated player headers require an independent live player body
-    // equal to the original native player text, and a matching stripped old body.
-    if(labels.has(b.row.scanIndex)){
-     if(p.bodyNormHash!==a.nativeNormHash)return false;
-     const prefix='**'+labels.get(b.row.scanIndex)+'**\n';
-     if(!b.row.domText.startsWith(prefix)||norm(b.row.domText.slice(prefix.length))!==norm(b.raw))return false;
+    const p=a.player,idx=b.row.scanIndex;
+    if(!p||p.ownerId!==a.id||!Number.isInteger(p.bodyParts)||p.bodyParts<1||typeof p.hasMedia!=='boolean'){playerIssues.push({scanIndex:idx,reason:'player-owner-or-body-unverified'});continue;}
+    if(p.hasMedia){playerIssues.push({scanIndex:idx,reason:'live-player-media-present'});continue;}
+    // Exact old prefix/body plus independently identical raw source. A live
+    // label outside the player marker is a separate structural proof, not a
+    // claim that Markdown rendering preserves literal native punctuation.
+    if(labels.has(idx)){
+     const label=labels.get(idx),prefix='**'+label+'**\n';
+     const exactBody=p.bodyNormHash===a.nativeNormHash;
+     const outsideLabel=eq(p.outsideLabelHashes,[hash(label)])&&/^[0-9a-f]{16}$/.test(p.bodyNormHash||'')&&p.bodyNormHash!==hash('')&&p.markerNormHash===p.bodyNormHash;
+     if(!b.row.domText.startsWith(prefix)||norm(b.row.domText.slice(prefix.length))!==norm(b.raw)||(!exactBody&&!outsideLabel)){playerIssues.push({scanIndex:idx,reason:'player-label-projection-unverified'});continue;}
+     labelProofIndices.push(idx);
     }
    }
   }
   const expectedAuto=autoIndices.map(i=>cp.rows[i].sourceMessageId);
   const derived=entries.filter((r,i)=>i>1&&['character','assistant'].includes(r.sender)&&['character','assistant'].includes(entries[i-1].sender)).map(r=>r.id);
-  return eq(derived,expectedAuto)&&eq(proof.autoContinueIds,derived);
+  const autoOk=eq(derived,expectedAuto)&&eq(proof.autoContinueIds,derived);
+  if(details)Object.assign(details,{orderedSourceProofOk:true,autoContinueOk:autoOk,playerIssues,labelProofIndices});
+  return autoOk&&playerIssues.length===0;
  }
 
  function replay(cp,diag,state,core,evidence,probes=[],historyProof=null){
@@ -195,7 +203,8 @@
   const manifest=diag.historySourceManifest;
   // Independent live identity inventory is required for promotion. Counts alone cannot prove identity.
   const manifestOk=early&&eq(cp.historySourceManifest,manifest)&&Array.isArray(manifest)&&manifest.length===ids.size&&new Set(manifest.map(x=>x.id)).size===ids.size&&manifest.every(m=>{const r=sourceKinds.get(m.id);return r&&m.kind===r.kind&&m.sender===r.sender&&eq(m.playerRows,r.sender==='user'?[r.scanIndex]:[])})&&!merged.length&&!playerLabels.length;
-  const supplementOk=early&&!merged.length&&verifyHistorySupplement(cp,historyProof,playerLabels,autoIndices);
+  const supplementDetails={orderedSourceProofOk:false,autoContinueOk:false,playerIssues:[],labelProofIndices:[]};
+  const supplementOk=early&&!merged.length&&verifyHistorySupplement(cp,historyProof,playerLabels,autoIndices,supplementDetails);
   const sourceAuditOk=!early||manifestOk||supplementOk;
   const checks=[],restored=[],opening={role:'ai',scanIndex:0,text:v.opening,gameTime:core.parseGameTime(v.opening)?.iso||null};
   for(const entry of [opening,...v.messages.filter(x=>x.role==='ai'),...v.events]){
@@ -213,6 +222,8 @@
   }
   const audit=evidence.summarize(rows,checks,core,v.ok);
   const report={format:'gal-archive-offline-revalidation',version:1,scanRunId:run,cycleId:id,originalScannerVersion:version,coreVersion:core.version,rawRows:n,integrityOk:v.ok,bottomProof:bottom,sourceAuditOk,sourceAuditMethod:early?(supplementOk?'independent-live-source-supplement':manifestOk?'independent-saved-history-id-inventory':'saved-row-local-proof-only'):'original-live-audit',pairs:v.pairs,events:v.events.length,autoContinues:v.autoContinues,playerRows,uniqueNativeIds:ids.size,playerLabelIndices:playerLabels.map(x=>x.i),restoredRenderTails:restored,sourceAuditBlockers:sourceAuditOk?[]:['原批次未保存完整獨立歷史ID／玩家對應清單，或缺少玩家標題投影證據；禁止正式重建'],nativeFormatAudit:{checked:audit.checkedNativeRows,verified:audit.verifiedNativeRows,failed:audit.failedNativeRows,complete:audit.nativeFormatComplete},failedIndices:audit.failures.map(x=>x.scanIndex),warnings:v.warnings,importable:false,method:early?'saved-complete-early-failure-revalidation':'saved-complete-source-audited-batch'};
+  report.historySupplementDetails=supplementDetails;
+  if(!sourceAuditOk&&supplementDetails.orderedSourceProofOk&&supplementDetails.playerIssues.length)report.sourceAuditBlockers=supplementDetails.playerIssues.map(x=>'原生索引 '+x.scanIndex+'：'+(x.reason==='live-player-media-present'?'即時玩家節點含媒體，須局部核對':'玩家來源或外部標籤證據不符'));
   if(!audit.nativeFormatComplete||!sourceAuditOk)return {report,canonical:null};
   for(const {i,sources} of merged){
    const entry=v.messages.find(x=>x.scanIndex===i&&x.role==='me');
@@ -244,8 +255,9 @@
   assert(new Set([...messages,...events].map(x=>x.id)).size===n-1,'正式 ID 重複');
   const canonical={format:'gal-ai-authoritative-scan',version:1,generatedAt:new Date().toISOString(),scope:'entire-opening-to-bottom',source:{url:path,origin:url.origin,path:url.pathname,gameClockOnly:true},target:{...cp.target,uid:'',manager:'',managerNames:[]},opening:opening.text,messages,events,rawRows:n,scanRunId:run,scannerVersion:version,coreVersion:core.version,readOnlyUntilImported:true,
    validation:{ok:true,integrityOk:true,nativeFormatComplete:true,pairs:v.pairs,events:events.length,autoContinues:v.autoContinues,openingChars:opening.text.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,unknownGameTimeCount:v.unknownGameTimeCount||0,verifiedUntimedCount:v.verifiedUntimedCount||0,invalidDateReplyCount:v.invalidDateReplyCount||0,invalidDateRowCount:v.invalidDateRowCount||0,warnings:v.warnings,errors:[]},
-   nativeFormatAudit:report.nativeFormatAudit,eventAudit:{...ev,complete:true,zeroEventAssessment:events.length?'not-zero':'no-accepted-event-in-observed-history'},offlineRecovery:{method:report.method,originalScannerVersion:version,originalFailure:cp.failedPhase,coreVersion:core.version,originalRun:run,liveRescan:false,sourceAuditReused:!early,sourceAuditMethod:report.sourceAuditMethod,restoredRenderTails:restored,bottomProof:bottom},note:'由完整保全及同批次現場來源稽核離線重驗產出；並非重新實機掃描。匯入前仍須核對目標輪迴、預覽與備份。'};
+   nativeFormatAudit:report.nativeFormatAudit,eventAudit:{...ev,...(early&&sourceAuditOk?{ordinaryAiTotal:aiRows,ordinaryAiVerified:aiRows,historyMarkersObserved:ids.size}:{}),complete:true,zeroEventAssessment:events.length?'not-zero':'no-accepted-event-in-observed-history'},offlineRecovery:{method:report.method,originalScannerVersion:version,originalFailure:cp.failedPhase,coreVersion:core.version,originalRun:run,liveRescan:false,sourceAuditReused:!early,sourceAuditMethod:report.sourceAuditMethod,restoredRenderTails:restored,bottomProof:bottom},note:'由完整保全及同批次現場來源稽核離線重驗產出；並非重新實機掃描。匯入前仍須核對目標輪迴、預覽與備份。'};
   if(supplementOk)canonical.offlineRecovery.historySupplementRunId=historyProof.scanRunId;
+  if(early)canonical.offlineRecovery.originalEventAuditCounts={ordinaryAiTotal:ev.ordinaryAiTotal,ordinaryAiVerified:ev.ordinaryAiVerified};
   report.canonicalAvailable=true;
   return {report,canonical};
  }

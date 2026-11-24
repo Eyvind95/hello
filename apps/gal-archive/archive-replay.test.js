@@ -47,7 +47,7 @@ test('a remaining native content difference returns only a diagnostic, not canon
 test('website button, separate files, local-only report and cache assets are wired',()=>{
  const html=fs.readFileSync(require.resolve('./index.html'),'utf8'),sw=fs.readFileSync(require.resolve('./sw.js'),'utf8'),js=fs.readFileSync(require.resolve('./archive-replay.js'),'utf8');
  for(const id of ['archiveReplayOpen','archiveReplayRaw','archiveReplayDiag','archiveReplayState','archiveReplayRun','archiveReplayDownload','archiveReplayReport'])assert.ok(html.includes('id="'+id+'"'));
- assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=6/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
+ assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=7/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
  assert.doesNotMatch(js,/\bfetch\s*\(|indexedDB|firestore|localStorage|sessionStorage/);
 });
 
@@ -91,7 +91,22 @@ test('independent source supplement proves ordered IDs, original hashes, both ed
  const edge=w=>({stable:true,waitedMs:8300,checks:[0,8300].map(at=>({at,top:w.top,height:w.height,clientHeight:w.clientHeight,ids:w.ids}))});
  const p={format:'gal-ai-history-source-proof',version:1,forensicOnly:true,importable:false,complete:true,scope:'independent-live-source-inventory',scanRunId:'other-run',scannerVersion:'0.9.14',coreVersion:'0.9.14',source:f.cp.source,target:f.cp.target,entries,windows,firstProof:edge(windows[0]),lastProof:edge(windows[1]),eventCards:[],autoContinueIds:[]};
  const go=p=>replay(f.cp,f.diag,f.state,core,evidence,[],p);
- assert.ok(go(p).canonical);assert.equal(go(p).canonical.offlineRecovery.historySupplementRunId,'other-run');
+ // Older integrity failure may have stopped the ordinary AI audit early.
+ f.cp.eventAudit.ordinaryAiTotal=f.cp.eventAudit.ordinaryAiVerified=0;
+ f.diag.eventAudit.ordinaryAiTotal=f.diag.eventAudit.ordinaryAiVerified=0;
+ const rebuilt=go(p).canonical;assert.ok(rebuilt);assert.equal(rebuilt.offlineRecovery.historySupplementRunId,'other-run');
+ assert.equal(rebuilt.eventAudit.ordinaryAiTotal,1);assert.equal(rebuilt.eventAudit.ordinaryAiVerified,1);
+ assert.deepEqual(rebuilt.offlineRecovery.originalEventAuditCounts,{ordinaryAiTotal:0,ordinaryAiVerified:0});
+ const verifier=require('./archive-replay.js').verifyHistorySupplement;
+ const labeled=structuredClone(f.cp);labeled.rows[1].domText='**測試標籤**\n'+labeled.rows[1].nativeText;
+ const q=structuredClone(p);Object.assign(q.entries[1].player,{bodyNormHash:hash('格式投影後文字'),markerNormHash:hash('格式投影後文字'),outsideLabelHashes:[hash('測試標籤')]});
+ const labels=[{i:1,label:'測試標籤'}],details={};
+ assert.equal(verifier(labeled,q,labels,[],details),true);assert.deepEqual(details.labelProofIndices,[1]);
+ for(const mutate of [x=>x.entries[1].player.hasMedia=true,x=>x.entries[1].player.outsideLabelHashes=[hash('其他標籤')],x=>x.entries[1].player.markerNormHash='different',x=>x.entries[1].nativeHash='different']){
+  const x=structuredClone(q);mutate(x);assert.equal(verifier(labeled,x,labels,[]),false);
+ }
+ const media=structuredClone(q);media.entries[1].player.hasMedia=true;const blocked={};assert.equal(verifier(labeled,media,labels,[],blocked),false);assert.deepEqual(blocked.playerIssues,[{scanIndex:1,reason:'live-player-media-present'}]);
+ const wrong=structuredClone(labeled);wrong.rows[1].domText+='缺漏';assert.equal(verifier(wrong,q,labels,[]),false);
  for(const mutate of [x=>x.entries[1].nativeHash='wrong',x=>x.entries[1].index++,x=>x.entries[1].sender='character',x=>x.entries[1].player.ownerId='foreign',x=>x.windows[1].ids=['native-2'],x=>x.firstProof.waitedMs=7999,x=>x.lastProof.checks.pop(),x=>x.target={...x.target,cycleId:'other'},x=>x.complete=false,x=>x.autoContinueIds=['native-2']]){
   const x=structuredClone(p);mutate(x);assert.equal(go(x).canonical,null);
  }
