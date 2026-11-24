@@ -52,3 +52,38 @@ test('default diagnostics redact story contexts',()=>{
  assert.equal(d.original.domContext,undefined);
  assert.ok(d.candidates.every(x=>!Object.hasOwn(x,'_privateContext')));
 });
+
+test('a failed clock validation retains actual event classification in future scanner diagnostics',()=>{
+ const fs=require('node:fs');
+ const source=fs.readFileSync(require.resolve('../chrome-extension/gal-content.js'),'utf8');
+ assert.match(source,/failedValidation=validation;/);
+ assert.match(source,/failedValidation\|\|\{messages:\[\],events:\[\]\}/);
+ const begin=source.indexOf('function summarizeEventAudit(');
+ const end=source.indexOf('function isBottom(',begin);
+ assert.ok(begin>0&&end>begin);
+ const body=source.slice(begin,end);
+ const summarize=new Function('hash','SCANNER_VERSION',body+'; return summarizeEventAudit;')(
+  x=>String(x), '0.8.34');
+ const eventId='event-example';
+ const collected=[
+  {role:'ai',formatSource:{nativeReply:{messageId:'opening'}}},
+  {role:'ai',eventType:'event',formatSource:{nativeReply:{messageId:eventId}}},
+  {role:'me'},
+  {role:'ai',formatSource:{nativeReply:{messageId:'reply'}}}
+ ];
+ const audit={
+  headers:new Map([['h1',{scanIndex:1,reason:'serialized'}]]),
+  native:new Map([[eventId,{kind:'event-message',accepted:true,scanIndex:1}]]),
+  unverifiedCards:new Map(),
+  history:new Map([[eventId,'event-message'],['reply','ordinary-message']])
+ };
+ const validation={messages:[{role:'me',scanIndex:2},{role:'ai',scanIndex:3}],events:[{scanIndex:1}]};
+ const result=summarize(audit,collected,validation,false);
+ assert.equal(result.complete,false);
+ assert.equal(result.exportedEvents,1);
+ assert.equal(result.unresolvedAccepted,0);
+ assert.equal(result.unresolvedHeaders,0);
+ const misleading=summarize(audit,collected,{messages:[],events:[]},false);
+ assert.equal(misleading.unresolvedAccepted,1);
+ assert.equal(misleading.unresolvedHeaders,1);
+});
