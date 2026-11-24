@@ -1493,3 +1493,36 @@ test('clockless trending header proves one hidden context and one bare leading f
  assert.equal(core.compareNativeParagraphs(dom,native,{source:'whif-message-content'}).text,null);
  assert.equal(validate([...prefix,{...row,formatSource:{nativeReply:{...row.formatSource.nativeReply,markerCount:2}}},...suffix]).ok,false);
 });
+
+
+test('V0.8.47 quote-wrapped trending and two separate fenced blocks require complete matching evidence',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const news='【基甫納熱搜】\n'+Array.from({length:5},(_,i)=>
+  '#'+(i+1)+' 測試「標題」內容\n🔥熱度：1,000\n💬匿名留言：測試「留言」內容').join('\n\n');
+ const visible=news.replaceAll('「標題」','\n「標題」\n').replaceAll('「留言」','\n「留言」\n');
+ const hud='｜2026年8月27日（星期四）｜\n｜🕒06:22｜晴朗｜\n｜📍測試地點｜\n｜🍿暴走值：0｜';
+ const body='\n\n普通正文。\n\n> 保留引用\n\n**粗體**';
+ const dom=visible+'\n'+hud+body;
+ const native=fence+'\n'+news+'\n'+fence+'\n\n{{測試上下文}}\n\n'+fence+'\n'+hud+'\n'+fence+body;
+ const iso='2026-08-26T22:22:00.000Z';
+ const options={source:'whif-message-content',statusText:hud,codeBlocks:[visible,hud]};
+ assert.equal(parseGameTime(dom).iso,iso);
+ assert.equal(parseGameTime(native).iso,iso);
+ const result=core.compareNativeParagraphs(dom,native,options);
+ assert.equal(result.comparison.prefixedHudProjection.legacyBoundary,'dual-fenced-news-hud');
+ assert.equal(result.text,news+'\n\n'+hud+body);
+ assert.equal(result.comparison.clockEqual,true);
+ for(const wrong of [native+'新增正文',native.replace('06:22','06:23'),native.replace('1,000','1,001'),
+  native.replace(fence,fence+'js'),native.replace('{{測試上下文}}','{{user|role}}'),
+  native.replace('> 保留引用','保留引用'),native.replace('**粗體**','粗體')]){
+  assert.equal(core.compareNativeParagraphs(dom,wrong,options).text,null);
+ }
+ for(const wrong of [{...options,codeBlocks:[hud]},{...options,codeBlocks:[hud,visible]},
+  {...options,statusText:hud.replace('0｜','1｜')}]){
+  assert.equal(core.compareNativeParagraphs(dom,native,wrong).text,null);
+ }
+ const validated=validate([{role:'ai',text:'輪迴開場測試正文。'},{role:'me',text:'玩家測試'},{role:'ai',text:dom}]);
+ assert.equal(validated.ok,true);assert.equal(validated.messages[0].gameTime,iso);assert.equal(validated.messages[1].gameTime,iso);
+ assert.equal(parseGameTime(visible+'\n\n任意額外敘述\n'+hud),null);
+ assert.equal(parseGameTime(visible.replace('#3 ','#8 ')+'\n'+hud),null);
+});
