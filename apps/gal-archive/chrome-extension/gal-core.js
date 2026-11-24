@@ -6,7 +6,25 @@ const txt=x=>String(x==null?'':x);
 const clean=x=>txt(x).replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').trim();
 const normalizedWorld=x=>clean(x).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase();
 function parseGameTime(input){
-  const head=clean(input).split('\n').slice(0,18).join('\n').slice(0,1600);
+  const lines=clean(input).split('\n');
+  let head=lines.slice(0,18).join('\n').slice(0,1600);
+  // Recognized notification/news headers may precede a real HUD by many
+  // lines. Extend only for a unique consecutive date/time/location header.
+  if(/^【(?:終端|基甫納熱搜)】$/u.test(lines[0]?.trim()||'')){
+   const candidates=[];
+   for(let i=1;i<Math.min(lines.length-2,48);i++){
+    if(!/^[｜|│]\s*\d{4}(?:年|[-/])/u.test(lines[i].trim())||
+       !/^[｜|│]\s*(?:🕒\s*)?\d{1,2}[：:]\d{2}(?:[.:：]\d{1,2})?\s*[｜|│]/u.test(lines[i+1].trim())||
+       !/^[｜|│]\s*📍/u.test(lines[i+2].trim()))continue;
+    const prefix=lines.slice(0,i).join('\n');
+    if(prefix.length>4000)continue;
+    if(lines[0].trim()==='【基甫納熱搜】'&&
+       !/(?:^|\n)[ \t]*\*{3}[ \t]*(?:\n\s*\{\{[^{}\n]{1,200}\}\})?(?:\n\s*\x60{3})?\s*$/u.test(prefix))continue;
+    if(lines[0].trim()==='【終端】'&&!/📨任務通知[：:]/u.test(prefix))continue;
+    candidates.push(i);
+   }
+   if(candidates.length===1)head=lines.slice(candidates[0],candidates[0]+3).join('\n');
+  }
   // A Gal AI event may place the entire status header on ONE rendered line.
   // Keep the search in the header and prefer the clock closest after its date.
   const date=head.match(/(?:^|\n|[｜|│]\s*)(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u)
