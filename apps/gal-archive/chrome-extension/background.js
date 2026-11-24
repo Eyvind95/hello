@@ -80,7 +80,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try{
         await chrome.scripting.executeScript({target:{tabId:sender.tab.id},world:'MAIN',files:['gal-native-source.js']});
       }catch(_){}
-      await chrome.scripting.executeScript({target:{tabId:sender.tab.id},files:['gal-core.js','gal-content.js']});
+      await chrome.scripting.executeScript({target:{tabId:sender.tab.id},files:['gal-core.js','gal-format-evidence.js','gal-content.js']});
       const expected=chrome.runtime.getManifest().version;
       const loaded=await chrome.tabs.sendMessage(sender.tab.id,{type:'gal-scan-ping'});
       if(loaded?.version!==expected||loaded?.coreVersion!==expected)
