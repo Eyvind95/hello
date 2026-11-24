@@ -1061,3 +1061,118 @@ test('V0.8.35 does not silently reinterpret events as untimed ordinary messages'
  const v=validate(rows);
  assert.equal(v.verifiedUntimedCount,0);
 });
+
+
+function cycle9CombinedFixture(){
+ const prefix='{{ctx-test}}\n'; // exactly 12 non-whitespace context chars
+ const marker='{{img:abcdefg}}'; // exactly 15 non-whitespace image marker chars
+ const start='小智看向走廊。洛倫斯說：你確定嗎？米契爾回答：我已經確認。';
+ const tail='望著窗外，繼續記錄每一個事件與當下的回應。';
+ const filler='觀'.repeat(447-[...(start+tail).replace(/\s/g,'')].length);
+ const rendered=start+'\n\n'+filler+'\n'+tail;
+ const nativeBody=start.replace('你確定嗎？','「你確定嗎？」')
+  .replace('我已經確認。','「我已經確認。」')+'\n\n'+filler+'\n'+tail;
+ const native=prefix+nativeBody+'\n'+marker;
+ assert.equal([...rendered.replace(/\s/g,'')].length,447);
+ assert.equal([...native.replace(/\s/g,'')].length,478);
+ return {rendered,native,prefix,marker,nativeBody};
+}
+function cycle9SourceRows(nativeOverride,sourceOverride={}){
+ const {rendered,native}=cycle9CombinedFixture();
+ return [
+  {role:'ai',text:'這是一則沒有劇情時間的合法開場。'},
+  {role:'me',text:'小智，請繼續。'},
+  {role:'ai',text:rendered,formatSource:{nativeReply:{
+    reason:'available',messageId:'cycle9-native-230',
+    markerCount:1,scannedText:rendered,text:nativeOverride===undefined?native:nativeOverride,
+    ...sourceOverride
+  }}}
+ ];
+}
+test('V0.8.39: cycle 9 combined hidden context, trailing image and 2 balanced quote pairs preserve every body character',()=>{
+ const {rendered,native,nativeBody}=cycle9CombinedFixture();
+ const rows=cycle9SourceRows();
+ const v=validate(rows,'全員精神穩定，感情除外');
+ assert.equal(v.ok,true,JSON.stringify(v.errors));
+ assert.equal(v.pairs,1);
+ assert.equal(v.verifiedUntimedCount,1);
+ assert.equal(v.messages[0].gameTime,null);
+ assert.equal(v.messages[1].gameTime,null);
+ const cmp=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  source:'whif-message-content',verifiedUntimedNative:true
+ });
+ assert.equal(cmp.comparison.contentEqual,true);
+ assert.equal(cmp.comparison.clockEqual,true);
+ assert.equal(cmp.comparison.verifiedNoClock,true);
+ assert.equal(cmp.comparison.scannedNonWhitespace,447);
+ assert.equal(cmp.comparison.nativeNonWhitespace,478);
+ assert.equal(cmp.comparison.remainingUnexplained.native,0);
+ assert.equal(cmp.comparison.remainingUnexplained.scanned,0);
+ assert.equal(cmp.comparison.untimedCombinedProjection.hiddenContextCount,1);
+ assert.equal(cmp.comparison.untimedCombinedProjection.omittedQuotePairs,2);
+ assert.equal(cmp.comparison.untimedCombinedProjection.terminalImageMarker,true);
+ assert.deepEqual(Array.from(cmp.comparison.formatMarkers,x=>x.kind),[
+  'terminal-image-marker',
+  'verified-untimed-leading-context-after-image',
+  'verified-untimed-balanced-native-quotes'
+ ]);
+ assert.equal(cmp.text,nativeBody);
+ assert.match(cmp.text,/「你確定嗎？」/);
+ assert.match(cmp.text,/「我已經確認。」/);
+ assert.ok(cmp.text.includes('\n\n'));
+ assert.ok(v.warnings.some(w=>w.includes('保留 null')));
+});
+test('V0.8.39: cycle 9 combined formatting fails closed for prose edits, duplicate ID, missing HUD, unbalanced quotes and visible placeholders',()=>{
+ const {rendered,native,prefix,marker}=cycle9CombinedFixture();
+ const cases=[
+  ['prose swapped',native.replace('記錄每一個事件','遺忘每一個事件'),{}],
+  ['hidden prose',native.replace(prefix,prefix+'真實正文不得隱藏'),{}],
+  ['trailing marker lost',native.replace(marker,''),{}],
+  ['trailing marker visible',native,{scannedText:rendered+marker}],
+  ['unbalanced native open quote',native.replace('「我已經確認。」','「我已經確認。'),{}],
+  ['unbalanced native close quote',native.replace('「你確定嗎？」','你確定嗎？」'),{}],
+  ['time exists native only',prefix+'｜2026年8月22日｜\n｜🕒11:15｜\n'+native.slice(prefix.length),{}],
+  ['fake context placeholder',native.replace(prefix,'{{user}}\n'),{}],
+  ['nested visible placeholders',native.replace(prefix,'{{user|name}}\n'),{}],
+  ['multiple hidden templates',native.replace(prefix,prefix+'{{another}}\n'),{}],
+  ['unique ID missing',native,{messageId:null}],
+  ['two markers same ID',native,{markerCount:2}],
+  ['source content not matching scanned DOM',native,{scannedText:'其他回覆'}]
+ ];
+ for(const [reason,source,overrides] of cases){
+  const v=validate(cycle9SourceRows(source,overrides));
+  assert.equal(v.ok,false,reason);
+  assert.match(v.errors.join(' '),/原生無時間來源未通過/,reason);
+ }
+ const duplicate=cycle9SourceRows();
+ duplicate[0].formatSource={nativeReply:{
+  reason:'available',messageId:'cycle9-native-230',markerCount:1,
+  scannedText:duplicate[0].text,text:duplicate[0].text
+ }};
+ assert.equal(validate(duplicate).ok,false,'duplicate original WHIF ID must not be accepted');
+ const noOption=context.GalArchiveCore.compareNativeParagraphs(rendered,native,{
+  source:'whif-message-content'
+ });
+ assert.equal(noOption.text,null,'only verified untimed replies may project invisible context');
+});
+test('V0.8.39: visible curly tokens survive and cannot be consumed as a hidden context',()=>{
+ const {rendered,native,marker}=cycle9CombinedFixture();
+ const prefix='{{ctx-test}}\n';
+ const visible=rendered.replace('小智看向走廊。','小智看向走廊。{{user}}');
+ const original=native.replace('小智看向走廊。','小智看向走廊。{{user}}');
+ const check=context.GalArchiveCore.compareNativeParagraphs(visible,original,{
+  source:'whif-message-content',verifiedUntimedNative:true
+ });
+ assert.equal(check.comparison.contentEqual,true);
+ assert.ok(check.text.includes('{{user}}'));
+ const tampered=context.GalArchiveCore.compareNativeParagraphs(visible,original.replace('{{user}}',''),{
+  source:'whif-message-content',verifiedUntimedNative:true
+ });
+ assert.equal(tampered.text,null,'visible player placeholders must not be silently removed');
+ const markerBody=context.GalArchiveCore.compareNativeParagraphs(visible,
+  original.replace(prefix,'{{img:shadow}}\n'),{
+  source:'whif-message-content',verifiedUntimedNative:true
+ });
+ assert.equal(markerBody.text,null,'leading image marker is never eligible hidden context');
+ assert.ok(original.endsWith(marker));
+});
