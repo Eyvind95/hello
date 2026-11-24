@@ -47,7 +47,7 @@ test('a remaining native content difference returns only a diagnostic, not canon
 test('website button, separate files, local-only report and cache assets are wired',()=>{
  const html=fs.readFileSync(require.resolve('./index.html'),'utf8'),sw=fs.readFileSync(require.resolve('./sw.js'),'utf8'),js=fs.readFileSync(require.resolve('./archive-replay.js'),'utf8');
  for(const id of ['archiveReplayOpen','archiveReplayRaw','archiveReplayDiag','archiveReplayState','archiveReplayRun','archiveReplayDownload','archiveReplayReport'])assert.ok(html.includes('id="'+id+'"'));
- assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=7/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
+ assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=8/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
  assert.doesNotMatch(js,/\bfetch\s*\(|indexedDB|firestore|localStorage|sessionStorage/);
 });
 
@@ -117,4 +117,16 @@ test('source-only overlap never appends disjoint or reordered windows',()=>{
  const ids=[];append(ids,['a','b']);append(ids,['b','c']);append(ids,['c','d']);assert.deepEqual(ids,['a','b','c','d']);
  for(const w of [['z'],['b','d'],['d','a'],['d','d']])assert.throws(()=>append(ids,w));
  const body=s.slice(s.indexOf('async function historySourceProbe('),s.indexOf('async function anchorRecoveryProbe('));assert.doesNotMatch(body,/\bsnapshot\(|\bboundaryRead\(|markdownFromDom|parseGameTime/);
+});
+
+test('native player image references only permit bounded WHIF image links',()=>{
+ const api=require('./archive-replay.js');
+ const url='https://img.whif.io/synthetic/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/768';
+ assert.equal(api.validNativeImageUrl(url),true);
+ for(const v of [url+'?x=1',url+'#x',url.replace('https:','http:'),url.replace('img.whif.io','example.invalid'),url.replace('/768','/999'),url.replace('img.whif.io','img.whif.io.evil.invalid'),'javascript:alert(1)'])assert.equal(api.validNativeImageUrl(v),false);
+ assert.equal(api.capturedPlayerImage({source:{url:'https://whif.io/chat/test'}},{},{id:'x',player:{}},{generatedAt:'2026-01-01T00:00:00Z'},{sourceId:'other'}),null);
+ const html=fs.readFileSync(require.resolve('./index.html'),'utf8');
+ assert.match(html,/nativeImageReferences.*historySupplementRunId/s);
+ assert.match(html,/rel="noopener noreferrer">查看 WHIF 原生附圖/);
+ assert.match(html,/nativeSourceMessageId','nativeImageReferences'\]\.every/);
 });
