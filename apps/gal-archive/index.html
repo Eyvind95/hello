@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.63｜Gal AI</title>
+<title>輪迴檔案館 V5.64｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -110,13 +110,14 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 .handover-entry{border:1px solid var(--border);border-radius:13px;padding:14px;margin:12px 0;background:#141e33;overflow-wrap:anywhere}.handover-entry strong{word-break:break-word}.handover-entry .actions{margin-top:10px}.handover-note{white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0}.handover-thread{text-align:left;width:100%;margin:4px 0}.handover-thread strong{font-size:.91rem;display:block}.handover-warning{margin-top:24px;padding:12px;border:1px solid var(--border);border-radius:10px}.handover-warning strong{color:#e8e2ff}
 .handover-review-details{margin:9px 0;max-width:100%;border-top:1px solid var(--border);padding-top:8px}.handover-review-details summary{cursor:pointer;color:#d9d0ff;font-size:.87rem;padding:8px 4px}.handover-review-details .handover-note{max-height:65vh;overflow:auto;padding:12px;border-radius:9px;background:#0d1729}
 </style>
+<link rel="stylesheet" href="./archive-observatory.css?v=1">
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.63</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.36.zip" download title="下載雙掃描助手 V0.8.36：逐處核驗 AI 自動繼續原生來源，不再使用錯誤的整輪標記總數等式，保留事件與來源驗證">🧩 雙掃描助手 V0.8.36</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.64</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.36.zip" download title="下載雙掃描助手 V0.8.36：逐處核驗 AI 自動繼續原生來源，不再使用錯誤的整輪標記總數等式，保留事件與來源驗證">🧩 雙掃描助手 V0.8.36</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><label for="cycleSort" class="note" style="display:block;margin-top:12px">輪迴列表排序</label><select id="cycleSort" class="search" aria-label="輪迴列表排序"><option value="number-desc">輪迴數字：由大到小（預設）</option><option value="number-asc">輪迴數字：由小到大</option><option value="updated">最近修改優先</option></select><div id="cycles"></div><div class="divider"></div><div class="sectionhead"><h2>📚 交接稿</h2><button id="newHandover" type="button" class="btn small primary" title="新增交接對話">＋新增</button></div><p class="note">依目前世界觀分類；每個交接對話可上傳多份檔案。</p><button type="button" id="handoverSharedReviews" class="cycle handover-thread" style="width:100%;margin:4px 0 12px;text-align:left"><strong>💬 大家的評語（共用）</strong><span>這個世界觀只需貼一次，所有交接對話皆可閱讀</span></button><div id="handoverThreads" aria-live="polite"><p class="note">正在載入交接稿…</p></div><div class="actions topsp"><button type="button" class="btn small" id="handoverExport">備份此世界觀（.ghb）</button><button type="button" class="btn small" id="handoverImport">匯入交接稿備份</button><button type="button" class="btn small" id="handoverStorage">檢查本機儲存空間</button></div><p class="note" id="handoverStorageStatus" role="status"></p><input id="handoverImportFile" type="file" accept=".ghb,.json,application/json,application/octet-stream" hidden><p class="note">交接稿與附件已支援手動 Firebase 雲端同步，也包含於上方「完整備份（.gab）」。此區仍可單獨下載 .ghb 備份。</p></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -361,6 +362,37 @@ function archiveCompareCycleList(a,b){
 
 function renderSide(){$('worlds').innerHTML=WORLDS.map(w=>`<button class="world ${w.id===world?'active':''}" data-world="${safe(w.id)}"><span>${safe(w.name)}</span><span class="number">${records.filter(r=>r.world===w.id).length} 輪</span></button>`).join('');$('newCycle').disabled=false;$('editWorld').disabled=false;$('cycleSort').value=cycleSortMode;let q=$('cycleSearch').value.trim().toLowerCase();let rows=records.filter(r=>r.world===world&&[r.title,r.hero,r.partner,cycleManagerLabel(r),r.number].join(' ').toLowerCase().includes(q)).sort(archiveCompareCycleList);$('cycles').innerHTML=rows.length?rows.map(r=>`<button class="cycle ${selected===r.id&&!window.ArchiveHandover?.isActive(world)?'active':''}" data-cycle="${safe(r.id)}">${safe(r.title)}<span>${safe([r.hero,cycleManagerLabel(r)&&"管理："+cycleManagerLabel(r)].filter(Boolean).join(" · "))}　${archiveCompleteMessageCount(r)} 則完整對話（含已接事件） · ${(r.pilotMessages||[]).length} 則副駕駛聊天</span></button>`).join(''):'<p class="note">這裡還沒有符合條件的輪迴。</p>';window.ArchiveHandover?.renderList(world)}
 window.ArchiveHandoverBridge={worldId:()=>world,worldName:id=>WORLDS.find(w=>w.id===id)?.name||id,rerender:()=>{renderSide();renderContent()}};
+
+window.ArchiveObservatoryBridge={
+ records:()=>records,worlds:()=>WORLDS,
+ storyTimeline:r=>archiveStoryTimeline(r),
+ dialogueAudit:rows=>archiveCheckDialoguePairs(rows),
+ galTimeContext:rows=>archiveGalTimeContext(rows),
+ parseStoryClock:row=>archiveParseGalAIClock(row),
+ parseEventClock:row=>archiveParseGalAIClock(row),
+ jump:(cycleId,section,rowIndex)=>{
+  const target=records.find(r=>r.id===cycleId);
+  if(!target)return;
+  window.ArchiveHandover?.close();
+  world=target.world;selected=target.id;
+  tab=['events','opening'].includes(section)?section:'chat';
+  renderSide();renderContent();
+  requestAnimationFrame(()=>{
+   const content=document.getElementById('content');
+   content?.scrollIntoView({behavior:'smooth',block:'start'});
+   if(tab==='chat'){
+    archiveAuditJump(rowIndex,'pair','chat');
+   }else if(tab==='events'){
+    const event=(target.events||[])[rowIndex];
+    const nodes=[...document.querySelectorAll('#eventList [data-message-id]')];
+    const node=nodes.find(n=>n.dataset.messageId===event?.id)||nodes[rowIndex];
+    if(node){node.scrollIntoView({behavior:'smooth',block:'center'});
+     node.classList.add('archive-event-flash');setTimeout(()=>node.classList.remove('archive-event-flash'),2300);}
+   }
+  });
+ }
+};
+
 function renderContent(){if(window.ArchiveHandover?.isActive(world)){window.ArchiveHandover.renderActive(world);return}const r=current();if(!r){$('content').innerHTML=`<div class="empty"><strong>${safe(WORLDS.find(w=>w.id===world)?.name||'')}</strong>先點左側「編輯目前世界觀」填入作品共用設定，或新增輪迴。</div>`;return}let tabs=[['chat','完整對話'],['events','事件簿'],['pilotChat','副駕駛聊天'],['opening','輪迴開場'],['lore','世界觀（唯讀）'],['notes','補充筆記'],['quiz','10題'],['changes','與皮卡修改記錄'],['personality','人格設定'],['easterEggs','這輪彩蛋'],['copilot','副駕駛閱讀']];$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">${safe(WORLDS.find(w=>w.id===r.world).name)}</div><h2>${safe(r.title)}</h2><div class="stat">${safe([r.hero&&'主角：'+r.hero,r.partner&&'重要角色：'+r.partner,cycleManagerLabel(r)&&'負責副駕駛：'+cycleManagerLabel(r)].filter(Boolean).join(' ／ '))}</div></div><div class="actions"><button class="btn small" id="copyCycleId">複製輪迴 ID</button><button class="btn small" id="editCycle">編輯資料</button><button class="btn small danger" id="deleteCycle">刪除輪迴</button></div></div><div class="tabs">${tabs.map(([id,name])=>`<button class="tab ${id===tab?'active':''}" data-tab="${id}">${name}</button>`).join('')}</div><div id="tabBody"></div>`;renderTab(r)}
 function renderTab(r){if(tab==='chat'){renderChat(r);mountArchiveComposerImages();return}if(tab==='events'){renderEvents(r);mountArchiveComposerImages();return}if(tab==='pilotChat'){renderPilotChat(r);mountArchiveComposerImages();return}if(tab==='quiz'||tab==='changes'){renderLog(r,tab);mountArchiveComposerImages();return}if(tab==='copilot')return renderCopilot(r);if(tab==='lore')return renderReadOnlyWorld(r);if(tab==='notes')return renderNotesSections(r);let names={opening:['輪迴開場','保存最初的角色、時間、地點、開場文字與設定。'],lore:['世界觀設定','可以寫規則、角色設定、能力、人物關係、重要限制。'],notes:['補充筆記','正史摘要、重大事件、前輩交接、尚待確認事項等。'],personality:['人格設定','記錄主角人格、個性、言行、心理、重要人際關係與本輪差異。'],easterEggs:['這輪彩蛋','記錄這輪彩蛋、伏筆、出處、對應原作與確認結果。']};let [title,hint]=names[tab];$('tabBody').innerHTML=`<h3>${title}</h3><p class="note">${hint}</p><textarea id="docEditor" class="tall" placeholder="在這裡貼入完整內容…">${safe(r[tab]||'')}</textarea><div class="actions topsp"><button id="saveDoc" class="btn primary">儲存${title}</button><button id="copyDoc" class="btn">複製文字</button></div>`}
 
@@ -2197,14 +2229,14 @@ $('downloadSite').onclick=async()=>{
  // Include independent JS features in the standalone HTML download.
  try{
   const page=document.documentElement.cloneNode(true);
-  for(const selector of ['#tmModal','#handoverModal'])page.querySelector(selector)?.remove();
+  for(const selector of ['#tmModal','#handoverModal','#archiveObservatoryModal'])page.querySelector(selector)?.remove();
   for(const id of ['worlds','cycles','handoverThreads','content']){
    const host=page.querySelector('#'+id);
    if(host)host.replaceChildren();
   }
   let html='<!DOCTYPE html>\n'+page.outerHTML;
   const closing='</scr'+'ipt>';
-  for(const asset of ['time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2']){
+  for(const asset of ['time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=1','archive-observatory.js?v=1']){
    const response=await fetch(new URL('./'+asset,location.href),{cache:'no-store'});
    if(!response.ok)throw Error('程式讀取失敗：'+asset+'，HTTP '+response.status);
    const script=await response.text();
@@ -2213,7 +2245,15 @@ $('downloadSite').onclick=async()=>{
    if(!html.includes(external))throw Error('獨立網站找不到 '+asset+' 的連結');
    html=html.replace(external,'<scr'+'ipt>'+script+closing);
   }
-  downloadText('輪迴檔案館_V5.63_網站.html',html);
+  const cssAsset='archive-observatory.css?v=1';
+  const cssResponse=await fetch(new URL('./'+cssAsset,location.href),{cache:'no-store'});
+  if(!cssResponse.ok)throw Error('獨立網站缺少健康中心樣式：HTTP '+cssResponse.status);
+  const cssText=await cssResponse.text();
+  if(!cssText||/<\/style/i.test(cssText))throw Error('樣式檔無法安全內嵌');
+  const cssLink='<link rel="stylesheet" href="./'+cssAsset+'">';
+  if(!html.includes(cssLink))throw Error('獨立網站找不到健康中心 CSS 連結');
+  html=html.replace(cssLink,'<style>'+cssText+'</style>');
+  downloadText('輪迴檔案館_V5.64_網站.html',html);
   notify('已下載包含交接稿與雲端同步程式的獨立 HTML；私人資料與附件請另外下載完整 .gab 備份');
  }catch(err){alert('下載完整網站失敗：'+String(err?.message||err))}
 };
@@ -4611,5 +4651,5 @@ $('cloudPull').onclick=async()=>{
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
   }
 })();
-</script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script>
+</script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=1"></script><script src="./archive-observatory.js?v=1"></script>
 </body></html>
