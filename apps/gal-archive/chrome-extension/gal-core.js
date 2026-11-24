@@ -1228,6 +1228,12 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    /^[｜|│]\s*(?:🕒\s*)?\d{1,2}[：:]\d{2}/u.test(lines[1].trim())&&
    /^[｜|│]\s*📍/u.test(lines[2].trim())&&
    lines.slice(3).some(line=>/^[｜|│].*(?:暴走|嚮導)值/u.test(line.trim()));
+  // A combined clock/location line is only allowed in the fully proven
+  // closed multiline HUD projection, not the weaker unclosed variant.
+  const combinedClockLocationHud=lines=>lines.length>=3&&
+   /^[｜|│]\s*\d{4}(?:年|[-/])/u.test(lines[0].trim())&&
+   /^[｜|│]\s*(?:🕒\s*)?\d{1,2}[：:]\d{2}\s*[｜|│]\s*[^｜|│\n\s][^｜|│\n]*[｜|│]$/u.test(lines[1].trim())&&
+   /^[｜|│][^｜|│\n]*(?:暴走|嚮導)值\s*[：:]/u.test(lines[2].trim());
   const quoteProof=(native,dom)=>{
    const visible=[...unspaced(dom)];let pos=0,depth=0,omitted=0;
    for(const ch of unspaced(native)){
@@ -1248,7 +1254,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
       (options.codeBlocks||[]).length===1&&statusKey&&codeKeys.has(statusKey)){
     const close=sourceLines.findIndex((line,i)=>i>1&&line===fence);
     const hud=sourceLines.slice(2,close),hudText=hud.join('\n');
-    if(close>2&&exactHudShape(hud)&&unspaced(hudText)===statusKey){
+    if(close>2&&(exactHudShape(hud)||combinedClockLocationHud(hud))&&unspaced(hudText)===statusKey){
      let end=1,visibleHud='';
      while(end<visibleLines.length&&visibleHud.length<statusKey.length){
       visibleHud+=unspaced(visibleLines[end++]);
