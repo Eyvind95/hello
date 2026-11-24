@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.64｜Gal AI</title>
+<title>輪迴檔案館 V5.65｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -117,7 +117,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.64</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.36.zip" download title="下載雙掃描助手 V0.8.36：逐處核驗 AI 自動繼續原生來源，不再使用錯誤的整輪標記總數等式，保留事件與來源驗證">🧩 雙掃描助手 V0.8.36</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.65</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.36.zip" download title="下載雙掃描助手 V0.8.36：逐處核驗 AI 自動繼續原生來源，不再使用錯誤的整輪標記總數等式，保留事件與來源驗證">🧩 雙掃描助手 V0.8.36</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><label for="cycleSort" class="note" style="display:block;margin-top:12px">輪迴列表排序</label><select id="cycleSort" class="search" aria-label="輪迴列表排序"><option value="number-desc">輪迴數字：由大到小（預設）</option><option value="number-asc">輪迴數字：由小到大</option><option value="updated">最近修改優先</option></select><div id="cycles"></div><div class="divider"></div><div class="sectionhead"><h2>📚 交接稿</h2><button id="newHandover" type="button" class="btn small primary" title="新增交接對話">＋新增</button></div><p class="note">依目前世界觀分類；每個交接對話可上傳多份檔案。</p><button type="button" id="handoverSharedReviews" class="cycle handover-thread" style="width:100%;margin:4px 0 12px;text-align:left"><strong>💬 大家的評語（共用）</strong><span>這個世界觀只需貼一次，所有交接對話皆可閱讀</span></button><div id="handoverThreads" aria-live="polite"><p class="note">正在載入交接稿…</p></div><div class="actions topsp"><button type="button" class="btn small" id="handoverExport">備份此世界觀（.ghb）</button><button type="button" class="btn small" id="handoverImport">匯入交接稿備份</button><button type="button" class="btn small" id="handoverStorage">檢查本機儲存空間</button></div><p class="note" id="handoverStorageStatus" role="status"></p><input id="handoverImportFile" type="file" accept=".ghb,.json,application/json,application/octet-stream" hidden><p class="note">交接稿與附件已支援手動 Firebase 雲端同步，也包含於上方「完整備份（.gab）」。此區仍可單獨下載 .ghb 備份。</p></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -133,13 +133,13 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 <label class="checklabel" style="margin:12px 0"><input type="checkbox" id="galNativeConfirmLostAccepted">我已核對全部已接事件；如果新掃描找不到舊事件，允許在備份後以 Gal AI 原始事件列表為準</label>
 <pre id="galNativeStatus" class="archivepreview" role="status" aria-live="polite" style="max-height:45vh;overflow:auto;white-space:pre-wrap;margin:12px 0">尚未讀取掃描檔；不會修改資料。</pre>
 </div></div>
-<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步（含交接稿）</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">沿用同一 Firebase 帳號。上傳／下載包含輪迴正史、交接稿、共用評語、自評及 PDF／Word 附件。附件使用 Firestore 分段儲存，可能消耗較多讀寫額度；為保護正史，必須手動按鈕確認，不會因某台裝置空白就清除雲端資料。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn primary" id="cloudPush">↑ 上傳本機資料</button><button class="btn" id="cloudPull">↓ 從雲端合併下載</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn primary" id="missingAuditOpen">🔍 對照本輪缺漏（唯讀）</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn primary" id="moveConversation">↗ 精準轉移誤收訊息（跨輪迴）</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">皮卡藍框訊息含「事件到達」或 whif-icon.svg 時優先進入「事件簿」，預設待決定；已接才依來源時間顯示於完整對話。其餘行首「我：／他：」拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆進副駕駛聊天。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。沒有標註時間的手動正史不移位；有手動標註時間的訊息也會按原始時間排序。</p>
+<div class="modalback hidden" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudTitle"><div class="modal"><div class="sectionhead"><h2 id="cloudTitle">☁ Firestore 雲端同步（含交接稿）</h2><button class="btn small" id="cloudClose">關閉</button></div><p class="note">沿用同一 Google 帳號。登入後預設自動核對各輪迴最新版本：雲端更新的安全合併，本機更新的自動上傳；交接稿、評語與 PDF／Word 附件也一併核對。若遇到衝突、刪除標記或不能安全判斷的版本，會停止自動同步，不會偷偷覆蓋正史。大量附件可能消耗較多 Firestore 讀寫額度。</p><div class="actions topsp"><button class="btn primary" id="cloudConnect">使用 Google 登入</button><button class="btn" id="cloudLogout">登出</button></div><p class="note" id="cloudIdentity">尚未登入</p><div class="archive-auto-config"><label style="display:flex;gap:10px;align-items:center;margin:7px 0"><input id="archiveAutoSyncToggle" type="checkbox" checked style="width:auto">登入後自動同步（本機與雲端依各筆版本安全核對）</label><div class="actions"><button class="btn primary small" type="button" id="archiveAutoSyncNow">↻ 立即重新核對</button></div><p class="note" id="archiveAutoSyncDetail" role="status" aria-live="polite">等待 Google 登入；不會在未登入時上傳。</p></div><div class="divider"></div><div class="actions"><button class="btn" id="cloudVerify">檢查／建立雲端集合</button></div><div class="actions topsp"><button class="btn" id="cloudPush">進階：手動上傳本機</button><button class="btn" id="cloudPull">進階：手動從雲端合併</button><button class="btn" id="cloudInbox">📥 分類收取自動紀錄</button><button class="btn primary" id="missingAuditOpen">🔍 對照本輪缺漏（唯讀）</button><button class="btn" id="repairAutoChat">🛠 修復舊版紀錄分類</button><button class="btn" id="reorderCurrentPilot">↕ 只校正目前輪迴（建議先用）</button><button class="btn" id="reorderPilot">↕ 校正所有輪迴自動歸檔</button><button class="btn" id="cleanupImported">🧹 選取並清除測試訊息</button><button class="btn" id="showMoreCleanup">🧽 清理「顯示較多／顯示較少」</button><button class="btn primary" id="moveConversation">↗ 精準轉移誤收訊息（跨輪迴）</button><button class="btn primary" id="migrateInbox">📦 舊來源分層遷移／核對</button><button class="btn danger" id="purgeDeletedCycleSources">🧹 清理已刪輪迴的殘留來源（需輪迴 ID）</button><button class="btn danger" id="discardPendingBtn">🗑 拋棄待收取來源（含幽靈輪迴）</button></div><p class="note">皮卡藍框訊息含「事件到達」或 whif-icon.svg 時優先進入「事件簿」，預設待決定；已接才依來源時間顯示於完整對話。其餘行首「我：／他：」拆入 Gal AI 劇情；一般玩家貼文和 GPT 回覆進副駕駛聊天。排序優先依原始發言時間；缺少則依首次擷取；選單時間只有分鐘精度，同一分鐘依 ChatGPT 回合順序。修復分類按鈕僅針對舊版資料；排序請按「依時間校正」。沒有標註時間的手動正史不移位；有手動標註時間的訊息也會按原始時間排序。</p>
 <div class="divider"></div><h3>副駕駛自動歸檔授權（進階設定）</h3>
 <p class="note">可建立一次性顯示的寫入金鑰，供部署後的 GPT 動作呼叫。金鑰只允許新增「待收取」訊息；不允許副駕駛刪除正史。正式啟用前，仍需另外部署雲端接收服務並在自訂 GPT 設定動作。</p>
 <p class="note">目前登入 UID：<code id="writerUid">尚未登入</code></p>
 <div class="actions"><button class="btn" id="writerGenerate">建立／重設寫入金鑰</button><button class="btn danger" id="writerRevoke">撤銷寫入金鑰</button></div>
 <textarea id="writerToken" readonly placeholder="新金鑰只會在建立當次顯示；請複製至 GPT 動作的 API Key 設定，不要公開。" style="min-height:90px"></textarea>
-<p id="writerStatus" class="note" role="status">此功能尚未啟用。</p><p id="cloudStatus" class="note" role="status" aria-live="polite">雲端入口與 Google 帳號共用；手動按「↑ 上傳本機資料」可同步輪迴、交接稿與附件，操作前建議先下載完整 .gab 備份。</p><p class="note">合併下載以更新時間較新的項目為準；同一 ID 的資料可能被更新，不會刪除本機未出現在雲端的輪迴。資料量很大時上傳需要較多 Firestore 讀寫次數。</p></div></div>
+<p id="writerStatus" class="note" role="status">此功能尚未啟用。</p><p id="cloudStatus" class="note" role="status" aria-live="polite">雲端入口與 Google 帳號共用；已登入後會自動比對本機與雲端版本。只有不能安全處理的衝突才需要人工確認。重要正史仍建議定期保存完整 .gab 備份。</p><p class="note">自動同步預設啟用；先比對各筆版本，再同步變更。若雲端較新的同一輪迴需要取代本機舊版，會先在時光機保留快照。來源衝突、已刪輪迴復活風險及交接稿刪除標記會暫停自動處理。下方手動按鈕保留供進階復原使用。</p></div></div>
 <div class="toast hidden" id="toast" role="status"></div>
 <div class="modalback hidden" id="missingAuditModal" role="dialog" aria-modal="true" aria-labelledby="missingAuditTitle">
   <div class="modal" style="max-width:880px"><div class="sectionhead"><h2 id="missingAuditTitle">🔍 輪迴缺漏對照（不修改資料）</h2><button class="btn small" id="missingAuditClose">關閉</button></div>
@@ -270,7 +270,7 @@ const $=id=>document.getElementById(id),safe=s=>String(s??'').replace(/[&<>"']/g
 const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2);
 function notify(t){$('toast').textContent=t;$('toast').classList.remove('hidden');clearTimeout(notify.timer);notify.timer=setTimeout(()=>$('toast').classList.add('hidden'),2700)}
 function openDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB,2);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(STORE))req.result.createObjectStore(STORE,{keyPath:'id'});if(!req.result.objectStoreNames.contains(WORLDSTORE))req.result.createObjectStore(WORLDSTORE,{keyPath:'id'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-function operation(mode,payload,store=STORE){return new Promise((resolve,reject)=>{const tx=db.transaction(store,mode),os=tx.objectStore(store);let r;if(payload?.type==='put')r=os.put(payload.item);else if(payload?.type==='delete')r=os.delete(payload.id);else r=os.getAll();tx.oncomplete=()=>resolve(r?.result);tx.onerror=()=>reject(tx.error)})}
+function operation(mode,payload,store=STORE){return new Promise((resolve,reject)=>{const tx=db.transaction(store,mode),os=tx.objectStore(store);let r;if(payload?.type==='put')r=os.put(payload.item);else if(payload?.type==='delete')r=os.delete(payload.id);else r=os.getAll();tx.oncomplete=()=>{if(mode==='readwrite'&&!window.__archiveAutoApplyingCloud)window.dispatchEvent(new Event('archive:local-changed'));resolve(r?.result)};tx.onerror=()=>reject(tx.error)})}
 function parseCycleManagers(input){
   const values=Array.isArray(input)?input:[input||''],names=[];
   for(const v of values)for(const name0 of String(v||'').split(/[、，,;；\r\n]+/)){
@@ -2222,7 +2222,9 @@ $('importConfirm').onclick=async()=>{
  }catch(err){importStatus('匯入失敗：'+String(err?.message||err),true)}
  finally{button.disabled=false}
 };
-(async()=>{try{db=await openDB();await refresh()}catch(err){$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
+let archiveLocalResolve,archiveLocalReject;
+const archiveLocalLoaded=new Promise((resolve,reject)=>{archiveLocalResolve=resolve;archiveLocalReject=reject});
+(async()=>{try{db=await openDB();await refresh();archiveLocalResolve();window.dispatchEvent(new Event('archive:local-ready'))}catch(err){archiveLocalReject(err);$('content').innerHTML='<div class="empty">無法使用瀏覽器資料庫，請檢查網站儲存權限。</div>';console.error(err)}})();
 
 // V3.6: self-contained HTML download and optional private Firestore sync.
 $('downloadSite').onclick=async()=>{
@@ -2236,7 +2238,7 @@ $('downloadSite').onclick=async()=>{
   }
   let html='<!DOCTYPE html>\n'+page.outerHTML;
   const closing='</scr'+'ipt>';
-  for(const asset of ['time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=1','archive-observatory.js?v=1']){
+  for(const asset of ['time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=1','archive-observatory.js?v=1','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=1']){
    const response=await fetch(new URL('./'+asset,location.href),{cache:'no-store'});
    if(!response.ok)throw Error('程式讀取失敗：'+asset+'，HTTP '+response.status);
    const script=await response.text();
@@ -2253,7 +2255,7 @@ $('downloadSite').onclick=async()=>{
   const cssLink='<link rel="stylesheet" href="./'+cssAsset+'">';
   if(!html.includes(cssLink))throw Error('獨立網站找不到健康中心 CSS 連結');
   html=html.replace(cssLink,'<style>'+cssText+'</style>');
-  downloadText('輪迴檔案館_V5.64_網站.html',html);
+  downloadText('輪迴檔案館_V5.65_網站.html',html);
   notify('已下載包含交接稿與雲端同步程式的獨立 HTML；私人資料與附件請另外下載完整 .gab 備份');
  }catch(err){alert('下載完整網站失敗：'+String(err?.message||err))}
 };
@@ -2263,6 +2265,7 @@ $('cloudModal').addEventListener('click',e=>{if(e.target===$('cloudModal'))$('cl
 const firebaseConfig={apiKey:'AIzaSyAP4hKop0wN9jrAN6_xx0fGhwInAAa5chI',authDomain:'eyvind95-182f0.firebaseapp.com',projectId:'eyvind95-182f0',storageBucket:'eyvind95-182f0.firebasestorage.app',messagingSenderId:'105770576221',appId:'1:105770576221:web:dd3a57ce4e051bda91a0b4',measurementId:'G-7HHMTE1W1T'};
 let cloudApp=null,cloudAuth=null,cloudDb=null,cloudAuthUnsubscribe=null,cloudReadyPromise=null;
 let cloudRootEnsurePromise=null,cloudRootEnsureUID=null;
+let archiveManualBusy=false;window.__archiveAutoApplyingCloud=false;
 function cloudStatus(t,err=false){$('cloudStatus').textContent=t;$('cloudStatus').style.color=err?'#ffadad':'#c4e4ff'}
 // 登入後只建立必要的空間入口，不自動覆蓋任何正史資料。
 async function ensureArchiveRoot(user,forceCheck=false){
@@ -2290,7 +2293,7 @@ async function ensureArchiveRoot(user,forceCheck=false){
   }
 }
 function rootReadyMessage(result){
-  return (result.created?'已建立':'已確認')+' Firestore 集合 galArchive（你的 Google UID）。完整輪迴尚需手動上傳。';
+  return (result.created?'已建立':'已確認')+' Firestore 集合 galArchive（你的 Google UID）。輪迴正史依每筆更新時間自動核對。';
 }
 async function cloudInit(){
   if(cloudReadyPromise)return cloudReadyPromise;
@@ -2306,6 +2309,7 @@ async function cloudInit(){
       if(!u)$('writerToken').value='';
       $('cloudConnect').style.display=u?'none':'';
       $('cloudLogout').style.display=u?'':'none';
+      window.dispatchEvent(new CustomEvent('archive:cloud-auth',{detail:{uid:u?.uid||null}}));
       if(!u){cloudRootEnsurePromise=null;cloudRootEnsureUID=null;return}
       cloudStatus('Google 已登入，正在檢查 galArchive 雲端入口…');
       ensureArchiveRoot(u).then(result=>{
@@ -4585,6 +4589,8 @@ async function pullCloud(){
     +'舊版 users 僅補足新版不存在的輪迴；跳過可能覆蓋新版的舊項目 '+legacySkipped+' 筆。');
 }
 $('cloudPush').onclick=async()=>{
+ if(window.__archiveAutoApplyingCloud)return cloudStatus('自動同步正在進行，請完成後再使用手動上傳。',true);
+ archiveManualBusy=true;
  const btn=$('cloudPush');btn.disabled=true;let canonDone=false;
  try{
   if(!confirm('確定將本機輪迴正史、交接稿、評語與完整附件一起上傳到私人 Firestore？大量附件會產生多筆讀寫，請先下載完整 .gab 備份。'))return;
@@ -4595,9 +4601,11 @@ $('cloudPush').onclick=async()=>{
   cloudStatus('✅ 正史及交接稿全部上傳完成：交接對話 '+result.threads+'，文字／評語 '+result.text+'，附件 '+result.files+'，刪除標記 '+result.deletes+'，略過未變更 '+result.skipped+' 筆。');
  }catch(e){
   cloudStatus((canonDone?'⚠ 正史已上傳，交接稿同步未完成：':'⛔ 上傳中斷：')+String(e?.message||e)+'。請保留本機與完整備份。',true);
- }finally{btn.disabled=false}
+ }finally{btn.disabled=false;archiveManualBusy=false}
 };
 $('cloudPull').onclick=async()=>{
+ if(window.__archiveAutoApplyingCloud)return cloudStatus('自動同步正在進行，請完成後再使用手動合併。',true);
+ archiveManualBusy=true;
  const btn=$('cloudPull');btn.disabled=true;let canonDone=false;
  try{
   if(!confirm('確定從私人 Firestore 合併下載輪迴正史、交接稿、評語及完整附件？只合併，不會因另一台裝置缺資料就刪除本機內容。'))return;
@@ -4608,7 +4616,29 @@ $('cloudPull').onclick=async()=>{
   cloudStatus('✅ 正史及交接稿全部合併完成：交接對話 '+result.threads+'，文字／評語 '+result.text+'，附件 '+result.files+'，刪除標記 '+result.deletes+'，保留原有 '+result.skipped+' 筆。');
  }catch(e){
   cloudStatus((canonDone?'⚠ 正史已合併，但交接稿未完整下載：':'⛔ 下載中斷：')+String(e?.message||e)+'。未驗證的 PDF 不會匯入。',true);
- }finally{btn.disabled=false}
+ }finally{btn.disabled=false;archiveManualBusy=false}
+};
+window.ArchiveAutoSyncBridge={
+ autoReady:()=>archiveLocalLoaded,
+ user:()=>cloudAuth?.currentUser||null,
+ isSignedIn:uid=>Boolean(uid&&cloudAuth?.currentUser?.uid===uid),
+ firestore:()=>cloudDb,
+ localCycles:()=>records,
+ localWorlds:()=>Object.values(worldDocs),
+ isManualBusy:()=>archiveManualBusy,
+ isApplyingCloud:()=>window.__archiveAutoApplyingCloud===true,
+ setApplyingCloud:value=>{window.__archiveAutoApplyingCloud=Boolean(value)},
+ ensureRoot:async()=>ensureArchiveRoot(await cloudSignedIn()),
+ remoteMetadata:async()=>{
+  const user=await cloudSignedIn(),root=cloudDb.collection('galArchive').doc(user.uid);
+  const [cycles,worlds]=await Promise.all([
+   root.collection('cycles').get({source:'server'}),
+   root.collection('worlds').get({source:'server'})
+  ]);
+  return {cycles:cycles.docs.map(d=>({...d.data(),id:d.id})),
+   worlds:worlds.docs.map(d=>({...d.data(),id:d.id}))};
+ },
+ pullCanonical:()=>pullCloud(),pushCanonical:()=>pushCloud()
 };
 </script><script>
 (function(){
@@ -4651,5 +4681,5 @@ $('cloudPull').onclick=async()=>{
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
   }
 })();
-</script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=1"></script><script src="./archive-observatory.js?v=1"></script>
+</script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=1"></script><script src="./archive-observatory.js?v=1"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=1"></script>
 </body></html>
