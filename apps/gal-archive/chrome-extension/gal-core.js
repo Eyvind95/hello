@@ -30,17 +30,38 @@ function adventureContextLine(line){
  const m=String(line||'').trim().match(/^\{\{([^{}\n]{1,200})\}\}$/u);
  return !!m&&!!m[1].trim()&&!/^(?:user|char|character|img|image)(?:\s*(?:[:|=]|$))/iu.test(m[1].trim());
 }
+// WHIF renders a quoted place name on its own line inside a bold HUD title.
+ // Only reassemble quote-adjacent boundaries before the first named HUD section.
+function adventureClockTitle(lines){
+ const direct=adventureHeader(lines[0]);
+ if(direct&&lines[1]==='🔹【基礎】🔹')return {match:direct,headerRows:1};
+ const end=lines.indexOf('🔹【基礎】🔹');
+ if(end<2||end>12||!/^\*\*\d{4}年\d{1,2}月\d{1,2}日[ \t]+\d{1,2}[：:]\d{2}/u.test(lines[0]))return null;
+ const pieces=lines.slice(0,end);
+ if(!pieces.at(-1).endsWith('**')||pieces.some((x,i)=>!x||x.slice(i===0?2:0,i===end-1?-2:undefined).includes('**')))return null;
+ const quote=x=>/^「[^「」\n]+」(?:\*\*)?$/u.test(x);
+ for(let i=1;i<pieces.length;i++){
+  if(!quote(pieces[i])&&!quote(pieces[i-1]))return null;
+ }
+ const match=adventureHeader(pieces.join(''));
+ return match?{match,headerRows:end}:null;
+}
 function parseAdventureClock(input){
  let lines=clean(input).split('\n').map(line=>line.trim());
  if(isEvent(lines[0])){lines.shift();while(lines[0]==='')lines.shift()}
- if(adventureContextLine(lines[0])&&lines[1]===ADVENTURE_FENCE)lines.shift();
+ if(adventureContextLine(lines[0])){
+  let at=1;
+  while(at<=3&&lines[at]==='')at++;
+  if(lines[at]===ADVENTURE_FENCE)lines=lines.slice(at);
+ }
  const fenced=lines[0]===ADVENTURE_FENCE;
  if(fenced)lines.shift();
- const match=adventureHeader(lines[0]);
- if(!match||lines[1]!=='🔹【基礎】🔹')return null;
- const end=lines.indexOf(ADVENTURE_FENCE,2);
+ const title=adventureClockTitle(lines);
+ if(!title)return null;
+ const {match,headerRows}=title;
+ const end=lines.indexOf(ADVENTURE_FENCE,headerRows+1);
  if(fenced&&end<0)return null;
- const hud=lines.slice(2,end<0?undefined:end),co=hud.indexOf('🔹【共鳴契】🔹'),st=hud.indexOf('🔹【狀態】🔹');
+ const hud=lines.slice(headerRows+1,end<0?undefined:end),co=hud.indexOf('🔹【共鳴契】🔹'),st=hud.indexOf('🔹【狀態】🔹');
  if(co<0||st<=co||!hud.slice(0,co).some(x=>/^等級[：:]/u.test(x))||
   !hud.slice(0,co).some(x=>/^血量[：:]/u.test(x))||
   !hud.slice(co+1,st).some(x=>/^對象[：:]/u.test(x))||
@@ -76,9 +97,10 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
  // proven HUD fence from a bounded native reply, never a body marker.
  const firstLine=original.split('\n')[0];
  if(options.source==='whif-message-content'&&!options.event&&adventureContextLine(firstLine)&&
-    blocks[0]?.index===firstLine.length+1&&adventureHeader(blocks[0][1].split('\n')[0])&&
+    blocks[0]&&/^\n(?:[ \t]*\n){0,2}$/u.test(original.slice(firstLine.length,blocks[0].index))&&
+    adventureHeader(blocks[0][1].split('\n')[0])&&
     !actual.startsWith(compact(firstLine))&&!visible.includes(firstLine)){
-  hiddenContext=firstLine;sourceOffset=firstLine.length+1;
+  hiddenContext=firstLine;sourceOffset=blocks[0].index;
  }
  const take=value=>{const v=compact(value);if(!actual.startsWith(v,offset))return false;offset+=v.length;return true};
  if(validFences&&proof.length===blocks.length){
