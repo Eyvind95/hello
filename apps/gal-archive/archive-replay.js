@@ -100,7 +100,7 @@
   const checks=[],opening={role:'ai',scanIndex:0,text:v.opening,gameTime:core.parseGameTime(v.opening)?.iso||null};
   for(const entry of [opening,...v.messages.filter(x=>x.role==='ai'),...v.events]){
    const r=rows[entry.scanIndex],fs=r.formatSource,source=fs.nativeReply,event=r.eventType==='event';
-   const result=core.compareNativeParagraphs(entry.text,source.text,{source:event?'whif-event-content':'whif-message-content',event,opening:entry.scanIndex===0,eventTitle:event?entry.title:undefined,chapterTitle:source.chapterTitle,statusText:fs.statusText,codeBlocks:fs.codeBlocks,verifiedUntimedNative:entry.verifiedUntimedNative===true});
+   const result=core.compareNativeParagraphs(entry.text,source.text,{source:event?'whif-event-content':'whif-message-content',event,opening:entry.scanIndex===0,eventTitle:event?entry.title:undefined,chapterTitle:source.chapterTitle,statusText:fs.statusText,codeBlocks:fs.codeBlocks,verifiedUntimedNative:entry.verifiedUntimedNative===true,allowInvalidNativeDate:!!entry.nativeInvalidDateEvidence});
    const ok=entry.text===source.scannedText&&result.text!==null&&result.comparison?.contentEqual===true&&result.comparison?.clockEqual===true;
    checks.push({check:{scanIndex:entry.scanIndex,reason:ok?(entry.text===result.text?'source-matched-no-change':'applied'):'content-or-clock-not-proven',source:ok?'whif-message-content':'rendered-dom',comparison:result.comparison}});
    if(ok)entry.text=result.text;
@@ -127,6 +127,8 @@
   };
   const messages=v.messages.map((m,i)=>{const row=build(m,i,'message');
    if(m.verifiedUntimedNative)row.nativeClockEvidence='verified-original-without-game-time';
+   if(m.nativeInvalidDateEvidence){row.nativeClockEvidence='verified-original-invalid-calendar-date';row.nativeInvalidDateEvidence=m.nativeInvalidDateEvidence;row.nativeSourceMessageId=m.nativeInvalidDateEvidence.sourceMessageId;}
+   if(m.nativePairedInvalidDate)row.nativePairedInvalidDate=m.nativePairedInvalidDate;
    if(m.nativeUserSegments){row.nativeUserSegments=m.nativeUserSegments;row.nativeUserMergeVerified=true}
    return row;
   });
@@ -134,7 +136,7 @@
   const events=v.events.map(e=>({...build(e,e.scanIndex,'event'),role:'ai',status:'accepted',title:e.title,worldName:e.worldName||null}));
   assert(new Set([...messages,...events].map(x=>x.id)).size===n-1,'正式 ID 重複');
   const canonical={format:'gal-ai-authoritative-scan',version:1,generatedAt:new Date().toISOString(),scope:'entire-opening-to-bottom',source:{url:path,origin:url.origin,path:url.pathname,gameClockOnly:true},target:{...cp.target,uid:'',manager:'',managerNames:[]},opening:opening.text,messages,events,rawRows:n,scanRunId:run,scannerVersion:version,coreVersion:core.version,readOnlyUntilImported:true,
-   validation:{ok:true,integrityOk:true,nativeFormatComplete:true,pairs:v.pairs,events:events.length,autoContinues:v.autoContinues,openingChars:opening.text.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,unknownGameTimeCount:v.unknownGameTimeCount||0,verifiedUntimedCount:v.verifiedUntimedCount||0,warnings:v.warnings,errors:[]},
+   validation:{ok:true,integrityOk:true,nativeFormatComplete:true,pairs:v.pairs,events:events.length,autoContinues:v.autoContinues,openingChars:opening.text.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,unknownGameTimeCount:v.unknownGameTimeCount||0,verifiedUntimedCount:v.verifiedUntimedCount||0,invalidDateReplyCount:v.invalidDateReplyCount||0,invalidDateRowCount:v.invalidDateRowCount||0,warnings:v.warnings,errors:[]},
    nativeFormatAudit:report.nativeFormatAudit,eventAudit:{...ev,complete:true,zeroEventAssessment:events.length?'not-zero':'no-accepted-event-in-observed-history'},offlineRecovery:{method:report.method,originalScannerVersion:version,originalFailure:cp.failedPhase,coreVersion:core.version,originalRun:run,liveRescan:false,sourceAuditReused:true,bottomProof:bottom},note:'由完整保全及同批次現場來源稽核離線重驗產出；並非重新實機掃描。匯入前仍須核對目標輪迴、預覽與備份。'};
   report.canonicalAvailable=true;
   return {report,canonical};

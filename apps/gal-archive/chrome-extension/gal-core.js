@@ -18,12 +18,17 @@ function adventureHeader(line){
  if(t.startsWith('**')!==t.endsWith('**'))return null;
  return (t.startsWith('**')?t.slice(2,-2).trim():t).match(adventureHeaderPattern);
 }
+function adventureHudColor(lines){
+ const blue=lines.includes('🔹【基礎】🔹')&&lines.includes('🔹【共鳴契】🔹')&&(lines.includes('🔹【狀態】🔹')||lines.includes('🔹【狀態】'));
+ const orange=lines.includes('🔸【基礎】🔸')&&lines.includes('🔸【共鳴契】🔸')&&lines.includes('🔸【狀態】🔸');
+ return blue===orange?null:blue?'🔹':'🔸';
+}
 function adventureClockEvidence(input){
  const lines=clean(input).split('\n');
  const markers=new Set(lines.map(line=>line.trim()));
- if(markers.has('🔹【基礎】🔹')&&markers.has('🔹【共鳴契】🔹')&&(markers.has('🔹【狀態】🔹')||markers.has('🔹【狀態】')))return true;
+ if(adventureHudColor([...markers]))return true;
  return lines.some((line,i)=>/^(?:\*\*)?\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}[：:]\d{2}/u.test(line.trim())&&
-  (/[ \t]+[I｜|][ \t]+\S/u.test(line)||lines[i+1]?.trim()==='🔹【基礎】🔹'));
+  (/[ \t]+[I｜|][ \t]+\S/u.test(line)||['🔹【基礎】🔹','🔸【基礎】🔸'].includes(lines[i+1]?.trim())));
 }
 // A single, bounded context marker immediately before the fenced HUD.
 function adventureContextLine(line){
@@ -40,8 +45,9 @@ function adventureWorldPrefix(line){
 }
 function adventureClockTitle(lines){
  const direct=adventureHeader(lines[0]);
- if(direct&&lines[1]==='🔹【基礎】🔹')return {match:direct,headerRows:1};
- const end=lines.indexOf('🔹【基礎】🔹');
+ const basic=x=>x==='🔹【基礎】🔹'||x==='🔸【基礎】🔸';
+ if(direct&&basic(lines[1]))return {match:direct,headerRows:1};
+ const end=lines.findIndex(basic);
  if(end<2||end>12||!/^\*\*\d{4}年\d{1,2}月\d{1,2}日[ \t]+\d{1,2}[：:]\d{2}/u.test(lines[0]))return null;
  const pieces=lines.slice(0,end);
  if(!pieces.at(-1).endsWith('**')||pieces.some((x,i)=>!x||x.slice(i===0?2:0,i===end-1?-2:undefined).includes('**')))return null;
@@ -52,8 +58,18 @@ function adventureClockTitle(lines){
  const match=adventureHeader(pieces.join(''));
  return match?{match,headerRows:end}:null;
 }
-function parseAdventureClock(input){
- let lines=clean(input).split('\n').map(line=>line.trim());
+const ADVENTURE_EVENT_CONTEXT='{{Below context is an event which has just occurred. '+ADVENTURE_WORLD+' should not skip this moment — chime in naturally as '+ADVENTURE_WORLD+' would react. This event is to make the story dynamic and fresh.}}';
+function adventureEventPrefix(input){
+ const lines=clean(input).split('\n');
+ if(lines[0].trim()!==ADVENTURE_EVENT_CONTEXT)return null;
+ let i=1;while(i<=3&&!lines[i]?.trim())i++;
+ const prefix=adventureWorldPrefix(lines[i]);
+ if(!prefix?.context||prefix.label!==ADVENTURE_WORLD+':')return null;
+ return {label:prefix.label,context:prefix.context,body:lines.slice(i+1).join('\n'),projected:prefix.label+'\n'+lines.slice(i+1).join('\n')};
+}
+function adventureClockDetails(input){
+ const eventPrefix=adventureEventPrefix(input);
+ let lines=clean(eventPrefix?.projected||input).split('\n').map(line=>line.trim());
  if(isEvent(lines[0])){lines.shift();while(lines[0]==='')lines.shift()}
  const prefix=adventureWorldPrefix(lines[0]);
  // A literal malformed marker observed identically in both projections.
@@ -71,21 +87,28 @@ function parseAdventureClock(input){
  if(!title)return null;
  const {match,headerRows}=title;
  const end=lines.indexOf(ADVENTURE_FENCE,headerRows+1);
- if(fenced&&end<0)return null;
- const hud=lines.slice(headerRows+1,end<0?undefined:end),co=hud.indexOf('🔹【共鳴契】🔹'),st=hud.findIndex(x=>x==='🔹【狀態】🔹'||x==='🔹【狀態】');
+ // Only the proven world-label event shape may have a visible unclosed HUD.
+ // Comparison must still prove the literal opening fence and complete body.
+ if(fenced&&end<0&&(!prefix||prefix.label!==ADVENTURE_WORLD+':'||lines.some(x=>x.startsWith(ADVENTURE_FENCE))))return null;
+ const allHud=lines.slice(0,end<0?undefined:end),color=adventureHudColor(allHud);
+ if(!color||allHud[headerRows]!==color+'【基礎】'+color)return null;
+ const hud=allHud.slice(headerRows+1),co=hud.indexOf(color+'【共鳴契】'+color),st=hud.findIndex(x=>x===color+'【狀態】'+color||color==='🔹'&&x==='🔹【狀態】');
  if(co<0||st<=co||!hud.slice(0,co).some(x=>/^等級[：:]/u.test(x))||
   !hud.slice(0,co).some(x=>/^血量[：:]/u.test(x))||
   !hud.slice(co+1,st).some(x=>/^對象[：:]/u.test(x))||
   !hud.slice(co+1,st).some(x=>/^深度[：:]/u.test(x)))return null;
  const [year,month,day,hour,minute]=match.slice(1,6).map(Number);
  const local=new Date(Date.UTC(year,month-1,day,hour,minute));
- if(year<100||local.getUTCFullYear()!==year||local.getUTCMonth()+1!==month||local.getUTCDate()!==day||
-  local.getUTCHours()!==hour||local.getUTCMinutes()!==minute)return null;
+ if(year<100||month<1||month>12||day<1||day>31||hour>23||minute>59)return null;
  const pad=n=>String(n).padStart(2,'0');
+ const civil=year+'/'+pad(month)+'/'+pad(day)+' '+pad(hour)+':'+pad(minute);
+ if(local.getUTCFullYear()!==year||local.getUTCMonth()+1!==month||local.getUTCDate()!==day)
+  return {iso:null,civil,invalidDate:true,header:match[0],profile:'adventure'};
  return {iso:new Date(local.getTime()-8*3600000).toISOString(),
-  civil:year+'/'+pad(month)+'/'+pad(day)+' '+pad(hour)+':'+pad(minute),
+  civil,
   year,month,day,hour,minute,second:0,location:match[6],profile:'adventure'};
 }
+function parseAdventureClock(input){const result=adventureClockDetails(input);return result?.invalidDate?null:result;}
 function adventureOpening(text){
  const clock=parseAdventureClock(text);
  return clock?.iso===ADVENTURE_OPENING_ISO&&clock.location==='冒險者公會';
@@ -94,16 +117,51 @@ function adventureOpening(text){
 // monospace box or as a literal fenced block. Every block and all surrounding
 // prose must match in order. Return native text including original fences,
 // titles, placeholder tokens, punctuation, and all inventory characters.
+function systemBoxProof(raw,domKey){
+ const key=raw.replace(/\s/gu,'');
+ // Each alternative is confined to an actual paired delimiter or a known
+ // emoticon spelling in a system box. Bold pairs cannot be split.
+ const choices=new Map();
+ for(const m of raw.matchAll(/(?<!\*)\*\*([^*\n]+)\*\*(?!\*)/gu)){
+  const start=raw.slice(0,m.index).replace(/\s/gu,'').length,v=m[0].replace(/\s/gu,'');
+  choices.set(start,{end:start+v.length,variants:[v,m[1].replace(/\s/gu,'')]});
+ }
+ for(const m of key.matchAll(/☆\*ヾ\([・•]ω[・•]\*\)ノ\*☆|✧\*｡٩\(ˊᗜˋ\*\)و✧\*｡|٩\(ˊᗜˋ\*\)و|\(\*\/ω＼\*\)|\(\*´ω`\*\)|\(\*¯꒳¯\*\)/gu)){
+  const v=m[0],stars=[...v.matchAll(/\*/g)].map(x=>x.index);
+  const variants=[v];
+  // Only the known renderings of these punctuation patterns are admitted.
+  if(stars.length===2)variants.push(v.replace(/\*/g,''));
+  else if(stars.length===3)variants.push(v.replace('*','').replace('*',''),v.replace(/\*/g,''));
+  else if(stars.length===1)variants.push(v.replace('*',''));
+  choices.set(m.index,{end:m.index+v.length,variants});
+ }
+ let positions=new Set([0]);
+ for(let i=0;i<key.length;){
+  const choice=choices.get(i)||{end:i+1,variants:[key[i]]};
+  const next=new Set();
+  for(const pos of positions)for(const v of choice.variants)if(domKey.startsWith(v,pos))next.add(pos+v.length);
+  if(!next.size)return false;
+  positions=next;i=choice.end;
+ }
+ return positions.has(domKey.length);
+}
 function compareAdventureParagraphs(scanned,nativeCopy,options){
  const visible=clean(scanned),original=clean(nativeCopy),compact=v=>v.replace(/\s/gu,'');
+ const eventPrefix=options.event===true&&options.source==='whif-event-content'?adventureEventPrefix(original):null;
+ const eventProven=eventPrefix&&visible.split('\n')[0].trim()===eventPrefix.label&&clean(options.eventTitle)===eventPrefix.label&&!visible.includes(eventPrefix.context)&&!visible.includes(ADVENTURE_EVENT_CONTEXT);
+ const projection=eventProven?eventPrefix.projected:original;
  const actual=compact(visible),nativeClock=parseAdventureClock(original),clock=parseAdventureClock(visible);
- const clockEqual=Boolean(clock&&nativeClock&&clock.iso===nativeClock.iso&&
+ const invalidA=adventureClockDetails(visible),invalidB=adventureClockDetails(original);
+ const invalidClock=options.allowInvalidNativeDate===true&&options.source==='whif-message-content'&&!options.event&&!options.opening&&invalidA?.invalidDate&&invalidB?.invalidDate&&invalidA.header===invalidB.header;
+ const clockEqual=Boolean(invalidClock||clock&&nativeClock&&clock.iso===nativeClock.iso&&
   (!options.opening||(adventureOpening(visible)&&adventureOpening(original))));
- const blocks=[...original.matchAll(/^[ \t]*\x60{3}[ \t]*\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm)];
- const fenceLines=original.split('\n').filter(l=>l.trim().startsWith(ADVENTURE_FENCE));
- const validFences=fenceLines.length===blocks.length*2&&blocks.length>0;
+ const blocks=[...projection.matchAll(/^[ \t]*\x60{3}[ \t]*\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm)];
+ const fenceLines=projection.split('\n').filter(l=>l.trim().startsWith(ADVENTURE_FENCE));
+ const openTail=(options.source==='whif-message-content'&&!options.event||eventProven)&&fenceLines.length===blocks.length*2+1&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE)&&
+  (blocks.length>0||eventProven)&&projection.slice((blocks.at(-1)?.index??0)+(blocks.at(-1)?.[0].length??0)).split('\n').filter(l=>l.trim()===ADVENTURE_FENCE).length===1;
+ const validFences=(fenceLines.length===blocks.length*2&&blocks.length>0)||openTail;
  const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
- let matched=false,omitted=0,headings=0,offset=0,sourceOffset=0,hiddenContext='',postContext='',quotePairs=0;
+ let matched=false,omitted=0,headings=0,offset=0,sourceOffset=0,hiddenContext='',postContext='',quotePairs=0,systemBoxProjections=0;
  const bounded=options.source==='whif-message-content'&&!options.event;
  // Only whole visible dialogue lines may prove omission of a paired
  // native quote. Never apply to HUD/other code blocks or unknown sources.
@@ -113,12 +171,12 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
   const value=compact(line);
   if(value){lineStarts.add(lineOffset);lineOffset+=value.length;lineEnds.add(lineOffset);}
  }
- const leadingWorld=adventureWorldPrefix(original.split('\n')[0]);
+ const leadingWorld=adventureWorldPrefix(projection.split('\n')[0]);
  // Project only a single standalone leading context immediately before a
  // proven HUD fence from a bounded native reply, never a body marker.
- const firstLine=original.split('\n')[0];
+ const firstLine=projection.split('\n')[0];
  if(bounded&&(adventureContextLine(firstLine)||leadingWorld?.context)&&
-    blocks[0]&&/^\n(?:[ \t]*\n){0,2}$/u.test(original.slice(firstLine.length,blocks[0].index))&&
+    blocks[0]&&/^\n(?:[ \t]*\n){0,2}$/u.test(projection.slice(firstLine.length,blocks[0].index))&&
     adventureHeader(blocks[0][1].split('\n')[0])&&
     !visible.includes(leadingWorld?.context||firstLine)&&
     (leadingWorld?visible.split('\n')[0].trim()===leadingWorld.label:!actual.startsWith(compact(firstLine)))){
@@ -159,15 +217,20 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
   for(let i=0;i<blocks.length;i++){
    const b=blocks[i],raw=b[1],first=raw.split('\n')[0],heading=first.trim();
    const knownBold=heading.startsWith('**')&&heading.endsWith('**')&&
-    (i===0&&!!adventureHeader(heading)||/^\*\*(?:【[^】\n]+】|此次戰鬥損益！|系統對話框|共鳴契對象階段變化！|冒險者階級考核結果！)\*\*$/u.test(heading));
+    (i===0&&!!adventureHeader(heading)||/^\*\*(?:【[^】\n]+】|此次戰鬥損益！|系統對話框|共鳴契對象階段變化！|冒險者階級考核結果！|本次委託結果！|冒險者階級考核進行中！)\*\*$/u.test(heading));
    const stripped=knownBold?raw.replace(first,heading.slice(2,-2).trim()):raw;
-   // DOM textContent and serialized Markdown are distinct projections.
-   // Prove the block with DOM text, then independently consume the
-   // serialized form, which can legitimately restore heading bold.
+   // The system box can be parsed as rich text in DOM textContent even
+   // though the independent serialized Markdown preserves the exact source.
+   // Prove only paired bold delimiters and stars in observed kaomoji; no
+   // arbitrary body character can disappear. The raw form is still required
+   // for these richer projections in the serialized DOM below.
    const domKey=compact(String(proof[i]??''));
-   const domProven=[raw,stripped].some(v=>compact(v)===domKey);
-   const variants=[...new Set([raw,...(compact(stripped)===domKey?[stripped]:[])])];
-   if(!domProven||!gap(original.slice(sourceOffset,b.index),i===1)){matched=false;break}
+   const standard=[raw,stripped].filter(v=>compact(v)===domKey);
+   const systemProof=heading==='**系統對話框**'&&systemBoxProof(raw,domKey);
+   const domProven=standard.length>0||systemProof;
+   if(!standard.length&&systemProof)systemBoxProjections++;
+   const variants=[...new Set([raw,...standard])];
+   if(!domProven||!gap(projection.slice(sourceOffset,b.index),i===1)){matched=false;break}
    let consumed=false;
    for(const v of variants){
     if(take(ADVENTURE_FENCE+'\n'+v+'\n'+ADVENTURE_FENCE)){consumed=true;if(v!==raw)headings++;break}
@@ -176,13 +239,17 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
    if(!consumed){matched=false;break}
    sourceOffset=b.index+b[0].length;
   }
-  matched=matched&&gap(original.slice(sourceOffset),blocks.length===1)&&offset===actual.length;
+  // An open tail must be visible verbatim (apart from whitespace), including its opening delimiter.
+  matched=matched&&(openTail?take(projection.slice(sourceOffset),false):gap(projection.slice(sourceOffset),blocks.length===1))&&offset===actual.length;
  }
  // Exact native text needs no removed-delimiter evidence; malformed or
  // unmatched fences are still rejected, even on an otherwise equal body.
- const literal=validFences&&actual===compact(original);
+ const literal=validFences&&!openTail&&actual===compact(original);
  const contentEqual=Boolean(literal||matched);
  const formatMarkers=[];
+ if(contentEqual&&eventProven)formatMarkers.push({kind:'adventure-proven-event-title-companion',tokens:2,nonWhitespaceChars:compact(ADVENTURE_EVENT_CONTEXT+eventPrefix.context).length});
+ if(contentEqual&&openTail)formatMarkers.push({kind:'adventure-visible-unclosed-tail',tokens:0,nonWhitespaceChars:0});
+ if(contentEqual&&systemBoxProjections)formatMarkers.push({kind:'adventure-system-box-dom-text-projection',tokens:systemBoxProjections,nonWhitespaceChars:0});
  if(contentEqual&&!literal&&hiddenContext)formatMarkers.push({kind:'adventure-leading-context-template',tokens:1,nonWhitespaceChars:compact(hiddenContext).length});
  if(contentEqual&&!literal&&postContext)formatMarkers.push({kind:'adventure-post-hud-context-template',tokens:1,nonWhitespaceChars:compact(postContext).length});
  if(contentEqual&&!literal&&quotePairs)formatMarkers.push({kind:'adventure-proven-dialogue-quote-pair',tokens:quotePairs*2,nonWhitespaceChars:quotePairs*2});
@@ -195,8 +262,8 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
   formatMarkerCount:formatMarkers.reduce((n,x)=>n+x.tokens,0),
   explainedNonWhitespace:formatMarkers.reduce((n,x)=>n+x.nonWhitespaceChars,0),
   remainingUnexplained:{scanned:contentEqual?0:Math.max(0,actual.length-offset),native:contentEqual?0:Math.max(0,compact(original).length-offset)},
-  ignoredDifferences:formatMarkers.map(x=>x.kind),adventureProjection:{nativeBlocks:blocks.length,domBlocks:proof.length,allOrdered:contentEqual}};
- return {text:contentEqual&&clockEqual?original:null,comparison};
+  ignoredDifferences:formatMarkers.map(x=>x.kind),adventureProjection:{nativeBlocks:blocks.length,domBlocks:proof.length,allOrdered:contentEqual,systemBoxProjections}};
+ return {text:contentEqual&&clockEqual?original:null,comparison:{...comparison,...(invalidClock&&contentEqual?{invalidNativeDate:{civil:invalidA.civil,header:invalidA.header}}:{})}};
 }
 
 // A clock-shaped HUD anywhere is evidence against an untimed classification,
@@ -374,6 +441,22 @@ function isAllowedOpeningRow(row,expectedWorld){
    ?{ok:true,reason:'native-text-confirmed-no-time'}
    :{ok:false,reason:verified.comparison.contentEqual?'native-clock-unverified':'native-text-mismatch'};
  }
+function verifiedInvalidAdventureReply(row,rows){
+ if(row?.role!=='ai'||row.eventType==='event'||isEvent(row.text))return null;
+ const detail=adventureClockDetails(row.text),source=row.formatSource?.nativeReply;
+ if(!detail?.invalidDate||source?.reason!=='available'||source.markerCount!==1||
+    !source.messageId||source.scannedText!==row.text||typeof source.text!=='string'||
+    source.text.length<8||source.text.length>30000||source.eventEvidence?.messageId!==source.messageId||
+    source.eventEvidence?.kind!=='ordinary-message'||source.eventEvidence?.sender!=='character')return null;
+ const ids=rows.flatMap(r=>[r.formatSource?.nativeReply?.messageId,...(r.formatSource?.playerSources||[]).map(x=>x.id)]);
+ if(ids.filter(id=>id===source.messageId).length!==1)return null;
+ const proof=compareNativeParagraphs(row.text,source.text,{source:'whif-message-content',allowInvalidNativeDate:true,
+  chapterTitle:source.chapterTitle,statusText:row.formatSource?.statusText,codeBlocks:row.formatSource?.codeBlocks});
+ if(proof.text===null||!proof.comparison.contentEqual||!proof.comparison.clockEqual||!proof.comparison.invalidNativeDate)return null;
+ return {kind:'verified-original-invalid-calendar-date',civil:detail.civil,header:detail.header,
+  sourceMessageId:source.messageId,markerCount:1,sender:'character',sourceKind:'ordinary-message'};
+}
+function invalidAdventureDate(input){const detail=adventureClockDetails(input);return detail?.invalidDate?{civil:detail.civil,header:detail.header}:null;}
 function validate(rows,expectedWorld){
  const errors=[],warnings=[],canon=[],events=[];
  if(!Array.isArray(rows)||!rows.length)return {ok:false,errors:['沒有掃到任何可辨識訊息'],warnings,opening:'',messages:[],events:[],pairs:0};
@@ -382,7 +465,7 @@ function validate(rows,expectedWorld){
    errors.push('首則不是可辨識的輪迴開場（依綁定世界觀驗收：原有開場規則或冒險者3000/01/01 08:00公會開場）；請回到真正的開場重新掃描');
  const opening=opener.role==='ai'?clean(opener.text):'';
  if(opening.length<8)errors.push('輪迴開場過短，可能選到工具列或不完整訊息');
- let pending=null,pairs=0,previousMs=null,autoContinues=0,unknownGameTimeCount=0,verifiedUntimedCount=0;
+ let pending=null,pairs=0,previousMs=null,autoContinues=0,unknownGameTimeCount=0,verifiedUntimedCount=0,invalidDateReplyCount=0,invalidDateRowCount=0;
  for(let i=1;i<rows.length;i++){
   const row=rows[i],role=row.role,t=clean(row.text);
   if(!t){errors.push('第 '+(i+1)+' 則是空訊息');continue}
@@ -412,8 +495,9 @@ function validate(rows,expectedWorld){
   }
   const clock=explicitlyUnknown?null:parseGameTime(t);
   if(clock&&expectedWorld&&isAdventureWorld(expectedWorld)!==(clock.profile==='adventure')){errors.push('第 '+(i+1)+' 則時間格式與綁定世界觀不一致');continue;}
-  const nativeUntimed=!clock&&!explicitlyUnknown?verifiedUnclockedReply(row,rows):null;
-  if(!clock&&!explicitlyUnknown&&!nativeUntimed?.ok){
+  const invalidDate=!clock&&!explicitlyUnknown&&isAdventureWorld(expectedWorld)?verifiedInvalidAdventureReply(row,rows):null;
+  const nativeUntimed=!clock&&!explicitlyUnknown&&!invalidDate?verifiedUnclockedReply(row,rows):null;
+  if(!clock&&!explicitlyUnknown&&!invalidDate&&!nativeUntimed?.ok){
    errors.push('第 '+(i+1)+' 則 Gal AI 回覆沒有可辨識劇情時間，原生無時間來源未通過（'+
     (nativeUntimed?.reason||'unknown')+'）；不能自行沿用前一則時間');
    continue;
@@ -422,9 +506,12 @@ function validate(rows,expectedWorld){
   if(pending===null&&!continued){errors.push('第 '+(i+1)+' 則 Gal AI 沒有相鄰的「我」');continue}
   // The explicit '日期不詳／時間不詳' header is evidence of an unknown
   // clock, NOT permission to borrow the previous reply's time.
-  if(pending)pending.gameTime=clock?.iso||null;
-  canon.push({role:'ai',text:t,scanIndex:i,gameTime:clock?.iso||null,...(nativeUntimed?.ok?{verifiedUntimedNative:true}:{}),...(continued?{autoContinue:true}:{})});
-  if(explicitlyUnknown){
+  if(pending){pending.gameTime=clock?.iso||null;if(invalidDate)pending.nativePairedInvalidDate={civil:invalidDate.civil,sourceMessageId:invalidDate.sourceMessageId};}
+  canon.push({role:'ai',text:t,scanIndex:i,gameTime:clock?.iso||null,...(nativeUntimed?.ok?{verifiedUntimedNative:true}:{}),...(invalidDate?{nativeInvalidDateEvidence:invalidDate}:{}),...(continued?{autoContinue:true}:{})});
+  if(invalidDate){
+   invalidDateReplyCount++;invalidDateRowCount+=pending?2:1;
+   warnings.push('第 '+(i+1)+' 則原生日期無效（'+invalidDate.civil+'）；保留原文與掃描位置，禁止推定有效日期');
+  }else if(explicitlyUnknown){
    unknownGameTimeCount+=pending?2:1;
    warnings.push('第 '+(i+1)+' 則 Gal AI 原文明示「日期不詳／時間不詳」；本回合時間保留空白，不推測時間');
   }else if(nativeUntimed?.ok){
@@ -445,7 +532,7 @@ function validate(rows,expectedWorld){
  if(expectedWorld&&sourceNames.length&&sourceNames.some(x=>normalizedWorld(x)!==normalizedWorld(expectedWorld)))
    errors.push('事件世界觀與綁定世界觀不一致');
  return {ok:errors.length===0,errors,warnings,opening,messages:canon,events,pairs,autoContinues,
-  unknownGameTimeCount,verifiedUntimedCount,worldNames:sourceNames,scannedRows:rows.length};
+  unknownGameTimeCount,verifiedUntimedCount,invalidDateReplyCount,invalidDateRowCount,worldNames:sourceNames,scannedRows:rows.length};
 }
 function copyRangeWithLiveStyles(range,trace){
  const root=range.commonAncestorContainer;
@@ -1753,5 +1840,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseAdventureClock,adventureClockEvidence,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.9.11'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.9.12'};
 })();
