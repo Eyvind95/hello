@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.37",
-  "version_name": "V0.8.37 測試版",
-  "description": "輪迴檔案館 V0.8.37：唯讀追蹤玩家原生 ID 的兩筆差額及其文字區間，診斷含來源雜湊與相鄰掃描索引；來源未核實前仍拒絕完整正史匯出，不更動已通過的AI自動繼續與事件驗證。",
+  "version": "0.8.38",
+  "version_name": "V0.8.38 批次下載與失敗保全",
+  "description": "輪迴檔案館 V0.8.38：台灣時間的逐輪迴獨立批次、單一掃描狀態檔、Chrome 完成確認、失敗原生資料全量保全、逐筆錯誤上下文及來源綁定七則測試。未驗證 JSON 禁止匯入正式正史。",
   "permissions": [
     "storage",
     "activeTab",
