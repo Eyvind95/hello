@@ -1877,3 +1877,26 @@ test('anomaly 010: unknown native sender does not silently suppress a candidate;
  const legacy=nativeBoundaryFixture({unknown:true,unowned:true,playerLabels:[]});
  assert.equal(legacy.result.rows.length,3);
 });
+
+test('Live anchor detail records same-line fence tails without rewriting the original',()=>{
+ const src=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const part=src.slice(src.indexOf('function anchorClosingTails('),src.indexOf('function anchorDetailedEvidence('));
+ const tails=new Function(part+'\nreturn anchorClosingTails')();
+ const fence=String.fromCharCode(96).repeat(3);
+ assert.deepEqual(tails([fence,'內容',fence+'尾字',fence,'更多',fence].join('\n')),[{line:3,text:'尾字'}]);
+ assert.deepEqual(tails([fence+'javascript','內容',fence].join('\n')),[]);
+ assert.deepEqual(tails([fence,'未閉合'].join('\n')),[]);
+});
+test('Live anchor detail refuses duplicate IDs, foreign owners and nonaccepted native sources',()=>{
+ const src=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const part=src.slice(src.indexOf('function anchorClosingTails('),src.indexOf('async function anchorRecoveryProbe('));
+ const id='target-1',attr='data-selection-copy-message-id';
+ const make=(id,wrapper=null)=>({getAttribute:k=>k===attr?id:null,closest:()=>wrapper,querySelectorAll:()=>[]});
+ const run={scanRunId:'run',cycleId:'cycle'};
+ const capture=(nodes,read)=>new Function('SCANNER_VERSION','core','nativeMessageSelector','readNativeNode',part+'\nreturn anchorDetailedEvidence')('0.9.11',{version:'0.9.11'},'['+attr+']',read)({querySelectorAll:()=>nodes},id,{},run);
+ assert.deepEqual(capture([make(id),make(id)],()=>{throw Error('must not read')}).missing,['target-marker-not-unique']);
+ assert.deepEqual(capture([make(id,{getAttribute:()=> 'foreign'})],()=>{}).missing,['wrapper-id-mismatch']);
+ assert.deepEqual(capture([make(id)],()=>({reason:'available',text:'text',eventEvidence:{messageId:id,sender:'deg_event',kind:'event-message',accepted:false}})).missing,['unique-accepted-native-event-not-proven']);
+ assert.deepEqual(capture([make(id)],()=>({reason:'available',text:'text',eventEvidence:{messageId:'foreign',sender:'deg_event',kind:'event-message',accepted:true}})).missing,['unique-accepted-native-event-not-proven']);
+ assert.match(src,/stable&&!liveDetail&&before\.state==='anchor-collected'&&after\.state==='anchor-collected'/);
+});
