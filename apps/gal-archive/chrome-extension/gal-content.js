@@ -976,6 +976,9 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  const eventAudit={headers:new Map(),native:new Map(),unverifiedCards:new Map(),probes:new WeakMap(),history:new Map()};
  let firstTimedTrace=null;
  let registered=false;
+ // Preserve any partially valid event classifications in failure diagnostics.
+ // A missing-clock AI must not erase previously observed accepted events.
+ let failedValidation=null;
  let paragraphCheck={scannerVersion:SCANNER_VERSION,coreVersion:core.version,
   source:'rendered-dom',reason:'first-reply-not-validated'};
  try{
@@ -1120,6 +1123,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   if(paused)throw Error('掃描已暫停。請返回輪迴開場重新開始，避免匯出半份正史。');
   if(stepCount>=12000)throw Error('未確認掃描到底，達到安全上限');
   const validation=core.validate(collected,target.worldName);
+  failedValidation=validation;
   if(preview){
    // A 3-item count alone does not prove opening/me/AI pairing. Keep
    // source-bound IDs out of the downloadable diagnostic; retain only
@@ -1233,7 +1237,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   diagnostic={...(diagnostic||inspect()),...run,scanMode,error:failure,trustedCount:collected.length,paragraphCheck,unpairedReply,bottomProof,
    scrollStall,scrollAtFailure,
    autoContinueCandidates:continuedPositions.map(({scanIndex})=>scanIndex),
-   eventAudit:summarizeEventAudit(eventAudit,collected,{messages:[],events:[]},false),
+   eventAudit:summarizeEventAudit(eventAudit,collected,
+    failedValidation||{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
   status((cancelled?'已取消：':paused?'已暫停：':'⛔ 安全停止：')+failure+'\n可信訊息 '+collected.length+
    ' 則，未輸出半份正史；可按「📋 複製版面診斷」。');
