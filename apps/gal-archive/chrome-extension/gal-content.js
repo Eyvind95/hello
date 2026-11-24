@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.10: native message ownership guard for boundaries; preserve scan acceptance. */
+/* Independent Gal AI page scanner. v0.9.11: target-only live forensic event evidence; preserve scan acceptance. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.10';
+const SCANNER_VERSION='0.9.11';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -768,6 +768,7 @@ function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null)
   }
   const row={role:'ai',text:item.text,id:'',top:item.start.getBoundingClientRect().top,
    formatSource:item.metadata,scanNode:item.start};
+  if(probeTrace)row.probeBoundary={start:item.start,end:item.end};
   if(item.kind==='event'){
    row.eventType='event';row.worldName=target?.worldName||'';
    debug.completeEvents++;
@@ -1483,6 +1484,78 @@ function anchorProbeSnapshot(root,anchorId){
   headers:headings.map(h=>({kind:h.kind,...anchorProbeElement(h.node)})),toolbars:tools.map(anchorProbeElement),
   localMarkers:local.map(elementInfo)};
 }
+// Forensic-only: capture the actual mounted target after a stable pair.
+// Never substitute checkpoint text, or inspect an adjacent message as the target.
+function anchorClosingTails(text){
+ const out=[];let open=false;
+ for(const [index,line] of String(text||'').split(/\r?\n/).entries()){
+  const m=line.match(/^[ \t]*\x60{3}(.*)$/u);
+  if(!m)continue;
+  if(open&&m[1].trim())out.push({line:index+1,text:m[1]});
+  open=!open;
+ }
+ return out;
+}
+function anchorDetailedEvidence(root,anchorId,expected,run){
+ const result={format:'gal-ai-live-anchor-detail',version:1,forensicOnly:true,importable:false,
+  scanRunId:run.scanRunId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+  worldName:run.worldName,worldKey:run.worldKey,cycleId:run.cycleId,cycleNumber:run.cycleNumber,
+  sourceId:anchorId,capturedAt:new Date().toISOString(),complete:false,missing:[]};
+ const fail=why=>{result.missing.push(why);return result};
+ try{
+  const markers=[...root.querySelectorAll(nativeMessageSelector)].filter(n=>n.getAttribute('data-selection-copy-message-id')===anchorId);
+  if(markers.length!==1)return fail('target-marker-not-unique');
+  const node=markers[0],wrapper=node.closest('[data-message-id]');
+  if(wrapper&&wrapper.getAttribute('data-message-id')!==anchorId)return fail('wrapper-id-mismatch');
+  const body=wrapper||node;
+  if([...body.querySelectorAll(nativeMessageSelector)].some(n=>n.getAttribute('data-selection-copy-message-id')!==anchorId))return fail('foreign-message-in-wrapper');
+  const native=readNativeNode(node);
+  result.native={reason:native.reason,source:native.eventEvidence||null,text:typeof native.text==='string'?native.text:null};
+  const proof=native.eventEvidence;
+  if(native.reason!=='available'||proof?.messageId!==anchorId||proof.kind!=='event-message'||proof.sender!=='deg_event'||proof.accepted!==true)return fail('unique-accepted-native-event-not-proven');
+  const view=boundaryRead(root,false,true,[]);
+  const rows=view.rows.filter(r=>r.formatSource?.nativeReply?.messageId===anchorId);
+  if(rows.length!==1||rows[0].eventType!=='event')return fail('target-event-row-not-unique');
+  const row=rows[0],source=row.formatSource.nativeReply;
+  if(source.reason!=='available'||source.text!==native.text||source.eventEvidence?.messageId!==anchorId||source.markerCount!==1)return fail('live-native-row-mismatch');
+  result.serialized={text:row.text,length:row.text.length,hash:hash(row.text),codeBlocks:row.formatSource.codeBlocks||[]};
+  if(result.serialized.hash!==expected.textHash||result.serialized.length!==expected.textLength)return fail('live-serialization-changed');
+  const {start,end}=row.probeBoundary||{};
+  if(!start||!end||!boundaryFollows(start,end))return fail('live-boundary-unavailable');
+  const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
+  if(!range.intersectsNode(node))return fail('marker-outside-event-boundary');
+  const holder=document.createElement('div');holder.append(range.cloneContents());
+  const styles=n=>{const s=getComputedStyle(n);return {...anchorProbeElement(n),contentVisibility:s.contentVisibility||null,overflow:s.overflow,clipPath:s.clipPath,whiteSpace:s.whiteSpace}};
+  const snapshot=n=>n?{outerHTML:n.outerHTML??null,textContent:n.textContent??null,innerText:typeof n.innerText==='string'?n.innerText:null,style:n.nodeType===1?styles(n):null}:null;
+  const sibling=n=>n?.nodeType===1?snapshot(n):n?{nodeType:n.nodeType,textContent:n.textContent}:null;
+  result.dom={marker:snapshot(node),wrapper:wrapper?snapshot(wrapper):null,
+   boundary:{start:snapshot(start),end:snapshot(end),html:holder.innerHTML,textContent:holder.textContent,rangeText:range.toString()},
+   blocks:[...body.querySelectorAll('pre,code')].filter(n=>range.intersectsNode(n)).map(n=>({node:snapshot(n),previous:sibling(n.previousSibling),next:sibling(n.nextSibling),parent:snapshot(n.parentElement)}))};
+  result.tails=anchorClosingTails(native.text).map(t=>{
+   const matches=[],walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT);
+   for(let n=walker.nextNode();n;n=walker.nextNode()){
+    if(!range.intersectsNode(n))continue;
+    const value=n.nodeValue||'',needle=t.text.trim();let at=value.indexOf(needle);
+    while(needle&&at>=0){
+     const r=document.createRange();r.setStart(n,at);r.setEnd(n,at+needle.length);
+     const ancestors=[];for(let e=n.parentElement;e&&body.contains(e);e=e.parentElement)ancestors.push(styles(e));
+     matches.push({text:value,offset:at,parent:snapshot(n.parentElement),ancestors,
+      rects:[...r.getClientRects()].map(q=>({x:q.x,y:q.y,width:q.width,height:q.height}))});
+     at=value.indexOf(needle,at+needle.length);
+    }
+   }
+   const needle=t.text.trim(),contains=v=>typeof v==='string'&&v.includes(needle);
+   return {...t,native:true,markerText:contains(node.textContent),markerInnerText:contains(node.innerText),
+    wrapperText:contains(wrapper?.textContent),wrapperInnerText:contains(wrapper?.innerText),
+    boundaryText:contains(holder.textContent),serialized:contains(row.text),matches};
+  });
+  const live=[...root.querySelectorAll(nativeMessageSelector)].filter(n=>n.getAttribute('data-selection-copy-message-id')===anchorId);
+  if(live.length!==1||live[0]!==node||!node.isConnected)return fail('target-unmounted-during-capture');
+  if(typeof node.innerText!=='string'||!result.dom.marker.outerHTML||!result.dom.boundary.html)return fail('required-live-dom-fields-unavailable');
+  result.complete=true;return result;
+ }catch(error){return fail('capture-error: '+String(error?.message||error))}
+}
+
 async function anchorRecoveryProbe(){
  if(busy)return status('掃描進行中，禁止同時取證');
  if(!target?.cycleId)return status('先確認目前頁面的輪迴綁定');
@@ -1499,7 +1572,8 @@ async function anchorRecoveryProbe(){
  const origin=location.origin+location.pathname,profile={...target};
  const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'missing',
   worldName:profile.worldName,cycleTitle:profile.cycleTitle,scannerVersion:SCANNER_VERSION};
- const attempts=[],seen=new Set();let root=null,initial=null,registered=false,reason=null,restore=null;
+ const attempts=[],seen=new Set();let root=null,initial=null,registered=false,reason=null,restore=null,liveDetail=null;
+ const detailFailures=[];
  const guard=()=>{
   if(cancelled||paused)throw Error('使用者中止局部取證');
   if(location.origin+location.pathname!==origin||!root?.isConnected)throw Error('聊天網址或捲動容器變更，停止取證');
@@ -1572,6 +1646,14 @@ async function anchorRecoveryProbe(){
      JSON.stringify(before.rawIds)===JSON.stringify(after.rawIds)&&
      JSON.stringify(before.rows.map(x=>x.sourceIds))===JSON.stringify(after.rows.map(x=>x.sourceIds));
     attempts.push({requested,beforeHeight,stable,before,after});
+    if(stable&&!liveDetail&&before.state==='anchor-collected'&&after.state==='anchor-collected'){
+     const a=before.rows.find(r=>r.sourceIds.includes(anchorId)),b=after.rows.find(r=>r.sourceIds.includes(anchorId));
+     if(a&&b&&a.textHash===b.textHash&&a.textLength===b.textLength){
+      const detail=anchorDetailedEvidence(root,anchorId,b,run);
+      if(detail.complete)liveDetail=detail;
+      else detailFailures.push({attempt:attempts.length,missing:detail.missing});
+     }
+    }
     status('🧪 錨點復原取證 '+attempts.length+'/16：'+after.state+'；僅保全，不接續掃描');
     if(root.scrollHeight!==centerHeight||root.clientHeight!==centerWidth){
      const live=reference?recoveryMarkerTop(root,reference):null;
@@ -1600,13 +1682,14 @@ async function anchorRecoveryProbe(){
    const reach=anchorProbeReach(attempts,localization,anchorId,neighbors);
    const result={format:'gal-ai-anchor-recovery-probe',version:2,importable:false,validated:false,complete:false,
     forensicOnly:true,scanRunId:run.scanRunId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+    liveDetail:liveDetail||{complete:false,missing:detailFailures.length?detailFailures:['no-stable-unique-accepted-event-capture']},
     generatedAt:new Date().toISOString(),scope:'anchor-overlap-diagnostic',source:{url:origin},
     target:{cycleId:profile.cycleId,cycleTitle:profile.cycleTitle,worldName:run.worldName,worldKey:run.worldKey,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey},
     input:{anchorId,lastGoodY:y,previousScrollHeight:oldHeight,targetClock:clockText||null,neighbors},initial,restore,reason,localization,reach,history,attempts,
     observedStates:[...new Set(attempts.flatMap(a=>[a.before.state,a.after.state]))],
     note:'僅局部 DOM 與候選視窗鑑識，未證明連續性、未追加訊息、不得匯入正史。'};
    const audit={...run,format:'gal-ai-anchor-recovery-diagnostic',importable:false,initial,restore,reason,
-    localization,reach,historySampleCount:history.length,attemptCount:attempts.length,observedStates:result.observedStates,attempts:attempts.map(a=>({requested:a.requested,stable:a.stable,actual:a.after.scrollTop,height:a.after.scrollHeight,anchorMarkerCount:a.after.anchorMarkerCount,state:a.after.state,rawIds:a.after.rawIds,candidateIds:a.after.rows.flatMap(x=>x.sourceIds)}))};
+    localization,reach,liveDetail:{complete:!!liveDetail,sourceId:anchorId,missing:liveDetail?[]:result.liveDetail.missing},historySampleCount:history.length,attemptCount:attempts.length,observedStates:result.observedStates,attempts:attempts.map(a=>({requested:a.requested,stable:a.stable,actual:a.after.scrollTop,height:a.after.scrollHeight,anchorMarkerCount:a.after.anchorMarkerCount,state:a.after.state,rawIds:a.after.rawIds,candidateIds:a.after.rows.flatMap(x=>x.sourceIds)}))};
    diagnostic=audit;
    const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason:reason||null});
    if(!saved?.ok)throw Error(saved?.error||'下載未確認');
