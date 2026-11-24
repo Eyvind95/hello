@@ -109,12 +109,12 @@ test('no automatic sync is performed without account authentication, and only se
  assert.match(html,/window\.ArchiveAutoSyncBridge=/);
  assert.match(html,/archiveManualBusy=true/);
  assert.match(html,/!window\.__archiveAutoApplyingCloud/);
- assert.match(html,/downloadText\('輪迴檔案館_V5\.65_網站\.html'/);
+ assert.match(html,/downloadText\('輪迴檔案館_V5\.66_網站\.html'/);
 });
 test('PWA and self contained HTML download both include automatic sync code',()=>{
  const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
- assert.match(sw,/gal-archive-pwa-v97/);
+ assert.match(sw,/gal-archive-pwa-v98/);
  assert.match(sw,/archive-auto-sync-core\.js/);
  assert.match(sw,/archive-auto-sync\.js/);
  assert.match(html,/for\(const asset of \[.*'archive-auto-sync-core\.js\?v=1','archive-auto-sync\.js\?v=1'/);
