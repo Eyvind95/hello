@@ -292,7 +292,7 @@ test('website uses actual production clock parser for long terminal and news sca
  const news='【基甫納熱搜】\n'+[1,2,3,4,5].map(n=>'#'+n+' 測試新聞\n🔥熱度：100\n💬匿名留言：測試\n').join('\n')+'\n***\n';
  const replies=[terminal+hud,news+hud, '無時間的測試正文。'];
  const core=GalArchiveCore;
- const rows=[{role:'ai',text:'測試輪迴開場。'},...replies.flatMap((text,i)=>[{role:'me',text:'玩家'+i},{role:'ai',text,...(i===2?{formatSource:{nativeReply:{reason:'available',messageId:'untimed',markerCount:1,scannedText:text,text}}}: {})}])];
+ const rows=[{role:'ai',text:'這是完整的測試輪迴開場。'},...replies.flatMap((text,i)=>[{role:'me',text:'玩家'+i},{role:'ai',text,...(i===2?{formatSource:{nativeReply:{reason:'available',messageId:'untimed',markerCount:1,scannedText:text,text}}}: {})}])];
  const v=core.validate(rows,x.target.worldName);assert.equal(v.ok,true,JSON.stringify(v.errors));
  x.events=[];x.messages=v.messages.map((m,i)=>({...m,id:'m'+i,sourceEventId:'m'+i,sourceKind:'gal-ai-native',chatKey:'synthetic',messageOrder:m.scanIndex,...(m.verifiedUntimedNative?{nativeClockEvidence:'verified-original-without-game-time'}:{})}));
  x.validation={ok:true,pairs:v.pairs,events:0,gameTimeCount:4,unknownGameTimeCount:2,verifiedUntimedCount:1,warnings:[],errors:[]};
