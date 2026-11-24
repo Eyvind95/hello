@@ -4,7 +4,8 @@
 if(globalThis.GalArchivePageScanner)return;
 const SCANNER_VERSION='0.8.43';
 const core=globalThis.GalArchiveCore;
-const formatEvidence=globalThis.GalArchiveFormatEvidence;
+function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
+function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=8000,BOTTOM_POLL_MS=750;
 let busy=false,cancelled=false,paused=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
@@ -1402,7 +1403,7 @@ async function positionSevenProbe(mode){
 
 async function eventThreeRowProbe(profile){
  if(busy)return {ok:false,error:'正在掃描中'};
- if(core?.version!==SCANNER_VERSION)return {ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'};
+ if(core?.version!==SCANNER_VERSION||!formatEvidenceReady())return {ok:false,error:'掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面'};
  busy=true;cancelled=false;paused=false;target=profile;mount();localDifferences.clear();
  const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'event-three',scannerVersion:SCANNER_VERSION};
  let registered=false,localRows=[];
@@ -1429,7 +1430,7 @@ async function eventThreeRowProbe(profile){
   const previousFormat=applyNativeFormat(previousEntry,rows,sourceCounts,scanMode,'',false);
   const eventFormat=applyNativeFormat(eventEntry,rows,sourceCounts,scanMode,'',true);
   showLocalDifferences([previousFormat,eventFormat]);
-  const probeNativeFormatAudit=formatEvidence.summarize(
+  const probeNativeFormatAudit=requireFormatEvidence().summarize(
    rows,[previousFormat,eventFormat],core,true);
   const eventTestId=crypto.randomUUID();
   const result={
@@ -1494,7 +1495,7 @@ async function eventThreeRowProbe(profile){
 
 async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.randomUUID()){
  if(busy)return {ok:false,error:'正在掃描中'};
- if(core?.version!==SCANNER_VERSION)return {ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'};
+ if(core?.version!==SCANNER_VERSION||!formatEvidenceReady())return {ok:false,error:'掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面'};
  const run={scanRunId,cycleId:profile.cycleId,scope:preview?'preview':'full'};
  const managed=['whif.io','www.whif.io'].includes(location.hostname)&&location.protocol==='https:'&&
   typeof chrome.runtime.sendMessage==='function';
@@ -1508,6 +1509,10 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  exportButton.textContent=preview?'下載三則測試 JSON':'下載原生正史 JSON';
  const collected=[];activeScanRows=collected;let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,geometryReanchors=0,scanMode='auto',bottomProof=null;
  const recoveryLog=[];
+ const phaseHistory=[];let phase='scan',bottomRetries=0;
+ const phaseStatus=(name,msg)=>{phase=name;phaseHistory.push({phase:name,at:new Date().toISOString()});diagnostic={...(diagnostic||{}),phase,phaseHistory:phaseHistory.slice(-30)};status(msg);};
+ const yieldUi=()=>sleep(0);
+ const ensureRunning=()=>{if(cancelled||paused)throw Error(cancelled?'使用者停止掃描':'使用者暫停驗收')};
  let progressLastCount=0,progressLastAt=Date.now();
  let unpairedReply=null,scrollStall=null;
  const continuedPositions=[];
@@ -1619,8 +1624,10 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
      let changed=false,reason='stable';
      status('⏳ 已到目前頁面底部；等待 '+Math.round(BOTTOM_CONFIRM_MS/1000)+
       ' 秒確認 WHIF 是否仍在補載後續歷史。\n目前可信 '+collected.length+' 則，尚未匯出。');
+     phaseStatus('bottom-confirm','⏳ 頁尾穩定確認：0/8 秒；已讀 '+collected.length+' 則；重試 '+bottomRetries+' 次。');
      while(Date.now()-proofStarted<BOTTOM_CONFIRM_MS){
-      await sleep(BOTTOM_POLL_MS);
+      await sleep(BOTTOM_POLL_MS);ensureRunning();
+      status('⏳ 頁尾穩定確認：'+Math.min(8,Math.floor((Date.now()-proofStarted)/1000))+'/8 秒；已讀 '+collected.length+' 則；重試 '+bottomRetries+' 次。');
       if(!root.isConnected)throw Error('底部確認期間頁面替換了原捲動容器，停止避免漏掃');
       if(root.scrollHeight!==proofHeight||!isBottom(root)){
        changed=true;reason='scroll-geometry-changed';break;
@@ -1633,9 +1640,9 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
      bottomProof={stable:!changed,reason,waitedMs:Date.now()-proofStarted,
       collected:collected.length,initialScrollHeight:proofHeight,finalScrollHeight:root.scrollHeight};
      diagnostic={...(diagnostic||inspect()),bottomProof};
-     if(!changed)break;
-     bottomFrames=0;
-     status('↻ WHIF 在底部確認期間又載入了內容；繼續掃描，不判定完成。');
+     if(!changed){phaseStatus('bottom-confirmed','✅ 頁尾已穩定 '+(bottomProof.waitedMs/1000).toFixed(2)+' 秒；開始資料驗收。');await yieldUi();break;}
+     bottomRetries++;bottomFrames=0;
+     status('↻ WHIF 頁尾發生變化（'+reason+'），第 '+bottomRetries+' 次重新確認；繼續掃描。');
      continue;
     }
    }else bottomFrames=0;
@@ -1673,6 +1680,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   if(cancelled)throw Error('使用者停止掃描');
   if(paused)throw Error('掃描已暫停。請返回輪迴開場重新開始，避免匯出半份正史。');
   if(stepCount>=12000)throw Error('未確認掃描到底，達到安全上限');
+  phaseStatus('integrity','🔎 完整性檢查中：'+collected.length+' 則。');await yieldUi();ensureRunning();
   const validation=core.validate(collected,target.worldName);
   failedValidation=validation;
   if(preview){
@@ -1707,6 +1715,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    }
   }
   if(!validation.ok)throw Error('完整性檢查失敗：\n'+validation.errors.slice(0,12).join('\n'));
+  phaseStatus('source-audit','🔎 完整性通過；正在核對玩家來源及自動繼續。');await yieldUi();ensureRunning();
   const sourceCounts=new Map();
   for(const row of collected){
    const id=row.formatSource?.nativeReply?.messageId;
@@ -1751,12 +1760,20 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   // In particular, an untimed opening cannot rely on the AI timestamp gate.
   const openingEntry={role:'ai',text:validation.opening,scanIndex:0,
    gameTime:core.parseGameTime(validation.opening)?.iso||null};
+  requireFormatEvidence();
+  const aiRows=validation.messages.filter(row=>row.role==='ai');
+  const totalNative=1+aiRows.length+validation.events.length;
+  phaseStatus('native-format','🔎 原生格式驗收：0/'+totalNative+' 則。');await yieldUi();ensureRunning();
   const openingFormat=applyNativeFormat(openingEntry,collected,sourceCounts,scanMode,'',false,true);
   validation.opening=openingEntry.text;
-  const replies=validation.messages.filter(row=>row.role==='ai').map((row,i)=>
-   applyNativeFormat(row,collected,sourceCounts,scanMode,i===0?nativeCopy:''));
+  const replies=[],events=[];let checkedNative=1;
+  const tickNative=async()=>{checkedNative++;if(checkedNative%8===0||checkedNative===totalNative){
+   status('🔎 原生格式驗收：'+checkedNative+'/'+totalNative+' 則。');await yieldUi();ensureRunning();
+  }};
+  for(const [i,row] of aiRows.entries()){replies.push(applyNativeFormat(row,collected,sourceCounts,scanMode,i===0?nativeCopy:''));await tickNative();}
   paragraphCheck=replies[0].check;
-  const events=validation.events.map(row=>applyNativeFormat(row,collected,sourceCounts,scanMode,'',true));
+  for(const row of validation.events){events.push(applyNativeFormat(row,collected,sourceCounts,scanMode,'',true));await tickNative();}
+  phaseStatus('native-summary','🔎 原生格式比對完成；整理驗收結果。');await yieldUi();ensureRunning();
   showLocalDifferences([openingFormat,...replies,...events]);
   const nativeApplied=paragraphCheck.reason==='applied';
   const nativeConfirmed=nativeApplied||paragraphCheck.reason==='source-matched-no-change';
@@ -1767,8 +1784,9 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     :'無法讀取原生段落來源，請貼上完整首則 AI 回覆的原生複製文字');
   }
   const paragraphAudit={opening:openingFormat.check,ai:summarizeNativeFormats(replies),events:summarizeNativeFormats(events,true)};
-  const nativeFormatAudit=formatEvidence.summarize(collected,
+  const nativeFormatAudit=requireFormatEvidence().summarize(collected,
    [openingFormat,...replies,...events],core,validation.ok);
+  phaseStatus('serialize','📦 正在整理掃描結果及驗收證據。');await yieldUi();ensureRunning();
   lastResult=canonical(collected,validation,preview);
   lastResult.scanRunId=run.scanRunId;
   // Three-row test exports MUST include the opening's independent audit.
@@ -1810,6 +1828,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     '）。已保存完整原文／DOM／來源 ID／標記位置與相鄰訊息，禁止輸出正式正史。');
   }
   if(!managed&&$('gal-scan-export'))$('gal-scan-export').disabled=false;
+  phaseStatus('download','📥 驗收通過，正在排隊提交 Chrome 下載。');await yieldUi();ensureRunning();
   status(managed?'掃描資料已產生，正在等待 Chrome 完成寫入兩份 JSON。':preview?'✅ 三則測試完成：世界觀開場 × 1、我 × 1、他 × 1。\n'+
    (nativeApplied?'已採用原生文字的分段。':nativeConfirmed?'分段與原生來源相同。':'本次僅使用頁面 DOM。段落驗收請用「用原生來源驗收三則」。')+
    '\n開場原生段落：'+openingFormat.check.reason+'（空白分段 '+openingFormat.check.exportedBlankLines+'）'+
@@ -1833,6 +1852,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   }
  }catch(err){
   failure=String(err?.message||err);
+  const failedPhase=phase;
+  phaseStatus('failure','⛔ '+failure+'\n可信訊息 '+collected.length+' 則；正在保全診斷。');await yieldUi();
   const scrollAtFailure=root?.isConnected?{
    scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight}:null;
   if(root?.isConnected)root.scrollTop=lastGoodY;
@@ -1847,10 +1868,14 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    eventAudit:summarizeEventAudit(eventAudit,collected,
     failedValidation||{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
-  diagnostic.errorContexts=failureContexts(collected,failedValidation,failure);
+  diagnostic.failedPhase=failedPhase;
+  diagnostic.phaseHistory=phaseHistory;
+  try{diagnostic.errorContexts=failureContexts(collected,failedValidation,failure)}
+  catch(error){diagnostic.errorContexts=[{scanIndex:null,error:failure}];diagnostic.contextError=String(error)}
   if(!diagnostic.nativeFormatAudit&&collected.length){
-   diagnostic.nativeFormatAudit=formatEvidence.inspectRaw(
-    collected,core,failedValidation?.ok===true);
+   try{diagnostic.nativeFormatAudit=requireFormatEvidence().inspectRaw(
+    collected,core,failedValidation?.ok===true);}
+   catch(error){diagnostic.nativeFormatAudit={nativeFormatComplete:false,inspection:'unavailable',error:String(error)};}
   }
   diagnostic.validationPhases={
    integrity:failedValidation?.ok===true?'passed':'failed',
@@ -1859,6 +1884,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   status((cancelled?'已取消：':paused?'已暫停：':'⛔ 安全停止：')+failure+'\n可信訊息 '+collected.length+
    ' 則，未輸出半份正史；可按「📋 複製版面診斷」。');
   if(registered){
+   status('⛔ '+failure+'\n正在排隊下載失敗診斷及未驗證保全。');await yieldUi();
    const unverified=collected.length?
     JSON.stringify(unverifiedEvidence(collected,run,failure,diagnostic)):null;
    const response=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
@@ -1883,6 +1909,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   // Make the local export control available even when browser downloads
   // have timed out, without changing the archive or Firebase.
   if(lastResult?.validation?.ok&&lastResult.validation.nativeFormatComplete===true)exportButton.disabled=false;
+  else exportButton.disabled=true;
  }
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
@@ -1925,7 +1952,7 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
   return false;
  }
  if(msg?.type==='gal-scan-open'){
-  if(core?.version!==SCANNER_VERSION){respond({ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'});return false}
+  if(core?.version!==SCANNER_VERSION||!formatEvidenceReady()){respond({ok:false,error:'掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面'});return false}
   const p=msg.profile||{};
   if(typeof p.cycleId!=='string'||!p.cycleId||typeof p.worldName!=='string'||!p.worldName){
    respond({ok:false,error:'這個 WHIF 聊天尚未綁定目標輪迴與世界觀'});return false;
@@ -1943,11 +1970,11 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
    '\n尚未開始掃描；Browser Use 可直接操作本頁助手。');
   respond({ok:true,opened:true});return false;
  }
- if(msg?.type==='gal-scan-ping'){respond({ok:true,version:SCANNER_VERSION,coreVersion:core?.version,busy,hasResult:!!lastResult,
+ if(msg?.type==='gal-scan-ping'){respond({ok:true,version:SCANNER_VERSION,coreVersion:core?.version,formatEvidenceVersion:globalThis.GalArchiveFormatEvidence?.version||null,formatEvidenceReady:formatEvidenceReady(),busy,hasResult:!!lastResult,
   scanRunId:activeRun?.scanRunId||null});return false}
  if(msg?.type==='gal-scan-event-probe'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
-  if(core?.version!==SCANNER_VERSION){respond({ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'});return false}
+  if(core?.version!==SCANNER_VERSION||!formatEvidenceReady()){respond({ok:false,error:'掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面'});return false}
   const p=msg.profile||{};
   if(typeof p.cycleId!=='string'||!p.cycleId||typeof p.worldName!=='string'||!p.worldName){
    respond({ok:false,error:'必須先選擇目標輪迴與世界觀'});return false;
@@ -1964,7 +1991,7 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
  }
  if(msg?.type==='gal-scan-start'){
   if(busy){respond({ok:false,error:'掃描進行中'});return false}
-  if(core?.version!==SCANNER_VERSION){respond({ok:false,error:'掃描器與核心版本不一致，請重新整理 Gal AI 頁面'});return false}
+  if(core?.version!==SCANNER_VERSION||!formatEvidenceReady()){respond({ok:false,error:'掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面'});return false}
   const p=msg.profile||{};
   if(typeof p.cycleId!=='string'||!p.cycleId||typeof p.worldName!=='string'||!p.worldName){
    respond({ok:false,error:'必須先選擇目標輪迴與世界觀'});return false;
