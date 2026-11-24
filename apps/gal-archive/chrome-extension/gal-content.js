@@ -4,6 +4,7 @@
 if(globalThis.GalArchivePageScanner)return;
 const SCANNER_VERSION='0.8.39';
 const core=globalThis.GalArchiveCore;
+const formatEvidence=globalThis.GalArchiveFormatEvidence;
 const STOP='gal-scanner-stop',STYLE='gal-scanner-style',PANEL='gal-scanner-panel';
 const SCROLL_RATIO=.31,MAX_SCROLL_PX=350,WAIT_MS=420,STABLE_MS=350,BOTTOM_CONFIRM_MS=8000,BOTTOM_POLL_MS=750;
 let busy=false,cancelled=false,paused=false,lastResult=null,target=null,calibration=null,picking=false,diagnostic=null;
@@ -1757,6 +1758,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     :'無法讀取原生段落來源，請貼上完整首則 AI 回覆的原生複製文字');
   }
   const paragraphAudit={opening:openingFormat.check,ai:summarizeNativeFormats(replies),events:summarizeNativeFormats(events,true)};
+  const nativeFormatAudit=formatEvidence.summarize(collected,
+   [openingFormat,...replies,...events],core,validation.ok);
   lastResult=canonical(collected,validation,preview);
   lastResult.scanRunId=run.scanRunId;
   // Three-row test exports MUST include the opening's independent audit.
@@ -1764,6 +1767,12 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   // which can misleadingly pass while opening remains flattened.
   lastResult.openingCheck=openingFormat.check;
   lastResult.paragraphAudit=paragraphAudit;
+  lastResult.validation.integrityOk=validation.ok;
+  lastResult.validation.nativeFormatComplete=nativeFormatAudit.nativeFormatComplete;
+  lastResult.nativeFormatAudit={complete:nativeFormatAudit.nativeFormatComplete,
+   checked:nativeFormatAudit.checkedNativeRows,
+   verified:nativeFormatAudit.verifiedNativeRows,
+   failed:nativeFormatAudit.failedNativeRows};
   if(!preview){
    lastResult.eventAudit=summarizeEventAudit(eventAudit,collected,validation,true);
   }
@@ -1776,8 +1785,21 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    firstTimedReply:firstTimedTrace,export:{generatedAt:lastResult.generatedAt,
     firstReplyScanIndex:firstReply?.scanIndex,
     firstReplyQuotes:(firstReply?.text.match(/「/g)||[]).length,
-    firstReplyBlankLines:paragraphCheck.exportedBlankLines},paragraphCheck,paragraphAudit,eventAudit:lastResult.eventAudit};
+    firstReplyBlankLines:paragraphCheck.exportedBlankLines},paragraphCheck,paragraphAudit,
+   nativeFormatAudit,validationPhases:{integrity:validation.ok?'passed':'failed',
+    nativeFormatting:nativeFormatAudit.nativeFormatComplete?'passed':'failed'},
+   eventAudit:lastResult.eventAudit};
   Object.assign(diagnostic,run);
+  // Structural success alone MUST NOT be reported as all validations passing.
+  // Keep diagnostic + unverified full evidence, but never emit canonical
+  // history while ANY opening, AI or accepted-event native format is unproven.
+  if(!preview&&!nativeFormatAudit.nativeFormatComplete){
+   const failed=nativeFormatAudit.failures.map(x=>x.scanIndex);
+   lastResult=null;exportButton.disabled=true;
+   throw Error('完整性檢查通過，但原生格式驗收未通過：'+
+    failed.length+' 則（scanIndex '+failed.slice(0,12).join('、')+
+    '）。已保存完整原文／DOM／來源 ID／標記位置與相鄰訊息，禁止輸出正式正史。');
+  }
   if(!managed&&$('gal-scan-export'))$('gal-scan-export').disabled=false;
   status(managed?'掃描資料已產生，正在等待 Chrome 完成寫入兩份 JSON。':preview?'✅ 三則測試完成：世界觀開場 × 1、我 × 1、他 × 1。\n'+
    (nativeApplied?'已採用原生文字的分段。':nativeConfirmed?'分段與原生來源相同。':'本次僅使用頁面 DOM。段落驗收請用「用原生來源驗收三則」。')+
@@ -1817,6 +1839,14 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     failedValidation||{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
   diagnostic.errorContexts=failureContexts(collected,failedValidation,failure);
+  if(!diagnostic.nativeFormatAudit&&collected.length){
+   diagnostic.nativeFormatAudit=formatEvidence.inspectRaw(
+    collected,core,failedValidation?.ok===true);
+  }
+  diagnostic.validationPhases={
+   integrity:failedValidation?.ok===true?'passed':'failed',
+   nativeFormatting:diagnostic.nativeFormatAudit?.nativeFormatComplete===true?'passed':'failed'
+  };
   status((cancelled?'已取消：':paused?'已暫停：':'⛔ 安全停止：')+failure+'\n可信訊息 '+collected.length+
    ' 則，未輸出半份正史；可按「📋 複製版面診斷」。');
   if(registered){
@@ -1843,7 +1873,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   // A valid in-page canonical result survives a stale background run.
   // Make the local export control available even when browser downloads
   // have timed out, without changing the archive or Firebase.
-  if(lastResult?.validation?.ok)exportButton.disabled=false;
+  if(lastResult?.validation?.ok&&lastResult.validation.nativeFormatComplete===true)exportButton.disabled=false;
  }
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
