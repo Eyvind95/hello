@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const root=__dirname;
 const planner=require('./archive-auto-sync-core.js');
-function cycle(id,updatedAt,count){return {id,title:'第'+id+'輪迴',updatedAt,messages:Array(count||0).fill({text:'正史'})}}
+function cycle(id,updatedAt,count){return {id,title:'第'+id+'輪迴',updatedAt,messages:Array(count||0).fill({text:'正史'}),messageCount:count||0,acceptedEventCount:0}}
 const local=()=>cycle('5','2026-11-24T06:30:00.000Z',2630);
 const remote=()=>cycle('5','2026-11-23T06:30:00.000Z',1000);
 test('latest desktop with old cloud uploads without pulling stale cloud into local',()=>{
@@ -49,6 +49,31 @@ test('unknown timestamps and duplicate IDs cannot authorize automatic overwrites
   cycle('5','2026-11-24T00:00:00Z')],[]);
  assert.equal(duplicates.ok,false);
  assert.match(duplicates.problems.join(','),/duplicate-id/);
+});
+test('cloud revision cannot automatically replace a longer canonical archive with fewer messages',()=>{
+ const older=cycle('5','2026-11-23T00:00:00Z',2630);
+ const newer=cycle('5','2026-11-24T00:00:00Z',1000);
+ const p=planner.plan([older],[newer]);
+ assert.equal(p.ok,false);
+ assert.equal(p.needsPull,false);
+ assert.match(p.problems.join(','),/cycle-remote-has-fewer-messages/);
+});
+test('legacy cloud without count evidence requires manual verification before replacing nonempty local data',()=>{
+ const older=cycle('5','2026-11-23T00:00:00Z',2630);
+ const newer=cycle('5','2026-11-24T00:00:00Z',2700);
+ delete newer.messageCount;
+ const p=planner.plan([older],[newer]);
+ assert.equal(p.ok,false);
+ assert.match(p.problems.join(','),/cycle-missing-remote-count-proof/);
+});
+test('accepted-event loss fails closed even when messages are a superset',()=>{
+ const older=cycle('5','2026-11-23T00:00:00Z',500);
+ older.events=[{status:'accepted',text:'事件1'},{status:'accepted',text:'事件2'}];
+ const newer=cycle('5','2026-11-24T00:00:00Z',600);
+ newer.acceptedEventCount=1;
+ const p=planner.plan([older],[newer]);
+ assert.equal(p.ok,false);
+ assert.match(p.problems.join(','),/cycle-remote-has-fewer-accepted-events/);
 });
 test('equal revisions and unchanged local data create no automatic writes',()=>{
  const p=planner.plan([local()],[local()]);
