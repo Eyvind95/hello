@@ -129,6 +129,13 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 <p class="note" style="color:#ffd59b">⚠ Gal AI 原始內容具有正史優先權，即使與現有手動修訂內容不同也會以來源為準；但事件「已接取／未接取」是玩家決定，不應單憑新來源文字自動更改。必須完整由開場掃描到結尾，不能用半段資料覆蓋。</p>
 <label for="galNativeFile">選擇 Gal AI 原生掃描 JSON</label>
 <input type="file" id="galNativeFile" accept=".json,application/json">
+<div class="archive-reconcile-inputs" style="margin:10px 0;padding:10px;border:1px solid #64748b;border-radius:8px">
+ <strong>🧷 第 5 輪迴舊掃描救援（僅限 V0.8.36 保全）</strong>
+ <p class="note">上方先選擇「V0.8.36 不可匯入保全 JSON」，下方再選擇「V0.8.37 終態診斷 JSON」。兩份必須互相吻合，且只接受 scanIndex 1474、2268 的人工核對雙來源合併；其他掃描失敗不能使用此例外。</p>
+ <label for="galNativeDiagFile">V0.8.37 玩家來源終態診斷（不能選保全檔）</label>
+ <input type="file" id="galNativeDiagFile" accept=".json,application/json">
+ <label class="checklabel" style="display:flex;gap:10px;align-items:start;margin:10px 0"><input type="checkbox" id="galNativeRecoveryConfirm" style="width:auto">我已親自核對 WHIF 第 1475、2269 則各有兩則連續玩家訊息；同意合併呈現，但明白現有保全沒有逐來源原文分界。</label>
+</div>
 <div class="actions topsp"><button class="btn primary" id="galNativePreview">🔎 核對來源與覆蓋預覽（唯讀）</button><button class="btn danger" id="galNativeApply" disabled>📦 下載備份並覆蓋本機正史</button></div>
 <label class="checklabel" style="margin:12px 0"><input type="checkbox" id="galNativeConfirmLostAccepted">我已核對全部已接事件；如果新掃描找不到舊事件，允許在備份後以 Gal AI 原始事件列表為準</label>
 <pre id="galNativeStatus" class="archivepreview" role="status" aria-live="polite" style="max-height:45vh;overflow:auto;white-space:pre-wrap;margin:12px 0">尚未讀取掃描檔；不會修改資料。</pre>
@@ -486,7 +493,7 @@ function downloadText(filename,content){let blob=new Blob([content],{type:'text/
 /* V5.35: Gal AI native authoritative import. Applies only to one selected cycle.
    Source is a downloaded file, not the ChatGPT incoming inbox.
    Mandatory user confirmation and JSON backup before local replacement. */
-let galNativeLoaded=null,galNativePlan=null;
+let galNativeLoaded=null,galNativePlan=null,galNativeDiagLoaded=null,galNativeEffectiveLoaded=null;
 function galNativeText(v){return String(v==null?'':v).replace(/\r\n?/g,'\n').trim()}
 function galNativeWorld(v){return galNativeText(v).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase()}
 function archiveAutoContinueEvidence(previous,current){
@@ -525,6 +532,26 @@ function galNativeVerify(obj,r){
  if(!r){fail.push('請先在檔案館左側選擇要覆蓋的輪迴');return {fail,warn}}
  if(!obj||obj.format!=='gal-ai-authoritative-scan'||obj.version!==1||obj.scope!=='entire-opening-to-bottom'
    ||obj.readOnlyUntilImported!==true)fail.push('不是完整開場到結尾的 Gal AI 原生正史掃描檔');
+ if(obj?.reconciliation){
+  const rec=obj.reconciliation;
+  if(rec.kind!=='manual-reviewed-player-source-merges'||rec.machineScanComplete!==false||
+   rec.checkpointImportable!==false||rec.manualApproved!==true||
+   rec.checkpointRun!=='cbaad410-6316-4cbd-9e27-cfde6797f22c'||
+   rec.auditRun!=='51f9e7bc-f376-4c62-8f69-ce5f6aba354c'||
+   rec.verifiedSourceCount!==1313||rec.exactOriginalSegmentsAvailable!==false||
+   rec.approvedIndices?.length!==2||
+   JSON.stringify(rec.approvedIndices.map(x=>x.scanIndex))!==JSON.stringify([1474,2268]))
+   fail.push('人工救援的 WHIF 原生來源證據與兩筆指定玩家合併不符');
+  for(const index of [1474,2268]){
+   const me=obj.messages?.find(m=>m.scanIndex===index);
+   const approved=rec.approvedIndices.find(x=>x.scanIndex===index);
+   if(me?.role!=='me'||me.nativeUserMergeVerified!==false||
+    me.nativeUserMergeReview?.method!=='user-visual-review-of-WHIF-bubbles'||
+    me.nativeUserMergeReview?.sourceCount!==2||
+    JSON.stringify(me.nativeUserMergeReview?.sourceHashes)!==JSON.stringify(approved?.sourceHashes))
+    fail.push('救援第 '+(index+1)+' 則的人工來源標記不完整');
+  }
+ }
  if(obj?.validation?.ok!==true)fail.push('來源掃描未通過原始回合完整性檢查');
  if(obj?.target?.cycleId!==r.id)fail.push('目標輪迴 ID 不一致：禁止跨輪迴覆蓋');
  const selectedWorld=WORLDS.find(x=>x.id===r.world)?.name||'';
@@ -743,19 +770,37 @@ function galNativeBuildPlan(obj,r){
    afterOrange:check.timeIssues.length,afterRoleIssues:check.issues.length,untouched};
 }
 function galNativeShowStatus(t){$('galNativeStatus').textContent=t}
+function galNativePreparedSource(){
+ const raw=galNativeLoaded;
+ if(raw?.format!=='gal-ai-incomplete-scan-checkpoint')return raw;
+ if(!galNativeDiagLoaded)throw Error('請加入 V0.8.37 終態診斷 JSON，不能單獨匯入保全');
+ const approved=$('galNativeRecoveryConfirm').checked===true;
+ return window.GalArchiveReconcile.convert(raw,galNativeDiagLoaded,approved,
+  window.GalArchiveCore);
+}
 function galNativePreview(){
  const r=current();
  if(!galNativeLoaded)return galNativeShowStatus('請先讀取 Gal AI 掃描檔');
  let plan;
- try{plan=galNativeBuildPlan(galNativeLoaded,r)}
- catch(err){galNativePlan=null;$('galNativeApply').disabled=true;galNativeShowStatus('來源核對失敗：'+String(err?.message||err));return}
+ try{
+  galNativeEffectiveLoaded=galNativePreparedSource();
+  plan=galNativeBuildPlan(galNativeEffectiveLoaded,r);
+ }catch(err){galNativePlan=null;galNativeEffectiveLoaded=null;
+  $('galNativeApply').disabled=true;
+  galNativeShowStatus('來源核對失敗：'+String(err?.message||err));return}
  galNativePlan=plan;
  $('galNativeApply').disabled=!plan.ok;
  let lines=[
-  '【Gal AI 原生正史：覆蓋預覽】',
+  galNativeEffectiveLoaded?.reconciliation?'【耀斑：兩處玩家合併的人工救援覆蓋預覽】':'【Gal AI 原生正史：覆蓋預覽】',
   '目標：'+(r?.title||'未選輪迴')+'（'+(r?.id||'未知 ID')+'）',
   '世界觀：'+(plan.selectedWorld||'未確認'),
-  '來源：'+(galNativeLoaded.source?.url||'未標示'),
+  '來源：'+(galNativeEffectiveLoaded?.source?.url||'未標示'),
+  ...(galNativeEffectiveLoaded?.reconciliation?[
+   '⚠ 救援方式：V0.8.36 保全 + V0.8.37 終態診斷 + 使用者人工核對',
+   '⚠ 已確認玩家合併：1474、2268；1313 原生玩家來源對應 1311 個玩家回合',
+   '⚠ 不能將救援視為 V0.8.37 掃描成功；原始雙來源逐筆文字分界未保存',
+   '⚠ 只有本次兩筆來源差額可人工接受，其他核驗錯誤依舊禁止匯入'
+  ]:[]),
   plan.ok?'✅ 來源核驗完成：允許人工確認後覆蓋':'⛔ 來源核驗未通過，拒絕寫入',
   ...plan.fail.map(x=>'⛔ '+x)
  ];
@@ -774,14 +819,16 @@ function galNativePreview(){
 }
 $('galNativeOpen').onclick=()=>{
  const r=current();if(!r)return notify('請先選擇要匯入原生正史的輪迴');
- galNativeLoaded=null;galNativePlan=null;$('galNativeFile').value='';
+ galNativeLoaded=null;galNativePlan=null;galNativeDiagLoaded=null;galNativeEffectiveLoaded=null;
+ $('galNativeFile').value='';$('galNativeDiagFile').value='';
+ $('galNativeRecoveryConfirm').checked=false;
  $('galNativeApply').disabled=true;$('galNativeConfirmLostAccepted').checked=false;
  galNativeShowStatus('已選擇：'+r.title+'（'+r.id+'）\n請選擇由 Gal AI 專用掃描器輸出的 JSON。');
  $('galNativeModal').classList.remove('hidden');
 };
 $('galNativeClose').onclick=()=>$('galNativeModal').classList.add('hidden');
 $('galNativeFile').onchange=async e=>{
- galNativeLoaded=null;galNativePlan=null;$('galNativeApply').disabled=true;
+ galNativeLoaded=null;galNativePlan=null;galNativeEffectiveLoaded=null;$('galNativeApply').disabled=true;
  const file=e.target.files?.[0];if(!file)return;
  if(file.size>40*1024*1024){galNativeShowStatus('JSON 超過40MB，請停止匯入並檢查掃描範圍');return}
  try{
@@ -789,10 +836,25 @@ $('galNativeFile').onchange=async e=>{
   galNativeShowStatus('已讀取 '+file.name+'；按「核對來源與覆蓋預覽」。這一步尚未修改正史。');
  }catch(err){galNativeShowStatus('JSON 無法解析：'+String(err?.message||err))}
 };
+$('galNativeDiagFile').onchange=async e=>{
+ galNativeDiagLoaded=null;galNativePlan=null;galNativeEffectiveLoaded=null;
+ $('galNativeApply').disabled=true;
+ const file=e.target.files?.[0];if(!file)return;
+ if(file.size>5*1024*1024){galNativeShowStatus('診斷超過5MB，請核對檔案');return}
+ try{
+  galNativeDiagLoaded=JSON.parse(await file.text());
+  galNativeShowStatus('已讀取診斷：'+file.name+'。請確認人工核對勾選框，再按「核對來源與覆蓋預覽」。');
+ }catch(err){galNativeShowStatus('診斷 JSON 無法解析：'+String(err?.message||err))}
+};
+$('galNativeRecoveryConfirm').onchange=()=>{
+ galNativePlan=null;galNativeEffectiveLoaded=null;
+ $('galNativeApply').disabled=true;
+ galNativeShowStatus('人工核對狀態已改變，請重新進行唯讀驗收。');
+};
 $('galNativePreview').onclick=galNativePreview;
 $('galNativeApply').onclick=async()=>{
  const r=current(),p=galNativePlan;
- if(!p?.ok||!r||galNativeLoaded.target.cycleId!==r.id){
+ if(!p?.ok||!r||galNativeLoaded?.target?.cycleId!==r.id){
   notify('先重新核對來源、輪迴 ID 與世界觀，禁止跳過預覽');return;
  }
  if(p.acceptedUnmatched>0&&!$('galNativeConfirmLostAccepted').checked){
@@ -802,15 +864,17 @@ $('galNativeApply').onclick=async()=>{
    +'\n現有完整對話：'+p.previousCounts.messages+' → '+p.sourceCounts.messages
    +'\n現有事件：'+p.previousCounts.events+' → '+p.sourceCounts.events
    +'\n其餘分頁不動。先下載完整備份、然後只在本機套用。繼續？'))return;
- // Re-derive the plan to prevent file/selection changes between preview and apply.
- const fresh=galNativeBuildPlan(galNativeLoaded,r);
+ // Re-derive ALL source proofs, user checkbox, diagnostics and canonical data
+ // immediately before overwriting. No preview-time bypass is permitted.
+ const prepared=galNativePreparedSource();
+ const fresh=galNativeBuildPlan(prepared,r);
  if(!fresh.ok||!fresh.untouched)throw Error('套用前再次驗證失敗，已停止');
  if(fresh.acceptedUnmatched>0&&!$('galNativeConfirmLostAccepted').checked)return;
  downloadText('輪迴檔案館_GalAI絕對優先覆蓋前_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',
   JSON.stringify({format:'gal-ai-restore-backup',version:1,exportedAt:new Date().toISOString(),cycle:r},null,2));
  try{
   if(!window.ArchiveTimeMachine?.captureBeforeNative)throw Error('正史時光機尚未載入，為保護資料已停止覆蓋');
-  await window.ArchiveTimeMachine.captureBeforeNative(r,galNativeLoaded);
+  await window.ArchiveTimeMachine.captureBeforeNative(r,prepared);
   await put(fresh.updated);
   const result=current();
   if(!result||result.messages.length!==fresh.sourceCounts.messages||result.events.length!==fresh.sourceCounts.events
@@ -2239,7 +2303,7 @@ $('downloadSite').onclick=async()=>{
   }
   let html='<!DOCTYPE html>\n'+page.outerHTML;
   const closing='</scr'+'ipt>';
-  for(const asset of ['time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=1']){
+  for(const asset of ['chrome-extension/gal-core.js?v=0.8.37','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=8','handover-cloud.js?v=2','complete-backup.js?v=2','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=1']){
    const response=await fetch(new URL('./'+asset,location.href),{cache:'no-store'});
    if(!response.ok)throw Error('程式讀取失敗：'+asset+'，HTTP '+response.status);
    const script=await response.text();
@@ -4695,5 +4759,5 @@ window.ArchiveAutoSyncBridge={
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
   }
 })();
-</script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=1"></script>
+</script><script src="./chrome-extension/gal-core.js?v=0.8.37"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=8"></script><script src="./handover-cloud.js?v=2"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=1"></script>
 </body></html>
