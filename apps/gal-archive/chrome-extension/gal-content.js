@@ -216,33 +216,33 @@ function failureContexts(rows,validation,reason){
  }));
 }
 
-function saveProgressSnapshot(){
- const rows=activeScanRows;
- if(!rows?.length){
-  status('目前沒有可保全的掃描資料。若掃描尚未開始，請勿把舊診斷當成完整正史。');
-  return false;
+async function saveProgressSnapshot(){
+ if(!activeScanRows?.length){
+  status('目前沒有已讀掃描資料，禁止輸出空白或偽造的正史');return false;
  }
- const snapshot={
-  format:'gal-ai-incomplete-scan-checkpoint',version:1,
-  scope:'unverified-partial-progress',importable:false,
-  generatedAt:new Date().toISOString(),scannerVersion:SCANNER_VERSION,
-  scanRunId:activeRun?.scanRunId||null,
-  target:{cycleId:target?.cycleId,cycleTitle:target?.cycleTitle,worldName:target?.worldName},
-  source:{url:location.origin+location.pathname},
-  collectedCount:rows.length,complete:false,validated:false,
-  rows:rows.map((row,scanIndex)=>({
-   scanIndex,role:row.role,eventType:row.eventType||null,
-   text:row.text,worldName:row.worldName||null,
-   autoContinue:row.autoContinue===true,
-   sourceMessageId:row.formatSource?.nativeReply?.messageId||null,
-   nativeReason:row.formatSource?.nativeReply?.reason||null,
-   nativeText:row.formatSource?.nativeReply?.reason==='available'
-    ?row.formatSource.nativeReply.text:null
-  })),
-  note:'僅為連續掃描過程的原始進度保全，不代表已到頁尾或通過配對、事件、原生格式驗證；禁止直接匯入正史或 Firebase。'
- };
- downloadJson('Gal_AI_未完成掃描保全_',snapshot);
- status('🧷 已要求瀏覽器下載 '+rows.length+' 則未完成掃描保全 JSON。這不是完整正史，不能直接匯入。掃描本身不受影響。');
+ const run=activeRun;
+ const data=unverifiedEvidence(activeScanRows,run,'人工保全已讀進度',diagnostic||{});
+ if(run?.scanRunId&&run?.batchFolder){
+  try{
+   const result=await chrome.runtime.sendMessage({type:'gal-run-manual-save',
+    scanRunId:run.scanRunId,cycleId:run.cycleId,unverified:JSON.stringify(data)});
+   if(result?.ok){
+    status('🧷 '+(target?.cycleTitle||'輪迴')+' 已保全 '+
+     activeScanRows.length+' 則。\\n'+
+     '批次：'+result.status.batchFolder+'\\n'+
+     'Chrome 已核對：'+(result.status.files?.unverified||'未驗證掃描資料.json')+
+     '\\n不得直接匯入正式正史。');
+    return true;
+   }
+   throw Error(result?.error||'下載未完成');
+  }catch(error){
+   status('背景批次保全未成功：'+String(error.message||error)+
+    '\\n將啟用本頁的緊急本機下載；名稱與批次路徑可能無法歸類。');
+  }
+ }
+ // Fallback solely for an already-invalidated extension worker. It MUST
+ // remain non-importable; do not sacrifice user evidence to folder aesthetics.
+ downloadJson('Gal_AI_緊急未驗證保全_',data);
  return true;
 }
 function downloadJson(prefix,data){
@@ -1459,6 +1459,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  exportButton.textContent=preview?'下載三則測試 JSON':'下載原生正史 JSON';
  const collected=[];activeScanRows=collected;let bottomFrames=0,stepCount=0,failure='',recovery=0,root=null,lastGoodY=0,stepPx=0,noProgress=0,geometryReanchors=0,scanMode='auto',bottomProof=null;
  const recoveryLog=[];
+ let progressLastCount=0,progressLastAt=Date.now();
  let unpairedReply=null,scrollStall=null;
  const continuedPositions=[];
  const eventAudit={headers:new Map(),native:new Map(),unverifiedCards:new Map(),probes:new WeakMap(),history:new Map(),senders:new Map(),playerSourceRows:new Map(),userNearby:new Map()};
@@ -1538,6 +1539,15 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    if(shot.rows.some(x=>x.text.length>25000))throw Error('訊息超長，禁止存入截斷正史');
    if(preview&&collected.length>=3){collected.length=3;break}
    if(collected.length>20000)throw Error('已達20,000則安全上限');
+   if(registered&&collected.length>0&&
+      (collected.length-progressLastCount>=80||
+       Date.now()-progressLastAt>=120000)){
+    progressLastCount=collected.length;progressLastAt=Date.now();
+    // This updates one status file in the same batch. A connection error
+    // must not interrupt a valid ongoing WHIF scan.
+    chrome.runtime.sendMessage({type:'gal-run-progress',...run,
+     scanned:collected.length}).catch(()=>{});
+   }
    noProgress=info.added?0:noProgress+1;
    if(noProgress>180)throw Error('連續180次沒有新訊息，可能捲動區錯誤');
    status('掃描中：已讀 '+collected.length+' 則，步數 '+stepCount+
@@ -1798,15 +1808,34 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
+ if(msg?.type==='gal-scan-emergency-snapshot'&&sender.id===chrome.runtime.id){
+  const run=activeRun,rows=activeScanRows||[];
+  if(!run?.scanRunId){respond({ok:false,reason:'沒有進行中工作'});return false}
+  const diag={...(diagnostic||{}),scanRunId:run.scanRunId,
+   cycleId:run.cycleId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+   error:'Chrome 中斷／到期緊急保全：'+String(msg.reason||'未知'),
+   trustedCount:rows.length};
+  diag.errorContexts=failureContexts(rows,null,diag.error);
+  respond({ok:true,scanRunId:run.scanRunId,scanned:rows.length,
+   diagnostic:JSON.stringify(diag),
+   unverified:rows.length?
+    JSON.stringify(unverifiedEvidence(rows,run,diag.error,diag)):null});
+  return false;
+ }
  if(msg?.type==='gal-run-page-status'&&sender.id===chrome.runtime.id&&
     msg.status?.scanRunId===activeRun?.scanRunId){
   const result=msg.status;
-  if(result.state==='completed')status('✅ 正史 JSON 與版面診斷已下載。掃描 ID '+result.scanRunId+
-   '\n已核對 '+result.summary.pairs+' 組，事件 '+result.summary.events+' 件，自動繼續 '+result.summary.autoContinues+' 次。');
-  else if(result.state==='failed'||!result.files.diagnostic)
-   status(busy&&result.reason==='掃描或下載逾時'
-    ?'⚠ 背景工作已逾時，但 WHIF 頁面掃描可能仍在進行。勿重新整理；可按「保全已讀進度」。掃描 ID '+result.scanRunId
-    :'掃描未完成。'+(result.reason||'')+'。掃描 ID '+result.scanRunId);
+  const duration=result.endedAt&&result.startedAt
+   ?Math.max(0,Math.round((Date.parse(result.endedAt)-Date.parse(result.startedAt))/1000)):null;
+  const files=Object.entries(result.files||{}).map(([kind,path])=>kind+'：'+path);
+  const message=(result.state==='completed'?'✅':'⚠')+' '+(result.cycleTitle||'輪迴')+
+   '｜'+(result.scope||'掃描')+'｜'+result.state+
+   '\n已讀：'+(result.scanned??'未知')+' 則；耗時：'+(duration===null?'未知':duration+' 秒')+
+   '\n原因：'+(result.reason||'無')+
+   '\n批次資料夾：'+(result.batchFolder||'未知')+
+   '\nChrome 已完成的下載：'+(files.length?'\n'+files.join('\n'):'尚無')+
+   '\n正式 JSON 必須通過完整性驗收才會提供。';
+  status(message);
   return false;
  }
  if(msg?.type==='gal-scan-open'){
