@@ -1676,3 +1676,24 @@ test('V0.9.04 state HUD marker variant and literal malformed visible template ar
  assert.equal(core.compareNativeParagraphs(marker+d,marker.replace('測試','其他')+n,o).text,null);
  assert.equal(core.parseGameTime('{{user|role】】\n'+d),null);
 });
+
+test('V0.9.04 recovery diagnostics distinguish missing overlap, mismatched content, duplicate IDs and proven anchors without relaxing proof',()=>{
+ const code=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const a=code.slice(code.indexOf('function sameRow('),code.indexOf('function observeEventAudit('));
+ const b=code.slice(code.indexOf('function recoveryNativeId('),code.indexOf('async function recoverScanOverlap('));
+ const prove=new Function(a+'\n'+b+'\nreturn proveRecoveryOverlap;')();
+ const ai=(id,text)=>({role:'ai',id,text,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:id}}});
+ const me={role:'me',text:'測試玩家',formatSource:{playerSources:[{id:'player-1',sender:'user',nativeReason:'available',nativeSender:'user',nativeMessageId:'player-1'}]}};
+ const all=[me,ai('anchor-1','測試回覆')],tail=ai('next-1','下一則');
+ let detail={};
+ assert.equal(prove({rows:[me,all[1],tail]},all,detail),true);
+ assert.equal(detail.reason,'proven');
+ assert.equal(detail.candidateRows[0].sourceIds[0],'player-1');
+ assert.equal(all.length,2);
+ detail={};assert.equal(prove({rows:[tail]},all,detail),false);
+ assert.equal(detail.reason,'no-proven-ordered-overlap');
+ detail={};assert.equal(prove({rows:[me,ai('anchor-1','不同正文'),tail]},all,detail),false);
+ assert.equal(detail.sharedIdChecks.some(x=>x.id==='anchor-1'&&!x.textEqual),true);
+ detail={};assert.equal(prove({rows:[me,all[1],ai('anchor-1','重複來源')]},all,detail),false);
+ assert.equal(detail.candidateDuplicateIds.includes('anchor-1'),true);
+});

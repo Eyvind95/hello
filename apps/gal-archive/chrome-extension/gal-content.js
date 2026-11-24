@@ -1173,7 +1173,7 @@ function recoveryNativeId(row){
 function trustedRecoveryAnchor(root,shot,locate){
  const row=shot.rows.at(-1),id=recoveryNativeId(row);
  return {top:root.scrollTop,height:root.scrollHeight,id,
-  relativeTop:id?locate(id):null};
+  relativeTop:id?locate(id):null,windowRows:shot.rows.map(recoveryDiagnosticRow)};
 }
 function recoveryMarkerTop(root,id){
  const nodes=root.querySelectorAll('[data-selection-copy-message-id="'+CSS.escape(id)+'"]');
@@ -1181,17 +1181,34 @@ function recoveryMarkerTop(root,id){
  const y=nodes[0].getBoundingClientRect().top;
  return y-(isDocumentRoot(root)?0:root.getBoundingClientRect().top);
 }
+function recoveryDiagnosticRow(row){
+ const nativeId=recoveryNativeId(row);
+ const playerIds=(row.formatSource?.playerSources||[]).filter(x=>x.id&&x.sender==='user'&&x.nativeReason==='available'&&x.nativeSender==='user'&&x.nativeMessageId===x.id).map(x=>x.id);
+ return {id:nativeId,playerIds,sourceIds:nativeId?[nativeId]:playerIds,domId:row.domId||row.id||null,role:row.role,eventType:row.eventType||null};
+}
 function proveRecoveryOverlap(shot,all,detail=null){
  const reject=reason=>{if(detail)detail.reason=reason;return false};
  if(detail){
-  const describe=row=>({id:recoveryNativeId(row),role:row.role,eventType:row.eventType||null});
-  detail.trustedTail=all.slice(-Math.max(shot.rows.length,20)).map(describe);
-  detail.candidateRows=shot.rows.map(describe);
-  const ids=detail.candidateRows.map(r=>r.id).filter(Boolean);
-  detail.candidateMissingIds=detail.candidateRows.length-ids.length;
+  detail.trustedTail=all.slice(-Math.max(shot.rows.length,20)).map(recoveryDiagnosticRow);
+  detail.candidateRows=shot.rows.map(recoveryDiagnosticRow);
+  const ids=detail.candidateRows.flatMap(r=>r.sourceIds);
+  detail.candidateMissingIds=detail.candidateRows.filter(r=>!r.sourceIds.length).length;
   detail.candidateDuplicateIds=[...new Set(ids.filter((id,i)=>ids.indexOf(id)!==i))];
-  const known=new Set(all.map(recoveryNativeId).filter(Boolean));
+  const known=new Set(all.flatMap(row=>recoveryDiagnosticRow(row).sourceIds));
   detail.sharedNativeIds=ids.filter(id=>known.has(id));
+  // Include per-ID mismatch flags even when appendSample cannot find an anchor.
+  const stored=new Map();
+  for(const row of all)for(const id of recoveryDiagnosticRow(row).sourceIds){
+   if(!stored.has(id))stored.set(id,[]);
+   stored.get(id).push(row);
+  }
+  detail.sharedIdChecks=shot.rows.flatMap((row,candidateIndex)=>recoveryDiagnosticRow(row).sourceIds.flatMap(id=>
+   (stored.get(id)||[]).map(prior=>({id,candidateIndex,textEqual:prior.text===row.text,
+    roleEqual:prior.role===row.role,eventEqual:(prior.eventType||null)===(row.eventType||null),
+    storedOccurrences:stored.get(id).length}))));
+  detail.trustedMissingIds=detail.trustedTail.filter(r=>!r.sourceIds.length).length;
+  const tailIds=detail.trustedTail.flatMap(r=>r.sourceIds);
+  detail.trustedDuplicateIds=[...new Set(tailIds.filter((id,i)=>tailIds.indexOf(id)!==i))];
  }
  if(!all.length||!shot.rows.length)return reject('empty-window');
  const copies=all.map(row=>({...row}));
@@ -1238,7 +1255,7 @@ async function recoverScanOverlap(root,trusted,all,sample,locate,wait=sleep,guar
   await wait(WAIT_MS+STABLE_MS);guard();
   if(!root.isConnected)throw Error('捲動復原期間 WHIF 更換了訊息容器；已停止避免漏掃');
   const shot=sample();
-  const detail={};
+  const detail={trustedWindow:trusted.windowRows||[],trustedAnchorId:trusted.id||null};
   const proven=proveRecoveryOverlap(shot,all,detail);
   attempts.push({requested:candidate,actual:root.scrollTop,heightBefore:beforeHeight,
    heightAfter:root.scrollHeight,proven,detail});
