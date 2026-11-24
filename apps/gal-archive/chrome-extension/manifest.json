@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.9.13",
-  "version_name": "V0.9.13 離線全量重驗",
-  "description": "輪迴檔案館 V0.9.13：保存獨立歷史來源清單，支援證據綁定離線重驗與原生尾字修復。",
+  "version": "0.9.14",
+  "version_name": "V0.9.14 獨立歷史來源補證",
+  "description": "輪迴檔案館 V0.9.14：新增僅讀歷史來源補證，檔案館負責離線交叉驗收。",
   "permissions": [
     "storage",
     "activeTab",

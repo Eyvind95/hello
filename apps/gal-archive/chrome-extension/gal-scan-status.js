@@ -29,7 +29,7 @@ function galBatchIdentity(profile){
 
 function installGalScanStatus(api){
  const KEY='galScanRuns',ALARM='gal-scan-deadline:';
- const DEADLINE={full:240,preview:45,'event-three':45,'position-seven':45,missing:45};
+ const DEADLINE={full:240,preview:45,'event-three':45,'position-seven':45,missing:45,'history-source':240};
  const EXPORT_DEADLINE=15;
  const terminal=new Set(['completed','failed','paused','cancelled']);
  const idOk=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{5,160}$/.test(x);
@@ -43,14 +43,14 @@ function installGalScanStatus(api){
    '自訂_'+(clean(title)||'未命名輪迴')+'_'+String(cycleId).slice(0,8);
  }
  const typeFolder={full:'完整掃描',preview:'三則測試','event-three':'事件三則測試',
-  'position-seven':'指定位置測試',missing:'缺漏診斷'};
+  'position-seven':'指定位置測試',missing:'缺漏診斷','history-source':'歷史來源補證'};
  function batchPath(title,cycleId,scope,startedAt,scanRunId,worldName){
   if(!idOk(cycleId)||!uuidOk(scanRunId)||!typeFolder[scope])throw Error('批次綁定無效');
   return 'GalArchive/'+galBatchIdentity({worldName,cycleTitle:title,cycleId}).worldFolder+'/'+cycleFolder(title,cycleId)+'/'+typeFolder[scope]+'/'+timestamp(startedAt)+'_'+scanRunId;
  }
  const filenames={status:'掃描狀態.json',diagnostic:'掃描診斷.json',result:'原生正史.json',
   unverified:'未驗證掃描資料.json',eventResult:'事件三則測試.json',
-  positionResult:'指定位置測試.json',missingResult:'缺漏診斷.json'};
+  positionResult:'指定位置測試.json',missingResult:'缺漏診斷.json',historyResult:'歷史來源補證.json'};
  const offscreenUrl=api.runtime.getURL('gal-scan-files.html');
  let queue=Promise.resolve();
  function serial(fn){const p=queue.then(fn);queue=p.catch(error=>console.warn('Gal batch:',error.message));return p}
@@ -310,6 +310,7 @@ function installGalScanStatus(api){
       completedResult.target?.cycleId!==run.cycleId||
       safeUrl(completedResult.source?.url)!==run.source)
     throw Error('測試／正史輸出與工作來源不符');
+   if(run.scope==='history-source'&&(completedResult.format!=='gal-ai-history-source-proof'||completedResult.complete!==true||completedResult.importable!==false||completedResult.entries?.length!==message.scanned))throw Error('歷史來源補證格式不符');
    if(['full','preview'].includes(run.scope)){
     if(completedResult.validation?.ok!==true||
       completedResult.scope!==(run.scope==='full'?'entire-opening-to-bottom':'opening-first-pair-preview')||
@@ -338,7 +339,7 @@ function installGalScanStatus(api){
      pairs:completedResult.validation?.pairs||0,events:completedResult.events?.length||0,
      autoContinues:completedResult.validation?.autoContinues||0};
     const kind=run.scope==='event-three'?'eventResult':
-     run.scope==='position-seven'?'positionResult':run.scope==='missing'?'missingResult':'result';
+     run.scope==='position-seven'?'positionResult':run.scope==='missing'?'missingResult':run.scope==='history-source'?'historyResult':'result';
     next.files[kind]=await makeFile(run,kind,message.result);await save(runs);
    }else if(message.unverified){
     const data=JSON.parse(attachIdentity(run,message.unverified));

@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.13: offline revalidation and independent history source preservation. */
+/* Independent Gal AI page scanner. v0.9.14: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.13';
+const SCANNER_VERSION='0.9.14';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -73,6 +73,7 @@ function mount(){
  '<label>目標劇情時間（選填，YYYY/MM/DD HH:mm） <input id="gal-anchor-clock" maxlength="24" style="width:95%"></label>'+
  '<label>已知相鄰來源 ID（選填，一行一個） <textarea id="gal-anchor-neighbors" rows="3" maxlength="2000" style="width:95%"></textarea></label>'+
  '<button id="gal-anchor-probe">執行錨點復原取證（不匯入）</button></details>'+
+ '<button id="gal-history-source">📋 僅補取歷史來源清單（不解析正文）</button>'+
  '<div style="margin:6px 0"><button id="gal-scan-open-folder">📁 顯示最近下載資料夾</button>'+
  '<button id="gal-scan-copy-folder">📋 複製批次路徑</button></div>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -111,6 +112,7 @@ function mount(){
  $('gal-scan-position-visible').onclick=()=>positionSevenProbe('visible');
  $('gal-scan-position-last-error').onclick=()=>positionSevenProbe('last-error');
  $('gal-anchor-probe').onclick=()=>anchorRecoveryProbe();
+ $('gal-history-source').onclick=()=>historySourceProbe();
  $('gal-scan-pick').onclick=()=>chooseOpening();
  $('gal-scan-refresh-binding').onclick=()=>refreshBoundTarget();
  $('gal-scan-retry').onclick=()=>{if(!busy&&target)scan(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
@@ -591,7 +593,7 @@ function boundaryToolbars(root){
 }
 
 const nativeMessageSelector='[data-selection-copy-message-id]';
-function readNativeNode(node,evidenceOnly=false){
+function readNativeNode(node,evidenceOnly=false,historyOnly=false){
  const response='gal-archive-native-reply-response-v1';
  let source={reason:'native-reader-unavailable'};
  const receive=event=>{
@@ -605,7 +607,7 @@ function readNativeNode(node,evidenceOnly=false){
  };
  node.addEventListener(response,receive);
  try{node.dispatchEvent(new CustomEvent('gal-archive-native-reply-request-v1',{
-  bubbles:true,detail:evidenceOnly?'event-evidence':null
+  bubbles:true,detail:historyOnly?'history-source-evidence':evidenceOnly?'event-evidence':null
  }))}
  finally{node.removeEventListener(response,receive)}
  return source;
@@ -1554,6 +1556,118 @@ function anchorDetailedEvidence(root,anchorId,expected,run){
   if(typeof node.innerText!=='string'||!result.dom.marker.outerHTML||!result.dom.boundary.html)return fail('required-live-dom-fields-unavailable');
   result.complete=true;return result;
  }catch(error){return fail('capture-error: '+String(error?.message||error))}
+}
+
+// Source-only walk: no snapshot(), boundaryRead(), markdownFromDom(), or clock parsing.
+function historySourceAppend(all,ids){
+ if(!ids.length||new Set(ids).size!==ids.length)throw Error('empty-or-duplicate-window');
+ if(!all.length){all.push(...ids);return}
+ const start=all.indexOf(ids[0]);if(start<0)throw Error('no-ordered-overlap');
+ const overlap=Math.min(all.length-start,ids.length);
+ if(ids.slice(0,overlap).some((id,i)=>id!==all[start+i]))throw Error('source-order-changed');
+ const tail=ids.slice(overlap);
+ if(tail.length&&start+overlap!==all.length)throw Error('nonterminal-overlap');
+ if(tail.some(id=>all.includes(id)))throw Error('duplicate-source-outside-overlap');
+ all.push(...tail);
+}
+function historySourceSample(root){
+ const entries=[],seen=new Set(),cards=[];
+ const wrappers=[...root.querySelectorAll('[data-message-id]')].filter(n=>n.getClientRects().length);
+ const markers=[...root.querySelectorAll(nativeMessageSelector)].filter(n=>n.getClientRects().length);
+ for(const wrapper of wrappers){
+  const id=wrapper.getAttribute('data-message-id'),owned=markers.filter(n=>n.closest('[data-message-id]')===wrapper);
+  if(!id||seen.has(id)||owned.length!==1||owned[0].getAttribute('data-selection-copy-message-id')!==id)throw Error('ambiguous-live-wrapper');
+  seen.add(id);const marker=owned[0],native=readNativeNode(marker,true,true),e=native.eventEvidence;
+  if(native.reason!=='evidence'||e?.messageId!==id||!['ordinary-message','event-message'].includes(e.kind)||!['chapter','character','assistant','user','deg_event'].includes(e.sender)||!native.nativeHash||!native.nativeNormHash||!Number.isInteger(native.nativeLength))throw Error('unreadable-live-source:'+id);
+  if(e.kind==='event-message'?(e.sender!=='deg_event'||e.accepted!==true):e.sender==='deg_event')throw Error('unverified-event-identity:'+id);
+  const item=wrapper.closest('[data-item-index],[data-index]'),value=item?.getAttribute('data-item-index')??item?.getAttribute('data-index'),index=value!=null&&/^-?\d+$/.test(value)?Number(value):null;
+  const row={id,index,kind:e.kind,sender:e.sender,accepted:e.accepted,nativeHash:native.nativeHash,nativeNormHash:native.nativeNormHash,nativeLength:native.nativeLength};
+  if(e.sender==='user'){
+   const spans=[...marker.querySelectorAll('span.message-bubble-text.TemplatedText')].filter(n=>!n.parentElement?.closest('span.message-bubble-text.TemplatedText'));
+   const body=spans.map(n=>n.textContent||'').join('');
+   const labels=[...wrapper.querySelectorAll('span')].filter(n=>!marker.contains(n)&&!n.children.length&&(n.textContent||'').trim()&&(n.textContent||'').trim().length<=40);
+   row.player={ownerId:id,bodyParts:spans.length,bodyNormHash:hash(body.replace(/\s/gu,'')),markerNormHash:hash((marker.textContent||'').replace(/\s/gu,'')),hasMedia:!!marker.querySelector('img,video,audio,[data-attachment-id]'),outsideLabelHashes:[...new Set(labels.map(n=>hash((n.textContent||'').trim())))].sort()};
+  }
+  entries.push(row);
+ }
+ if(markers.length!==entries.length||markers.some(n=>!seen.has(n.getAttribute('data-selection-copy-message-id'))))throw Error('unmapped-live-markers');
+ for(const group of root.querySelectorAll('.flex.h-9.w-full.items-center.gap-3')){
+  if(!group.getClientRects().length)continue;
+  const buttons=[...group.children].filter(n=>n.matches('button,[role="button"]'));
+  if(buttons.length<2)continue;
+  const e=readNativeNode(buttons[0],true).eventEvidence;
+  if(e?.kind!=='event-card'||!e.messageId||e.accepted===true)throw Error('unverified-event-card');
+  cards.push({id:e.messageId,kind:e.kind,sender:e.sender,accepted:e.accepted});
+ }
+ return {top:root.scrollTop,height:root.scrollHeight,clientHeight:root.clientHeight,entries,cards};
+}
+async function historySourceProbe(){
+ if(busy)return status('掃描進行中，禁止同時補證');
+ if(!target?.cycleId||core?.version!==SCANNER_VERSION||!formatEvidenceReady())return status('請確認輪迴綁定與新版模組');
+ const profile={...target},url=location.origin+location.pathname,run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,worldName:profile.worldName,cycleTitle:profile.cycleTitle,scannerVersion:SCANNER_VERSION,scope:'history-source'};
+ let root=null,initial=null,registered=false,reason=null,firstProof=null,lastProof=null,restore=null;
+ const order=[],records=new Map(),windows=[],cards=new Map();
+ busy=true;paused=false;cancelled=false;activeScanRows=null;
+ const guard=()=>{if(cancelled||paused)throw Error('使用者中止來源補證');if(!root?.isConnected||location.origin+location.pathname!==url)throw Error('聊天來源或容器變更')};
+ const capture=()=>{guard();return historySourceSample(root)};
+ const signature=s=>JSON.stringify(s);
+ const stable=async()=>{let previous=null;for(let i=0;i<24;i++){const s=capture();if(s.entries.length&&previous&&signature(previous)===signature(s))return s;previous=s;await sleep(250)}throw Error('來源視窗未穩定')};
+ const edge=async(side)=>{
+  for(let retry=0;retry<8;retry++){
+   guard();if(side==='first')root.scrollTop=0;
+   const s=await stable(),atEdge=x=>side==='first'?x.top<=2:x.height-x.clientHeight-x.top<=3;
+   if(!atEdge(s)){if(side==='first')continue;return null}
+   const started=Date.now(),checks=[{at:0,top:s.top,height:s.height,clientHeight:s.clientHeight,ids:s.entries.map(x=>x.id)}];let changed=false;
+   while(Date.now()-started<8000){await sleep(750);const v=capture();if(!atEdge(v)||signature(v)!==signature(s)){changed=true;break}checks.push({at:Date.now()-started,top:v.top,height:v.height,clientHeight:v.clientHeight,ids:v.entries.map(x=>x.id)})}
+   if(!changed)return {sample:s,proof:{stable:true,waitedMs:Date.now()-started,checks}};
+   if(side==='last')return null;
+  }throw Error('無法確認歷史最初頁');
+ };
+ const append=s=>{
+  const ids=s.entries.map(x=>x.id);
+  for(const r of s.entries)if(records.has(r.id)&&JSON.stringify(records.get(r.id))!==JSON.stringify(r))throw Error('同一原生來源在不同視窗變更:'+r.id);
+  historySourceAppend(order,ids);if(order.length>20000)throw Error('來源筆數超過安全上限');
+  for(const r of s.entries)records.set(r.id,r);
+  for(const c of s.cards){if(cards.has(c.id)&&JSON.stringify(cards.get(c.id))!==JSON.stringify(c))throw Error('事件卡狀態變更');cards.set(c.id,c)}
+  windows.push({top:s.top,height:s.height,clientHeight:s.clientHeight,ids,indices:s.entries.map(r=>r.index),stable:true});
+ };
+ try{
+  await fetchCurrentBinding(profile);root=scroller();initial={top:root.scrollTop,height:root.scrollHeight,clientHeight:root.clientHeight};
+  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});if(!reg?.ok)throw Error(reg?.error||'補證工作登記失敗');
+  Object.assign(run,{worldName:reg.status.worldName,worldKey:reg.status.worldKey,cycleNumber:reg.status.cycleNumber,archiveKey:reg.status.archiveKey,batchFolder:reg.status.batchFolder,statusPath:reg.status.statusPath});registered=true;activeRun=run;
+  const first=await edge('first');firstProof=first.proof;append(first.sample);
+  let last=first.sample,stalls=0,step=Math.max(12,Math.floor(root.clientHeight*.75));
+  for(let n=0;n<12000;n++){
+   guard();if(last.height-last.clientHeight-last.top<=3){
+    const end=await edge('last');if(end){append(end.sample);lastProof=end.proof;break}
+   }
+   root.scrollTop=Math.min(root.scrollHeight-root.clientHeight,last.top+step);
+   let next=await stable();
+   try{append(next)}catch(e){if(String(e.message)!=='no-ordered-overlap'||step<=12)throw e;step=Math.max(12,Math.floor(step/2));root.scrollTop=last.top;const restored=await stable();if(JSON.stringify(restored.entries.map(r=>r.id))!==JSON.stringify(last.entries.map(r=>r.id)))throw Error('未能復原可信來源視窗');continue}
+   stalls=next.top<=last.top+0.25&&next.height===last.height?stalls+1:0;
+   if(stalls>12)throw Error('歷史來源捲動停滯');
+   last=next;step=Math.min(Math.floor(root.clientHeight*.75),Math.max(12,Math.floor(step*1.2)));
+   status('📋 僅補取來源：'+order.length+' 個 ID；'+windows.length+' 個穩定視窗\n不解析正文、不匯入');
+   if(n%20===0)await chrome.runtime.sendMessage({type:'gal-run-progress',scanRunId:run.scanRunId,cycleId:run.cycleId,scanned:order.length});
+  }
+  if(!lastProof)throw Error('未確認歷史頁尾');
+  await fetchCurrentBinding(profile);
+  if(!['chapter','character','assistant'].includes(records.get(order[0])?.sender)||order.some((id,i)=>!Number.isInteger(records.get(id).index)||(i>0&&records.get(id).index!==records.get(order[i-1]).index+1)))throw Error('開場或虛擬列表連續索引證據不足');
+ }catch(e){reason=String(e?.message||e)}
+ finally{
+  if(root?.isConnected&&initial&&location.origin+location.pathname===url){root.scrollTop=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,root.scrollHeight===initial.height?initial.top:root.scrollHeight-root.clientHeight-(initial.height-initial.clientHeight-initial.top)));restore={requested:initial.top,actual:root.scrollTop,exact:root.scrollHeight===initial.height&&Math.abs(root.scrollTop-initial.top)<=2}}
+  try{
+   if(!registered){status('來源補證未啟動：'+reason);return}
+   const entries=order.map((id,i)=>({...records.get(id),order:i,previousId:order[i-1]||null,nextId:order[i+1]||null}));
+   const autoContinueIds=entries.filter((r,i)=>i>1&&['character','assistant'].includes(r.sender)&&['character','assistant'].includes(entries[i-1].sender)).map(r=>r.id);
+   const result={format:'gal-ai-history-source-proof',version:1,forensicOnly:true,importable:false,complete:!reason,scope:'independent-live-source-inventory',scanRunId:run.scanRunId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,source:{url},target:{cycleId:run.cycleId,cycleTitle:run.cycleTitle,worldName:run.worldName,worldKey:run.worldKey,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey},generatedAt:new Date().toISOString(),reason,firstProof,lastProof,entries,windows,eventCards:[...cards.values()],autoContinueIds,initial,restore,note:'僅讀 WHIF 當時掛載來源及原文雜湊，不重新解析正文；首尾為現場虛擬列表證據，非服務端分頁 API。'};
+   const audit={...result,cycleId:run.cycleId};
+   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:entries.length,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason});
+   if(!saved?.ok)throw Error(saved?.error||'保存未確認');
+   status((reason?'⛔ 補證未完成：'+reason:'✅ 獨立來源補證完成：'+entries.length+' 個 ID')+'\n'+run.batchFolder+'\n僅供檔案館交叉驗收，未重建正史。');
+  }catch(e){status('來源補證保存失敗：'+String(e?.message||e))}
+  finally{busy=false}
+ }
 }
 
 async function anchorRecoveryProbe(){

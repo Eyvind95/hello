@@ -47,7 +47,7 @@ test('a remaining native content difference returns only a diagnostic, not canon
 test('website button, separate files, local-only report and cache assets are wired',()=>{
  const html=fs.readFileSync(require.resolve('./index.html'),'utf8'),sw=fs.readFileSync(require.resolve('./sw.js'),'utf8'),js=fs.readFileSync(require.resolve('./archive-replay.js'),'utf8');
  for(const id of ['archiveReplayOpen','archiveReplayRaw','archiveReplayDiag','archiveReplayState','archiveReplayRun','archiveReplayDownload','archiveReplayReport'])assert.ok(html.includes('id="'+id+'"'));
- assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=5/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
+ assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=6/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
  assert.doesNotMatch(js,/\bfetch\s*\(|indexedDB|firestore|localStorage|sessionStorage/);
 });
 
@@ -79,4 +79,27 @@ test('optional evidence input and actual WHIF monospace frame selector are wired
  assert.match(src,/pre,code,span\.message-bubble-text\.TemplatedText\.font-mono/);
  assert.match(src,/historySourceManifest:\s*fullDiagnostic\?\.historySourceManifest/);
  assert.match(src,/diagnostic\.historySourceManifest=\[\.\.\.eventAudit\.history\]/);
+});
+
+test('independent source supplement proves ordered IDs, original hashes, both edges and player identity',()=>{
+ const f=fixture(),world={worldName:'測試世界',worldKey:'test',cycleNumber:1,archiveKey:'test::synthetic-cycle'};
+ Object.assign(f.cp.target,world);Object.assign(f.diag,world);Object.assign(f.state,world);
+ f.cp.failedPhase=f.diag.failedPhase='integrity';f.diag.validationPhases.integrity='failed';f.cp.phaseHistory=f.diag.phaseHistory=['bottom-confirmed','integrity','failure'].map(phase=>({phase}));f.diag.autoContinueAudit=null;f.diag.playerSourceAudit=null;f.diag.autoContinueCandidates=[];
+ const entries=f.cp.rows.map((r,i)=>({id:'native-'+i,index:100+i,order:i,kind:'ordinary-message',sender:i===0?'chapter':i===1?'user':'character',accepted:null,nativeHash:hash(r.nativeText),nativeNormHash:hash(r.nativeText.replace(/\s/gu,'')),nativeLength:r.nativeText.length,previousId:i?'native-'+(i-1):null,nextId:i<2?'native-'+(i+1):null,...(i===1?{player:{ownerId:'native-1',bodyParts:1,bodyNormHash:hash(r.nativeText),hasMedia:false}}:{})}));
+ const w=(top,ids)=>({top,height:1000,clientHeight:500,ids,indices:ids.map(id=>entries.find(r=>r.id===id).index),stable:true});
+ const windows=[w(0,['native-0','native-1']),w(500,['native-1','native-2'])];
+ const edge=w=>({stable:true,waitedMs:8300,checks:[0,8300].map(at=>({at,top:w.top,height:w.height,clientHeight:w.clientHeight,ids:w.ids}))});
+ const p={format:'gal-ai-history-source-proof',version:1,forensicOnly:true,importable:false,complete:true,scope:'independent-live-source-inventory',scanRunId:'other-run',scannerVersion:'0.9.14',coreVersion:'0.9.14',source:f.cp.source,target:f.cp.target,entries,windows,firstProof:edge(windows[0]),lastProof:edge(windows[1]),eventCards:[],autoContinueIds:[]};
+ const go=p=>replay(f.cp,f.diag,f.state,core,evidence,[],p);
+ assert.ok(go(p).canonical);assert.equal(go(p).canonical.offlineRecovery.historySupplementRunId,'other-run');
+ for(const mutate of [x=>x.entries[1].nativeHash='wrong',x=>x.entries[1].index++,x=>x.entries[1].sender='character',x=>x.entries[1].player.ownerId='foreign',x=>x.windows[1].ids=['native-2'],x=>x.firstProof.waitedMs=7999,x=>x.lastProof.checks.pop(),x=>x.target={...x.target,cycleId:'other'},x=>x.complete=false,x=>x.autoContinueIds=['native-2']]){
+  const x=structuredClone(p);mutate(x);assert.equal(go(x).canonical,null);
+ }
+});
+test('source-only overlap never appends disjoint or reordered windows',()=>{
+ const s=fs.readFileSync(require.resolve('./chrome-extension/gal-content.js'),'utf8');
+ const append=new Function(s.slice(s.indexOf('function historySourceAppend('),s.indexOf('function historySourceSample('))+'\nreturn historySourceAppend')();
+ const ids=[];append(ids,['a','b']);append(ids,['b','c']);append(ids,['c','d']);assert.deepEqual(ids,['a','b','c','d']);
+ for(const w of [['z'],['b','d'],['d','a'],['d','d']])assert.throws(()=>append(ids,w));
+ const body=s.slice(s.indexOf('async function historySourceProbe('),s.indexOf('async function anchorRecoveryProbe('));assert.doesNotMatch(body,/\bsnapshot\(|\bboundaryRead\(|markdownFromDom|parseGameTime/);
 });

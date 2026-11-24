@@ -8,7 +8,8 @@ globalThis.__galArchiveNativeReplyReader=true;
 document.addEventListener(request,event=>{
  const node=event.target;
  if(!(node instanceof Element))return;
- const evidenceOnly=event.detail==='event-evidence';
+ const historyOnly=event.detail==='history-source-evidence';
+ const evidenceOnly=historyOnly||event.detail==='event-evidence';
  const id=node.getAttribute('data-selection-copy-message-id')||
   (evidenceOnly?node.getAttribute('data-message-id'):null);
  if(!id&&!evidenceOnly)return;
@@ -27,6 +28,10 @@ document.addEventListener(request,event=>{
     result={reason:'evidence',eventEvidence:{messageId:message.id,
      kind,sender:typeof sender==='string'?sender:null,
      accepted:typeof message.metadata?.accept==='boolean'?message.metadata.accept:null}};
+    if(historyOnly){
+     const hash=s=>{let a=2166136261,b=0x811c9dc5;for(let i=0;i<s.length;i++){a=Math.imul(a^s.charCodeAt(i),16777619)>>>0;b=Math.imul(b^s.charCodeAt(i),2246822519)>>>0}return a.toString(16).padStart(8,'0')+b.toString(16).padStart(8,'0')};
+     result.nativeHash=hash(message.content);result.nativeNormHash=hash(message.content.replace(/\s/gu,''));result.nativeLength=message.content.length;
+    }
     break;
    }
    if(message.content.trim()&&message.content.length<=30000){
