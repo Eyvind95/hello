@@ -1,0 +1,38 @@
+name: Gal Archive Health + Timeline Tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gal-archive-observatory.yml'
+      - 'apps/gal-archive/archive-observatory-core.js'
+      - 'apps/gal-archive/archive-observatory.js'
+      - 'apps/gal-archive/archive-observatory.css'
+      - 'apps/gal-archive/archive-observatory.test.js'
+      - 'apps/gal-archive/index.html'
+      - 'apps/gal-archive/sw.js'
+      - 'main.html'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readonly-observatory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify syntax, read-only timeline and health regression tests
+        run: |
+          node --check apps/gal-archive/archive-observatory-core.js
+          node --check apps/gal-archive/archive-observatory.js
+          node --test apps/gal-archive/archive-observatory.test.js
+          node - <<'NODE'
+          const fs=require('fs');
+          const html=fs.readFileSync('apps/gal-archive/index.html','utf8');
+          const matches=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
+          for(const match of matches){
+            if(match[1].trim())new Function(match[1]);
+          }
+          console.log('Validated '+matches.length+' HTML inline scripts');
+          NODE
