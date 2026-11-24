@@ -1253,6 +1253,31 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    prefixedHudProjection={comparableText:scanned,omittedQuotePairs:omitted/2,provenEntireText:true,legacyBoundary:kind};
   }
  }
+ // A legacy clockless trending panel has its own two-line fenced header,
+ // not a dated HUD. Prove the exact leading hidden context and rendered
+ // header, leaving every subsequent marker and paragraph untouched.
+ if(options.verifiedUntimedNative===true&&options.source==='whif-message-content'&&
+    !options.event&&!options.opening&&!parseGameTime(scanned)&&!parseGameTime(original)&&
+    !hasHudClockEvidence(scanned)&&!hasHudClockEvidence(original)&&
+    !isExplicitUnknownGameTime(scanned)&&!isExplicitUnknownGameTime(original)&&
+    !prefixedHudProjection&&unspaced(scanned)!==unspaced(text)){
+  const panel=original.match(/^(\{\{系統顯示熱搜介面(?:｜[^{}\n]{1,160})?\}\})[ \t]*\n(?:[ \t]*\n)*\x60{3}[ \t]*\n([｜|│][^｜|│\n]{1,120}・內部網路[｜|│])\n([｜|│]🔥(?:\uFE0F)?熱搜榜・即時更新[｜|│])\n\x60{3}[ \t]*(?=\n|$)/u);
+  if(panel&&!scanned.includes(panel[1])){
+   const header=panel[2]+'\n'+panel[3];
+   const visible=scanned.split('\n');
+   const tail=original.slice(panel[0].length);
+   const candidate=header+tail;
+   if(tail.trim()&&unspaced(visible.slice(0,2).join('\n'))===unspaced(header)&&
+      unspaced(candidate)===unspaced(scanned)&&!parseGameTime(candidate)&&
+      !hasHudClockEvidence(candidate)){
+    markers.length=0;
+    markers.push({kind:'verified-untimed-trending-context',tokens:1,nonWhitespaceChars:count(panel[1])},
+     {kind:'verified-untimed-trending-header-fences',tokens:2,nonWhitespaceChars:6});
+    text=candidate;
+    prefixedHudProjection={comparableText:scanned,omittedQuotePairs:0,provenEntireText:true,untimed:true,legacyBoundary:'untimed-trending-header'};
+   }
+  }
+ }
  const comparableText=prefixedHudProjection?.comparableText??timedCompositeProjection?.comparableText??eventPostStatusProjection?.comparableText??
   (untimedCombinedProjection?.comparableText??
   (openingQuoteProjection?.comparableText??
