@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.4: adventure minute suffix, bounded visible prefixes, multiple code blocks, dialogue quotes and overlap diagnostics. */
+/* Independent Gal AI page scanner. v0.9.5: independent bounded native anchor recovery probe; no change to scan acceptance. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.4';
+const SCANNER_VERSION='0.9.5';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -65,6 +65,11 @@ function mount(){
  '<button id="gal-scan-position-index">指定位置測試</button>'+
  '<button id="gal-scan-position-visible">測目前畫面</button>'+
  '<button id="gal-scan-position-last-error">測上次錯誤位置</button></div>'+
+ '<details><summary>🧪 指定原生錨點復原取證</summary>'+
+ '<label>原生訊息 ID <input id="gal-anchor-id" maxlength="100" style="width:95%"></label>'+
+ '<label>上次可信 Y <input id="gal-anchor-y" type="number" min="0" step="any" style="width:110px"></label>'+
+ '<label>上次頁面高度（選填） <input id="gal-anchor-height" type="number" min="1" step="any" style="width:110px"></label>'+
+ '<button id="gal-anchor-probe">執行錨點復原取證（不匯入）</button></details>'+
  '<div style="margin:6px 0"><button id="gal-scan-open-folder">📁 顯示最近下載資料夾</button>'+
  '<button id="gal-scan-copy-folder">📋 複製批次路徑</button></div>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -102,6 +107,7 @@ function mount(){
  $('gal-scan-position-index').onclick=()=>positionSevenProbe('index');
  $('gal-scan-position-visible').onclick=()=>positionSevenProbe('visible');
  $('gal-scan-position-last-error').onclick=()=>positionSevenProbe('last-error');
+ $('gal-anchor-probe').onclick=()=>anchorRecoveryProbe();
  $('gal-scan-pick').onclick=()=>chooseOpening();
  $('gal-scan-refresh-binding').onclick=()=>refreshBoundTarget();
  $('gal-scan-retry').onclick=()=>{if(!busy&&target)scan(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
@@ -656,7 +662,7 @@ function candidatePlayerGap(start,end,previousId,currentId){
   .some(node=>range.intersectsNode(node));
  return {markers:[...markers.values()],loading};
 }
-function boundaryRead(root,traceFirst=false,captureNative=false){
+function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null){
  const headings=boundaryHeaders(root),tools=boundaryToolbars(root);
  const rows=[],debug={headers:headings.filter(h=>h.kind==='reply').length,
   eventHeaders:headings.filter(h=>h.kind==='event').length,
@@ -671,7 +677,11 @@ function boundaryRead(root,traceFirst=false,captureNative=false){
   const heading=headings[i],start=heading.node,next=headings[i+1]?.node||null;
   // Both "👍 👎 複製" and "✎ 👍 👎 書籤 更多" end a Gal AI item.
   const strips=tools.filter(t=>boundaryFollows(start,t)&&(!next||boundaryFollows(t,next)));
+  const probe=probeTrace?{headingIndex:i,kind:heading.kind,heading:anchorProbeElement(start),
+   nextHeading:next?anchorProbeElement(next):null,toolbarCandidates:strips.map(anchorProbeElement),outcome:'pending'}:null;
+  if(probe)probeTrace.push(probe);
   if(!strips.length){
+   if(probe)probe.outcome='action-toolbar-not-found';
    if(eventHeadersByNode.has(start))eventHeadersByNode.get(start).reason='action-toolbar-not-found';
    debug.incompleteAI++;break;
   }
@@ -679,7 +689,9 @@ function boundaryRead(root,traceFirst=false,captureNative=false){
   const metadata=captureNative?{}:undefined;
   const end=strips[0],text=boundaryFragmentText(start,end,'ai',trace,metadata,heading.kind==='event');
   if(trace&&core.parseGameTime(text)&&!core.isEvent(text))firstTimedTrace=trace;
+  if(probe){probe.bodyLength=text.length;probe.nativeId=metadata?.nativeReply?.messageId||null;probe.nativeReason=metadata?.nativeReply?.reason||null;probe.markerCount=metadata?.nativeReply?.markerCount??null;probe.outcome='serialized'}
   if(text.length<8||text.length>25000){
+   if(probe)probe.outcome='body-length-rejected';
    if(eventHeadersByNode.has(start))eventHeadersByNode.get(start).reason='event-body-incomplete';
    debug.incompleteAI++;break;
   }
@@ -1263,6 +1275,145 @@ async function recoverScanOverlap(root,trusted,all,sample,locate,wait=sleep,guar
   seen.add(Math.round(root.scrollTop));
  }
  return {ok:false,attempts};
+}
+
+
+// Independent local diagnostic. Never appends to trusted scan rows or
+// modifies the normal scanner's recovery algorithm.
+function anchorProbeOffsets(y,height,max){
+ const h=Math.max(1,height),limit=Math.max(0,max);
+ const values=[y,...[.5,1,2,4,8].flatMap(n=>[y-h*n,y+h*n])];
+ const seen=new Set();
+ return values.map(x=>Math.max(0,Math.min(limit,x))).filter(x=>{
+  const key=Math.round(x);if(seen.has(key))return false;seen.add(key);return true;
+ });
+}
+function anchorProbeState(rawCount,rows,anchorId){
+ const hits=rows.filter(r=>r.sourceIds.includes(anchorId)).length;
+ return rawCount===0?'anchor-not-mounted':rawCount!==1?'anchor-marker-not-unique':
+  hits===0?'mounted-but-not-collected':hits===1?'anchor-collected':'anchor-row-not-unique';
+}
+function anchorProbeElement(node){
+ const r=node.getBoundingClientRect(),style=getComputedStyle(node);
+ const wrapper=node.closest('[data-message-id]');
+ const item=node.closest('[data-item-index],[data-index]');
+ return {tag:node.tagName,ownerId:wrapper?.getAttribute('data-message-id')||null,
+  itemIndex:item?.getAttribute('data-item-index')||item?.getAttribute('data-index')||null,
+  className:String(node.getAttribute('class')||'').slice(0,500),
+  top:r.top,bottom:r.bottom,width:r.width,height:r.height,
+  display:style.display,visibility:style.visibility,opacity:style.opacity,
+  textLength:(node.textContent||'').length};
+}
+function anchorProbeSnapshot(root,anchorId){
+ const raw=[...root.querySelectorAll(nativeMessageSelector)];
+ const selected=raw.filter(n=>n.getAttribute('data-selection-copy-message-id')===anchorId);
+ const headings=boundaryHeaders(root),tools=boundaryToolbars(root),trace=[];
+ const rowView=boundaryRead(root,false,true,trace);
+ const rows=rowView.rows.map(row=>({...recoveryDiagnosticRow(row),textLength:row.text.length,
+  textHash:hash(row.text),nativeReason:row.formatSource?.nativeReply?.reason||null,
+  clock:core.parseGameTime(row.text)?.iso||null}));
+ const elementInfo=n=>{
+  const id=n.getAttribute('data-selection-copy-message-id');
+  const parent=n.closest('[data-message-id]')||n.closest('[data-item-index],[data-index]')||n.parentElement;
+  const proof=readNativeNode(n,true);
+  const ancestor=parent||n;
+  const headingLike=[...ancestor.querySelectorAll('span,strong,b,p,h1,h2,h3,h4,label,div')].filter(x=>{
+   if(x===n||n.contains(x)||x.contains(n))return false;
+   const q=boundaryDirectText(x);
+   return q&&q.length<=140&&boundaryFollows(x,n);
+  }).slice(0,20).map(x=>({text:boundaryDirectText(x),...anchorProbeElement(x)}));
+  return {id,...anchorProbeElement(n),nativeEvidence:proof.eventEvidence||null,
+   nativeEvidenceReason:proof.reason||null,wrapper:anchorProbeElement(ancestor),
+   recognizedHeaders:headings.filter(h=>ancestor.contains(h.node)).map(h=>({kind:h.kind,...anchorProbeElement(h.node)})),
+   recognizedToolbars:tools.filter(t=>ancestor.contains(t)).map(anchorProbeElement),
+   headingCandidates:headingLike,
+   actionIcons:[...ancestor.querySelectorAll('svg')].slice(0,40).map(x=>({icon:boundaryIconTag(x).slice(0,250),...anchorProbeElement(x)}))};
+ };
+ // Keep raw ID order even when no matching heading or toolbar exists.
+ const rawIds=raw.map(n=>n.getAttribute('data-selection-copy-message-id'));
+ const center=raw.findIndex(n=>n.getAttribute('data-selection-copy-message-id')===anchorId);
+ const local=center>=0?raw.slice(Math.max(0,center-3),center+4):raw.slice(0,7);
+ return {scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,clientHeight:root.clientHeight,
+  rawMarkerCount:raw.length,rawIds,anchorMarkerCount:selected.length,
+  anchorRelativeTop:recoveryMarkerTop(root,anchorId),
+  state:anchorProbeState(selected.length,rows,anchorId),rows,
+  boundaryDebug:rowView.debug,boundaryTrace:trace,
+  headers:headings.map(h=>({kind:h.kind,...anchorProbeElement(h.node)})),toolbars:tools.map(anchorProbeElement),
+  localMarkers:local.map(elementInfo)};
+}
+async function anchorRecoveryProbe(){
+ if(busy)return status('掃描進行中，禁止同時取證');
+ if(!target?.cycleId)return status('先確認目前頁面的輪迴綁定');
+ if(core?.version!==SCANNER_VERSION||!formatEvidenceReady())return status('模組版本不一致，請重新載入');
+ const anchorId=$('gal-anchor-id').value.trim(),yText=$('gal-anchor-y').value.trim(),heightText=$('gal-anchor-height').value.trim();
+ if(!/^[A-Za-z0-9_-]{5,100}$/.test(anchorId)||!yText||!Number.isFinite(Number(yText))||Number(yText)<0||
+  (heightText&&(!Number.isFinite(Number(heightText))||Number(heightText)<=0)))return status('請填入有效原生 ID、可信 Y 與選填頁面高度');
+ const y=Number(yText),oldHeight=heightText?Number(heightText):null;
+ busy=true;cancelled=false;paused=false;
+ const origin=location.origin+location.pathname,profile={...target};
+ const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'missing',
+  worldName:profile.worldName,cycleTitle:profile.cycleTitle,scannerVersion:SCANNER_VERSION};
+ const attempts=[],seen=new Set();let root=null,initial=null,registered=false,reason=null,restore=null;
+ const guard=()=>{
+  if(cancelled||paused)throw Error('使用者中止局部取證');
+  if(location.origin+location.pathname!==origin||!root?.isConnected)throw Error('聊天網址或捲動容器變更，停止取證');
+ };
+ try{
+  await fetchCurrentBinding(profile);
+  root=scroller();initial={top:root.scrollTop,height:root.scrollHeight,clientHeight:root.clientHeight};
+  guard();
+  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
+  if(!reg?.ok)throw Error(reg?.error||'無法建立錨點取證批次');
+  Object.assign(run,{worldName:reg.status?.worldName||run.worldName,worldKey:reg.status?.worldKey||null,cycleNumber:reg.status?.cycleNumber??null,archiveKey:reg.status?.archiveKey||null,batchFolder:reg.status?.batchFolder});
+  registered=true;
+  // Initial current viewport plus the old absolute coordinate and at most
+  // eight viewports either side. Coordinates are hints, not continuity proof.
+  const planned=[initial.top,...anchorProbeOffsets(y,initial.clientHeight,initial.height-initial.clientHeight)];
+  if(oldHeight!==null&&oldHeight!==initial.height)planned.push(...anchorProbeOffsets(y+initial.height-oldHeight,initial.clientHeight,initial.height-initial.clientHeight));
+  for(let i=0;i<planned.length&&attempts.length<16;i++){
+   guard();
+   const requested=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,planned[i]));
+   const key=Math.round(requested);if(seen.has(key))continue;seen.add(key);
+   const beforeHeight=root.scrollHeight;root.scrollTop=requested;
+   await sleep(WAIT_MS+STABLE_MS);guard();
+   const before=anchorProbeSnapshot(root,anchorId);
+   await sleep(STABLE_MS);guard();
+   const after=anchorProbeSnapshot(root,anchorId);
+   const stable=before.scrollHeight===after.scrollHeight&&Math.abs(before.scrollTop-after.scrollTop)<2&&
+    JSON.stringify(before.rawIds)===JSON.stringify(after.rawIds)&&
+    JSON.stringify(before.rows.map(x=>x.sourceIds))===JSON.stringify(after.rows.map(x=>x.sourceIds));
+   attempts.push({requested,beforeHeight,stable,before,after});
+   status('🧪 錨點復原取證 '+attempts.length+'/16：'+after.state+'；僅保全，不接續掃描');
+   // If mounted but dropped, also try centering the actual marker.
+   if(after.anchorMarkerCount===1&&Number.isFinite(after.anchorRelativeTop)){
+    const centered=root.scrollTop+after.anchorRelativeTop-root.clientHeight/3;
+    if(!seen.has(Math.round(Math.max(0,Math.min(root.scrollHeight-root.clientHeight,centered)))))planned.splice(i+1,0,centered);
+   }
+  }
+ }catch(error){reason=String(error?.message||error)}
+ finally{
+  if(root?.isConnected&&initial&&location.origin+location.pathname===origin){
+   root.scrollTop=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,initial.top));
+   restore={requested:initial.top,actual:root.scrollTop,height:root.scrollHeight};
+  }
+  try{
+   if(!registered){status('錨點取證未啟動：'+(reason||'未知錯誤'));return;}
+   const result={format:'gal-ai-anchor-recovery-probe',version:1,importable:false,validated:false,complete:false,
+    forensicOnly:true,scanRunId:run.scanRunId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
+    generatedAt:new Date().toISOString(),scope:'anchor-overlap-diagnostic',source:{url:origin},
+    target:{cycleId:profile.cycleId,cycleTitle:profile.cycleTitle,worldName:run.worldName,worldKey:run.worldKey,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey},
+    input:{anchorId,lastGoodY:y,previousScrollHeight:oldHeight},initial,restore,reason,attempts,
+    observedStates:[...new Set(attempts.flatMap(a=>[a.before.state,a.after.state]))],
+    note:'僅局部 DOM 與候選視窗鑑識，未證明連續性、未追加訊息、不得匯入正史。'};
+   const audit={...run,format:'gal-ai-anchor-recovery-diagnostic',importable:false,initial,restore,reason,
+    attemptCount:attempts.length,observedStates:result.observedStates,attempts:attempts.map(a=>({requested:a.requested,stable:a.stable,actual:a.after.scrollTop,height:a.after.scrollHeight,anchorMarkerCount:a.after.anchorMarkerCount,state:a.after.state,rawIds:a.after.rawIds,candidateIds:a.after.rows.flatMap(x=>x.sourceIds)}))};
+   diagnostic=audit;
+   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit)});
+   if(!saved?.ok)throw Error(saved?.error||'下載未確認');
+   status('🧪 局部取證已送出 '+attempts.length+' 次'+(reason?'；中斷：'+reason:'')+'\n'+result.observedStates.join(' / ')+'\n批次：'+run.batchFolder+'\n只供鑑識，不代表掃描通過。');
+  }catch(error){status('錨點取證保存失敗：'+String(error?.message||error))}
+  finally{busy=false;}
+ }
 }
 
 function hash(str){let h1=2166136261,h2=0x811c9dc5;for(let i=0;i<str.length;i++){

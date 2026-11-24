@@ -1697,3 +1697,19 @@ test('V0.9.04 recovery diagnostics distinguish missing overlap, mismatched conte
  detail={};assert.equal(prove({rows:[me,all[1],ai('anchor-1','重複來源')]},all,detail),false);
  assert.equal(detail.candidateDuplicateIds.includes('anchor-1'),true);
 });
+
+test('V0.9.05 anchor probe has bounded deduplicated positions and distinguishes mounted versus collected IDs',()=>{
+ const src=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const part=src.slice(src.indexOf('function anchorProbeOffsets('),src.indexOf('function anchorProbeElement('));
+ const {offsets,state}=new Function(part+'\nreturn {offsets:anchorProbeOffsets,state:anchorProbeState}')();
+ const p=offsets(1000,100,2000);
+ assert.equal(p.length,11);assert.equal(p[0],1000);assert.equal(p[1],950);assert.equal(p[10],1800);
+ const edge=offsets(10,100,200);assert.equal(new Set(edge.map(Math.round)).size,edge.length);
+ assert.ok(edge.every(x=>x>=0&&x<=200));
+ const rows=[{sourceIds:['next']}];
+ assert.equal(state(0,rows,'anchor'),'anchor-not-mounted');
+ assert.equal(state(1,rows,'anchor'),'mounted-but-not-collected');
+ assert.equal(state(2,rows,'anchor'),'anchor-marker-not-unique');
+ assert.equal(state(1,[{sourceIds:['anchor']}],'anchor'),'anchor-collected');
+ assert.equal(state(1,[{sourceIds:['anchor']},{sourceIds:['anchor']}],'anchor'),'anchor-row-not-unique');
+});
