@@ -758,9 +758,17 @@ function analyzePlayerSourceDifference(collected,history,senders,links,nearby){
   hasText:nearby?.get(id)?.hasText===true,
   hasMedia:nearby?.get(id)?.hasMedia===true
  }));
+ const adjacentAi=index=>{
+  const before=collected.slice(0,index).findLast(row=>row?.role==='ai');
+  const after=collected.slice(index+1).find(row=>row?.role==='ai');
+  const sourceHash=row=>row?.formatSource?.nativeReply?.messageId
+   ?hash(row.formatSource.nativeReply.messageId):null;
+  return {previousAiSourceHash:sourceHash(before),nextAiSourceHash:sourceHash(after),
+   playerTextLength:String(collected[index]?.text||'').length};
+ };
  const multiSourceRows=[...perRow].filter(([,ids])=>ids.size>1)
   .map(([scanIndex,ids])=>({scanIndex,nativeUserSourceCount:ids.size,
-   sourceHashes:[...ids].map(hash)}));
+   sourceHashes:[...ids].map(hash),...adjacentAi(scanIndex)}));
  const rowsWithoutProvenUserMarker=[...perRow].filter(([,ids])=>
   ![...ids].some(id=>observedSet.has(id))).map(([scanIndex])=>scanIndex);
  const multipleRows=[...(links||new Map())].filter(([id,indices])=>
@@ -1345,9 +1353,16 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     eventAudit.playerSourceRows,eventAudit.userNearby)
    :{ok:true,notApplicable:true,candidateIndices:[],observedNativeMarkers:eventAudit.history.size,
      scannedRows:collected.length};
-  if(!autoContinueAudit.ok)
-   throw Error('自動繼續逐筆來源驗證未通過（'+autoContinueAudit.problems
+  if(!autoContinueAudit.ok){
+   const onlyUserDifference=autoContinueAudit.problems.length===1&&
+    autoContinueAudit.problems[0].errors?.includes('more-observed-user-messages-than-player-rows');
+   if(onlyUserDifference)
+    throw Error('玩家原生來源 ID 與玩家文字掃描列相差 '+
+     autoContinueAudit.playerSourceAudit.countDifference+
+     '（不等於已證實漏掃），AI 自動繼續均已通過；請核對診斷 autoContinueAudit.playerSourceAudit 的多來源玩家列及未定位標記');
+   throw Error('來源完整性核對未通過（'+autoContinueAudit.problems
     .map(p=>p.scanIndex??p.scope).join('、')+'）；請依診斷 autoContinueAudit 核對，不得猜測漏失訊息');
+  }
   // The independent opening is not part of validation.messages. It must
   // have its OWN source-ID-checked native paragraph pass before serialization.
   // In particular, an untimed opening cannot rely on the AI timestamp gate.
@@ -1384,6 +1399,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   if(preview)lastResult.paragraphCheck=paragraphCheck;
   diagnostic={...diagnostic,scanMode,scannerVersion:SCANNER_VERSION,coreVersion:core.version,nativeParagraphsApplied:nativeApplied,bottomProof,
    openingCheck:openingFormat.check,autoContinueAudit,
+   playerSourceAudit:autoContinueAudit?.playerSourceAudit||null,
    firstTimedReply:firstTimedTrace,export:{generatedAt:lastResult.generatedAt,
     firstReplyScanIndex:firstReply?.scanIndex,
     firstReplyQuotes:(firstReply?.text.match(/「/g)||[]).length,
@@ -1419,6 +1435,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   diagnostic={...(diagnostic||inspect()),...run,scanMode,error:failure,trustedCount:collected.length,paragraphCheck,unpairedReply,bottomProof,
    scrollStall,scrollAtFailure,
    autoContinueCandidates:continuedPositions.map(({scanIndex})=>scanIndex),autoContinueAudit,
+   playerSourceAudit:autoContinueAudit?.playerSourceAudit||null,
    eventAudit:summarizeEventAudit(eventAudit,collected,
     failedValidation||{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
