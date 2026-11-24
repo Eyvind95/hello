@@ -83,7 +83,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await chrome.scripting.executeScript({target:{tabId:sender.tab.id},files:['gal-core.js','gal-format-evidence.js','gal-content.js']});
       const expected=chrome.runtime.getManifest().version;
       const loaded=await chrome.tabs.sendMessage(sender.tab.id,{type:'gal-scan-ping'});
-      if(loaded?.version!==expected||loaded?.coreVersion!==expected)
+      if(loaded?.version!==expected||loaded?.coreVersion!==expected||loaded?.formatEvidenceVersion!==expected||loaded?.formatEvidenceReady!==true)
         return {ok:false,error:'分頁的掃描器或核心版本與已安裝版本不一致；請重新整理 WHIF 頁面'};
       const opened=await chrome.tabs.sendMessage(sender.tab.id,{type:'gal-scan-open',profile});
       return opened?.ok?{ok:true,opened:true}:{ok:false,error:opened?.error||'掃描助手沒有回應'};
