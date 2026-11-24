@@ -528,6 +528,61 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   statusText=unfenced[1];
   text=after;
  }
+ // After WHIF's event HUD, a second *hidden* context marker can occur
+ // directly before the event story. It is distinct from visible templates
+ // elsewhere and from the previously verified leading event wrapper.
+ // Never delete an arbitrary {{...}} token: the title, complete timestamped
+ // status and every visible body character must align exactly. Missing
+ // Chinese quotes are projected ONLY as balanced, whole-text-proven pairs.
+ let eventPostStatusProjection=null;
+ if(options.event===true&&options.source==='whif-event-content'&&
+    !eventQuoteProjection&&titleKey&&statusKey&&
+    parseGameTime(scanned)?.iso&&
+    parseGameTime(scanned)?.iso===parseGameTime(text)?.iso){
+  const eventHeader=titleKey+statusKey;
+  if(unspaced(scanned).startsWith(eventHeader)&&
+     unspaced(text).startsWith(eventHeader)){
+   const sourceNonSpace=[...text.matchAll(/\S/gu)];
+   const boundary=sourceNonSpace[[...eventHeader].length]?.index;
+   const atBoundary=boundary===undefined?'':text.slice(boundary);
+   const hidden=atBoundary.match(/^\{\{([^{}\n]{1,200})\}\}[ \t]*(?:\r?\n[ \t]*)*/u);
+   const hiddenLabel=hidden?.[1]?.trim();
+   if(hidden&&hiddenLabel&&
+      !/^(?:(?:user|char|character)(?:\s*(?:\||:|=|$))|(?:img|image)\s*:)/i.test(hiddenLabel)&&
+      !scanned.includes(hidden[0].trim())){
+    const without=text.slice(0,boundary)+text.slice(boundary+hidden[0].length);
+    const visible=[...unspaced(scanned)];
+    let aligned=0,projected='',omitted=[],valid=true;
+    for(const character of without){
+     if(/\s/u.test(character)){projected+=character;continue}
+     if(aligned<visible.length&&character===visible[aligned]){
+      projected+=character;aligned++;continue;
+     }
+     if(character==='「'||character==='」'){omitted.push(character);continue}
+     valid=false;break;
+    }
+    let depth=0;
+    for(const quote of omitted){
+     depth+=quote==='「'?1:-1;
+     if(depth<0){valid=false;break}
+    }
+    if(valid&&aligned===visible.length&&depth===0&&
+       omitted.length>0&&omitted.length%2===0&&
+       unspaced(projected)===unspaced(scanned)){
+     record('verified-event-post-status-hidden-template',1,text,without);
+     record('verified-event-balanced-native-quotes',omitted.length,without,projected);
+     text=without;
+     eventPostStatusProjection={
+      comparableText:projected,templateStartUtf16:boundary,
+      templateNonWhitespaceChars:count(hidden[0]),
+      omittedQuotePairs:omitted.filter(x=>x==='「').length,
+      preservedVisibleQuotes:(scanned.match(/[「」]/g)||[]).length,
+      provenEntireEventText:true
+     };
+    }
+   }
+  }
+ }
  if(imageMarker.test(text)&&!imageMarker.test(scanned)){
   const after=text.replace(imageMarker,'').trimEnd();
   record('terminal-image-marker',1,text,after);
@@ -818,9 +873,10 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
   }
  }
- const comparableText=untimedCombinedProjection?.comparableText??
+ const comparableText=eventPostStatusProjection?.comparableText??
+  (untimedCombinedProjection?.comparableText??
   (openingQuoteProjection?.comparableText??
-   (legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text)));
+   (legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text))));
  const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(comparableText)];
  const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
  const contentEqual=scanChars.join('')===nativeChars.join('');
@@ -847,7 +903,10 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  const comparison={scannedLength:[...scanned].length,nativeLength:[...nativeCopy].length,
   scannedNonWhitespace:scanChars.length,nativeNonWhitespace:count(original),
   comparableNativeNonWhitespace:nativeChars.length,whitespaceOnlyEqual,contentEqual,clockEqual,
-  preambleMetadata,verifiedNoClock,untimedWrappedProjection,untimedCombinedProjection:
+  preambleMetadata,verifiedNoClock,untimedWrappedProjection,
+  eventPostStatusProjection:eventPostStatusProjection?{
+   ...eventPostStatusProjection,comparableText:undefined}:null,
+  untimedCombinedProjection:
    untimedCombinedProjection?{...untimedCombinedProjection,comparableText:undefined}:null,
   formatMarkers:markers,formatMarkerCount:markers.reduce((sum,m)=>sum+m.tokens,0),
   explainedNonWhitespace:markers.reduce((sum,m)=>sum+m.nonWhitespaceChars,0),
@@ -909,6 +968,16 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   return {text:null,comparison,localContext:{scanned:context(scanChars),native:context(nativeChars)}};
  }
  if(!text||!clockEqual)return {text:null,comparison};
+ if(eventPostStatusProjection){
+  comparison.eventPostStatusProjection={
+   templateStartUtf16:eventPostStatusProjection.templateStartUtf16,
+   templateNonWhitespaceChars:eventPostStatusProjection.templateNonWhitespaceChars,
+   omittedQuotePairs:eventPostStatusProjection.omittedQuotePairs,
+   preservedVisibleQuotes:eventPostStatusProjection.preservedVisibleQuotes,
+   provenEntireEventText:true
+  };
+  return {text,comparison};
+ }
  if(untimedCombinedProjection){
   comparison.untimedCombinedProjection={
    hiddenContextCount:untimedCombinedProjection.hiddenContextCount,
