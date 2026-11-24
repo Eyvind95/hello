@@ -122,7 +122,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 </head>
 <body>
 <div class="app">
-<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.67</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.40.zip" download title="下載雙掃描助手 V0.8.40：第9輪無時間組合修復、第11輪事件投影嚴格驗證，格式失敗保全原生完整證據，失敗仍下載診斷，依輪迴及掃描批次分類；未驗證資料不能匯入正史。">🧩 雙掃描助手 V0.8.40</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
+<header class="mast"><div><div class="eyebrow">CHRONICLE / GAL AI</div><h1>輪迴檔案館 V5.68</h1><div class="sub">世界觀・輪迴開場・完整對話，一座留給歷代副駕駛的資料庫</div></div><div class="actions"><button class="btn primary" id="installApp">📲 安裝到手機</button><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="./chrome-extension/gal-archive-chrome-v0.8.40.zip" download title="下載雙掃描助手 V0.8.40：第9輪無時間組合修復、第11輪事件投影嚴格驗證，格式失敗保全原生完整證據，失敗仍下載診斷，依輪迴及掃描批次分類；未驗證資料不能匯入正史。">🧩 雙掃描助手 V0.8.40</a><button class="btn" id="forceUpdateBtn" type="button">🔄 強制更新</button><button class="btn" id="downloadSite">下載 HTML</button><button class="btn" id="cloudBtn">☁ 雲端同步</button><span id="archiveAutoSyncStatus" class="pill" data-state="idle" role="status" aria-live="polite">☁ 正在讀取登入狀態…</span><button class="btn" id="exportBtn">📦 完整備份（含交接稿）</button><button class="btn" id="exportCanonBtn">僅正史 JSON</button><button class="btn" id="timeMachineOpen" type="button">⏳ 正史版本時光機</button><button class="btn" id="archiveHealthOpen" type="button">🩺 正史健康檢查</button><button class="btn" id="archiveTimelineOpen" type="button">🗓 全輪迴時間軸</button><button class="btn" id="importBtn">匯入備份</button><button class="btn primary" id="galNativeOpen">🌐 Gal AI 原生正史覆蓋</button></div></header>
 <div class="layout"><aside class="panel sidebar"><div class="sectionhead"><h2>世界觀</h2><button id="newWorld" class="btn small primary">＋新增</button></div><div id="worlds" class="worldlist"></div><button class="btn primary worldedit" id="editWorld">✎ 編輯目前世界觀</button><div class="divider"></div><div class="sectionhead"><h2>輪迴列表</h2><button id="newCycle" class="btn small primary">＋新增</button></div><input id="cycleSearch" class="search" placeholder="搜尋輪迴名稱或主角…"><label for="cycleSort" class="note" style="display:block;margin-top:12px">輪迴列表排序</label><select id="cycleSort" class="search" aria-label="輪迴列表排序"><option value="number-desc">輪迴數字：由大到小（預設）</option><option value="number-asc">輪迴數字：由小到大</option><option value="updated">最近修改優先</option></select><div id="cycles"></div><div class="divider"></div><div class="sectionhead"><h2>📚 交接稿</h2><button id="newHandover" type="button" class="btn small primary" title="新增交接對話">＋新增</button></div><p class="note">依目前世界觀分類；每個交接對話可上傳多份檔案。</p><button type="button" id="handoverSharedReviews" class="cycle handover-thread" style="width:100%;margin:4px 0 12px;text-align:left"><strong>💬 大家的評語（共用）</strong><span>這個世界觀只需貼一次，所有交接對話皆可閱讀</span></button><div id="handoverThreads" aria-live="polite"><p class="note">正在載入交接稿…</p></div><div class="actions topsp"><button type="button" class="btn small" id="handoverExport">備份此世界觀（.ghb）</button><button type="button" class="btn small" id="handoverImport">匯入交接稿備份</button><button type="button" class="btn small" id="handoverStorage">檢查本機儲存空間</button></div><p class="note" id="handoverStorageStatus" role="status"></p><input id="handoverImportFile" type="file" accept=".ghb,.json,application/json,application/octet-stream" hidden><p class="note">交接稿與附件已支援手動 Firebase 雲端同步，也包含於上方「完整備份（.gab）」。此區仍可單獨下載 .ghb 備份。</p></aside><main class="panel" id="content"><div class="empty"><strong>歡迎進入輪迴檔案館</strong>從左邊選擇世界觀，開始記錄故事。</div></main></div>
 <div class="modalback hidden" id="archiveImageModal" role="dialog" aria-modal="true" aria-label="查看訊息圖片"><div class="modal" style="max-width:96vw;width:1100px;max-height:96vh;text-align:center"><div class="actions" style="justify-content:flex-end"><button class="btn" id="archiveImageDownload" type="button">下載圖片</button><button class="btn" id="archiveImageClose" type="button">關閉</button></div><img id="archiveImageFull" alt="已附加的圖片" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:8px"><p class="note" id="archiveImageLabel"></p></div></div><div class="footer">資料預設保存在本機 IndexedDB。你可以下載整個網站（HTML）、匯出 JSON 備份；設定 Firebase 後可手動將私人資料同步到 Firestore。GitHub 公開的是網站程式，不是你的輪迴內容。</div></div>
 <div class="modalback hidden" id="modal"><div class="modal"><div class="sectionhead"><h2 id="modalTitle">新增輪迴</h2><button class="btn small" id="closeModal">關閉</button></div><label>輪迴名稱 *</label><input id="fieldTitle" maxlength="180" placeholder="例如：新輪迴名稱"><div class="formrow"><div><label>主角</label><input id="fieldHero" placeholder="例如：杜林"></div><div><label>伴侶／重要角色</label><input id="fieldPartner" placeholder="可空白"></div></div><label for="fieldManager">負責管理的副駕駛／前輩／後輩（可多人）</label><input id="fieldManager" maxlength="500" placeholder="可填一位或多位實際負責的副駕駛"><p class="note">以「、」或換行分隔，照接手順序填寫；每則歸檔紀錄只標示實際負責的其中一位。</p><div class="actions topsp"><button class="btn primary" id="saveCycle">儲存輪迴</button></div></div></div>
@@ -774,8 +774,16 @@ function galNativeBuildPlan(obj,r){
  updated.opening=v.opening;
  updated.messages=messages;
  updated.events=mapped;
+ if(r.specialReviews){
+  const priorRows=archiveStoryTimeline(r),nextRows=archiveStoryTimeline(updated),reviewMap={...r.specialReviews};
+  for(const oldRow of priorRows){const oldKey=archiveSpecialKey(oldRow),mark=archiveSpecialState(r,oldRow);if(!oldKey||!mark)continue;
+   const exact=nextRows.filter(row=>row.type===oldRow.type&&archiveSpecialKey(row)&&(row.entry.text===oldRow.entry.text||row.entry.text===mark.anchorText));
+   if(exact.length===1){const newKey=archiveSpecialKey(exact[0]);if(newKey!==oldKey&&!reviewMap[newKey])reviewMap[newKey]={...mark,editedText:exact[0].entry.text};}
+  }
+  updated.specialReviews=archiveSpecialMerge(reviewMap);
+ }
  // The only fields permitted to change are exactly the three user-authorized sections.
- const untouched=Object.keys(r).every(k=>['opening','messages','events'].includes(k)
+ const untouched=Object.keys(r).every(k=>['opening','messages','events','specialReviews'].includes(k)
    ||JSON.stringify(r[k])===JSON.stringify(updated[k]));
  const check=archiveCheckDialoguePairs(archiveStoryTimeline(updated));
  const ok=untouched&&!check.issues.length;
@@ -1215,6 +1223,10 @@ function beginArchiveInlineEdit(button,section,record){
     try{
       const updated=structuredClone(record),next=(updated[section]||[]).find(x=>x.id===m.id);
       if(!next)throw Error('找不到這則訊息，請重新整理後再試');
+      if(section==='messages'||section==='events'){
+        const row={type:section==='events'?'event':'message',entry:m},key=archiveSpecialKey(row),mark=archiveSpecialState(record,row);
+        if(mark&&key)updated.specialReviews=archiveSpecialMerge(updated.specialReviews,{[key]:{...mark,editedText:textArea.value}});
+      }
       next.text=textArea.value;next.images=draftEditorImages;if(titleInput)next.title=titleInput.value.trim()||'事件到達';
       if(managerInput)next.manager=managerInput.value.trim();
       let timeChanged=false;
@@ -1263,7 +1275,7 @@ function renderEvents(r){
       +'<button type="button" data-archive-attach="'+i+'">＋圖片</button>'
       +'<button type="button" data-eventedit="'+i+'">編輯</button>'
       +'<button type="button" data-eventtime="'+i+'">時間／定位</button>'
-      +'<button type="button" data-eventremove="'+i+'">刪除</button></div></div></div>';
+      +'<button type="button" data-eventremove="'+i+'">刪除</button>'+(ev.status==='accepted'?archiveSpecialTools(r,{type:'event',entry:ev}):'')+'</div></div></div>';
   }).join('');
   $('tabBody').innerHTML=
     '<div class="sectionhead"><h3>事件簿 <span class="stat">（'+items.length+' 件）</span></h3><span class="note">'+statusCounts+'</span></div>'
@@ -1391,7 +1403,9 @@ function archiveSpecialKey(row){
  const e=row?.entry;
  if(!e||(row.type!=='event'&&(row.type!=='message'||e.role!=='ai')))return null;
  const kind=row.type;
- if(typeof e.sourceEventId==='string'&&e.sourceEventId)return JSON.stringify([kind,'source',e.chatKey||'',e.sourceEventId,e.sourcePartIndex??0]);
+ // galnative-* is generated from scan ordinal; it is not an immutable source ID.
+ if(typeof e.nativeSourceMessageId==='string'&&e.nativeSourceMessageId)return JSON.stringify([kind,'native',e.chatKey||'',e.nativeSourceMessageId,e.sourcePartIndex??0]);
+ if(typeof e.sourceEventId==='string'&&e.sourceEventId&&!e.sourceEventId.startsWith('galnative-'))return JSON.stringify([kind,'source',e.chatKey||'',e.sourceEventId,e.sourcePartIndex??0]);
  return typeof e.id==='string'&&e.id?JSON.stringify([kind,'record',e.id]):null;
 }
 function archiveSpecialMerge(...maps){
@@ -1399,7 +1413,7 @@ function archiveSpecialMerge(...maps){
  for(const map of maps)for(const [key,value] of Object.entries(map||{})){
   if(!key.startsWith('[')||!value||!['pending','resolved'].includes(value.status)||typeof value.updatedAt!=='string'||!Number.isFinite(Date.parse(value.updatedAt)))continue;
   const old=out[key];
-  const latest=!old||value.updatedAt>old.updatedAt||(value.updatedAt===old.updatedAt&&value.status==='resolved')?value:old;
+  const latest=!old||value.updatedAt>old.updatedAt||(value.updatedAt===old.updatedAt&&(value.status==='resolved'||value.status===old.status))?value:old;
   const evidence=[...new Set([...(Array.isArray(old?.evidence)?old.evidence:[]),...(Array.isArray(value.evidence)?value.evidence:[])].filter(x=>typeof x==='string'))].sort();
   out[key]={...latest,evidence};
  }
@@ -1412,10 +1426,53 @@ function archiveSpecialNext(previous,action,reason,now){
 }
 function archiveSpecialState(record,row){
  const key=archiveSpecialKey(row);
- return key?record?.specialReviews?.[key]||null:null;
+ if(!key)return null;
+ const mark=record?.specialReviews?.[key];
+ if(mark?.anchorText!==undefined&&key.includes('"record"')&&mark.anchorText!==row.entry.text&&mark.editedText!==row.entry.text)return null;
+ return mark||null;
 }
 function archiveSpecialIssues(record,timeline){
  return timeline.flatMap((row,index)=>{const mark=archiveSpecialState(record,row);return mark?.status==='pending'?[{index,text:mark.reason||'需人工核對'}]:[]});
+}
+// Diagnostics are a separate review-only input, never a canonical import.
+function archiveSpecialDiagnosticPlan(record,timeline,diagnostic,now){
+ const target=diagnostic?.target?.cycleId||diagnostic?.cycleId;
+ const audit=diagnostic?.nativeFormatAudit;
+ if(target!==record.id||!audit||audit.schemaVersion!==1||!Array.isArray(audit.failures)||audit.failures.length>20000)
+  throw Error('診斷格式或輪迴 ID 不符；未修改任何正史');
+ const updates=Object.create(null),unmatched=[],already=[];
+ const normalize=t=>typeof t==='string'?t.replace(/\r\n?/g,'\n'):null;
+ for(const failure of audit.failures){
+  const source=failure?.sourceMessageId,dom=normalize(failure?.originalDomText);
+  if(!source||failure.sourceMarkerCount!==1||!dom||failure.role!=='ai'){unmatched.push(failure?.scanIndex??null);continue}
+  const candidates=timeline.filter(row=>archiveSpecialKey(row)&&((row.type==='event')===(failure.eventType==='event')));
+  const sourceMatches=candidates.filter(row=>row.entry.nativeSourceMessageId===source);
+  const matches=sourceMatches.length?sourceMatches:candidates.filter(row=>!row.entry.nativeSourceMessageId&&normalize(row.entry.text)===dom);
+  if(matches.length!==1){unmatched.push(failure.scanIndex??null);continue}
+  const row=matches[0],key=archiveSpecialKey(row),prior=archiveSpecialState(record,row);
+  const evidence='診斷 '+String(diagnostic.scanRunId||'無批次 ID')+'／來源 '+source+'／'+String(failure.reason||'格式驗收失敗');
+  if(prior){already.push(failure.scanIndex??null);continue}
+  updates[key]={status:'pending',reason:String(failure.reason||'原生格式驗收失敗'),source:'scanner-diagnostic',evidence:[evidence],updatedAt:now,resolvedAt:null,anchorText:row.entry.text,editedText:row.entry.text};
+ }
+ return {updates,unmatched,already};
+}
+async function archiveSpecialReadDiagnostic(record){
+ const input=document.createElement('input');input.type='file';input.accept='.json,application/json';
+ input.onchange=async()=>{
+  try{
+   const file=input.files?.[0];if(!file)return;
+   if(current()?.id!==record.id||tab!=='chat')throw Error('輪迴已切換，取消讀取');
+   const latest=current(),diagnostic=JSON.parse((await readBackupFile(file)).replace(/^\uFEFF/,''));
+   if(current()?.id!==latest.id)throw Error('輪迴已切換，取消讀取');
+   const plan=archiveSpecialDiagnosticPlan(latest,archiveStoryTimeline(latest),diagnostic,new Date().toISOString());
+   const count=Object.keys(plan.updates).length;
+   const summary='可對應既有訊息 '+count+' 則；已有人工狀態 '+plan.already.length+' 則；無法唯一核對 '+plan.unmatched.length+' 則。只新增藍點，不匯入或覆蓋任何正文。';
+   if(!count){alert(summary);return}
+   if(!confirm(summary+'\n確定新增藍點？'))return;
+   await put({...latest,specialReviews:archiveSpecialMerge(latest.specialReviews,plan.updates)});notify('已加入 '+count+' 則特殊訊息藍點');
+  }catch(e){alert('診斷讀取停止：'+String(e.message||e))}
+ };
+ input.click();
 }
 function archiveSpecialTools(record,row){
  const key=archiveSpecialKey(row);if(!key)return '';
@@ -1777,7 +1834,7 @@ function archiveAuditRefresh(r){
   archiveAuditRail(a);
 }
 
-function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages),galContext=archiveGalTimeContext(r.messages||[]);audit.specialIssues=archiveSpecialIssues(r,messages);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveTimeForensicsExport" class="btn small">🧭 匯出時間診斷 JSON（唯讀）</button><button id="archiveSortCurrentChat" class="btn small">🔧 修復已確認錯序（預覽＋備份）</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：只有同類時間發生倒流才標示。Gal AI 劇情時間（同回合「我／他」相同）、ChatGPT 原始＝手動、首次擷取、雲端接收按優先級辨識；不同類型不能直接比大小（略過並計數）。擷取與接收時間僅是低可信線索。已接事件不參與橘線比較。**版本更新只更新檢查邏輯，並不會自動整理以前已排錯的訊息；請先用「🧭 匯出時間診斷 JSON（唯讀）」找出原因。** 🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。🟢 綠色光點：原生掃描已證實「我按下自動繼續」，因此合法出現 Gal AI → Gal AI，不視為漏掉玩家發言；沒有完整證據的連續 Gal AI 仍畫紅線。🟥 深紅線：皮卡原句包含 made in heaven／做愛跳過，提示可能主動省略的劇情（不計為漏回合）。🔵 藍色光點：已標記的原生格式或特殊訊息，需人工核對；可在卡片上關閉或重新標記。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div>${archiveSkipPanelHtml(audit.skipIssues,'chat')}<div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r,galContext)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件，深紅線為疑似做愛跳過，藍點為待核對特殊訊息；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
+function renderChat(r){let messages=archiveStoryTimeline(r),audit=archiveCheckDialoguePairs(messages),galContext=archiveGalTimeContext(r.messages||[]);audit.specialIssues=archiveSpecialIssues(r,messages);$('tabBody').innerHTML=`<div class="sectionhead"><h3>對話紀錄 <span class="stat">（${messages.length} 則，含已接事件 ${messages.filter(x=>x.type==='event').length} 則）</span></h3><span class="note">左：Gal AI ／ 右：我</span></div><div class="archive-audit-bar"><button id="archiveAuditRun" class="btn small">🔎 檢查回合＋時間</button><button id="archiveSpecialDiagnostic" class="btn small">🔵 讀取特殊診斷（只標記）</button><button id="archiveTimeForensicsExport" class="btn small">🧭 匯出時間診斷 JSON（唯讀）</button><button id="archiveSortCurrentChat" class="btn small">🔧 修復已確認錯序（預覽＋備份）</button><span class="archive-audit-label">📨 已接事件計入訊息總數，但不參與一來一回檢查</span><span id="archiveAuditSummary" class="archive-audit-summary ${audit.issues.length?'warning':audit.timeIssues.length?'time-warning':''}">${archiveAuditText(audit)}</span><button id="archiveAuditToggle" class="btn small">${archiveAuditOpen?'收合':'查看'}異常（${archiveAuditTotal(audit)}）</button></div><p class="archive-audit-help">事件是獨立通知：事件 → 皮卡 → Gal AI 屬於正常流程，不畫紅線。已接事件可使用 ↑↓ 手動移動或按「時間」修改；依時間整理時會連事件一起校正。🔴 紅線：疑似漏回合；🟠 橘線：只有同類時間發生倒流才標示。Gal AI 劇情時間（同回合「我／他」相同）、ChatGPT 原始＝手動、首次擷取、雲端接收按優先級辨識；不同類型不能直接比大小（略過並計數）。擷取與接收時間僅是低可信線索。已接事件不參與橘線比較。**版本更新只更新檢查邏輯，並不會自動整理以前已排錯的訊息；請先用「🧭 匯出時間診斷 JSON（唯讀）」找出原因。** 🟡 黃色光點：已接事件在完整對話中的實際位置，可點選直接跳到該事件；未接事件不會出現。🟢 綠色光點：原生掃描已證實「我按下自動繼續」，因此合法出現 Gal AI → Gal AI，不視為漏掉玩家發言；沒有完整證據的連續 Gal AI 仍畫紅線。🟥 深紅線：皮卡原句包含 made in heaven／做愛跳過，提示可能主動省略的劇情（不計為漏回合）。🔵 藍色光點：已標記的原生格式或特殊訊息，需人工核對；可在卡片上關閉或重新標記。右側進度條可按住滑鼠拖動、點擊標記跳轉；不修改正史或時間。</p><div id="archiveAuditIssues" class="archive-audit-issues ${archiveAuditOpen?'':'hidden'}">${archiveAuditIssueList(audit)}</div>${archiveSkipPanelHtml(audit.skipIssues,'chat')}<div class="archive-chat-grid"><div class="chat" id="chat">${messages.length?messages.map((row,i)=>archiveStoryBubble(row,i,r,galContext)).join(''):'<div class="empty">還沒有對話，從下方新增第一則。</div>'}</div><div id="archiveAuditTrack" class="archive-audit-track" title="拖動快速捲動；紅線為回合異常，橘線為時間倒流，黃色光點為已接事件，深紅線為疑似做愛跳過，藍點為待核對特殊訊息；單擊標記跳轉" aria-label="可拖曳的完整對話檢查進度條"></div></div><div class="composer"><h3>新增對話</h3><div class="speaker"><button class="btn ${speaker==='ai'?'selected':''}" data-speaker="ai">Gal AI（左）</button><button class="btn ${speaker==='me'?'selected':''}" data-speaker="me">我（右）</button></div><label>對話內容（保留換行）</label><textarea id="messageInput" placeholder="輸入或貼上這一則完整對話…"></textarea>${archiveTimeInputHTML('messageSourceTime')}<div class="actions topsp"><button id="addMessage" class="btn primary">加入對話</button><button id="toggleBulk" class="btn">批次貼上對話</button></div><div id="bulkBox" class="hidden"><div class="divider"></div><h3>批次匯入</h3><p class="note">智慧辨識支援「我：／他：」標記、Gal AI 的日期／時間／狀態表開頭。直接貼整段聊天即可；<strong>沒有清楚分界時會標示待確認</strong>，不會假裝百分之百辨識成功。先按「智慧辨識並編輯」，逐則確認後再匯入。</p><textarea id="bulkInput" class="tall" placeholder="我：&#10;「今天有什麼甜點？」&#10;他：&#10;｜2026年…｜&#10;「有布丁。」"></textarea><div class="actions topsp"><button id="previewBulk" class="btn">智慧辨識並編輯</button><button id="appendBulk" class="btn primary">確認加入</button></div><div id="bulkPreview" class="note topsp" role="status"></div><div id="bulkSaveStatus" class="note topsp" role="status" aria-live="polite"></div><div id="bulkItems" class="smartpreview"></div></div></div>`;archiveAuditRail(audit)}
 // 智慧複製辨識：只有明確的訊息頭才視為可信的分界。
 // 日期狀態表可以定位 Gal AI 開頭，但無法單獨定位後續玩家發言，因此預覽允許手動拆分。
 let smartDraft=[],smartSource='';
@@ -2012,16 +2069,18 @@ if(b.id==='archiveAuditRun'){archiveAuditRefresh(r);notify('完整對話的回�
 if(b.id==='archiveAuditToggle'){archiveAuditOpen=!archiveAuditOpen;archiveAuditRefresh(r);return}
 if(b.id==='pilotAuditRun'){archivePilotTimeRefresh(r);notify('副駕駛聊天時間檢查完成（不檢查發言回合）');return}
 if(b.id==='pilotAuditToggle'){archivePilotTimeOpen=!archivePilotTimeOpen;archivePilotTimeRefresh(r);return}
+if(b.id==='archiveSpecialDiagnostic'){if(tab==='chat'&&r)archiveSpecialReadDiagnostic(r);return}
 if(b.dataset.specialKey!==undefined){
- if(tab!=='chat'||!r)return;
+ if(!['chat','events'].includes(tab)||!r)return;
  const key=b.dataset.specialKey,action=b.dataset.specialAction;
- if(!archiveStoryTimeline(r).some(row=>archiveSpecialKey(row)===key))return;
- const prior=r.specialReviews?.[key];
+ const row=archiveStoryTimeline(r).find(row=>archiveSpecialKey(row)===key);if(!row)return;
+ const prior=archiveSpecialState(r,row);
  if(action==='detail'){if(prior)alert('狀態：'+prior.status+'\n原因：'+prior.reason+'\n證據：'+(prior.evidence||[]).join('\n')+'\n更新時間：'+prior.updatedAt);return}
  if(action!=='resolve'&&action!=='mark')return;
  let reason='';
  if(action==='mark'){const answer=prompt('請輸入特殊訊息原因（不修改正文）',prior?.reason||'原生格式／官方複製異常');if(answer===null||!answer.trim())return;reason=answer.trim();}
  const mark=archiveSpecialNext(prior,action,reason,new Date().toISOString());if(!mark)return;
+ mark.anchorText=prior?.anchorText??row.entry.text;mark.editedText=row.entry.text;
  const updated={...r,specialReviews:archiveSpecialMerge(r.specialReviews,{[key]:mark})};
  await put(updated);notify(action==='resolve'?'藍點已關閉，證據仍保留':'已標為特殊訊息');return;
 }
@@ -2389,7 +2448,7 @@ $('downloadSite').onclick=async()=>{
   const cssLink='<link rel="stylesheet" href="./'+cssAsset+'">';
   if(!html.includes(cssLink))throw Error('獨立網站找不到健康中心 CSS 連結');
   html=html.replace(cssLink,'<style>'+cssText+'</style>');
-  downloadText('輪迴檔案館_V5.67_網站.html',html);
+  downloadText('輪迴檔案館_V5.68_網站.html',html);
   notify('已下載包含交接稿與雲端同步程式的獨立 HTML；私人資料與附件請另外下載完整 .gab 備份');
  }catch(err){alert('下載完整網站失敗：'+String(err?.message||err))}
 };
@@ -4651,7 +4710,7 @@ async function pushCloud(){
     if(remote&&String(remote.updatedAt||'')>=String(r.updatedAt||'')){olderSkipped++;continue}
     const ref=root.collection('cycles').doc(r.id);
     const oldParts=await ref.collection('parts').get();
-    if(remote){if(oldParts.size!==remote.partCount)throw Error('藍點合併前發現雲端片段數量不一致');const old=JSON.parse(oldParts.docs.slice().sort((a,b)=>Number(a.id)-Number(b.id)).map(d=>d.data().data).join(''));if(old.id!==r.id)throw Error('藍點合併前輪迴 ID 不符');if(old.specialReviews||r.specialReviews)r.specialReviews=archiveSpecialMerge(old.specialReviews,r.specialReviews);}
+    if(remote){if(oldParts.size!==remote.partCount)throw Error('藍點合併前發現雲端片段數量不一致');const old=JSON.parse(oldParts.docs.slice().sort((a,b)=>Number(a.id)-Number(b.id)).map(d=>d.data().data).join(''));if(old.id!==r.id)throw Error('藍點合併前輪迴 ID 不符');if(old.specialReviews||r.specialReviews){r.specialReviews=archiveSpecialMerge(old.specialReviews,r.specialReviews);await operation('readwrite',{type:'put',item:r});}}
     const parts=cloudParts(JSON.stringify(r));
     let batch=cloudDb.batch(),ops=0;
     const flushBatch=async()=>{if(ops===350){await batch.commit();batch=cloudDb.batch();ops=0}};
@@ -4715,7 +4774,7 @@ async function pullCloud(){
       if(snap.size!==meta.partCount)throw Error(root.label+'：輪迴 '+d.id+' 的雲端片段數量不一致，已停止合併');
       const item=JSON.parse(snap.docs.map(x=>x.data().data).join(''));
       if(item.id!==d.id)throw Error(root.label+'：輪迴 ID 不符，已停止');
-      if(existing?.specialReviews||item.specialReviews)item.specialReviews=archiveSpecialMerge(existing?.specialReviews,item.specialReviews);
+      if(existing?.specialReviews||item.specialReviews){const merged=archiveSpecialMerge(existing?.specialReviews,item.specialReviews);if(JSON.stringify(merged)!==JSON.stringify(archiveSpecialMerge(item.specialReviews)))item.updatedAt=new Date().toISOString();item.specialReviews=merged;}
       await operation('readwrite',{type:'put',item});
       cycleMap.set(item.id,item);
       cyclesAdded++;
