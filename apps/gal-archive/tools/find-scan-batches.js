@@ -85,8 +85,8 @@ function findScanBatches(root=DEFAULT,{cycle='',world='',scope='',limit=30}={}){
     if(modern){
      for(const [name,file] of Object.entries(d.files||{})){
       const local=path.join(path.dirname(p),path.basename(file));
-      if(fs.existsSync(file)&&fs.statSync(file).isFile())batch.files[name]=file;
-      else if(fs.existsSync(local)&&fs.statSync(local).isFile())batch.files[name]=local;
+      if(fs.existsSync(local)&&fs.statSync(local).isFile())batch.files[name]=local;
+      else if(fs.existsSync(file)&&fs.statSync(file).isFile())batch.files[name]=file;
      }
     }else{
      for(const [name,file] of Object.entries(d.files||{}))
