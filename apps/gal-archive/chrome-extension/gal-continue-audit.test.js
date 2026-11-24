@@ -148,14 +148,14 @@ test('two extra native user markers preserve refusal and reveal detailed explana
 });
 
 
-function source(id,text){return {id,sender:'user',kind:'ordinary-message',
+function userNative(id,text){return {id,sender:'user',kind:'ordinary-message',
  nativeReason:'available',nativeText:text,nativeMessageId:id,nativeSender:'user',
  hasText:true,hasMedia:false};}
 function twoNativeSourcesFixture(){
  const x=fixture(),links=new Map(),indices=x.rows.flatMap((row,index)=>row.role==='me'?[index]:[]);
  for(let j=0;j<indices.length;j++){
   const index=indices[j],id='u-'+j;
-  x.rows[index].formatSource={playerSources:[source(id,'內容'+j)],
+  x.rows[index].formatSource={playerSources:[userNative(id,'內容'+j)],
    playerGapHasMedia:false};
   x.rows[index].text='內容'+j;
   x.history.set(id,'ordinary-message');x.senders.set(id,'user');
@@ -209,7 +209,7 @@ test('two separate double-source player turns explain exactly two surplus WHIF u
  const {x,links,special}=twoNativeSourcesFixture();
  const another=x.rows.findIndex((row,index)=>row.role==='me'&&index>special);
  const secondId='u-second-extra',firstId=[...links].find(([,indices])=>indices.has(another))[0];
- x.rows[another].formatSource.playerSources=[source(firstId,'甲'),source(secondId,'乙')];
+ x.rows[another].formatSource.playerSources=[source(firstId,'甲'),userNative(secondId,'乙')];
  x.rows[another].text='甲乙';
  x.history.set(secondId,'ordinary-message');x.senders.set(secondId,'user');
  links.set(secondId,new Set([another]));
