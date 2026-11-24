@@ -1607,6 +1607,7 @@ test('V0.9.02 raw DOM code proof is independent of serialized bold and restores 
  const opts={source:'whif-message-content',codeBlocks:[rawHud],statusText:rawHud};
  assert.equal(core.compareNativeParagraphs(visible,wrap,{...opts,opening:true}).text,wrap);
  assert.equal(core.compareNativeParagraphs(visible,native,opts).text,native);
+ assert.equal(core.compareNativeParagraphs(visible.replace(/^\*\*(.*?)\*\*/,'$1'),wrap,{...opts,codeBlocks:[hud]}).text,null);
  assert.equal(core.parseGameTime(native).civil,'3000/01/01 08:00');
  for(const bad of [native.replace('報酬二','報酬三'),native.replace('08:00','08:01'),native.replace('種族：{k}','種族：其他'),native.replace('**測試委託**','測試委託'),native.replace(prefix,'{{user|role}}\n'),native.replace(prefix,'{{img:foo}}\n'),native.replace(prefix,'{{甲}}{{乙}}\n'),native.replace(prefix,'正文\n'+prefix),native.replace(prefix,'{{甲}}\n{{乙}}\n'),native.replace(f+'\n'+hud,f+'js\n'+hud)])assert.equal(core.compareNativeParagraphs(visible,bad,opts).text,null);
  for(const bad of [{...opts,codeBlocks:[]},{...opts,codeBlocks:[rawHud.replace('10/10','9/10')]},{...opts,source:'unknown'},{...opts,event:true}])assert.equal(core.compareNativeParagraphs(visible,native,bad).text,null);

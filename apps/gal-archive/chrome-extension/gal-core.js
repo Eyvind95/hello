@@ -91,8 +91,9 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
    // DOM textContent and serialized Markdown are distinct projections.
    // Prove the block with DOM text, then independently consume the
    // serialized form, which can legitimately restore heading bold.
-   const variants=[...new Set([raw,stripped])];
-   const domProven=variants.some(v=>compact(v)===compact(String(proof[i]??'')));
+   const domKey=compact(String(proof[i]??''));
+   const domProven=[raw,stripped].some(v=>compact(v)===domKey);
+   const variants=[...new Set([raw,...(compact(stripped)===domKey?[stripped]:[])])];
    if(!domProven||!take(original.slice(sourceOffset,b.index))){matched=false;break}
    let consumed=false;
    for(const v of variants){
@@ -1645,5 +1646,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseAdventureClock,adventureClockEvidence,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.9.1'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseAdventureClock,adventureClockEvidence,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.9.2'};
 })();
