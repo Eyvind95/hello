@@ -1339,7 +1339,7 @@ function anchorFastPlan(sample,decision,targetMs,oldY,oldHeight,previous,visited
  // If the desired bottom-relative position is not loaded, request older
  // history immediately at the top, not by scrolling every intervening row.
  if(distance!==null&&estimated<0&&!(decision.max!==null&&targetMs!==null&&decision.max<targetMs)){
-  if(sample.top>2||!previous||previous.height!==sample.height)return at(0,'preload-history');
+  return at(0,'preload-history');
  }
  if(estimated!==null&&estimated>=0&&(!previous||previous.height!==sample.height||previous.clientHeight!==sample.clientHeight)&&fresh(estimated))
   return at(estimated,'bottom-relative-jump');
