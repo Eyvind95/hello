@@ -466,3 +466,25 @@ V0.8.37 — 第5輪迴「耀斑」玩家來源差額唯讀鑑識（2026/11/24）
 - 自動繼續驗收保持原本三處逐筆驗證；新增 autoContinueAudit.playerSourceAudit（並於 failed/success 診斷頂層複製）辨別「一則玩家列含多來源」及「觀察到、但無法配對到玩家列的來源」。原生來源差額、同一 user ID 對應多列及來源未經歷史觀察仍拒絕正式匯出，不以總數相等或不等直接推定劇情內容。
 - 原本 V0.8.36 失敗診斷沒有保存 user ID→玩家區間 mapping；可用 node apps/gal-archive/tools/inspect-player-surplus.js <診斷.json> 判斷既有證據是否足夠。僅有 1313/1311 總數無法反推出兩筆位置。更新 V0.8.37 前先保存既有的不可匯入 checkpoint 和舊診斷；不能因部署新程式就將半份正史當成完整 JSON。
 - 禁止自動重掃、強制匯入或操作 Firebase。更新擴充功能會重新載入 content script；未保全前不要更新。對同一掃描來源仍需完成一次正式原生逐筆驗證後才可發布正史。
+
+
+【V0.8.38｜下載分流、失敗保全及指定位置測試】
+- 更新前重要提醒：若舊版 V0.8.37 在 WHIF 第9周目已讀完382則但驗證失敗，請先在原 WHIF 分頁按「🧷 保全已讀進度（不可匯入）」下載當次記憶；升級擴充功能會替換 content script，原始掃描記憶可能消失。V0.8.38 無法替已關閉的舊視窗重建382則原文。
+- V0.8.38 新的完整掃描從開始即固定：Downloads/GalArchive/第09輪迴/完整掃描/YYYY-MM-DD_HH-mm-ss_<scanRunId>/
+  已下載的檔案為「掃描狀態.json」（同批覆寫）、「掃描診斷.json」，若完成核驗才有「原生正史.json」，未通過則保留「未驗證掃描資料.json」。每批獨立 UUID 資料夾，不再依賴 (1)、(2) 命名。
+- 三則測試、事件三則測試、指定位置測試各有獨立分類和固定批次；自訂輪迴名稱先轉為 Windows 安全名稱，並附上輪迴 ID 防止撞名。
+- 「未驗證掃描資料.json」包含原文、DOM文字、原生來源ID、玩家來源、時間、事件資訊，format: gal-ai-unverified-scan / importable:false，無權匯入檔案館或同步 Firebase。
+- 完整性驗證失敗時診斷增加 errorContexts，包括錯誤所在列及前後3列、逐欄的完整 DOM/native 文本、第一差異、原生時間與分類證據及是否連鎖。
+- 指定位置測試：從前次掃描記憶輸入0-based scanIndex，或依最近一次出錯的索引、當前可核對的 WHIF 原生 source ID 定位。找不到原生對應時拒絕，絕不把畫面第 N 個元素當作整輪第 N 則；只輸出局部7列，不冒充完整正史。
+- 「📁 顯示最近下載資料夾」透過 Chrome downloads.show 選取已確認下載檔案；「📋 複製批次路徑」優先使用 Chrome 回報的真實 Windows 位置。
+- 若 Chrome 在掃描逾時、分頁中斷時仍可連到原 WHIF 文件，背景程序會要求當前已讀資料的緊急唯讀保全；若文件已關閉，未讀內容不會被猜測生成，狀態檔會明確記錄未取得的資料。
+- 舊版所有 failed/completed/running 狀態檔仍可保留；不會清除歷史下載。
+- Codex/操作端找最新批次： 
+  node apps/gal-archive/tools/find-scan-batches.js --cycle 第9周目 --scope full
+  或指定：--root "C:\Users\izawa\Downloads\GalArchive"
+  回傳實際存在的 statusPath、batchFolder、files，以及 scanRunId、startedAt、endedAt、reason。新流程不要再以舊 failed_YYYY-MM-DD (2).json 檔名找結果。
+- 下載完成訊息只在 Chrome downloads.search 返回 complete 及實際 filename 時才可宣稱成功。完整掃描結束仍必須驗證原生時間、排序、接取事件、原生段落與所有來源 ID。
+
+【V0.8.38 已知限制】
+- 如果舊版掃描已經結束而且原頁關閉，只有舊狀態與舊診斷並不能恢復整份原文；須先從舊版 WHIF 面板下載保全，才可避免再次掃描。
+- 檔案館網站內獨立的「缺漏診斷」不是 WHIF Chrome 掃描工作；網站直接下載的診斷檔受到一般網頁下載權限限制，不會自動挪入 Chrome 專屬掃描批次資料夾。Chrome 的 batchPath 已預留 missing 類型，後續可接網站匯出流程，但不得宣稱已實際整合。
