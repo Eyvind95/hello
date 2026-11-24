@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.8.34",
-  "version_name": "V0.8.34 測試版",
-  "description": "輪迴檔案館 V0.8.34：完整掃描 4 小時背景期限、過期完成結果核對救援與不可匯入的已讀進度保全，維持嚴格時間和事件驗證。",
+  "version": "0.8.35",
+  "version_name": "V0.8.35 測試版",
+  "description": "輪迴檔案館 V0.8.35：原生全文唯一來源驗證後才還原無時間 AI 的隱藏模板、無語言標籤圍欄與尾圖；保留失敗時事件核對，支援4小時長掃描。",
   "permissions": [
     "storage",
     "activeTab",
