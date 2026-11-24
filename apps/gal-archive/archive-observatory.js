@@ -151,14 +151,15 @@ function renderHealth(){
  }).join('');
  const issueItems=issues.slice(0,settings.issueLimit).map(x=>{
   const sign=x.level==='error'?'🔴':x.level==='warning'?'🟠':'🔹';
-  const jumpable=x.section!=='cycle'&&Number.isInteger(x.rowIndex);
+  const jumpable=x.section==='opening'||x.section==='cycle'||Number.isInteger(x.rowIndex);
   return '<div class="ob-item ob-issue" data-level="'+esc(x.level)+'">'+
    '<div class="ob-row"><strong>'+sign+' '+esc(x.cycleTitle)+'</strong>'+
    '<span class="ob-small">'+esc(x.code)+'</span></div>'+
    '<div class="ob-snippet">'+esc(x.description)+'</div>'+
    (jumpable?'<div class="ob-actions"><button type="button" class="btn small"'+
     ' data-ob-jump="'+esc(x.cycleId)+'" data-ob-section="'+esc(x.section)+
-    '" data-ob-index="'+x.rowIndex+'">查看原文位置</button></div>':'')+'</div>';
+    '" data-ob-index="'+(Number.isInteger(x.rowIndex)?x.rowIndex:-1)+'">'+
+    (x.section==='opening'?'查看輪迴開場':x.section==='cycle'?'查看輪迴':'查看原文位置')+'</button></div>':'')+'</div>';
  }).join('');
  $('obResults').innerHTML=statCards(count)+
   '<p class="ob-note">沿用現有回合紅線、時間橘線與疑似省略檢查，增加重複 ID、空白內容、事件定位及時間標記摘要。所有異常都只是待核對線索，不會自動修改資料。</p>'+
