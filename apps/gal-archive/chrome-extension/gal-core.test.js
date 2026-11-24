@@ -1465,3 +1465,64 @@ test('V0.8.46 unmatched literal fence is preserved exactly',()=>{
  for(const wrong of [native+'\n'+fence,native.replace('19:10','19:11'),native.replace('8%','9%'),native.replace('正文。','不符。'),native.replace('「通報。」','「通報。'),native.replace('{{測試上下文}}','{{user}}')])assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
  assert.equal(core.compareNativeParagraphs(dom.slice(fence.length+1),native,opts).text,null);
 });
+
+
+test('clockless trending header proves one hidden context and one bare leading fence pair only',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const header='｜測試基地・內部網路｜\n｜🔥熱搜榜・即時更新｜';
+ const body=['','`系統提示`','','---','','**1. 測試標題**','','> 引用內容','',fence,'測試程式碼',fence,'','{{visible-template}}'].join('\n');
+ const dom=header+body;
+ const native='{{系統顯示熱搜介面｜測試上下文}}\n'+fence+'\n'+header+'\n'+fence+body;
+ const opts={source:'whif-message-content',verifiedUntimedNative:true};
+ const v=core.compareNativeParagraphs(dom,native,opts);
+ assert.equal(v.comparison.prefixedHudProjection.legacyBoundary,'untimed-trending-header');
+ assert.equal(v.comparison.clockEqual,true);
+ assert.equal(v.text,dom);
+ assert.equal(parseGameTime(v.text),null);
+ const row={role:'ai',text:dom,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:'synthetic-trending',scannedText:dom,text:native}}};
+ const prefix=[{role:'ai',text:'輪迴開場測試正文。'},{role:'me',text:'玩家測試'}];
+ const suffix=[{role:'me',text:'下一回合'},{role:'ai',text:'｜2026年8月22日｜\n｜🕒18:45｜\n正常回覆。'}];
+ const checked=validate([...prefix,row,...suffix]);
+ assert.equal(checked.ok,true,JSON.stringify(checked.errors));
+ assert.equal(checked.messages[0].gameTime,null);
+ assert.equal(checked.messages[1].gameTime,null);
+ assert.equal(checked.messages[2].gameTime,'2026-08-22T10:45:00.000Z');
+ for(const wrong of [native+'額外文字',native.replace('熱搜榜・即時更新','熱搜榜・其他更新'),native.replace('系統顯示熱搜介面','其他模板'),native.replace(fence,fence+'js'),native.replace(fence,''),native.replace('**1.','1.'),native.replace('> 引用','引用'),native.replace('{{visible-template}}',''),native.replace('測試程式碼','其他程式碼'),native.replace('{{系統顯示熱搜介面｜測試上下文}}','{{user|role}}')]){
+  assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
+ }
+ assert.equal(core.compareNativeParagraphs(dom,native,{source:'whif-message-content'}).text,null);
+ assert.equal(validate([...prefix,{...row,formatSource:{nativeReply:{...row.formatSource.nativeReply,markerCount:2}}},...suffix]).ok,false);
+});
+
+
+test('V0.8.47 quote-wrapped trending and two separate fenced blocks require complete matching evidence',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const news='【基甫納熱搜】\n'+Array.from({length:5},(_,i)=>
+  '#'+(i+1)+' 測試「標題」內容\n🔥熱度：1,000\n💬匿名留言：測試「留言」內容').join('\n\n');
+ const visible=news.replaceAll('「標題」','\n「標題」\n').replaceAll('「留言」','\n「留言」\n');
+ const hud='｜2026年8月27日（星期四）｜\n｜🕒06:22｜晴朗｜\n｜📍測試地點｜\n｜🍿暴走值：0｜';
+ const body='\n\n普通正文。\n\n> 保留引用\n\n**粗體**';
+ const dom=visible+'\n'+hud+body;
+ const native=fence+'\n'+news+'\n'+fence+'\n\n{{測試上下文}}\n\n'+fence+'\n'+hud+'\n'+fence+body;
+ const iso='2026-08-26T22:22:00.000Z';
+ const options={source:'whif-message-content',statusText:hud,codeBlocks:[visible,hud]};
+ assert.equal(parseGameTime(dom).iso,iso);
+ assert.equal(parseGameTime(native).iso,iso);
+ const result=core.compareNativeParagraphs(dom,native,options);
+ assert.equal(result.comparison.prefixedHudProjection.legacyBoundary,'dual-fenced-news-hud');
+ assert.equal(result.text,news+'\n\n'+hud+body);
+ assert.equal(result.comparison.clockEqual,true);
+ for(const wrong of [native+'新增正文',native.replace('06:22','06:23'),native.replace('1,000','1,001'),
+  native.replace(fence,fence+'js'),native.replace('{{測試上下文}}','{{user|role}}'),
+  native.replace('> 保留引用','保留引用'),native.replace('**粗體**','粗體')]){
+  assert.equal(core.compareNativeParagraphs(dom,wrong,options).text,null);
+ }
+ for(const wrong of [{...options,codeBlocks:[hud]},{...options,codeBlocks:[hud,visible]},
+  {...options,statusText:hud.replace('0｜','1｜')}]){
+  assert.equal(core.compareNativeParagraphs(dom,native,wrong).text,null);
+ }
+ const validated=validate([{role:'ai',text:'輪迴開場測試正文。'},{role:'me',text:'玩家測試'},{role:'ai',text:dom}]);
+ assert.equal(validated.ok,true);assert.equal(validated.messages[0].gameTime,iso);assert.equal(validated.messages[1].gameTime,iso);
+ assert.equal(parseGameTime(visible+'\n\n任意額外敘述\n'+hud),null);
+ assert.equal(parseGameTime(visible.replace('#3 ','#8 ')+'\n'+hud),null);
+});

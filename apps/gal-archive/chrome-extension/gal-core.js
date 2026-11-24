@@ -18,21 +18,55 @@ function hasHudClockEvidence(input){
 // Strict alternative to the historical *** separator: the prefix must be a
 // complete numbered news list, with each item carrying its heat and comment.
 function structuredNewsPrefix(prefix){
- const rows=prefix.split('\n').map(line=>line.trim()).filter(Boolean);
+ const fence=String.fromCharCode(96).repeat(3);
+ let rows=prefix.split('\n').map(line=>line.trim());
+ while(rows.at(-1)==='')rows.pop();
+ const fenced=rows[0]===fence;
+ if(fenced)rows.shift();
  if(rows.shift()!=='【基甫納熱搜】')return false;
- if(/^\x60{3}$/u.test(rows.at(-1)||''))rows.pop();
- if(/^\{\{[^{}\n]{1,200}\}\}$/u.test(rows.at(-1)||'')){
-  if(/^\{\{\s*(?:user|char|character|img|image)(?:\s*[:|=}]|\s*$)/iu.test(rows.at(-1)))return false;
-  rows.pop();
+ const contextOK=s=>/^\{\{[^{}\n]{1,200}\}\}$/u.test(s||'')&&
+  !/^\{\{\s*(?:user|char|character|img|image)(?:\s*[:|=}]|\s*$)/iu.test(s);
+ if(fenced){
+  const close=rows.indexOf(fence);
+  if(close<0)return false;
+  const suffix=rows.slice(close+1).filter(Boolean);
+  if(!(suffix.length===1&&suffix[0]===fence)&&
+     !(suffix.length===2&&contextOK(suffix[0])&&suffix[1]===fence))return false;
+  rows=rows.slice(0,close);
+ }else{
+  while(rows.at(-1)==='')rows.pop();
+  if(rows.at(-1)===fence)rows.pop();
+  while(rows.at(-1)==='')rows.pop();
+  if(contextOK(rows.at(-1)))rows.pop();
  }
- if(rows.length<6||rows.length%3!==0)return false;
- for(let i=0;i<rows.length;i+=3){
-  const heading=rows[i].match(/^(?:\*{2})?#(\d+)[ \t]+.+$/u);
-  if(!heading||+heading[1]!==i/3+1||
-     !/^(?:\*{2})?🔥(?:\uFE0F)?熱度[：:]\s*[\d,]+(?:\*{2})?$/u.test(rows[i+1])||
-     !/^(?:\*{2})?💬(?:\uFE0F)?匿名留言[：:]\s*\S/u.test(rows[i+2]))return false;
+ const heading=/^(?:\*{2})?#(\d+)[ \t]+.+$/u;
+ const heat=/^(?:\*{2})?🔥(?:\uFE0F)?熱度[：:]\s*[\d,]+(?:\*{2})?$/u;
+ const comment=/^(?:\*{2})?💬(?:\uFE0F)?匿名留言[：:]\s*\S/u;
+ const boundary=s=>!s||/^(?:\*{2})?#\d+|^(?:\*{2})?[🔥💬]|^[｜|│]|^\x60{3}|^\{\{|^【|^>/u.test(s);
+ let pos=0,n=0;
+ const skip=()=>{while(rows[pos]==='')pos++};
+ // Only adjacent balanced Chinese quote wrapping may extend these fields.
+ const take=pattern=>{
+  let line=rows[pos];
+  if(!line||!pattern.test(line))return null;
+  pos++;
+  while(/^「[^「」\n]+」$/u.test(rows[pos]||'')){
+   line+=rows[pos++];
+   if(!boundary(rows[pos])&&!/^「[^「」\n]+」$/u.test(rows[pos]))line+=rows[pos++];
+  }
+  return line;
+ };
+ skip();
+ while(pos<rows.length){
+  const h=take(heading);
+  if(!h||+h.match(heading)[1]!==++n)return false;
+  skip();
+  if(!heat.test(rows[pos++]||''))return false;
+  skip();
+  if(!take(comment))return false;
+  skip();
  }
- return true;
+ return n>=2;
 }
 function parseGameTime(input){
   let lines=clean(input).split('\n');
@@ -44,7 +78,8 @@ function parseGameTime(input){
   let head=lines.slice(0,18).join('\n').slice(0,1600);
   // Recognized notification/news headers may precede a real HUD by many
   // lines. Extend only for a unique consecutive date/time/location header.
-  if(/^【(?:終端|基甫納熱搜)】$/u.test(lines[0]?.trim()||'')){
+  const fencedNews=lines[0]?.trim()===String.fromCharCode(96).repeat(3)&&lines[1]?.trim()==='【基甫納熱搜】';
+  if(fencedNews||/^【(?:終端|基甫納熱搜)】$/u.test(lines[0]?.trim()||'')){
    const candidates=[];
    for(let i=1;i<Math.min(lines.length-2,48);i++){
     if(!/^[｜|│]\s*\d{4}(?:年|[-/])/u.test(lines[i].trim())||
@@ -52,6 +87,7 @@ function parseGameTime(input){
        !/^[｜|│]\s*📍/u.test(lines[i+2].trim()))continue;
     const prefix=lines.slice(0,i).join('\n');
     if(prefix.length>4000)continue;
+    if(fencedNews&&!structuredNewsPrefix(prefix))continue;
     if(lines[0].trim()==='【基甫納熱搜】'&&
        !/(?:^|\n)[ \t]*\*{3}[ \t]*(?:\n\s*\{\{[^{}\n]{1,200}\}\})?(?:\n\s*\x60{3})?\s*$/u.test(prefix)&&
        !structuredNewsPrefix(prefix))continue;
@@ -1253,13 +1289,75 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    prefixedHudProjection={comparableText:scanned,omittedQuotePairs:omitted/2,provenEntireText:true,legacyBoundary:kind};
   }
  }
+ // A legacy clockless trending panel has its own two-line fenced header,
+ // not a dated HUD. Prove the exact leading hidden context and rendered
+ // header, leaving every subsequent marker and paragraph untouched.
+ if(options.verifiedUntimedNative===true&&options.source==='whif-message-content'&&
+    !options.event&&!options.opening&&!parseGameTime(scanned)&&!parseGameTime(original)&&
+    !hasHudClockEvidence(scanned)&&!hasHudClockEvidence(original)&&
+    !isExplicitUnknownGameTime(scanned)&&!isExplicitUnknownGameTime(original)&&
+    !prefixedHudProjection&&unspaced(scanned)!==unspaced(text)){
+  const panel=original.match(/^(\{\{系統顯示熱搜介面(?:｜[^{}\n]{1,160})?\}\})[ \t]*\n(?:[ \t]*\n)*\x60{3}[ \t]*\n([｜|│][^｜|│\n]{1,120}・內部網路[｜|│])\n([｜|│]🔥(?:\uFE0F)?熱搜榜・即時更新[｜|│])\n\x60{3}[ \t]*(?=\n|$)/u);
+  if(panel&&!scanned.includes(panel[1])){
+   const header=panel[2]+'\n'+panel[3];
+   const visible=scanned.split('\n');
+   const tail=original.slice(panel[0].length);
+   const candidate=header+tail;
+   if(tail.trim()&&unspaced(visible.slice(0,2).join('\n'))===unspaced(header)&&
+      unspaced(candidate)===unspaced(scanned)&&!parseGameTime(candidate)&&
+      !hasHudClockEvidence(candidate)){
+    markers.length=0;
+    markers.push({kind:'verified-untimed-trending-context',tokens:1,nonWhitespaceChars:count(panel[1])},
+     {kind:'verified-untimed-trending-header-fences',tokens:2,nonWhitespaceChars:6});
+    text=candidate;
+    prefixedHudProjection={comparableText:scanned,omittedQuotePairs:0,provenEntireText:true,untimed:true,legacyBoundary:'untimed-trending-header'};
+   }
+  }
+ }
+ // A rendered news panel followed by a separately fenced HUD has a
+ // distinct proof contract: generic projections cannot erase its wrappers.
+ const dualNewsCandidate=!options.opening&&!options.event&&
+  options.source==='whif-message-content'&&/^【基甫納熱搜】(?:\n|$)/u.test(scanned)&&
+  /^\x60{3}[^\n]*\n【基甫納熱搜】(?:\n|$)/u.test(original)&&
+  (original.match(/^\x60{3}[^\n]*$/gm)||[]).length>=3&&hasHudClockEvidence(original);
+ let dualNewsProven=false;
+ if(dualNewsCandidate&&(options.codeBlocks||[]).length===2){
+  const clock=parseGameTime(scanned)?.iso;
+  const first=original.match(statusFence);
+  if(clock&&clock===parseGameTime(original)?.iso&&first&&
+     /^\x60{3}[ \t]*\n/u.test(original)&&/^【基甫納熱搜】(?:\n|$)/u.test(first[1])){
+   const mid=original.slice(first[0].length).match(/^\s*(\{\{([^{}\n]{1,200})\}\})[ \t]*\n\s*/u);
+   if(mid&&!/^(?:user|char|character|img|image)(?:\s*[:|=}]|\s*$)/iu.test(mid[2].trim())&&
+      !scanned.includes(mid[1])){
+    const rest=original.slice(first[0].length+mid[0].length),second=rest.match(statusFence);
+    const newsKey=unspaced(first[1]);
+    const lines=scanned.split('\n');
+    const dateIndex=lines.findIndex(line=>/^[｜|│]\s*\d{4}(?:年|[-/])/u.test(line.trim()));
+    if(second&&/^\x60{3}[ \t]*\n/u.test(rest)&&statusKey&&unspaced(second[1])===statusKey&&
+       unspaced(options.codeBlocks[0])===newsKey&&unspaced(options.codeBlocks[1])===statusKey&&
+       dateIndex>0&&unspaced(lines.slice(0,dateIndex).join('\n'))===newsKey&&
+       structuredNewsPrefix(lines.slice(0,dateIndex).join('\n'))&&
+       parseGameTime(second[1])?.iso===clock){
+     const candidate=first[1]+'\n\n'+second[1]+'\n\n'+rest.slice(second[0].length).trimStart();
+     if(unspaced(candidate)===unspaced(scanned)&&parseGameTime(candidate)?.iso===clock){
+      markers.length=0;
+      markers.push({kind:'verified-dual-news-hud-fences',tokens:4,nonWhitespaceChars:12},
+       {kind:'verified-dual-news-hud-context',tokens:1,nonWhitespaceChars:count(mid[1])});
+      text=candidate;
+      dualNewsProven=true;
+      prefixedHudProjection={comparableText:scanned,omittedQuotePairs:0,provenEntireText:true,legacyBoundary:'dual-fenced-news-hud'};
+     }
+    }
+   }
+  }
+ }
  const comparableText=prefixedHudProjection?.comparableText??timedCompositeProjection?.comparableText??eventPostStatusProjection?.comparableText??
   (untimedCombinedProjection?.comparableText??
   (openingQuoteProjection?.comparableText??
    (legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text))));
  const scanChars=[...unspaced(scanned)],nativeChars=[...unspaced(comparableText)];
  const whitespaceOnlyEqual=unspaced(scanned)===unspaced(original);
- const contentEqual=scanChars.join('')===nativeChars.join('');
+ const contentEqual=(!dualNewsCandidate||dualNewsProven)&&scanChars.join('')===nativeChars.join('');
  const clock=parseGameTime(scanned)?.iso;
  const nativeClock=parseGameTime(text)?.iso;
  // An ordinary AI reply may have an explicitly unknown date and time. Both
@@ -1411,5 +1509,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.46'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.47'};
 })();
