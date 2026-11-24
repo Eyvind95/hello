@@ -32,7 +32,7 @@ function example(){
    events:[]}
  ];
 }
-function adapt(records){
+function adapt(records,cycleComparator){
  const storyTimeline=r=>[
   ...r.messages.map((entry,index)=>({entry,index,type:'message'})),
   ...r.events.map((entry,index)=>({entry,index,type:'event'})).filter(x=>x.entry.status==='accepted')
@@ -48,7 +48,7 @@ function adapt(records){
  return core.build(records,{worlds:[
   {id:'sentinel',name:'《全員精神穩定，感情除外》'},
   {id:'adventure',name:'《身為冒險者就可以這樣那樣》'}],
-  storyTimeline,dialogueAudit,galTimeContext:()=>{
+  cycleComparator,storyTimeline,dialogueAudit,galTimeContext:()=>{
    const m=new Map();
    for(const r of records)for(const row of r.messages)if(row.gameTime)
     m.set(row,{domain:'story',ms:Date.parse(row.gameTime)});
@@ -65,6 +65,39 @@ test('all-cycle indexed timeline merges ONLY accepted events and remains read-on
  assert.ok(!index.entries.some(e=>e.preview.includes('未接支線')));
  assert.deepEqual(index.cycles.filter(c=>c.world==='sentinel').map(c=>c.number),[3,16]);
  assert.equal(JSON.stringify(records),before);
+});
+test('timeline follows the exact existing sidebar comparator for new-to-old, old-to-new, latest-updated and Chinese numerals',()=>{
+ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+ // Verify against the REAL sidebar implementation so the two cannot silently diverge.
+ const fnNames=['cycleOrdinalFromText','cycleOrdinal','archiveCompareCycleList'];
+ const implementations=fnNames.map(name=>{
+   const start=html.indexOf('function '+name+'(');
+   assert.ok(start>=0,name+' exists in sidebar');
+   const match=html.slice(start).match(/^function [^(]+\([^)]*\)\{[\s\S]*?\n\}/);
+   assert.ok(match,name+' function body is readable');
+   return match[0];
+ }).join('\n');
+ const comparatorFor=mode=>new Function('cycleSortMode',
+   implementations+'\nreturn archiveCompareCycleList;')(mode);
+ const records=example();
+ records[0].updatedAt='2026-11-24T10:00:00Z';
+ records[1].updatedAt='2026-11-23T10:00:00Z';
+ const chinese={...records[1],id:'cycle-17',title:'第十七輪迴',updatedAt:'2026-11-22T10:00:00Z',
+  messages:[{id:'s17-player',role:'me',text:'新輪迴'},{id:'s17-ai',role:'ai',text:'接續'}]};
+ records.push(chinese);
+ for(const [mode,want] of [
+   ['number-desc',['cycle-17','cycle-16','cycle-3']],
+   ['number-asc',['cycle-3','cycle-16','cycle-17']],
+   ['updated',['cycle-3','cycle-16','cycle-17']]
+ ]){
+  const comparator=comparatorFor(mode);
+  const rows=adapt(records,comparator);
+  const actual=rows.cycles.filter(c=>c.world==='sentinel').map(c=>c.id);
+  assert.deepEqual(actual,want,mode+' health and timeline must agree with sidebar');
+  const fromTimeline=core.timelineGroups(rows,{world:'sentinel'}).groups.map(g=>g.cycle.id);
+  assert.deepEqual(fromTimeline,want,mode+' timeline must use index order');
+  assert.equal(rows.cycles.at(-1).world,'adventure','worlds follow left world-tab order');
+ }
 });
 test('world and cycle filter remain separate from global story-time ordering',()=>{
  const index=adapt(example());
@@ -128,10 +161,13 @@ test('escape and script load integration: actual website includes both tools, sh
  assert.match(html,/id="archiveHealthOpen"/);
  assert.match(html,/id="archiveTimelineOpen"/);
  assert.match(html,/window\.ArchiveObservatoryBridge=/);
- assert.match(html,/<script src="\.\/archive-observatory-core\.js\?v=1"><\/script>/);
- assert.match(html,/<script src="\.\/archive-observatory\.js\?v=1"><\/script>/);
+ assert.match(html,/cycleComparator:\(a,b\)=>archiveCompareCycleList\(a,b\)/);
+ assert.match(js,/cycleComparator:bridge\.cycleComparator/);
+ assert.match(sw,/gal-archive-pwa-v98/);
+ assert.match(html,/<script src="\.\/archive-observatory-core\.js\?v=2"><\/script>/);
+ assert.match(html,/<script src="\.\/archive-observatory\.js\?v=2"><\/script>/);
  assert.match(html,/archive-observatory\.css\?v=1/);
- assert.match(html,/for\(const asset of \[.*'archive-observatory-core\.js\?v=1','archive-observatory\.js\?v=1'/);
+ assert.match(html,/for\(const asset of \[.*'archive-observatory-core\.js\?v=2','archive-observatory\.js\?v=2'/);
  assert.match(html,/cssAsset='archive-observatory\.css\?v=1'/);
  assert.match(sw,/archive-observatory-core\.js/);
  assert.match(sw,/archive-observatory\.js/);
