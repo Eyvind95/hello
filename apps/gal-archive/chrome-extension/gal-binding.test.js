@@ -40,8 +40,14 @@ test('explicitly refreshing binding updates target without starting scan',()=>{
  assert.match(match[1],/target=\{/);
  assert.doesNotMatch(match[1],/\bscan\s*\(/);
 });
-test('full and event preview scans verify binding before any page content scan',()=>{
- assert.match(source,/if\(managed\)\{\s*await fetchCurrentBinding\(profile\);\s*const response=await chrome.runtime.sendMessage\(\{type:'gal-run-start'/);
- assert.match(source,/await fetchCurrentBinding\(profile\);\s*const response=await chrome.runtime.sendMessage\(\{type:'gal-run-start'/);
- assert.match(source,/run.batchFolder=response.status\?\.batchFolder;registered=true;activeRun=run;\s*const shot=snapshot\(null,'auto',false,true\)/);
+test('full and event preview scans check binding before reading the WHIF DOM',()=>{
+ const full=source.indexOf('async function scan(');
+ const guarded=source.indexOf('await fetchCurrentBinding(profile);',full);
+ const fullSnapshot=source.indexOf('const first=snapshot()',full);
+ assert.ok(full>=0&&guarded>full&&fullSnapshot>guarded);
+ const event=source.indexOf('async function eventThreeRowProbe(');
+ const bound=source.indexOf('await fetchCurrentBinding(profile);',event);
+ const registered=source.indexOf("type:'gal-run-start'",bound);
+ const snapshot=source.indexOf("const shot=snapshot(null,'auto',false,true)",registered);
+ assert.ok(event>=0&&bound>event&&registered>bound&&snapshot>registered);
 });
