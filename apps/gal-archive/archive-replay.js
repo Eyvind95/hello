@@ -72,7 +72,52 @@
   if((core.parseGameTime(raw)?.iso||null)!==(core.parseGameTime(row.domText)?.iso||null))return null;
   return {text:raw,comparison:{...result.comparison,contentEqual:true,clockEqual:true,renderProjection:{kind:'verified-whif-terminal-fence-tail-not-rendered',sourceId:id,probeRunId:probe.scanRunId,originalRun:cp.scanRunId,line:ta.line,tailLength:tail.length,nativeHash:hash(raw),domHash:hash(row.domText)},formatMarkers:[...(result.comparison.formatMarkers||[]),{kind:'verified-whif-terminal-fence-tail-not-rendered',tokens:1,nonWhitespaceChars:norm(tail).length}]}};
  }
- function replay(cp,diag,state,core,evidence,probes=[]){
+ // Independent source-only traversal: replay the saved viewport overlap chain, not the checkpoint order.
+ function verifyHistorySupplement(cp,proof,playerLabels,autoIndices){
+  if(!proof||proof.format!=='gal-ai-history-source-proof'||proof.version!==1||proof.forensicOnly!==true||proof.importable!==false||proof.complete!==true||proof.reason||proof.scope!=='independent-live-source-inventory'||proof.scanRunId===cp.scanRunId||!proof.scanRunId||proof.scannerVersion!==proof.coreVersion||!/^0\.9\.(?:1[4-9]|[2-9]\d|\d{3,})$/.test(proof.scannerVersion)||proof.source?.url!==cp.source.url)return false;
+  if(!['cycleId','cycleTitle','worldName','worldKey','cycleNumber','archiveKey'].every(k=>proof.target?.[k]===cp.target[k]&&cp.target[k]!==undefined))return false;
+  const entries=proof.entries,windows=proof.windows;
+  if(!Array.isArray(entries)||!entries.length||!Array.isArray(windows)||!windows.length||windows.length>12010||new Set(entries.map(r=>r.id)).size!==entries.length)return false;
+  const map=new Map(entries.map(r=>[r.id,r])),order=[];
+  for(const w of windows){
+   if(w.stable!==true||!Array.isArray(w.ids)||!w.ids.length||new Set(w.ids).size!==w.ids.length||!eq(w.indices,w.ids.map(id=>map.get(id)?.index))||w.ids.some(id=>!map.has(id))||![w.top,w.height,w.clientHeight].every(Number.isFinite)||w.top<0||w.height<w.clientHeight||w.clientHeight<=0||w.top>w.height-w.clientHeight+3)return false;
+   const start=order.length?order.indexOf(w.ids[0]):0;if(start<0)return false;
+   const overlap=Math.min(order.length-start,w.ids.length);
+   if(w.ids.slice(0,overlap).some((id,i)=>id!==order[start+i])||w.ids.slice(overlap).some(id=>order.includes(id)))return false;
+   if(w.ids.length>overlap&&start+overlap!==order.length)return false;
+   order.push(...w.ids.slice(overlap));
+  }
+  if(!eq(order,entries.map(r=>r.id))||entries.some((r,i)=>r.order!==i||!Number.isInteger(r.index)||(i>0&&r.index!==entries[i-1].index+1)||r.previousId!==(entries[i-1]?.id||null)||r.nextId!==(entries[i+1]?.id||null)))return false;
+  const edge=(p,w,first)=>p?.stable===true&&p.waitedMs>=8000&&Array.isArray(p.checks)&&p.checks.length>=2&&p.checks[0].at===0&&p.checks.at(-1).at>=8000&&p.checks.every((s,i)=>Number.isFinite(s.at)&&(i===0||s.at>p.checks[i-1].at)&&s.top===w.top&&s.height===w.height&&s.clientHeight===w.clientHeight&&eq(s.ids,w.ids)&&(first?s.top<=2:s.height-s.clientHeight-s.top<=3));
+  if(!edge(proof.firstProof,windows[0],true)||!edge(proof.lastProof,windows.at(-1),false)||!Array.isArray(proof.eventCards)||proof.eventCards.some(c=>c.kind!=='event-card'||!c.id||c.accepted===true))return false;
+  const expected=[];
+  for(const r of cp.rows){
+   if(r.role==='ai'){
+    const s=r.formatSource.nativeReply,e=s.eventEvidence;expected.push({id:s.messageId,kind:e.kind,sender:e.sender,accepted:e.accepted,raw:s.text,row:r});
+   }else for(const s of r.formatSource.playerSources)expected.push({id:s.id,kind:s.kind,sender:s.sender,accepted:null,raw:s.nativeText,row:r});
+  }
+  if(expected.length!==entries.length)return false;
+  const labels=new Map(playerLabels.map(l=>[l.i,l.label]));
+  for(let i=0;i<entries.length;i++){
+   const a=entries[i],b=expected[i];
+   if(a.id!==b.id||a.kind!==b.kind||a.sender!==b.sender||a.accepted!==b.accepted||a.nativeHash!==hash(b.raw)||a.nativeNormHash!==hash(norm(b.raw))||a.nativeLength!==b.raw.length)return false;
+   if(a.sender==='user'){
+    const p=a.player;if(!p||p.ownerId!==a.id||!Number.isInteger(p.bodyParts)||p.bodyParts<1||p.hasMedia!==false)return false;
+    // For old duplicated player headers require an independent live player body
+    // equal to the original native player text, and a matching stripped old body.
+    if(labels.has(b.row.scanIndex)){
+     if(p.bodyNormHash!==a.nativeNormHash)return false;
+     const prefix='**'+labels.get(b.row.scanIndex)+'**\n';
+     if(!b.row.domText.startsWith(prefix)||norm(b.row.domText.slice(prefix.length))!==norm(b.raw))return false;
+    }
+   }
+  }
+  const expectedAuto=autoIndices.map(i=>cp.rows[i].sourceMessageId);
+  const derived=entries.filter((r,i)=>i>1&&['character','assistant'].includes(r.sender)&&['character','assistant'].includes(entries[i-1].sender)).map(r=>r.id);
+  return eq(derived,expectedAuto)&&eq(proof.autoContinueIds,derived);
+ }
+
+ function replay(cp,diag,state,core,evidence,probes=[],historyProof=null){
   assert(core?.validate&&core?.compareNativeParagraphs&&evidence?.summarize&&core.version===evidence.version,'核心及格式模組未載入或版本不同，請強制更新');
   assert(cp?.format==='gal-ai-unverified-scan'&&cp.version===1&&cp.importable===false&&cp.validated===false&&cp.complete===false&&cp.forensicOnly===true&&cp.scope==='unverified-read-progress','只接受原始未驗證保全 JSON');
   const n=cp.rows?.length,run=cp.scanRunId,id=cp.target?.cycleId,version=cp.scannerVersion;
@@ -150,7 +195,8 @@
   const manifest=diag.historySourceManifest;
   // Independent live identity inventory is required for promotion. Counts alone cannot prove identity.
   const manifestOk=early&&eq(cp.historySourceManifest,manifest)&&Array.isArray(manifest)&&manifest.length===ids.size&&new Set(manifest.map(x=>x.id)).size===ids.size&&manifest.every(m=>{const r=sourceKinds.get(m.id);return r&&m.kind===r.kind&&m.sender===r.sender&&eq(m.playerRows,r.sender==='user'?[r.scanIndex]:[])})&&!merged.length&&!playerLabels.length;
-  const sourceAuditOk=!early||manifestOk;
+  const supplementOk=early&&!merged.length&&verifyHistorySupplement(cp,historyProof,playerLabels,autoIndices);
+  const sourceAuditOk=!early||manifestOk||supplementOk;
   const checks=[],restored=[],opening={role:'ai',scanIndex:0,text:v.opening,gameTime:core.parseGameTime(v.opening)?.iso||null};
   for(const entry of [opening,...v.messages.filter(x=>x.role==='ai'),...v.events]){
    const r=rows[entry.scanIndex],fs=r.formatSource,source=fs.nativeReply,event=r.eventType==='event';
@@ -166,7 +212,7 @@
    if(ok)entry.text=result.text;
   }
   const audit=evidence.summarize(rows,checks,core,v.ok);
-  const report={format:'gal-archive-offline-revalidation',version:1,scanRunId:run,cycleId:id,originalScannerVersion:version,coreVersion:core.version,rawRows:n,integrityOk:v.ok,bottomProof:bottom,sourceAuditOk,sourceAuditMethod:early?(manifestOk?'independent-saved-history-id-inventory':'saved-row-local-proof-only'):'original-live-audit',pairs:v.pairs,events:v.events.length,autoContinues:v.autoContinues,playerRows,uniqueNativeIds:ids.size,playerLabelIndices:playerLabels.map(x=>x.i),restoredRenderTails:restored,sourceAuditBlockers:sourceAuditOk?[]:['原批次未保存完整獨立歷史ID／玩家對應清單，或缺少玩家標題投影證據；禁止正式重建'],nativeFormatAudit:{checked:audit.checkedNativeRows,verified:audit.verifiedNativeRows,failed:audit.failedNativeRows,complete:audit.nativeFormatComplete},failedIndices:audit.failures.map(x=>x.scanIndex),warnings:v.warnings,importable:false,method:early?'saved-complete-early-failure-revalidation':'saved-complete-source-audited-batch'};
+  const report={format:'gal-archive-offline-revalidation',version:1,scanRunId:run,cycleId:id,originalScannerVersion:version,coreVersion:core.version,rawRows:n,integrityOk:v.ok,bottomProof:bottom,sourceAuditOk,sourceAuditMethod:early?(supplementOk?'independent-live-source-supplement':manifestOk?'independent-saved-history-id-inventory':'saved-row-local-proof-only'):'original-live-audit',pairs:v.pairs,events:v.events.length,autoContinues:v.autoContinues,playerRows,uniqueNativeIds:ids.size,playerLabelIndices:playerLabels.map(x=>x.i),restoredRenderTails:restored,sourceAuditBlockers:sourceAuditOk?[]:['原批次未保存完整獨立歷史ID／玩家對應清單，或缺少玩家標題投影證據；禁止正式重建'],nativeFormatAudit:{checked:audit.checkedNativeRows,verified:audit.verifiedNativeRows,failed:audit.failedNativeRows,complete:audit.nativeFormatComplete},failedIndices:audit.failures.map(x=>x.scanIndex),warnings:v.warnings,importable:false,method:early?'saved-complete-early-failure-revalidation':'saved-complete-source-audited-batch'};
   if(!audit.nativeFormatComplete||!sourceAuditOk)return {report,canonical:null};
   for(const {i,sources} of merged){
    const entry=v.messages.find(x=>x.scanIndex===i&&x.role==='me');
@@ -174,6 +220,7 @@
    entry.text=sources.map(s=>s.nativeText).join('\n\n');
    entry.nativeUserSegments=sources.map((s,position)=>({position,sourceIdHash:hash(s.id),text:s.nativeText}));
   }
+  if(supplementOk)for(const {i} of playerLabels){const entry=v.messages.find(m=>m.scanIndex===i&&m.role==='me');assert(entry,'玩家標題對應不存在');entry.text=cp.rows[i].nativeText;}
   for(const {i,native} of playerQuoteRestored){
    const entry=v.messages.find(x=>x.scanIndex===i&&x.role==='me');
    assert(entry,'玩家引號來源未出現在正式回合');
@@ -198,6 +245,7 @@
   const canonical={format:'gal-ai-authoritative-scan',version:1,generatedAt:new Date().toISOString(),scope:'entire-opening-to-bottom',source:{url:path,origin:url.origin,path:url.pathname,gameClockOnly:true},target:{...cp.target,uid:'',manager:'',managerNames:[]},opening:opening.text,messages,events,rawRows:n,scanRunId:run,scannerVersion:version,coreVersion:core.version,readOnlyUntilImported:true,
    validation:{ok:true,integrityOk:true,nativeFormatComplete:true,pairs:v.pairs,events:events.length,autoContinues:v.autoContinues,openingChars:opening.text.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,unknownGameTimeCount:v.unknownGameTimeCount||0,verifiedUntimedCount:v.verifiedUntimedCount||0,invalidDateReplyCount:v.invalidDateReplyCount||0,invalidDateRowCount:v.invalidDateRowCount||0,warnings:v.warnings,errors:[]},
    nativeFormatAudit:report.nativeFormatAudit,eventAudit:{...ev,complete:true,zeroEventAssessment:events.length?'not-zero':'no-accepted-event-in-observed-history'},offlineRecovery:{method:report.method,originalScannerVersion:version,originalFailure:cp.failedPhase,coreVersion:core.version,originalRun:run,liveRescan:false,sourceAuditReused:!early,sourceAuditMethod:report.sourceAuditMethod,restoredRenderTails:restored,bottomProof:bottom},note:'由完整保全及同批次現場來源稽核離線重驗產出；並非重新實機掃描。匯入前仍須核對目標輪迴、預覽與備份。'};
+  if(supplementOk)canonical.offlineRecovery.historySupplementRunId=historyProof.scanRunId;
   report.canonicalAvailable=true;
   return {report,canonical};
  }
@@ -208,11 +256,12 @@
   const fields=['archiveReplayRaw','archiveReplayDiag','archiveReplayState'];
   const status=t=>$('archiveReplayStatus').textContent=t;
   const clear=()=>{ticket++;result=null;$('archiveReplayDownload').disabled=true;$('archiveReplayReport').disabled=true;$('archiveReplayRun').disabled=false};
-  const reset=()=>{clear();fields.forEach(id=>$(id).value='');if($('archiveReplayProbes'))$('archiveReplayProbes').value='';status('選擇同一次掃描的三份 JSON；只在此瀏覽器處理，不匯入、不上傳。')};
+  const reset=()=>{clear();fields.forEach(id=>$(id).value='');if($('archiveReplayProbes'))$('archiveReplayProbes').value='';if($('archiveReplayHistory'))$('archiveReplayHistory').value='';status('選擇同一次掃描的三份 JSON；只在此瀏覽器處理，不匯入、不上傳。')};
   $('archiveReplayOpen').onclick=()=>{reset();modal.classList.remove('hidden')};
   $('archiveReplayClose').onclick=()=>{reset();modal.classList.add('hidden')};
   fields.forEach(id=>$(id).onchange=()=>{clear();status('檔案已變更，請重新驗收。')});
   if($('archiveReplayProbes'))$('archiveReplayProbes').onchange=()=>{clear();status('局部證據已變更，請重新驗收。')};
+  if($('archiveReplayHistory'))$('archiveReplayHistory').onchange=()=>{clear();status('歷史來源補證已變更，請重新驗收。')};
   $('archiveReplayRun').onclick=async()=>{
    clear();const t=ticket;$('archiveReplayRun').disabled=true;
    status('正在讀取並核對保全、診斷及狀態…');
@@ -220,16 +269,18 @@
    try{
     const files=fields.map(id=>$(id).files?.[0]);
     const probeFiles=[...($('archiveReplayProbes')?.files||[])];
+    const historyFile=$('archiveReplayHistory')?.files?.[0];if(historyFile)assert(historyFile.size<=20*1024*1024,'歷史來源補證超過限制');
     assert(probeFiles.length<=32&&probeFiles.every(f=>f.size<=20*1024*1024),'局部證據超過限制');
     assert(files.every(Boolean),'請選齊三份 JSON');
     assert(files.every((f,i)=>f.size<=(i===0?100:20)*1024*1024),'檔案超過安全大小限制');
     const [cp,diag,state]=await Promise.all(files.map(async f=>JSON.parse(await f.text())));
     if(t!==ticket)return;
     const probes=await Promise.all(probeFiles.map(async f=>JSON.parse(await f.text())));
-    inputHashes=await Promise.all([...files,...probeFiles].map(async f=>({name:f.name,bytes:f.size,sha256:[...new Uint8Array(await crypto.subtle.digest('SHA-256',await f.arrayBuffer()))].map(v=>v.toString(16).padStart(2,'0')).join('')})));
+    const historyProof=historyFile?JSON.parse(await historyFile.text()):null;
+    inputHashes=await Promise.all([...files,...probeFiles,...(historyFile?[historyFile]:[])].map(async f=>({name:f.name,bytes:f.size,sha256:[...new Uint8Array(await crypto.subtle.digest('SHA-256',await f.arrayBuffer()))].map(v=>v.toString(16).padStart(2,'0')).join('')})));
     if(t!==ticket)return;
     replayRunId=crypto.randomUUID();
-    result=replay(cp,diag,state,host.GalArchiveCore,host.GalArchiveFormatEvidence,probes);Object.assign(result.report,{replayRunId,inputHashes});
+    result=replay(cp,diag,state,host.GalArchiveCore,host.GalArchiveFormatEvidence,probes,historyProof);Object.assign(result.report,{replayRunId,inputHashes});
     if(result.canonical)Object.assign(result.canonical.offlineRecovery,{replayRunId,inputHashes});
     const r=result.report;
     // Run the ordinary site's own import gate before enabling download.
@@ -251,5 +302,5 @@
   $('archiveReplayDownload').onclick=()=>{if(result?.canonical)download(result.canonical,'Gal_AI_離線重驗正史_'+result.canonical.target.cycleTitle+'.json')};
   $('archiveReplayReport').onclick=()=>{if(result?.report)download(result.report,'保全資料重驗診斷_'+(result.report.replayRunId||'failed')+'.json')};
  }
- return {replay,mount,hash,capturedEventProjection};
+ return {replay,mount,hash,capturedEventProjection,verifyHistorySupplement};
 });
