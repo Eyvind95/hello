@@ -69,6 +69,8 @@ function mount(){
  '<label>原生訊息 ID <input id="gal-anchor-id" maxlength="100" style="width:95%"></label>'+
  '<label>上次可信 Y <input id="gal-anchor-y" type="number" min="0" step="any" style="width:110px"></label>'+
  '<label>上次頁面高度（選填） <input id="gal-anchor-height" type="number" min="1" step="any" style="width:110px"></label>'+
+ '<label>目標劇情時間（選填，YYYY/MM/DD HH:mm） <input id="gal-anchor-clock" maxlength="24" style="width:95%"></label>'+
+ '<label>已知相鄰來源 ID（選填，一行一個） <textarea id="gal-anchor-neighbors" rows="3" maxlength="2000" style="width:95%"></textarea></label>'+
  '<button id="gal-anchor-probe">執行錨點復原取證（不匯入）</button></details>'+
  '<div style="margin:6px 0"><button id="gal-scan-open-folder">📁 顯示最近下載資料夾</button>'+
  '<button id="gal-scan-copy-folder">📋 複製批次路徑</button></div>'+
@@ -1293,6 +1295,61 @@ function anchorProbeState(rawCount,rows,anchorId){
  return rawCount===0?'anchor-not-mounted':rawCount!==1?'anchor-marker-not-unique':
   hits===0?'mounted-but-not-collected':hits===1?'anchor-collected':'anchor-row-not-unique';
 }
+
+// History localization is separate from overlap proof. The clock is only
+// a navigation hint; a missing ID is never inferred from a timestamp.
+function anchorHintTime(value){
+ const m=String(value||'').trim().match(/^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})$/u);
+ if(!m)return null;
+ const [y,mo,d,h,mi]=m.slice(1).map(Number);
+ const utc=new Date(0);utc.setUTCFullYear(y,mo-1,d);utc.setUTCHours(h,mi,0,0);
+ if(utc.getUTCFullYear()!==y||utc.getUTCMonth()!==mo-1||utc.getUTCDate()!==d||
+    utc.getUTCHours()!==h||utc.getUTCMinutes()!==mi)return null;
+ return utc.getTime()-8*3600000;
+}
+function anchorHistoryDecision(sample,anchorId,neighbors,targetMs){
+ const ids=sample.rawIds||[],matches=neighbors.filter(id=>ids.includes(id));
+ if(ids.includes(anchorId))return {kind:'anchor-id-observed',matches};
+ if(matches.length)return {kind:'reference-id-observed',matches};
+ const times=(sample.clocks||[]).map(x=>Date.parse(x.iso)).filter(Number.isFinite);
+ const min=times.length?Math.min(...times):null,max=times.length?Math.max(...times):null;
+ const near=targetMs!==null&&min!==null&&min<=targetMs+15*60000&&max>=targetMs-15*60000;
+ // When actual neighbor IDs are available, do not stop on a clock hint alone.
+ if(near&&!neighbors.length)return {kind:'clock-hint-only',matches,min,max};
+ return {kind:'target-interval-unconfirmed',matches,min,max,near};
+}
+function anchorHistoryStep(sample,direction){
+ const max=Math.max(0,sample.height-sample.clientHeight);
+ const step=Math.max(12,Math.floor(sample.clientHeight*.70));
+ return Math.max(0,Math.min(max,sample.top+direction*step));
+}
+function anchorHistorySignature(s){
+ return JSON.stringify([Math.round(s.top),s.height,s.clientHeight,s.rawIds]);
+}
+function anchorHistorySample(root){
+ const nodes=[...root.querySelectorAll(nativeMessageSelector)],rawIds=[],clocks=[];
+ for(const n of nodes){
+  const id=n.getAttribute('data-selection-copy-message-id');
+  if(!id)continue;rawIds.push(id);
+  const native=readNativeNode(n);
+  const clock=native.reason==='available'?core.parseGameTime(native.text):null;
+  if(clock)clocks.push({id,iso:clock.iso});
+ }
+ return {top:root.scrollTop,height:root.scrollHeight,clientHeight:root.clientHeight,rawIds,clocks};
+}
+function anchorProbeReach(attempts,localization,anchorId,neighbors){
+ const snapshots=attempts.filter(a=>a.stable).flatMap(a=>[a.before,a.after]);
+ const hits=snapshots.filter(s=>s.rawIds.includes(anchorId));
+ const nearIds=[...new Set(snapshots.flatMap(s=>s.rawIds.filter(id=>neighbors.includes(id))))];
+ if(hits.length)return {state:'anchor-observed-in-stable-probe',nearIds};
+ if(nearIds.length)return {state:'reference-ids-observed-anchor-unseen',nearIds};
+ if(localization?.decision?.kind==='anchor-id-observed'||localization?.decision?.kind==='reference-id-observed')
+  return {state:'located-but-not-reproduced-in-stable-probe',nearIds};
+ if(localization?.decision?.kind==='clock-hint-only'||localization?.clockHintObserved)
+  return {state:'clock-hint-only-anchor-unconfirmed',nearIds};
+ return {state:'target-interval-not-confirmed',nearIds};
+}
+
 function anchorProbeElement(node){
  const r=node.getBoundingClientRect(),style=getComputedStyle(node);
  const wrapper=node.closest('[data-message-id]');
@@ -1349,6 +1406,10 @@ async function anchorRecoveryProbe(){
  if(!/^[A-Za-z0-9_-]{5,100}$/.test(anchorId)||!yText||!Number.isFinite(Number(yText))||Number(yText)<0||
   (heightText&&(!Number.isFinite(Number(heightText))||Number(heightText)<=0)))return status('請填入有效原生 ID、可信 Y 與選填頁面高度');
  const y=Number(yText),oldHeight=heightText?Number(heightText):null;
+ const clockText=$('gal-anchor-clock').value.trim(),targetMs=anchorHintTime(clockText);
+ const neighbors=[...new Set($('gal-anchor-neighbors').value.trim().split(/\s+/u).filter(Boolean))].filter(id=>id!==anchorId);
+ if((clockText&&targetMs===null)||neighbors.length>24||neighbors.some(id=>!/^[A-Za-z0-9_-]{5,100}$/.test(id)))return status('目標時間或相鄰原生ID格式錯誤');
+ const history=[];let localization=null,restoreHint=null;
  busy=true;cancelled=false;paused=false;
  const origin=location.origin+location.pathname,profile={...target};
  const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'missing',
@@ -1362,55 +1423,114 @@ async function anchorRecoveryProbe(){
   await fetchCurrentBinding(profile);
   root=scroller();initial={top:root.scrollTop,height:root.scrollHeight,clientHeight:root.clientHeight};
   guard();
+  restoreHint={id:anchorHistorySample(root).rawIds[0]||null,bottomDistance:Math.max(0,initial.height-initial.clientHeight-initial.top)};
+  restoreHint.relativeTop=restoreHint.id?recoveryMarkerTop(root,restoreHint.id):null;
   const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
   if(!reg?.ok)throw Error(reg?.error||'無法建立錨點取證批次');
   Object.assign(run,{worldName:reg.status?.worldName||run.worldName,worldKey:reg.status?.worldKey||null,cycleNumber:reg.status?.cycleNumber??null,archiveKey:reg.status?.archiveKey||null,batchFolder:reg.status?.batchFolder});
   registered=true;
-  // Initial current viewport plus the old absolute coordinate and at most
-  // eight viewports either side. Coordinates are hints, not continuity proof.
-  const planned=[initial.top,...anchorProbeOffsets(y,initial.clientHeight,initial.height-initial.clientHeight)];
-  if(oldHeight!==null&&oldHeight!==initial.height)planned.push(...anchorProbeOffsets(y+initial.height-oldHeight,initial.clientHeight,initial.height-initial.clientHeight));
-  for(let i=0;i<planned.length&&attempts.length<16;i++){
+  // Walk the live history from the current viewport, including prepended
+  // batches. Never clamp all future positions to the initial scrollHeight.
+  // 320 lightweight location samples, then at most 16 detailed probes.
+  // Repeated coordinates are allowed after geometry or raw IDs change.
+  const locateLimit=320;
+  let previous=null,repeat=0,direction=null,reversed=false,requested=root.scrollTop;
+  let clockHintObserved=false,decision=null,sample=null;
+  const locatorSeen=new Set();
+  for(let i=0;i<locateLimit;i++){
    guard();
-   const requested=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,planned[i]));
-   const key=Math.round(requested);if(seen.has(key))continue;seen.add(key);
-   const beforeHeight=root.scrollHeight;root.scrollTop=requested;
+   const beforeHeight=root.scrollHeight;
+   root.scrollTop=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,requested));
    await sleep(WAIT_MS+STABLE_MS);guard();
-   const before=anchorProbeSnapshot(root,anchorId);
+   const first=anchorHistorySample(root);
    await sleep(STABLE_MS);guard();
-   const after=anchorProbeSnapshot(root,anchorId);
-   const stable=before.scrollHeight===after.scrollHeight&&Math.abs(before.scrollTop-after.scrollTop)<2&&
-    JSON.stringify(before.rawIds)===JSON.stringify(after.rawIds)&&
-    JSON.stringify(before.rows.map(x=>x.sourceIds))===JSON.stringify(after.rows.map(x=>x.sourceIds));
-   attempts.push({requested,beforeHeight,stable,before,after});
-   status('🧪 錨點復原取證 '+attempts.length+'/16：'+after.state+'；僅保全，不接續掃描');
-   // If mounted but dropped, also try centering the actual marker.
-   if(after.anchorMarkerCount===1&&Number.isFinite(after.anchorRelativeTop)){
-    const centered=root.scrollTop+after.anchorRelativeTop-root.clientHeight/3;
-    if(!seen.has(Math.round(Math.max(0,Math.min(root.scrollHeight-root.clientHeight,centered)))))planned.splice(i+1,0,centered);
+   sample=anchorHistorySample(root);
+   const stable=anchorHistorySignature(first)===anchorHistorySignature(sample);
+   decision=anchorHistoryDecision(sample,anchorId,neighbors,targetMs);
+   clockHintObserved||=!!decision.near||decision.kind==='clock-hint-only';
+   history.push({requested,beforeHeight,stable,...sample,decision});
+   if(stable&&decision.kind!=='target-interval-unconfirmed')break;
+   const sig=anchorHistorySignature(sample);
+   const repeated=sig===previous;repeat=repeated?repeat+1:0;previous=sig;
+   locatorSeen.add(sig);
+   if(direction===null){
+    // Time can guide initial direction only; it does not prove history order.
+    direction=targetMs!==null&&decision.max!==null&&decision.max<targetMs-15*60000?1:-1;
+   }
+   if(repeat>=4){
+    if(reversed)break;
+    // One bounded reverse search when a real edge remains unchanged.
+    // If history grew, the signature changes and this branch is not taken.
+    reversed=true;direction=-direction;repeat=0;
+   }
+   requested=anchorHistoryStep(sample,direction);
+   status('🧭 歷史定位 '+(i+1)+'/'+locateLimit+'；高度 '+sample.height+'；'+(decision.matches.length?'已見參考ID':'尚未確認目標區間'));
+  }
+  localization={decision,clockHintObserved,samples:history.length,distinctLayouts:locatorSeen.size,
+   stopped:history.at(-1)?.stable&&decision?.kind!=='target-interval-unconfirmed'?'located':'limit-or-stalled'};
+  // If there is no evidence of the neighborhood, preserve localization
+  // evidence and stop instead of pretending the target was absent.
+  if(localization.stopped==='located'){
+   let center=root.scrollTop,centerHeight=root.scrollHeight,centerWidth=root.clientHeight;
+   const reference=decision.kind==='anchor-id-observed'?anchorId:decision.matches[0];
+   const markerY=reference?recoveryMarkerTop(root,reference):null;
+   if(Number.isFinite(markerY))center+=markerY-root.clientHeight/3;
+   let planned=anchorProbeOffsets(center,root.clientHeight,root.scrollHeight-root.clientHeight);
+   if(oldHeight!==null&&Math.abs(root.scrollHeight-oldHeight)<root.clientHeight)
+    planned.push(...anchorProbeOffsets(y,root.clientHeight,root.scrollHeight-root.clientHeight));
+   for(let i=0;i<planned.length&&attempts.length<16;i++){
+    guard();
+    const requested=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,planned[i]));
+    const key=[root.scrollHeight,root.clientHeight,Math.round(requested)].join(':');
+    if(seen.has(key))continue;seen.add(key);
+    const beforeHeight=root.scrollHeight;root.scrollTop=requested;
+    await sleep(WAIT_MS+STABLE_MS);guard();
+    const before=anchorProbeSnapshot(root,anchorId);
+    await sleep(STABLE_MS);guard();
+    const after=anchorProbeSnapshot(root,anchorId);
+    const stable=before.scrollHeight===after.scrollHeight&&Math.abs(before.scrollTop-after.scrollTop)<2&&
+     JSON.stringify(before.rawIds)===JSON.stringify(after.rawIds)&&
+     JSON.stringify(before.rows.map(x=>x.sourceIds))===JSON.stringify(after.rows.map(x=>x.sourceIds));
+    attempts.push({requested,beforeHeight,stable,before,after});
+    status('🧪 錨點復原取證 '+attempts.length+'/16：'+after.state+'；僅保全，不接續掃描');
+    if(root.scrollHeight!==centerHeight||root.clientHeight!==centerWidth){
+     const live=reference?recoveryMarkerTop(root,reference):null;
+     center=root.scrollTop+(Number.isFinite(live)?live-root.clientHeight/3:0);
+     centerHeight=root.scrollHeight;centerWidth=root.clientHeight;
+     planned=planned.slice(0,i+1).concat(anchorProbeOffsets(center,centerWidth,centerHeight-centerWidth));
+    }
+    if(after.anchorMarkerCount===1&&Number.isFinite(after.anchorRelativeTop)){
+     const centered=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,root.scrollTop+after.anchorRelativeTop-root.clientHeight/3));
+     if(!seen.has([root.scrollHeight,root.clientHeight,Math.round(centered)].join(':')))planned.splice(i+1,0,centered);
+    }
    }
   }
  }catch(error){reason=String(error?.message||error)}
  finally{
   if(root?.isConnected&&initial&&location.origin+location.pathname===origin){
-   root.scrollTop=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,initial.top));
-   restore={requested:initial.top,actual:root.scrollTop,height:root.scrollHeight};
+   const live=restoreHint?.id?recoveryMarkerTop(root,restoreHint.id):null;
+   const canRestoreMarker=Number.isFinite(live)&&Number.isFinite(restoreHint?.relativeTop);
+   const requested=canRestoreMarker?root.scrollTop+live-restoreHint.relativeTop:
+    root.scrollHeight===initial.height?initial.top:root.scrollHeight-root.clientHeight-(restoreHint?.bottomDistance||0);
+   root.scrollTop=Math.max(0,Math.min(root.scrollHeight-root.clientHeight,requested));
+   restore={requested,actual:root.scrollTop,height:root.scrollHeight,mode:canRestoreMarker?'original-marker':root.scrollHeight===initial.height?'original-coordinate':'approximate-bottom-distance',exact:false};
   }
   try{
    if(!registered){status('錨點取證未啟動：'+(reason||'未知錯誤'));return;}
-   const result={format:'gal-ai-anchor-recovery-probe',version:1,importable:false,validated:false,complete:false,
+   const reach=anchorProbeReach(attempts,localization,anchorId,neighbors);
+   const result={format:'gal-ai-anchor-recovery-probe',version:2,importable:false,validated:false,complete:false,
     forensicOnly:true,scanRunId:run.scanRunId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
     generatedAt:new Date().toISOString(),scope:'anchor-overlap-diagnostic',source:{url:origin},
     target:{cycleId:profile.cycleId,cycleTitle:profile.cycleTitle,worldName:run.worldName,worldKey:run.worldKey,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey},
-    input:{anchorId,lastGoodY:y,previousScrollHeight:oldHeight},initial,restore,reason,attempts,
+    input:{anchorId,lastGoodY:y,previousScrollHeight:oldHeight,targetClock:clockText||null,neighbors},initial,restore,reason,localization,reach,history,attempts,
     observedStates:[...new Set(attempts.flatMap(a=>[a.before.state,a.after.state]))],
     note:'僅局部 DOM 與候選視窗鑑識，未證明連續性、未追加訊息、不得匯入正史。'};
    const audit={...run,format:'gal-ai-anchor-recovery-diagnostic',importable:false,initial,restore,reason,
-    attemptCount:attempts.length,observedStates:result.observedStates,attempts:attempts.map(a=>({requested:a.requested,stable:a.stable,actual:a.after.scrollTop,height:a.after.scrollHeight,anchorMarkerCount:a.after.anchorMarkerCount,state:a.after.state,rawIds:a.after.rawIds,candidateIds:a.after.rows.flatMap(x=>x.sourceIds)}))};
+    localization,reach,historySampleCount:history.length,attemptCount:attempts.length,observedStates:result.observedStates,attempts:attempts.map(a=>({requested:a.requested,stable:a.stable,actual:a.after.scrollTop,height:a.after.scrollHeight,anchorMarkerCount:a.after.anchorMarkerCount,state:a.after.state,rawIds:a.after.rawIds,candidateIds:a.after.rows.flatMap(x=>x.sourceIds)}))};
    diagnostic=audit;
-   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit)});
+   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason:reason||null});
    if(!saved?.ok)throw Error(saved?.error||'下載未確認');
-   status('🧪 局部取證已送出 '+attempts.length+' 次'+(reason?'；中斷：'+reason:'')+'\n'+result.observedStates.join(' / ')+'\n批次：'+run.batchFolder+'\n只供鑑識，不代表掃描通過。');
+   status('🧪 歷史定位 '+history.length+' 次；局部取證 '+attempts.length+' 次'+(reason?'；中斷：'+reason:'')+'\n'+reach.state+'\n'+result.observedStates.join(' / ')+'\n批次：'+run.batchFolder+'\n只供鑑識，不代表掃描通過。');
   }catch(error){status('錨點取證保存失敗：'+String(error?.message||error))}
   finally{busy=false;}
  }
