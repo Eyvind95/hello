@@ -549,7 +549,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   const token=hidden?.[1]?.trim();
   if(hidden&&token&&!preamble.test(scanned)&&
      !scanned.includes(hidden[0].trim())&&
-     !/^(?:user|char|character|img(?:age)?\s*:)/i.test(token)){
+     !/^(?:(?:user|char|character)(?:\s*(?:\||:|=|$))|(?:img|image)\s*:)/i.test(token)){
    const after=text.slice(hidden[0].length);
    const visibleChars=[...unspaced(scanned)];
    let matched=0,comparable='',omitted=[],valid=true;
@@ -745,7 +745,7 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  // ONLY if the full displayed text matches character-for-character after
  // projecting balanced missing quote pairs. Other text changes are rejected.
  let openingQuoteProjection=null;
- if((options.opening||options.verifiedUntimedNative)&&options.source==='whif-message-content'&&!options.event&&
+ if(!untimedCombinedProjection&&(options.opening||options.verifiedUntimedNative)&&options.source==='whif-message-content'&&!options.event&&
     unspaced(scanned)!==unspaced(text)){
   const visibleChars=[...unspaced(scanned)];
   let matched=0,projected='',omitted=[],valid=true;
