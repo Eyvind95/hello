@@ -110,3 +110,26 @@ test('both scanner launch paths load the audit before content and preflight its 
  assert.match(content,/phaseStatus\('failure'[\s\S]*?try\{diagnostic\.nativeFormatAudit=requireFormatEvidence\(\)\.inspectRaw\(/);
  assert.match(content,/catch\(error\)\{diagnostic\.nativeFormatAudit=\{nativeFormatComplete:false/);
 });
+
+test('both popups display the installed manifest version, not an obsolete static label',()=>{
+ const vm=require('node:vm');
+ const manifest=require('./manifest.json');
+ for(const name of ['popup','gal-popup']){
+  const html=fs.readFileSync(require.resolve('./'+name+'.html'),'utf8');
+  const js=fs.readFileSync(require.resolve('./'+name+'.js'),'utf8');
+  assert.match(html,/<span id="releaseVersion">版本讀取中…<\/span>/);
+  assert.doesNotMatch(html,/V0\.8\.\d+\s+測試版/);
+  const line=js.split('\n').find(l=>l.includes("$('releaseVersion').textContent="));
+  assert.ok(line);
+  for(const version of [manifest.version,'0.8.999']){
+   const label={textContent:''};
+   vm.runInNewContext(line,{$:id=>{assert.equal(id,'releaseVersion');return label},chrome:{runtime:{getManifest:()=>({version})}}});
+   assert.equal(label.textContent,'V'+version);
+  }
+ }
+ const content=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ assert.ok(content.includes("Gal AI 原生正史掃描器 V'+SCANNER_VERSION+'"));
+ assert.ok(content.includes("const SCANNER_VERSION='"+manifest.version+"'"));
+ assert.equal(core.version,manifest.version);
+ assert.equal(audit.version,manifest.version);
+});

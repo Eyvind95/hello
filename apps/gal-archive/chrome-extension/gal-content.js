@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.44: module preflight, bare HUD native formatting, responsive finalization. */
+/* Independent Gal AI page scanner. v0.8.45: module preflight, bare HUD native formatting, responsive finalization. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.44';
+const SCANNER_VERSION='0.8.45';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -55,7 +55,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.44 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V'+SCANNER_VERSION+' 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-save-progress">🧷 保全已讀進度（不可匯入）</button>'+

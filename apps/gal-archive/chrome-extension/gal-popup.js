@@ -1,6 +1,7 @@
 /* Gal AI stand-alone popup. Never invokes ChatGPT watch/scan. */
 'use strict';
 const $=id=>document.getElementById(id),keys=['worldName','cycleTitle','cycleId','uid'];
+$('releaseVersion').textContent='V'+chrome.runtime.getManifest().version;
 const managers=globalThis.ArchiveManagerNames;
 const storageGet=k=>new Promise(ok=>chrome.storage.local.get(k,ok));
 const storageSet=o=>new Promise(ok=>chrome.storage.local.set(o,ok));
