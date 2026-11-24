@@ -1262,3 +1262,40 @@ if(process.env.GAL_ARCHIVE_CYCLE11_EVENT_TEST){
   assert.equal(compare.comparison.remainingUnexplained.scanned,0);
  });
 }
+
+
+test('timed notification HUD restores native quotes on both sides, with exact text and clock',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const status='｜2026年8月23日｜\n｜🕒10:30｜\n｜📍測試區｜';
+ const prefix='【終端】\n📢基地公告：測試。\n👥群組：無。\n💬私人訊息：甲\n早安。\n📨任務通知：完成。';
+ const dom=prefix+'\n'+status+'\n你好。\n正文與「原有引用」。';
+ const native=prefix.replace('甲\n早安。','甲 「早安。」')+'\n\n'+fence+'\n'+status+'\n'+fence+'\n\n{{測試模板}}\n\n「你好。」正文與「原有引用」。';
+ const opts={source:'whif-message-content',statusText:status,codeBlocks:[status]};
+ const v=core.compareNativeParagraphs(dom,native,opts);
+ assert.equal(v.comparison.contentEqual,true);assert.equal(v.comparison.clockEqual,true);
+ assert.equal(v.comparison.timedCompositeProjection.prefixQuotePairs,1);
+ assert.equal(v.comparison.timedCompositeProjection.bodyQuotePairs,1);
+ assert.match(v.text,/「早安。」/);assert.match(v.text,/「你好。」/);assert.match(v.text,/「原有引用」/);
+ assert.equal(v.text.includes('{{測試模板}}'),false);
+ for(const wrong of [native.replace('早安。','晚安。'),native.replace('10:30','10:31'),native.replace('測試區','另一區'),native.replace('「你好。」','「你好。'),native.replace('「原有引用」','原有引用'),native.replace('{{測試模板}}','{{user|role}}'),native.replace('{{測試模板}}','{{img:asset}}'),native.replace('{{測試模板}}','{{甲}}\n{{乙}}'),native.replace('{{測試模板}}\n\n','').replace('正文與','{{測試模板}}正文與')]){
+  assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
+ }
+ assert.equal(core.compareNativeParagraphs(dom,native,{...opts,codeBlocks:[]}).text,null);
+});
+test('timed event title inline opening fence retains original literal fences and balanced quotes',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const status='｜2026年8月23日｜\n｜🕒13:35｜\n｜📍測試區｜';
+ const title='《測試世界》: '+fence;
+ const dom=title+'\n'+status+'\n'+fence+'\n警報。\n正文。\n「既有引用」';
+ const native='{{Below context is an event which has just occurred. Synthetic test.}}\n'+title+'\n'+status+'\n'+fence+'\n\n{{測試模板}}\n\n「警報。」正文。「既有引用」';
+ const opts={source:'whif-event-content',event:true,eventTitle:title};
+ const v=core.compareNativeParagraphs(dom,native,opts);
+ assert.equal(v.comparison.timedCompositeProjection.eventFencePreserved,true);
+ assert.equal(v.comparison.timedCompositeProjection.omittedQuotePairs,1);
+ assert.match(v.text,/「警報。」/);assert.match(v.text,/「既有引用」/);
+ assert.equal(v.text.split(fence).length,3);
+ assert.equal(v.text.includes('{{'),false);
+ for(const wrong of [native.replace('警報。','警告。'),native.replace('13:35','13:36'),native.replace('測試區','其他區'),native.replace('「警報。」','警報。」'),native.replace('「既有引用」','既有引用'),native.replace('{{測試模板}}','{{user}}'),native.replace('{{測試模板}}','{{img:asset}}'),native.replace('{{測試模板}}','{{甲}}\n{{乙}}'),native.replace('Below context is an event which has just occurred.','Unknown wrapper'),native.replace('《測試世界》','《別的世界》'),native.replace('{{測試模板}}\n\n','').replace('正文。','{{測試模板}}正文。')]){
+  assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
+ }
+});

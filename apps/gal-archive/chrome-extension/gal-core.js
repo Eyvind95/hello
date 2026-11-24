@@ -873,7 +873,97 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
   }
  }
- const comparableText=eventPostStatusProjection?.comparableText??
+ // V0.8.41: a verified timed HUD can coexist with a notification prefix,
+ // or with a literal event fence on the title line. Use the original source
+ // and commit all transformations only after exact segment-by-segment proof.
+ let timedCompositeProjection=null;
+ const existingComparable=eventPostStatusProjection?.comparableText??
+  untimedCombinedProjection?.comparableText??openingQuoteProjection?.comparableText??
+  legacyMessageProjection?.comparableText??eventQuoteProjection?.comparableText??text;
+ if(!options.opening&&unspaced(existingComparable)!==unspaced(scanned)&&
+    parseGameTime(scanned)?.iso&&parseGameTime(scanned)?.iso===parseGameTime(original)?.iso){
+  const quoteProof=(native,visible)=>{
+   const chars=[...unspaced(visible)];let pos=0,depth=0,omitted=0;
+   for(const c of native){
+    if(/\s/u.test(c))continue;
+    if(pos<chars.length&&c===chars[pos]){pos++;continue}
+    if(c==='「'){depth++;omitted++;continue}
+    if(c==='」'&&depth>0){depth--;omitted++;continue}
+    return null;
+   }
+   return pos===chars.length&&depth===0?{omitted}:null;
+  };
+  const hiddenAfter=tail=>{
+   const m=tail.match(/^\s*(\{\{([^{}\n]{1,200})\}\})[ \t]*(?=\n|$)\s*/u);
+   const label=m?.[2]?.trim();
+   if(!label||/^(?:(?:user|char|character)(?:\s*(?:\||:|=|$))|(?:img|image)\s*:)/i.test(label)||
+      scanned.includes(m[1]))return null;
+   return {body:tail.slice(m[0].length),marker:m[1]};
+  };
+  const lines=scanned.split('\n');
+  const dateIndex=lines.findIndex(line=>/^[｜|│]\s*\d{4}(?:年|[/-])/u.test(line.trim()));
+  if(dateIndex>=0){
+   const hud=[];
+   for(const line of lines.slice(dateIndex)){
+    if(!/^[｜|│][\s\S]*[｜|│]$/u.test(line.trim()))break;
+    hud.push(line);
+   }
+   const hudKey=unspaced(hud.join('\n'));
+   const prefix=lines.slice(0,dateIndex).join('\n');
+   const restLines=lines.slice(dateIndex+hud.length);
+   const fence=String.fromCharCode(96).repeat(3);
+   let nativePrefix='',nativeHud='',nativeTail='',wrapper='',fenceRemoved=false;
+   let visibleBody='',prefixProof=null,renderedHeader='';
+   if(hud.length>=2&&parseGameTime(hud.join('\n'))&&
+      options.event===true&&options.source==='whif-event-content'&&
+      dateIndex===1&&titleKey===unspaced(prefix)&&prefix.endsWith(fence)&&
+      restLines[0]?.trim()===fence){
+    const lead=original.match(preamble);
+    if(lead&&/^\s*below context is an event which has just occurred\./i.test(lead[1])){
+     const source=original.slice(lead[0].length),sourceLines=source.split('\n');
+     const head=sourceLines[0],close=sourceLines.findIndex((line,i)=>i>0&&line.trim()===fence);
+     if(unspaced(head)===unspaced(prefix)&&close===hud.length+1&&
+        unspaced(sourceLines.slice(1,close).join('\n'))===hudKey){
+      wrapper=lead[0];nativePrefix=head;nativeHud=sourceLines.slice(1,close).join('\n');
+      nativeTail=sourceLines.slice(close+1).join('\n');
+      visibleBody=restLines.slice(1).join('\n');prefixProof={omitted:0};
+      renderedHeader=nativePrefix+'\n'+nativeHud+'\n'+fence;
+     }
+    }
+   }else if(hud.length>=2&&options.event!==true&&options.source==='whif-message-content'&&
+      dateIndex>0&&dateIndex<=12&&/^\s*【終端】/u.test(prefix)&&
+      statusKey===hudKey&&codeKeys.has(hudKey)){
+    const firstFence=/^[ \t]*\x60{3}[ \t]*\n/m.exec(original);
+    const nativeBlock=firstFence&&original.slice(firstFence.index).match(statusFence);
+    if(nativeBlock&&unspaced(nativeBlock[1])===hudKey){
+     nativePrefix=original.slice(0,firstFence.index).trimEnd();
+     prefixProof=quoteProof(nativePrefix,prefix);
+     nativeHud=nativeBlock[1];nativeTail=original.slice(firstFence.index+nativeBlock[0].length);
+     visibleBody=restLines.join('\n');fenceRemoved=true;
+     renderedHeader=nativePrefix+'\n\n'+nativeHud;
+    }
+   }
+   const hidden=prefixProof&&hiddenAfter(nativeTail);
+   const bodyProof=hidden&&quoteProof(hidden.body,visibleBody);
+   if(bodyProof&&prefixProof.omitted+bodyProof.omitted>0){
+    const candidate=renderedHeader+'\n\n'+hidden.body;
+    const entire=quoteProof(candidate,scanned);
+    if(entire&&entire.omitted===prefixProof.omitted+bodyProof.omitted&&
+       parseGameTime(candidate)?.iso===parseGameTime(scanned)?.iso){
+     markers.length=0;
+     if(wrapper)markers.push({kind:'verified-timed-event-leading-context',tokens:1,nonWhitespaceChars:count(wrapper)});
+     if(fenceRemoved)markers.push({kind:'verified-timed-notification-status-fence',tokens:2,nonWhitespaceChars:6});
+     markers.push({kind:'verified-timed-post-status-template',tokens:1,nonWhitespaceChars:count(hidden.marker)});
+     markers.push({kind:'verified-timed-balanced-native-quotes',tokens:entire.omitted,nonWhitespaceChars:entire.omitted});
+     text=candidate;
+     timedCompositeProjection={comparableText:scanned,omittedQuotePairs:entire.omitted/2,
+      prefixQuotePairs:prefixProof.omitted/2,bodyQuotePairs:bodyProof.omitted/2,
+      eventFencePreserved:options.event===true,provenEntireText:true};
+    }
+   }
+  }
+ }
+ const comparableText=timedCompositeProjection?.comparableText??eventPostStatusProjection?.comparableText??
   (untimedCombinedProjection?.comparableText??
   (openingQuoteProjection?.comparableText??
    (legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text))));
@@ -968,6 +1058,10 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   return {text:null,comparison,localContext:{scanned:context(scanChars),native:context(nativeChars)}};
  }
  if(!text||!clockEqual)return {text:null,comparison};
+ if(timedCompositeProjection){
+  comparison.timedCompositeProjection={...timedCompositeProjection,comparableText:undefined};
+  return {text,comparison};
+ }
  if(eventPostStatusProjection){
   comparison.eventPostStatusProjection={
    templateStartUtf16:eventPostStatusProjection.templateStartUtf16,
@@ -1021,5 +1115,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.40'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.41'};
 })();
