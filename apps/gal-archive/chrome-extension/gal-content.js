@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.12: combined adventure verification and live forensic event evidence. */
+/* Independent Gal AI page scanner. v0.9.13: offline revalidation and independent history source preservation. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.12';
+const SCANNER_VERSION='0.9.13';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -179,7 +179,7 @@ function unverifiedEvidence(rows,run,why,fullDiagnostic){
    worldName:target?.worldName},
   source:{url:location.origin+location.pathname},scope:'unverified-read-progress',
   collectedCount:data.length,rawRows:data.length,
-  failure:why||null,phase:fullDiagnostic?.phase||null,phaseHistory:fullDiagnostic?.phaseHistory||[],failedPhase:fullDiagnostic?.failedPhase||null,bottomProof:fullDiagnostic?.bottomProof||null,eventAudit:fullDiagnostic?.eventAudit||null,
+  failure:why||null,phase:fullDiagnostic?.phase||null,phaseHistory:fullDiagnostic?.phaseHistory||[],failedPhase:fullDiagnostic?.failedPhase||null,bottomProof:fullDiagnostic?.bottomProof||null,eventAudit:fullDiagnostic?.eventAudit||null,historySourceManifest:fullDiagnostic?.historySourceManifest||null,
   errors:fullDiagnostic?.errorContexts||[],rows:data,
   note:'不具正式正史效力，禁止直接匯入檔案館或 Firebase；不捏造時間、來源文字或未讀歷史。'};
 }
@@ -1530,7 +1530,7 @@ function anchorDetailedEvidence(root,anchorId,expected,run){
   const sibling=n=>n?.nodeType===1?snapshot(n):n?{nodeType:n.nodeType,textContent:n.textContent}:null;
   result.dom={marker:snapshot(node),wrapper:wrapper?snapshot(wrapper):null,
    boundary:{start:snapshot(start),end:snapshot(end),html:holder.innerHTML,textContent:holder.textContent,rangeText:range.toString()},
-   blocks:[...body.querySelectorAll('pre,code')].filter(n=>range.intersectsNode(n)).map(n=>({node:snapshot(n),previous:sibling(n.previousSibling),next:sibling(n.nextSibling),parent:snapshot(n.parentElement)}))};
+   blocks:[...body.querySelectorAll('pre,code,span.message-bubble-text.TemplatedText.font-mono')].filter(n=>range.intersectsNode(n)).map(n=>({node:snapshot(n),previous:sibling(n.previousSibling),next:sibling(n.nextSibling),parent:snapshot(n.parentElement)}))};
   result.tails=anchorClosingTails(native.text).map(t=>{
    const matches=[],walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT);
    for(let n=walker.nextNode();n;n=walker.nextNode()){
@@ -2438,6 +2438,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    eventAudit:summarizeEventAudit(eventAudit,collected,
     failedValidation||{messages:[],events:[]},false),
    recoveryLog:recoveryLog.slice(-12),lastTrustedScrollTop:lastGoodY};
+  diagnostic.scannerVersion=SCANNER_VERSION;diagnostic.coreVersion=core.version;
+  diagnostic.historySourceManifest=[...eventAudit.history].map(([id,kind])=>({id,kind,sender:eventAudit.senders.get(id)||null,playerRows:[...(eventAudit.playerSourceRows.get(id)||[])].sort((a,b)=>a-b)}));
   diagnostic.failedPhase=failedPhase;
   diagnostic.phaseHistory=phaseHistory;
   try{diagnostic.errorContexts=failureContexts(collected,failedValidation,failure)}

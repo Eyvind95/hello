@@ -47,7 +47,7 @@ test('a remaining native content difference returns only a diagnostic, not canon
 test('website button, separate files, local-only report and cache assets are wired',()=>{
  const html=fs.readFileSync(require.resolve('./index.html'),'utf8'),sw=fs.readFileSync(require.resolve('./sw.js'),'utf8'),js=fs.readFileSync(require.resolve('./archive-replay.js'),'utf8');
  for(const id of ['archiveReplayOpen','archiveReplayRaw','archiveReplayDiag','archiveReplayState','archiveReplayRun','archiveReplayDownload','archiveReplayReport'])assert.ok(html.includes('id="'+id+'"'));
- assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=4/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
+ assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=5/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
  assert.doesNotMatch(js,/\bfetch\s*\(|indexedDB|firestore|localStorage|sessionStorage/);
 });
 
@@ -56,4 +56,27 @@ test('V0.9.06 player quote proof is narrow and rejects other changes',()=>{
  const proof=new Function("const norm=s=>String(s??'').replace(/\\s/gu,'');"+text.slice(text.indexOf(' function playerQuoteProof('),text.indexOf(' const hash='))+"\nreturn playerQuoteProof")();
  assert.equal(proof('甲“測試”乙','甲\n「測試」\n乙'),true);
  for(const d of ['甲「測試”乙','甲「測試」丙','甲「」乙','甲測試乙','甲」測試「乙'])assert.equal(proof('甲“測試”乙',d),false);
+});
+
+test('early complete failures are revalidated, but aggregate count is not independent source proof',()=>{
+ const f=fixture();
+ const world={worldName:'測試世界',worldKey:'test',cycleNumber:1,archiveKey:'test::synthetic-cycle'};
+ Object.assign(f.cp.target,world);Object.assign(f.diag,world);Object.assign(f.state,world);
+ f.cp.failedPhase=f.diag.failedPhase='integrity';f.diag.validationPhases.integrity='failed';
+ f.cp.phaseHistory=f.diag.phaseHistory=['bottom-confirmed','integrity','failure'].map(phase=>({phase}));
+ f.diag.autoContinueAudit=null;f.diag.playerSourceAudit=null;f.diag.autoContinueCandidates=[];
+ const first=run(f);assert.equal(first.report.integrityOk,true);assert.equal(first.report.nativeFormatAudit.verified,2);assert.equal(first.report.sourceAuditOk,false);assert.equal(first.canonical,null);
+ const inventory=[{id:'native-0',kind:'ordinary-message',sender:'chapter',playerRows:[]},{id:'native-1',kind:'ordinary-message',sender:'user',playerRows:[1]},{id:'native-2',kind:'ordinary-message',sender:'character',playerRows:[]}];
+ f.cp.historySourceManifest=structuredClone(inventory);f.diag.historySourceManifest=structuredClone(inventory);
+ const ok=run(f);assert.equal(ok.report.sourceAuditOk,true);assert.ok(ok.canonical);assert.equal(ok.canonical.offlineRecovery.sourceAuditReused,false);
+ for(const mutate of [x=>x.diag.historySourceManifest[1].id='foreign',x=>{x.cp.historySourceManifest[1].playerRows=[];x.diag.historySourceManifest[1].playerRows=[]},x=>{x.cp.historySourceManifest[1].sender='character';x.diag.historySourceManifest[1].sender='character'}]){
+  const x=structuredClone(f);mutate(x);assert.equal(run(x).canonical,null);
+ }
+});
+test('optional evidence input and actual WHIF monospace frame selector are wired',()=>{
+ const html=fs.readFileSync(require.resolve('./index.html'),'utf8'),src=fs.readFileSync(require.resolve('./chrome-extension/gal-content.js'),'utf8');
+ assert.match(html,/id="archiveReplayProbes"[^>]*multiple/);
+ assert.match(src,/pre,code,span\.message-bubble-text\.TemplatedText\.font-mono/);
+ assert.match(src,/historySourceManifest:\s*fullDiagnostic\?\.historySourceManifest/);
+ assert.match(src,/diagnostic\.historySourceManifest=\[\.\.\.eventAudit\.history\]/);
 });
