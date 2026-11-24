@@ -43,6 +43,23 @@
     if(choice==='unknown-revision'){
      problems.push(kind+'-revision-conflict:'+id);continue;
     }
+    if(kind==='cycle'&&choice==='remote-newer'&&local){
+     const localMessages=Array.isArray(local.messages)?local.messages.length:0;
+     const localAccepted=Array.isArray(local.events)?local.events.filter(e=>e?.status==='accepted').length:0;
+     const remoteMessages=remote.messageCount,remoteAccepted=remote.acceptedEventCount;
+     // Older manifests lack source-count evidence. Require manual review
+     // before overwriting an already populated local archive.
+     if((localMessages>0||localAccepted>0)&&
+       (!Number.isSafeInteger(remoteMessages)||!Number.isSafeInteger(remoteAccepted))){
+       problems.push('cycle-missing-remote-count-proof:'+id);continue;
+     }
+     if(Number.isSafeInteger(remoteMessages)&&remoteMessages<localMessages){
+       problems.push('cycle-remote-has-fewer-messages:'+id);continue;
+     }
+     if(Number.isSafeInteger(remoteAccepted)&&remoteAccepted<localAccepted){
+       problems.push('cycle-remote-has-fewer-accepted-events:'+id);continue;
+     }
+    }
     if(choice==='local-only'||choice==='local-newer')needsPush=true;
     if(choice==='remote-only'||choice==='remote-newer')needsPull=true;
     if(kind==='cycle'&&choice==='remote-newer'&&local)snapshots.push(local);
