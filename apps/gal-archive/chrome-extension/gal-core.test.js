@@ -1176,3 +1176,89 @@ test('V0.8.39: visible curly tokens survive and cannot be consumed as a hidden c
  assert.equal(markerBody.text,null,'leading image marker is never eligible hidden context');
  assert.ok(original.endsWith(marker));
 });
+
+
+function syntheticCycle11Event(){
+ const eventTitle='【前線緊急通知】';
+ const base=['｜2026年8月23日（星期日）｜','｜🕒08:15｜🌤️晴朗｜'];
+ const prefixLen=[...(eventTitle+base.join('')).replace(/\s/g,'')].length;
+ const extraLen=165-prefixLen-2;
+ assert.ok(extraLen>0);
+ const status=[...base,'｜'+'狀'.repeat(extraLen)+'｜'].join('\n');
+ const header=eventTitle+'\n'+status+'\n';
+ const quoteBodies=Array.from({length:5},(_,i)=>'隊員'+i+'通報：「第'+i+'項已查證。」').join('\n');
+ const visibleQuote='請保留「現場原有可見的引號」，不允許被移除。';
+ const intro='事件公告：所有隊員依照既有命令執行。';
+ const fixed=intro+'\n'+quoteBodies+'\n'+visibleQuote;
+ const domBeforePadding=header+fixed.replace(/：「([^」]*)」/g,'：$1');
+ const filler='章'.repeat(665-[...domBeforePadding.replace(/\s/g,'')].length);
+ const dom=domBeforePadding+'\n'+filler;
+ const body=intro+'\n'+quoteBodies+'\n'+visibleQuote+'\n'+filler;
+ const leading='{{'+'X'.repeat(162)+'}}\n';
+ const post='{{midstatus}}\n'; // 13 non-whitespace characters
+ const native=leading+header+post+body;
+ assert.equal([...dom.replace(/\s/g,'')].length,665);
+ assert.equal([...native.replace(/\s/g,'')].length,854);
+ return {dom,native,leading,post,header,body,eventTitle,status};
+}
+test('cycle 11 synthetic 854-to-665 event: first 166 context, then 13 post-HUD token and 5 missing native quote pairs',()=>{
+ const x=syntheticCycle11Event();
+ const cmp=context.GalArchiveCore.compareNativeParagraphs(x.dom,x.native,{
+  source:'whif-event-content',event:true,eventTitle:x.eventTitle,
+  statusText:x.status
+ });
+ assert.equal(cmp.text!==null,true,JSON.stringify(cmp.comparison.firstDifference));
+ assert.equal(cmp.comparison.contentEqual,true);
+ assert.equal(cmp.comparison.clockEqual,true);
+ assert.equal(cmp.comparison.nativeNonWhitespace,854);
+ assert.equal(cmp.comparison.scannedNonWhitespace,665);
+ assert.equal(cmp.comparison.eventPostStatusProjection.templateNonWhitespaceChars,13);
+ assert.equal(cmp.comparison.eventPostStatusProjection.omittedQuotePairs,5);
+ assert.equal(cmp.comparison.eventPostStatusProjection.provenEntireEventText,true);
+ assert.equal(cmp.comparison.remainingUnexplained.native,0);
+ assert.equal(cmp.comparison.remainingUnexplained.scanned,0);
+ assert.equal(cmp.comparison.formatMarkers.some(x=>x.kind==='verified-event-post-status-hidden-template'),true);
+ assert.equal(cmp.comparison.formatMarkers.some(x=>x.kind==='verified-event-balanced-native-quotes'),true);
+ assert.equal(cmp.text.includes('「現場原有可見的引號」'),true);
+ assert.equal((cmp.text.match(/「/g)||[]).length,6);
+ assert.equal(cmp.text.includes(x.post.trim()),false);
+ assert.equal(cmp.text.includes(x.leading.trim()),false);
+ assert.equal(cmp.text.includes('｜🕒08:15｜'),true);
+});
+test('cycle 11 rejects modified event body, time, status, misplaced context, unbalanced quotes and visible marker loss',()=>{
+ const x=syntheticCycle11Event();
+ const opts={source:'whif-event-content',event:true,eventTitle:x.eventTitle,statusText:x.status};
+ const reject=[
+  x.native.replace('第0項已查證','第0項未查證'),
+  x.native.replace('08:15','08:16'),
+  x.native.replace('晴朗','陰雨'),
+  x.native.replace(x.post,'{{user|role}}\n'),
+  x.native.replace(x.post,'{{img:missing}}\n'),
+  x.native.replace(x.post,'{{midstatus}}\n{{another}}\n'),
+  x.native.replace(x.post,'').replace('第0項','{{midstatus}}第0項'),
+  x.native.replace('：「第2項已查證。」','：「第2項已查證。'),
+  x.native.replace('：「第3項已查證。」','：第3項已查證。」'),
+  x.native.replace('「現場原有可見的引號」','現場原有可見的引號'),
+  x.native+'附加被刪除的劇情',
+  x.native.replace(x.leading,'')
+ ];
+ for(const original of reject){
+  const cmp=context.GalArchiveCore.compareNativeParagraphs(x.dom,original,opts);
+  assert.equal(cmp.text,null,'case should be rejected: '+original.slice(0,20));
+ }
+});
+if(process.env.GAL_ARCHIVE_CYCLE11_EVENT_TEST){
+ test('cycle 11 real source data never passes without exact full-text evidence',()=>{
+  const f=JSON.parse(fs.readFileSync(process.env.GAL_ARCHIVE_CYCLE11_EVENT_TEST,'utf8'));
+  const target=(f.rows||[]).find(r=>r.eventType==='event'||r.position==='event');
+  assert.ok(target?.nativeText&&target?.scannedText,'event-three test must have both full strings');
+  const opts={source:'whif-event-content',event:true,
+   eventTitle:target.scannedText.split('\n')[0]};
+  const compare=context.GalArchiveCore.compareNativeParagraphs(target.scannedText,target.nativeText,opts);
+  assert.equal(compare.comparison.contentEqual,true,
+   JSON.stringify(compare.comparison.firstDifference));
+  assert.equal(compare.comparison.clockEqual,true);
+  assert.equal(compare.comparison.remainingUnexplained.native,0);
+  assert.equal(compare.comparison.remainingUnexplained.scanned,0);
+ });
+}
