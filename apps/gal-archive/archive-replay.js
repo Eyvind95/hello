@@ -12,6 +12,19 @@
  const eq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
  const norm=s=>String(s??'').replace(/\s/gu,'');
  const empty=a=>Array.isArray(a)&&a.length===0;
+ // Single-source rendered curly English quotes may become Chinese quotes.
+ function playerQuoteProof(native,dom){
+  const a=[...norm(native)],b=[...norm(dom)];
+  if(a.length!==b.length)return false;
+  let opened=-1,pairs=0;
+  for(let i=0;i<a.length;i++){
+   if(a[i]===b[i])continue;
+   if(a[i]==='“'&&b[i]==='「'&&opened<0){opened=i;continue}
+   if(a[i]==='”'&&b[i]==='」'&&opened>=0&&i>opened+1){opened=-1;pairs++;continue}
+   return false;
+  }
+  return opened<0&&pairs>0;
+ }
  const hash=str=>{let h1=2166136261,h2=0x811c9dc5;for(let i=0;i<str.length;i++){
   h1=Math.imul(h1^str.charCodeAt(i),16777619)>>>0;h2=Math.imul(h2^str.charCodeAt(i),2246822519)>>>0;
  }return h1.toString(16).padStart(8,'0')+h2.toString(16).padStart(8,'0')};
@@ -38,7 +51,7 @@
   const ac=diag.autoContinueAudit,ps=ac?.playerSourceAudit,ev=diag.eventAudit;
   assert(ac?.ok===true&&ac.notApplicable!==true&&ac.scannedRows===n&&empty(ac.problems)&&empty(ac.unknownMarkers)&&empty(ac.unaccountedAIOrEvents)&&eq(ps,diag.playerSourceAudit),'原批次缺少已通過的現場來源稽核');
   assert(ev&&eq(cp.eventAudit,ev)&&ev.unresolvedAccepted===0&&ev.unresolvedHeaders===0&&ev.unreadableHistoryMarkers===0&&empty(ev.unverifiedCards),'事件及歷史標記稽核未通過');
-  const ids=new Set(),playerIds=new Set(),eventIndices=[],autoIndices=[],merged=[];
+  const ids=new Set(),playerIds=new Set(),eventIndices=[],autoIndices=[],merged=[],playerQuoteRestored=[];
   const addId=s=>{assert(typeof s==='string'&&s&&!ids.has(s),'原生來源 ID 重複或缺失');ids.add(s)};
   const rows=cp.rows.map((r,i)=>{
    assert(r.scanIndex===i&&['ai','me'].includes(r.role)&&typeof r.domText==='string'&&r.domText.trim()&&r.domText.length<=25000&&r.originalText===r.domText,'索引、身分或原始DOM文字異常：'+i);
@@ -58,7 +71,11 @@
      assert(s.sender==='user'&&s.kind==='ordinary-message'&&s.nativeReason==='available'&&s.nativeSender==='user'&&s.nativeMessageId===s.id&&s.hasText===true&&!s.hasMedia&&typeof s.nativeText==='string'&&s.nativeText.trim(),'玩家原文未驗證：'+i);
      addId(s.id);playerIds.add(s.id);
     }
-    assert(r.nativeText===sources.map(s=>s.nativeText).join('\n\n')&&norm(r.nativeText)===norm(r.domText),'玩家原文與DOM不一致：'+i);
+    assert(r.nativeText===sources.map(s=>s.nativeText).join('\n\n'),'玩家原文來源不一致：'+i);
+    if(norm(r.nativeText)!==norm(r.domText)){
+     assert(core.isAdventureWorld(cp.target.worldName)&&sources.length===1&&playerQuoteProof(r.nativeText,r.domText),'玩家原文與DOM不一致：'+i);
+     playerQuoteRestored.push({i,native:r.nativeText});
+    }
     if(sources.length>1)merged.push({i,sources});
    }
    return {role:r.role,text:r.domText,eventType:r.eventType||null,worldName:r.worldName||null,autoContinue:r.autoContinue===true,formatSource:fs};
@@ -97,6 +114,12 @@
    entry.text=sources.map(s=>s.nativeText).join('\n\n');
    entry.nativeUserSegments=sources.map((s,position)=>({position,sourceIdHash:hash(s.id),text:s.nativeText}));
   }
+  for(const {i,native} of playerQuoteRestored){
+   const entry=v.messages.find(x=>x.scanIndex===i&&x.role==='me');
+   assert(entry,'玩家引號來源未出現在正式回合');
+   entry.text=native;
+  }
+  report.playerQuoteRestoredIndices=playerQuoteRestored.map(x=>x.i);
   const path=url.origin+url.pathname,chatKey=(hash(path)+hash(path+'|Gal AI')).slice(0,32);
   const build=(entry,i,kind)=>{
    const sourceEventId='galnative-'+hash(path+'|'+i+'|'+kind);

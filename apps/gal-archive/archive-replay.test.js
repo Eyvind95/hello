@@ -47,6 +47,13 @@ test('a remaining native content difference returns only a diagnostic, not canon
 test('website button, separate files, local-only report and cache assets are wired',()=>{
  const html=fs.readFileSync(require.resolve('./index.html'),'utf8'),sw=fs.readFileSync(require.resolve('./sw.js'),'utf8'),js=fs.readFileSync(require.resolve('./archive-replay.js'),'utf8');
  for(const id of ['archiveReplayOpen','archiveReplayRaw','archiveReplayDiag','archiveReplayState','archiveReplayRun','archiveReplayDownload','archiveReplayReport'])assert.ok(html.includes('id="'+id+'"'));
- assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=2/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
+ assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=3/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
  assert.doesNotMatch(js,/\bfetch\s*\(|indexedDB|firestore|localStorage|sessionStorage/);
+});
+
+test('V0.9.06 player quote proof is narrow and rejects other changes',()=>{
+ const text=fs.readFileSync(require.resolve('./archive-replay.js'),'utf8');
+ const proof=new Function("const norm=s=>String(s??'').replace(/\\s/gu,'');"+text.slice(text.indexOf(' function playerQuoteProof('),text.indexOf(' const hash='))+"\nreturn playerQuoteProof")();
+ assert.equal(proof('甲“測試”乙','甲\n「測試」\n乙'),true);
+ for(const d of ['甲「測試”乙','甲「測試」丙','甲「」乙','甲測試乙','甲」測試「乙'])assert.equal(proof('甲“測試”乙',d),false);
 });

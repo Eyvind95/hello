@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.9.5",
-  "version_name": "V0.9.05 錨點復原取證",
-  "description": "輪迴檔案館 V0.9.05：指定原生錨點局部復原取證。",
+  "version": "0.9.6",
+  "version_name": "V0.9.06 冒險者無時間事件",
+  "description": "輪迴檔案館 V0.9.06：冒險者無時間事件及離線重驗。",
   "permissions": [
     "storage",
     "activeTab",
