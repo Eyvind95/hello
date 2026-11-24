@@ -163,8 +163,8 @@ function twoNativeSourcesFixture(){
  }
  const extraId='u-extra';
  const special=indices[3],firstId='u-3';
- x.rows[special].formatSource.playerSources=[source(firstId,'第一份「玩家」'),
-  source(extraId,'第二份玩家')];
+ x.rows[special].formatSource.playerSources=[userNative(firstId,'第一份「玩家」'),
+  userNative(extraId,'第二份玩家')];
  x.rows[special].text='第一份「玩家」\n\n第二份玩家';
  x.history.set(extraId,'ordinary-message');x.senders.set(extraId,'user');
  links.set(extraId,new Set([special]));
@@ -209,7 +209,7 @@ test('two separate double-source player turns explain exactly two surplus WHIF u
  const {x,links,special}=twoNativeSourcesFixture();
  const another=x.rows.findIndex((row,index)=>row.role==='me'&&index>special);
  const secondId='u-second-extra',firstId=[...links].find(([,indices])=>indices.has(another))[0];
- x.rows[another].formatSource.playerSources=[source(firstId,'甲'),userNative(secondId,'乙')];
+ x.rows[another].formatSource.playerSources=[userNative(firstId,'甲'),userNative(secondId,'乙')];
  x.rows[another].text='甲乙';
  x.history.set(secondId,'ordinary-message');x.senders.set(secondId,'user');
  links.set(secondId,new Set([another]));
