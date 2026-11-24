@@ -1725,3 +1725,30 @@ test('V0.9.06 untimed adventure event exact wrapper and title companion',()=>{
  assert.equal(check(native,dom,{...opts,eventTitle:'其他:'}),null);
  assert.equal(check(native,dom,{...opts,source:'whif-message-content',event:false}),null);
 });
+
+test('Anchor history localization follows new live geometry without using clock as identity',()=>{
+ const src=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const part=src.slice(src.indexOf('function anchorHintTime('),src.indexOf('function anchorHistorySample('));
+ const {time,decision,step,sig}=new Function(part+'\nreturn {time:anchorHintTime,decision:anchorHistoryDecision,step:anchorHistoryStep,sig:anchorHistorySignature}')();
+ const target=time('3000/01/03 19:15');
+ assert.equal(target,Date.parse('3000-01-03T11:15:00.000Z'));
+ assert.equal(time('3000/02/30 19:15'),null);
+ assert.equal(time('3000/01/03 24:00'),null);
+ const a={top:0,height:8258,clientHeight:905,rawIds:['new'],clocks:[{iso:'3000-01-03T23:33:00.000Z'}]};
+ const b={...a,top:8365.19921875,height:16857};
+ assert.equal(step(a,-1),0);
+ assert.equal(step(b,-1),7732.19921875);
+ assert.ok(sig(a)!==sig(b));
+ assert.equal(decision(b,'anchor',['neighbor'],target).kind,'target-interval-unconfirmed');
+ const near={...b,clocks:[{iso:'3000-01-03T11:15:00.000Z'}]};
+ assert.equal(decision(near,'anchor',['neighbor'],target).kind,'target-interval-unconfirmed');
+ assert.equal(decision(near,'anchor',[],target).kind,'clock-hint-only');
+ assert.equal(decision({...b,rawIds:['neighbor']},'anchor',['neighbor'],target).kind,'reference-id-observed');
+ assert.equal(decision({...b,rawIds:['anchor']},'anchor',['neighbor'],target).kind,'anchor-id-observed');
+ const reachCode=src.slice(src.indexOf('function anchorProbeReach('),src.indexOf('function anchorProbeElement('));
+ const reach=new Function(reachCode+'\nreturn anchorProbeReach')();
+ assert.equal(reach([],{decision:{kind:'target-interval-unconfirmed'}},'anchor',['neighbor']).state,'target-interval-not-confirmed');
+ assert.equal(reach([{stable:false,before:{rawIds:['anchor']},after:{rawIds:['anchor']}}],{},'anchor',[]).state,'target-interval-not-confirmed');
+ assert.equal(reach([{stable:true,before:{rawIds:['neighbor']},after:{rawIds:['neighbor']}}],{},'anchor',['neighbor']).state,'reference-ids-observed-anchor-unseen');
+ assert.equal(reach([{stable:true,before:{rawIds:['anchor']},after:{rawIds:['anchor']}}],{},'anchor',[]).state,'anchor-observed-in-stable-probe');
+});
