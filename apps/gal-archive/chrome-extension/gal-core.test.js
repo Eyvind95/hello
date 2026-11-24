@@ -1775,3 +1775,27 @@ test('V0.9.08 toolbar popup contains all anchor inputs and hands off only to the
   assert.equal(bad.result.ok,false);assert.equal(bad.calls,0);
  }
 });
+
+test('V0.9.09 fast anchor navigation jumps relative to bottom, preloads at top, slows near target without claiming identity',()=>{
+ const code=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const part=code.slice(code.indexOf('function anchorFastPlan('),code.indexOf('async function anchorFastSample('));
+ const plan=new Function(part+'\nreturn anchorFastPlan')();
+ const target=Date.parse('3000-01-03T11:15:00.000Z');
+ const d={min:target+5*3600000,max:target+6*3600000};
+ const base={top:7269,height:8258,clientHeight:905};
+ const visited=new Set();
+ assert.deepEqual(plan(base,d,target,358401.59375,377913,null,visited),{top:0,mode:'preload-history'});
+ const grown={...base,top:0,height:16857};
+ assert.deepEqual(plan(grown,d,target,358401.59375,377913,{...base,direction:-1},visited),{top:0,mode:'preload-history'});
+ const loaded={...base,top:50000,height:50284};
+ assert.equal(plan(loaded,d,target,358401.59375,377913,{...grown,direction:-1},visited).top,30772.59375);
+ const mid={...base,top:25000,height:50284};
+ const far=plan(mid,d,target,358401.59375,377913,{...mid,direction:-1},visited);
+ assert.equal(far.top,25000-905*8);
+ const near=plan(mid,{min:target+60000,max:target+120000},target,358401.59375,377913,{...mid,direction:-1},visited);
+ assert.equal(near.top,25000-905*.7);
+ const cross=plan(mid,{min:target-7200000,max:target-3600000},target,358401.59375,377913,{...mid,top:30000,direction:-1},visited);
+ assert.equal(cross.mode,'bracket-refine');assert.equal(cross.top,27500);
+ assert.match(code,/await sleep\(100\);elapsed\+=100/);
+ assert.match(code,/const limit=edgeWait\?2400:900/);
+});
