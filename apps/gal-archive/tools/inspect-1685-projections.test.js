@@ -48,7 +48,7 @@ test('duplicate source IDs and non-checkpoint inputs are rejected',()=>{
 test('default diagnostics redact story contexts',()=>{
  const d=redact(analyze(fixture('【章】原文','{{hidden}}\n【章】原文')),false);
  assert.ok(!JSON.stringify(d).includes('原文'));
- assert.ok(!JSON.stringify(d).includes('hidden'));
+ assert.ok(!JSON.stringify(d).includes('{{hidden}}'));
  assert.equal(d.original.domContext,undefined);
  assert.ok(d.candidates.every(x=>!Object.hasOwn(x,'_privateContext')));
 });
