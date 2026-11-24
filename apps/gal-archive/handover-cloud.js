@@ -210,7 +210,7 @@ async function push({db,user,progress=()=>{}}){
  }
  return {threads:updatedThreads,text:updatedText,files:updatedFiles,deletes:updatedDeletes,skipped};
 }
-async function pull({db,user,progress=()=>{}}){
+async function pull({db,user,progress=()=>{},safeAuto=false}){
  if(!db||!user?.uid)throw Error('請先登入 Firebase');
  const root=db.collection('galArchive').doc(user.uid);
  const [threadSnap,textSnap,fileSnap,deleteSnap]=await Promise.all([
@@ -278,6 +278,11 @@ async function pull({db,user,progress=()=>{}}){
  const removedEntries=local.entries.filter(e=>
    compareDeleted(e,marks.get('entry:'+e.id))||
    compareDeleted({updatedAt:e.updatedAt||e.createdAt},marks.get('thread:'+e.threadId))).map(e=>e.id);
+ // Ordinary automatic sync must never silently delete local handover records.
+ // The manual merge operation retains its original explicit-review behavior.
+ if(safeAuto&&(removedThreads.length||removedEntries.length))
+  throw Error('雲端有交接稿刪除標記，涉及本機 '+removedThreads.length+' 個交接對話與 '+removedEntries.length+
+   ' 個內容。自動同步已停止，請人工核對後再決定如何合併。');
  // Atomic local merge: all verified file entries, reviews, and deletion markers commit together.
  const localDb=await dbOpen();
  try{
