@@ -1465,3 +1465,31 @@ test('V0.8.46 unmatched literal fence is preserved exactly',()=>{
  for(const wrong of [native+'\n'+fence,native.replace('19:10','19:11'),native.replace('8%','9%'),native.replace('正文。','不符。'),native.replace('「通報。」','「通報。'),native.replace('{{測試上下文}}','{{user}}')])assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
  assert.equal(core.compareNativeParagraphs(dom.slice(fence.length+1),native,opts).text,null);
 });
+
+
+test('clockless trending header proves one hidden context and one bare leading fence pair only',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const header='｜測試基地・內部網路｜\n｜🔥熱搜榜・即時更新｜';
+ const body=['','`系統提示`','','---','','**1. 測試標題**','','> 引用內容','',fence,'測試程式碼',fence,'','{{visible-template}}'].join('\n');
+ const dom=header+body;
+ const native='{{系統顯示熱搜介面｜測試上下文}}\n'+fence+'\n'+header+'\n'+fence+body;
+ const opts={source:'whif-message-content',verifiedUntimedNative:true};
+ const v=core.compareNativeParagraphs(dom,native,opts);
+ assert.equal(v.comparison.prefixedHudProjection.legacyBoundary,'untimed-trending-header');
+ assert.equal(v.comparison.clockEqual,true);
+ assert.equal(v.text,dom);
+ assert.equal(parseGameTime(v.text),null);
+ const row={role:'ai',text:dom,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:'synthetic-trending',scannedText:dom,text:native}}};
+ const prefix=[{role:'ai',text:'輪迴開場測試正文。'},{role:'me',text:'玩家測試'}];
+ const suffix=[{role:'me',text:'下一回合'},{role:'ai',text:'｜2026年8月22日｜\n｜🕒18:45｜\n正常回覆。'}];
+ const checked=validate([...prefix,row,...suffix]);
+ assert.equal(checked.ok,true,JSON.stringify(checked.errors));
+ assert.equal(checked.messages[0].gameTime,null);
+ assert.equal(checked.messages[1].gameTime,null);
+ assert.equal(checked.messages[2].gameTime,'2026-08-22T10:45:00.000Z');
+ for(const wrong of [native+'額外文字',native.replace('熱搜榜・即時更新','熱搜榜・其他更新'),native.replace('系統顯示熱搜介面','其他模板'),native.replace(fence,fence+'js'),native.replace(fence,''),native.replace('**1.','1.'),native.replace('> 引用','引用'),native.replace('{{visible-template}}',''),native.replace('測試程式碼','其他程式碼'),native.replace('{{系統顯示熱搜介面｜測試上下文}}','{{user|role}}')]){
+  assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
+ }
+ assert.equal(core.compareNativeParagraphs(dom,native,{source:'whif-message-content'}).text,null);
+ assert.equal(validate([...prefix,{...row,formatSource:{nativeReply:{...row.formatSource.nativeReply,markerCount:2}}},...suffix]).ok,false);
+});
