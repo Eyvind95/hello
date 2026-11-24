@@ -192,3 +192,62 @@ test('bottom completion hands off to named responsive validation stages',()=>{
  assert.match(content,/hash\(row\.text\)\]\.join/);
  assert.match(content,/背景下載佇列等待超過 12 秒/);
 });
+
+
+const recoveryCtx=vm.createContext({});
+const rowStart=content.indexOf('function sameRow('),rowEnd=content.indexOf('\nfunction observeEventAudit(',rowStart);
+vm.runInContext('const WAIT_MS=420,STABLE_MS=350;\n'+content.slice(start,end)+'\n'+content.slice(rowStart,rowEnd)+'\nthis.recoverScanOverlap=recoverScanOverlap;this.proveRecoveryOverlap=proveRecoveryOverlap;this.appendSample=appendSample;this.trustedRecoveryAnchor=trustedRecoveryAnchor;',recoveryCtx);
+const recover=recoveryCtx.recoverScanOverlap;
+const nativeRow=(id,text='測試 '+id)=>({role:'ai',text,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:id}}});
+const playerRow=(text)=>({role:'me',text});
+function recoveryFixture(){
+ const all=[nativeRow('a'),playerRow('舊玩家'),nativeRow('b')];
+ const good={rows:[playerRow('舊玩家'),nativeRow('b'),playerRow('新玩家'),nativeRow('c')]};
+ const bad={rows:[nativeRow('unrelated')]};
+ return {all,good,bad};
+}
+test('V0.8.48 recovery proves overlap after +484px layout growth, without appending probes',async()=>{
+ const root=scrolling(402698.375,411814,905),{all,good,bad}=recoveryFixture();
+ const trusted={top:402418.78125,height:411814,id:'b',relativeTop:100};
+ let waits=0;
+ const result=await recover(root,trusted,all,()=>Math.abs(root.scrollTop-402902.78125)<2?good:bad,()=>null,async()=>{
+  if(++waits===1){root.scrollHeight=412298;root.scrollTop=402903.59375}
+ });
+ assert.equal(result.ok,true);assert.equal(all.length,3);
+ const merged=recoveryCtx.appendSample(result.shot,all);
+ assert.equal(merged.repeated,2);assert.equal(merged.added,2);assert.equal(all.length,5);
+ assert.equal(recoveryCtx.appendSample(result.shot,all).added,0);
+});
+test('V0.8.48 height-decrease candidate is verified rather than treated as a failed absolute rollback',async()=>{
+ const root=scrolling(5280,10000,900),{all,good,bad}=recoveryFixture();
+ const trusted={top:5000,height:10000,id:'b',relativeTop:80};
+ let waits=0;
+ const result=await recover(root,trusted,all,()=>root.scrollTop===4516?good:bad,()=>null,async()=>{if(++waits===1)root.scrollHeight=9516});
+ assert.equal(result.ok,true);assert.equal(root.scrollTop,4516);assert.equal(all.length,3);
+});
+test('V0.8.48 native marker offset locates a trusted window even when height delta is misleading',async()=>{
+ const root=scrolling(5280,10000,900),{all,good,bad}=recoveryFixture();
+ const trusted=recoveryCtx.trustedRecoveryAnchor({scrollTop:5000,scrollHeight:10000},{rows:all},()=>80);
+ const result=await recover(root,trusted,all,()=>root.scrollTop===4900?good:bad,()=>4900-root.scrollTop+80,async()=>{});
+ assert.equal(result.ok,true);assert.equal(root.scrollTop,4900);assert.equal(all.length,3);
+});
+test('V0.8.48 recovery rejects unrelated, conflicting, ambiguous or repeated native IDs and stops within six probes',async()=>{
+ const root=scrolling(5280,10000,900),{all,good,bad}=recoveryFixture();
+ const proof=recoveryCtx.proveRecoveryOverlap;
+ assert.equal(proof({rows:[nativeRow('other',all[2].text)]},all),false);
+ assert.equal(proof({rows:[nativeRow('b','改過的正文')]},all),false);
+ assert.equal(proof({rows:[nativeRow('b'),nativeRow('b')]},all),false);
+ assert.equal(proof({rows:[nativeRow('b'),nativeRow('a')]},all),false);
+ assert.equal(proof({rows:[{role:'ai',text:all[2].text}]},all),false);
+ assert.equal(proof(good,all),true);
+ const result=await recover(root,{top:5000,height:10000,id:'b',relativeTop:80},all,()=>bad,()=>null,async()=>{});
+ assert.equal(result.ok,false);assert.ok(result.attempts.length<=6);assert.equal(all.length,3);
+ assert.match(content,/if\(!recovered\.ok\)\s*throw Error/);
+});
+test('V0.8.48 recovery honors cancellation and container replacement',async()=>{
+ const root=scrolling(5280,10000,900),{all,bad}=recoveryFixture();
+ const trusted={top:5000,height:10000,id:'b',relativeTop:80};
+ await assert.rejects(recover(root,trusted,all,()=>bad,()=>null,async()=>{root.isConnected=false}),/更換了訊息容器/);
+ root.isConnected=true;let stopped=false;
+ await assert.rejects(recover(root,trusted,all,()=>bad,()=>null,async()=>{stopped=true},()=>{if(stopped)throw Error('停止')}),/停止/);
+});

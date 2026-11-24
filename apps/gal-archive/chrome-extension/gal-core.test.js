@@ -1526,3 +1526,24 @@ test('V0.8.47 quote-wrapped trending and two separate fenced blocks require comp
  assert.equal(parseGameTime(visible+'\n\n任意額外敘述\n'+hud),null);
  assert.equal(parseGameTime(visible.replace('#3 ','#8 ')+'\n'+hud),null);
 });
+
+
+test('V0.8.48 combined clock/location line proves multiline HUD including literal location quotes',()=>{
+ const core=context.GalArchiveCore,fence=String.fromCharCode(96).repeat(3);
+ const title='《測試-世界》:',hud='｜2026年8月24日｜\n｜🕒20:17｜測試「房間」與走廊｜\n｜🍿暴走值：37%｜\n｜🐆嚮導值：100%｜';
+ const visibleHud=hud.replace('「房間」','\n「房間」\n');
+ const dom=title+'\n'+visibleHud+'\n第一句。\n第二句。',native=title+' {{測試上下文}}\n'+fence+'\n'+hud+'\n'+fence+'\n\n「第一句。」\n\n「第二句。」';
+ const opts={source:'whif-message-content',statusText:visibleHud,codeBlocks:[visibleHud]};
+ const v=core.compareNativeParagraphs(dom,native,opts);
+ assert.equal(v.comparison.prefixedHudProjection.legacyBoundary,'multiline-hud');
+ assert.equal(v.comparison.clockEqual,true);
+ assert.equal(v.comparison.prefixedHudProjection.omittedQuotePairs,2);
+ assert.ok(v.text.includes('測試「房間」與走廊'));
+ assert.ok(v.text.includes('「第一句。」\n\n「第二句。」'));
+ assert.equal(parseGameTime(v.text).iso,'2026-08-24T12:17:00.000Z');
+ for(const wrong of [native+'新增',native.replace('37%','38%'),native.replace('20:17','20:18'),
+ native.replace('「房間」','房間'),native.replace('「第一句。」','「第一句。'),
+ native.replace('{{測試上下文}}','{{甲}}{{乙}}')])assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
+ for(const wrong of [{...opts,codeBlocks:[]},{...opts,statusText:''},{...opts,codeBlocks:[visibleHud.replace('37%','38%')]}])
+ assert.equal(core.compareNativeParagraphs(dom,native,wrong).text,null);
+});
