@@ -1,5 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);
+$('releaseVersion').textContent='V'+chrome.runtime.getManifest().version;
 const CHAT_PATTERN=/^\/(?:c\/[a-zA-Z0-9-]+|g\/[^/]+\/c\/[a-zA-Z0-9-]+)\/?$/;
 let tab=null, chat=null,activeBinding=null;
 const emptyTarget = () => ({uid:'',key:'',cycleId:'',manager:'',worldName:'',cycleTitle:''});
