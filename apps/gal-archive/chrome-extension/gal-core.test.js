@@ -1799,3 +1799,81 @@ test('V0.9.09 fast anchor navigation jumps relative to bottom, preloads at top, 
  assert.match(code,/await sleep\(100\);elapsed\+=100/);
  assert.match(code,/const limit=edgeWait\?2400:900/);
 });
+
+
+// Anonymized structural fixture based on anomaly 010, DOM items 99752–99754.
+// Test the production header finder and boundary reader; mock the DOM range
+// serializer and bridge only. No private story content is committed.
+function nativeBoundaryFixture({playerLabels=['《測試世界》','《測試世界》','《測試世界》'],event=false,missing=false,foreign=false,unknown=false,unowned=false}={}){
+ const source=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const head=source.slice(source.indexOf('function boundaryOrder('),source.indexOf('function boundaryTitles('));
+ const reader=source.slice(source.indexOf('function boundaryRead('),source.indexOf('function messageText('));
+ const nodes=[],strips=[];
+ const Node={TEXT_NODE:3,DOCUMENT_POSITION_FOLLOWING:4,DOCUMENT_POSITION_PRECEDING:2};
+ const core={clean:s=>String(s||'').trim(),normalizedWorld:s=>String(s||'').replace(/[《》\s]/g,''),parseGameTime:()=>null,isEvent:()=>false};
+ function make(parent,attrs={},value='',candidate=false){
+  const n={parent,attrs,innerText:value,textContent:value,childNodes:[{nodeType:3,nodeValue:value}],candidate,
+   getAttribute:k=>attrs[k]??null,
+   contains(other){for(let p=other;p;p=p.parent)if(p===this)return true;return false;},
+   closest(selector){for(let p=this;p;p=p.parent)if(selector==='[data-message-id]'&&p.attrs['data-message-id']||selector==='[data-selection-copy-message-id]'&&p.attrs['data-selection-copy-message-id'])return p;return null;},
+   querySelectorAll(selector){return nodes.filter(x=>x!==this&&this.contains(x)&&(selector==='[data-selection-copy-message-id]'?x.attrs['data-selection-copy-message-id']:x.candidate));},
+   compareDocumentPosition(other){return nodes.indexOf(this)<nodes.indexOf(other)?4:2;},
+   getBoundingClientRect(){return {top:nodes.indexOf(this)*10};}};
+  nodes.push(n);return n;
+ }
+ const root=make(null);
+ function msg(id,sender,labels,hasStrip,kind='reply'){
+  const wrap=make(root,unowned?{}:{'data-message-id':id});
+  if(sender!=='user')make(wrap,{},kind==='event'?'與《測試世界》的事件':'《測試世界》',true);
+  const body=make(wrap,{'data-selection-copy-message-id':id},'完整原文 '+id);
+  body.proof={messageId:id,sender,kind:'ordinary-message'};
+  for(const label of labels)make(body,{class:'z-10'},label,true);
+  if(hasStrip)strips.push(make(wrap,{},''));
+  return body;
+ }
+ msg('99752','character',[],!missing,event?'event':'reply');
+ if(foreign){const w=make(root,{'data-message-id':'foreign'});strips.push(make(w));}
+ msg('99753','user',playerLabels,false);
+ msg('99754','character',[],true);
+ const readNativeNode=n=>({eventEvidence:unknown?undefined:n.proof});
+ function between(start,end){return nodes.slice(nodes.indexOf(start)+1,nodes.indexOf(end));}
+ const boundaryFragmentText=(start,end,role,trace,metadata)=>{
+  const list=between(start,end).filter(n=>n.proof);
+  if(metadata)metadata.nativeReply={messageId:list[0]?.proof.messageId,reason:'available'};
+  return list.map(n=>n.innerText).join('\n');
+ };
+ const nativePlayerSourcesBetween=(start,end)=>between(start,end).filter(n=>n.proof?.sender==='user').map(n=>({id:n.proof.messageId,nativeText:n.innerText}));
+ const target={worldName:'測試世界'},PANEL='panel',nativeMessageSelector='[data-selection-copy-message-id]';
+ const getComputedStyle=()=>({display:'block',visibility:'visible'});
+ const api=new Function('Node','core','target','PANEL','nativeMessageSelector','readNativeNode','getComputedStyle','boundaryToolbars','boundaryFragmentText','nativePlayerSourcesBetween','candidatePlayerGap',head+'\n'+reader+'\nreturn {boundaryHeaders,boundaryRead};')(
+  Node,core,target,PANEL,nativeMessageSelector,readNativeNode,getComputedStyle,()=>strips,boundaryFragmentText,nativePlayerSourcesBetween,()=>({}));
+ return {headers:api.boundaryHeaders(root),result:api.boundaryRead(root,false,true)};
+}
+test('anomaly 010: three native player world-name spans preserve AI/player/AI and unique native IDs',()=>{
+ const {headers,result}=nativeBoundaryFixture();
+ assert.equal(headers.length,2);
+ assert.deepEqual(result.rows.map(r=>r.role),['ai','me','ai']);
+ assert.deepEqual(result.rows.map(r=>r.role==='ai'?r.formatSource.nativeReply.messageId:r.formatSource.playerSources[0].id),['99752','99753','99754']);
+ assert.equal(result.rows[1].formatSource.playerSources[0].nativeText,'完整原文 99753');
+ assert.equal(result.debug.incompleteAI,0);
+});
+test('anomaly 010: native player exact world text and event-like text cannot become headings',()=>{
+ for(const labels of [['測試世界'],['與《測試世界》的事件'],['《測試世界》','與《測試世界》的事件']]){
+  const {headers,result}=nativeBoundaryFixture({playerLabels:labels});
+  assert.equal(headers.length,2);assert.equal(result.rows.length,3);assert.equal(result.debug.incompleteAI,0);
+ }
+});
+test('anomaly 010: genuine reply/event without its toolbar remains fail closed, including foreign toolbar',()=>{
+ for(const event of [false,true])for(const foreign of [false,true]){
+  const {result}=nativeBoundaryFixture({event,foreign,missing:true,playerLabels:[]});
+  assert.equal(result.rows.length,0);assert.equal(result.debug.incompleteAI,1);
+ }
+});
+test('anomaly 010: unknown native sender does not silently suppress a candidate; valid event remains recognized',()=>{
+ const unknown=nativeBoundaryFixture({unknown:true});
+ assert.equal(unknown.headers.length,5);assert.equal(unknown.result.debug.incompleteAI,1);
+ const valid=nativeBoundaryFixture({event:true,playerLabels:[]});
+ assert.equal(valid.headers[0].kind,'event');assert.equal(valid.result.debug.completeEvents,1);assert.equal(valid.result.rows.length,3);
+ const legacy=nativeBoundaryFixture({unknown:true,unowned:true,playerLabels:[]});
+ assert.equal(legacy.result.rows.length,3);
+});

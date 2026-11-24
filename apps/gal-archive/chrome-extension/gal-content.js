@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.9: independent bounded native anchor recovery probe; no change to scan acceptance. */
+/* Independent Gal AI page scanner. v0.9.10: native message ownership guard for boundaries; preserve scan acceptance. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.9';
+const SCANNER_VERSION='0.9.10';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -494,7 +494,37 @@ function boundaryDirectText(n){
  return [...(n.childNodes||[])].filter(x=>x.nodeType===Node.TEXT_NODE)
    .map(x=>x.nodeValue||'').join('').replace(/\s+/g,' ').trim();
 }
-function boundaryHeaders(root){
+// Resolve only the closest native message owner. Never infer sender from story text.
+// Cache per boundary pass, not across virtualized mounts.
+function boundaryNativeOwner(node,cache){
+ const wrapper=node.closest?.('[data-message-id]')||node.closest?.(nativeMessageSelector);
+ if(!wrapper)return null;
+ if(cache.has(wrapper))return cache.get(wrapper);
+ const id=wrapper.getAttribute('data-message-id')||wrapper.getAttribute('data-selection-copy-message-id');
+ if(!id){cache.set(wrapper,null);return null;}
+ const markers=[...(wrapper.querySelectorAll?.(nativeMessageSelector)||[])].filter(n=>
+  n.getAttribute('data-selection-copy-message-id')===id&&
+  (!n.closest('[data-message-id]')||n.closest('[data-message-id]')===wrapper));
+ if(wrapper.getAttribute('data-selection-copy-message-id')===id)markers.unshift(wrapper);
+ // The bridge validates its React message ID. Conflicting or unavailable
+ // evidence stays unknown; it must never cause a player exclusion.
+ const proofs=[...new Set([...markers,wrapper])].map(n=>readNativeNode(n,true).eventEvidence)
+  .filter(e=>e?.messageId===id&&typeof e.sender==='string'&&e.sender);
+ const senders=[...new Set(proofs.map(e=>e.sender))];
+ const owner={id,sender:senders.length===1?senders[0]:null};
+ cache.set(wrapper,owner);
+ return owner;
+}
+function boundaryToolbarMatches(heading,toolbar,cache){
+ const a=heading.owner,b=boundaryNativeOwner(toolbar,cache);
+ if(b?.sender==='user')return false;
+ if(a?.id&&b?.id)return a.id===b.id;
+ // For proven native headings, do not borrow a strip of unknown ownership.
+ if(a?.id&&a.sender)return false;
+ // Unproven legacy structures retain the original bounded positional checks.
+ return true;
+}
+function boundaryHeaders(root,ownerCache=new Map()){
  const name=core.normalizedWorld(target?.worldName||'');
  if(!name)return [];
  const elements=[...root.querySelectorAll('span,strong,b,p,h1,h2,h3,h4,label,div')];
@@ -515,7 +545,9 @@ function boundaryHeaders(root){
   const kind=found.kind;
   const style=getComputedStyle(n);
   if(style.display==='none'||style.visibility==='hidden')continue;
-  candidates.push({node:n,kind});
+  const owner=boundaryNativeOwner(n,ownerCache);
+  if(owner?.sender==='user')continue;
+  candidates.push({node:n,kind,owner});
  }
  // Event's outer banner wins over the nested 《世界觀》 span.
  const withoutNestedEvent=candidates.filter(a=>!candidates.some(b=>b!==a&&b.kind==='event'&&b.node.contains(a.node)));
@@ -666,7 +698,8 @@ function candidatePlayerGap(start,end,previousId,currentId){
  return {markers:[...markers.values()],loading};
 }
 function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null){
- const headings=boundaryHeaders(root),tools=boundaryToolbars(root);
+ const ownerCache=new Map();
+ const headings=boundaryHeaders(root,ownerCache),tools=boundaryToolbars(root);
  const rows=[],debug={headers:headings.filter(h=>h.kind==='reply').length,
   eventHeaders:headings.filter(h=>h.kind==='event').length,
   reactionBars:tools.length,completeAI:0,completeEvents:0,playerGaps:0,
@@ -679,7 +712,7 @@ function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null)
  for(let i=0;i<headings.length;i++){
   const heading=headings[i],start=heading.node,next=headings[i+1]?.node||null;
   // Both "👍 👎 複製" and "✎ 👍 👎 書籤 更多" end a Gal AI item.
-  const strips=tools.filter(t=>boundaryFollows(start,t)&&(!next||boundaryFollows(t,next)));
+  const strips=tools.filter(t=>boundaryFollows(start,t)&&(!next||boundaryFollows(t,next))&&boundaryToolbarMatches(heading,t,ownerCache));
   const probe=probeTrace?{headingIndex:i,kind:heading.kind,heading:anchorProbeElement(start),
    nextHeading:next?anchorProbeElement(next):null,toolbarCandidates:strips.map(anchorProbeElement),outcome:'pending'}:null;
   if(probe)probeTrace.push(probe);
