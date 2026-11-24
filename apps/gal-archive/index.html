@@ -2408,6 +2408,7 @@ async function uploadOneCycle(r){
   if(ops)await batch.commit();
   await ref.set({id:r.id,world:r.world,title:r.title||'',manager:cycleManagerLabel(r),managerNames:cycleManagerNames(r),
     updatedAt:r.updatedAt||new Date().toISOString(),partCount:parts.length,
+    messageCount:(r.messages||[]).length,acceptedEventCount:(r.events||[]).filter(e=>e.status==='accepted').length,
     cloudSavedAt:new Date().toISOString()});
 }
 
@@ -4528,7 +4529,8 @@ async function pushCloud(){
     }
     if(ops)await batch.commit();
     // 在片段寫入成功後，才更新輪迴索引（降低資料寫入一半的風險）。
-    await ref.set({id:r.id,world:r.world,title:r.title||'',manager:cycleManagerLabel(r),managerNames:cycleManagerNames(r),updatedAt:r.updatedAt||now,partCount:parts.length,cloudSavedAt:now});
+    await ref.set({id:r.id,world:r.world,title:r.title||'',manager:cycleManagerLabel(r),managerNames:cycleManagerNames(r),updatedAt:r.updatedAt||now,partCount:parts.length,
+     messageCount:(r.messages||[]).length,acceptedEventCount:(r.events||[]).filter(e=>e.status==='accepted').length,cloudSavedAt:now});
     count++;
     cloudStatus('已上傳 '+count+' 個項目，正在繼續…');
   }
