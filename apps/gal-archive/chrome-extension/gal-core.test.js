@@ -1377,3 +1377,40 @@ test('literal event title and closing fence can restore quotes without a second 
  assert.equal(core.compareNativeParagraphs(dom,native.replace('通報。','改動。'),opts).text,null);
  assert.equal(core.compareNativeParagraphs(dom,native.replace('Below context is an event which has just occurred.','Other wrapper'),opts).text,null);
 });
+
+test('bare HUD with hidden prefix or post-HUD template restores only balanced native quotes',()=>{
+ const core=context.GalArchiveCore;
+ const hud='｜2026年8月25日｜\n｜🕒17:18｜晴朗｜\n｜📍測試｜\n｜🍿暴走值：0｜';
+ const dom=hud+'\n通報。\n原有「引用」。';
+ const opts={source:'whif-message-content'};
+ for(const native of [hud+'\n\n「通報。」原有「引用」。',
+  '{{測試模板}}\n\n'+hud+'\n\n「通報。」原有「引用」。',
+  hud+'\n\n{{測試模板}}\n\n「通報。」原有「引用」。\n{{img::test}}']){
+  const v=core.compareNativeParagraphs(dom,native,opts);
+  assert.equal(v.comparison.contentEqual,true);
+  assert.equal(v.comparison.clockEqual,true);
+  assert.equal(v.comparison.prefixedHudProjection.bareHud,true);
+  assert.match(v.text,/「通報。」/);
+  assert.match(v.text,/原有「引用」。/);
+  for(const wrong of [native.replace('通報。','改動。'),native.replace('17:18','17:19'),
+   native.replace('「通報。」','「通報。'),native.replace('「引用」','引用'),
+   native.replace('測試｜','不同｜'),native+'\n無法核對的正文']){
+   assert.equal(core.compareNativeParagraphs(dom,wrong,opts).text,null);
+  }
+ }
+ const a='{{甲}}\n\n'+hud+'\n\n{{乙}}\n\n「通報。」原有「引用」。';
+ assert.equal(core.compareNativeParagraphs(dom,a,opts).text,null);
+ const b='{{user|role}}\n\n'+hud+'\n\n「通報。」原有「引用」。';
+ assert.equal(core.compareNativeParagraphs(dom,b,opts).text,null);
+});
+test('bare HUD quote wrapping is proven across lines without changing the clock or status',()=>{
+ const core=context.GalArchiveCore;
+ const hud='｜2026年8月25日｜\n｜🕒17:18｜晴朗｜\n｜📍測試｜\n｜🐆嚮導值：30｜💭：他說「好了」。｜\n｜🐿️暴走值：0｜';
+ const native='{{測試模板}}\n\n'+hud+'\n\n「通報。」正文。';
+ const dom=hud.replace('「好了」','\n好了\n')+'\n通報。\n正文。';
+ const v=core.compareNativeParagraphs(dom,native,{source:'whif-message-content'});
+ assert.equal(v.comparison.prefixedHudProjection.bareHud,true);
+ assert.match(v.text,/他說「好了」/);
+ assert.equal(parseGameTime(v.text).civil,'2026/08/25 17:18');
+ assert.equal(core.compareNativeParagraphs(dom,native.replace('嚮導值：30','嚮導值：31'),{source:'whif-message-content'}).text,null);
+});
