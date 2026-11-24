@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
   "version": "0.8.39",
-  "version_name": "V0.8.39 無時間回覆原生組合格式驗證",
+  "version_name": "V0.8.39 無時間組合投影＋失敗保全",
   "description": "輪迴檔案館 V0.8.39：保留 V0.8.38 失敗保全與批次下載；修復第9周目無時間原生回覆的隱藏上下文＋圖片尾標＋平衡引號組合投影，仍維持來源 ID、全文與事件嚴格驗證，失敗資料禁止匯入正史。",
   "permissions": [
     "storage",
