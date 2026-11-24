@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.8.43: verified prefixed HUD clocks and formatting; quiet progress. */
+/* Independent Gal AI page scanner. v0.8.44: module preflight, bare HUD native formatting, responsive finalization. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.8.43';
+const SCANNER_VERSION='0.8.44';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -55,7 +55,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
- p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.43 測試版</strong>'+
+ p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V0.8.44 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
  '<button id="gal-scan-save-progress">🧷 保全已讀進度（不可匯入）</button>'+
@@ -120,7 +120,7 @@ function mount(){
  };
  $('gal-scan-close').onclick=()=>{if(busy)cancelled=true;p.remove();css.remove()};
  $('gal-scan-save-progress').onclick=()=>saveProgressSnapshot();
- $('gal-scan-export').onclick=()=>{if(!lastResult||!lastResult.validation?.ok)return;
+ $('gal-scan-export').onclick=()=>{if(!lastResult||!lastResult.validation?.ok||(!lastResult.validation.nativeFormatComplete&&lastResult.scope!=='opening-first-pair-preview'))return;
    const preview=lastResult.scope==='opening-first-pair-preview';
    downloadJson(preview?'Gal_AI_三則測試_':'Gal_AI_原生正史_',lastResult);
    status(preview?'已下載三則測試 JSON，供格式驗收。':'已請瀏覽器下載原生正史 JSON。這一步不會修改檔案館或 Firebase；請到輪迴檔案館「Gal AI 原生匯入」核對後套用。');
@@ -167,7 +167,7 @@ function unverifiedEvidence(rows,run,why,fullDiagnostic){
    worldName:target?.worldName},
   source:{url:location.origin+location.pathname},scope:'unverified-read-progress',
   collectedCount:data.length,rawRows:data.length,
-  failure:why||null,eventAudit:fullDiagnostic?.eventAudit||null,
+  failure:why||null,phase:fullDiagnostic?.phase||null,phaseHistory:fullDiagnostic?.phaseHistory||[],failedPhase:fullDiagnostic?.failedPhase||null,bottomProof:fullDiagnostic?.bottomProof||null,eventAudit:fullDiagnostic?.eventAudit||null,
   errors:fullDiagnostic?.errorContexts||[],rows:data,
   note:'不具正式正史效力，禁止直接匯入檔案館或 Firebase；不捏造時間、來源文字或未讀歷史。'};
 }
@@ -1407,7 +1407,7 @@ async function positionSevenProbe(mode){
 
 async function eventThreeRowProbe(profile){
  if(busy)return {ok:false,error:'正在掃描中'};
- if(core?.version!==SCANNER_VERSION||!formatEvidenceReady())return {ok:false,error:'掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面'};
+ if(core?.version!==SCANNER_VERSION||!formatEvidenceReady()){const error='掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面';status(error);return {ok:false,error};}
  busy=true;cancelled=false;paused=false;target=profile;mount();localDifferences.clear();
  const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'event-three',scannerVersion:SCANNER_VERSION};
  let registered=false,localRows=[];
@@ -1499,7 +1499,7 @@ async function eventThreeRowProbe(profile){
 
 async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.randomUUID()){
  if(busy)return {ok:false,error:'正在掃描中'};
- if(core?.version!==SCANNER_VERSION||!formatEvidenceReady())return {ok:false,error:'掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面'};
+ if(core?.version!==SCANNER_VERSION||!formatEvidenceReady()){const error='掃描器、核心或格式驗收模組缺失／版本不一致，請重新整理 Gal AI 頁面';status(error);return {ok:false,error};}
  const run={scanRunId,cycleId:profile.cycleId,scope:preview?'preview':'full'};
  const managed=['whif.io','www.whif.io'].includes(location.hostname)&&location.protocol==='https:'&&
   typeof chrome.runtime.sendMessage==='function';
@@ -1831,9 +1831,9 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     failed.length+' 則（scanIndex '+failed.slice(0,12).join('、')+
     '）。已保存完整原文／DOM／來源 ID／標記位置與相鄰訊息，禁止輸出正式正史。');
   }
-  if(!managed&&$('gal-scan-export'))$('gal-scan-export').disabled=false;
+  if((!managed||nativeFormatAudit.nativeFormatComplete)&&$('gal-scan-export'))$('gal-scan-export').disabled=false;
   phaseStatus('download','📥 驗收通過，正在排隊提交 Chrome 下載。');await yieldUi();ensureRunning();
-  status(managed?'掃描資料已產生，正在等待 Chrome 完成寫入兩份 JSON。':preview?'✅ 三則測試完成：世界觀開場 × 1、我 × 1、他 × 1。\n'+
+  status(managed?'驗收通過；正在排隊提交 Chrome 下載並等待寫入確認。':preview?'✅ 三則測試完成：世界觀開場 × 1、我 × 1、他 × 1。\n'+
    (nativeApplied?'已採用原生文字的分段。':nativeConfirmed?'分段與原生來源相同。':'本次僅使用頁面 DOM。段落驗收請用「用原生來源驗收三則」。')+
    '\n開場原生段落：'+openingFormat.check.reason+'（空白分段 '+openingFormat.check.exportedBlankLines+'）'+
    '\n首則 AI 回覆的段落空行：'+paragraphCheck.exportedBlankLines+'。可下載測試 JSON。':
