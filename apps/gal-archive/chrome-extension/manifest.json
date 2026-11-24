@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
   "version": "0.8.38",
-  "version_name": "V0.8.38 失敗保全與批次下載",
+  "version_name": "V0.8.38 來源鑑識＋批次管理",
   "description": "輪迴檔案館 V0.8.38：台灣時間的逐輪迴獨立批次、單一掃描狀態檔、Chrome 完成確認、失敗原生資料全量保全、逐筆錯誤上下文及來源綁定七則測試。未驗證 JSON 禁止匯入正式正史。",
   "permissions": [
     "storage",
