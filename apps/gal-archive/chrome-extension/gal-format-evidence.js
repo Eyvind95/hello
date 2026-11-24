@@ -107,5 +107,5 @@
   result.nativeFormatComplete=false;
   return result;
  }
- return {version:'0.9.7',markerPositions,evidence,summarize,inspectRaw};
+ return {version:'0.9.8',markerPositions,evidence,summarize,inspectRaw};
 });

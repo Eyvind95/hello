@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.7: independent bounded native anchor recovery probe; no change to scan acceptance. */
+/* Independent Gal AI page scanner. v0.9.8: independent bounded native anchor recovery probe; no change to scan acceptance. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.7';
+const SCANNER_VERSION='0.9.8';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -57,6 +57,7 @@ function mount(){
   '#'+PANEL+' pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace}';
  document.documentElement.append(css);
  const p=document.createElement('aside');p.id=PANEL;p.setAttribute('role','status');
+ p.dataset.galExtensionId=chrome.runtime.id;p.dataset.galScannerVersion=SCANNER_VERSION;
  p.innerHTML='<strong>📚 Gal AI 原生正史掃描器 V'+SCANNER_VERSION+' 測試版</strong>'+
  '<div id="gal-scan-info" style="white-space:pre-wrap;margin:9px 0">準備中…</div>'+
  '<div><button id="gal-scan-export" disabled>下載原生正史 JSON</button>'+
@@ -65,7 +66,7 @@ function mount(){
  '<button id="gal-scan-position-index">指定位置測試</button>'+
  '<button id="gal-scan-position-visible">測目前畫面</button>'+
  '<button id="gal-scan-position-last-error">測上次錯誤位置</button></div>'+
- '<details><summary>🧪 指定原生錨點復原取證</summary>'+
+ '<details id="gal-anchor-tools"><summary>🧪 指定原生錨點復原取證</summary>'+
  '<label>原生訊息 ID <input id="gal-anchor-id" maxlength="100" style="width:95%"></label>'+
  '<label>上次可信 Y <input id="gal-anchor-y" type="number" min="0" step="any" style="width:110px"></label>'+
  '<label>上次頁面高度（選填） <input id="gal-anchor-height" type="number" min="1" step="any" style="width:110px"></label>'+
@@ -2361,9 +2362,33 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
      new Set(managerNames.map(name=>name.trim())).size!==managerNames.length){
    respond({ok:false,error:'綁定中的副駕駛資料無效，請回擴充功能重新儲存'});return false;
   }
+  if(msg.anchorInputs){
+   if(busy){respond({ok:false,error:'掃描或取證進行中'});return false}
+   const mounted=$(PANEL);
+   if(mounted&&(mounted.dataset.galExtensionId!==chrome.runtime.id||mounted.dataset.galScannerVersion!==SCANNER_VERSION)){
+    respond({ok:false,error:'此頁已有其他版本掃描面板'});return false;
+   }
+   const a=msg.anchorInputs;
+   if(sender.id!==chrome.runtime.id||Object.keys(a).some(k=>!['id','y','height','clock','neighbors'].includes(k))||
+    ['id','y','height','clock','neighbors'].some(k=>typeof a[k]!=='string')||
+    !/^[A-Za-z0-9_-]{5,100}$/.test(a.id)||!a.y.trim()||!Number.isFinite(Number(a.y))||Number(a.y)<0||
+    (a.height&&(!Number.isFinite(Number(a.height))||Number(a.height)<=0))||
+    a.clock.length>24||(a.clock&&anchorHintTime(a.clock)===null)||a.neighbors.length>2000||
+    a.neighbors.trim().split(/\s+/u).filter(Boolean).length>24||
+    a.neighbors.trim().split(/\s+/u).filter(Boolean).some(id=>!/^[A-Za-z0-9_-]{5,100}$/.test(id))){
+    respond({ok:false,error:'錨點取證欄位不合法'});return false;
+   }
+  }
   target={uid:String(p.uid||''),worldName:p.worldName,cycleId:p.cycleId,
     cycleTitle:String(p.cycleTitle||''),managerNames:managerNames.map(name=>name.trim())};
   mount();
+  if(msg.anchorInputs){
+   const a=msg.anchorInputs;
+   for(const [key,id] of Object.entries({id:'gal-anchor-id',y:'gal-anchor-y',height:'gal-anchor-height',clock:'gal-anchor-clock',neighbors:'gal-anchor-neighbors'}))$(id).value=a[key];
+   $('gal-anchor-tools').open=true;
+   anchorRecoveryProbe().catch(error=>{busy=false;status('錨點復原取證失敗：'+String(error?.message||error))});
+   respond({ok:true,opened:true,anchorStarted:true});return false;
+  }
   status('✅ 已從 WHIF 頁面開啟掃描助手。\n目標：'+target.worldName+'／'+(target.cycleTitle||target.cycleId)+
    '\n尚未開始掃描；Browser Use 可直接操作本頁助手。');
   respond({ok:true,opened:true});return false;

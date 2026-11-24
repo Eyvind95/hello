@@ -1752,3 +1752,26 @@ test('Anchor history localization follows new live geometry without using clock 
  assert.equal(reach([{stable:true,before:{rawIds:['neighbor']},after:{rawIds:['neighbor']}}],{},'anchor',['neighbor']).state,'reference-ids-observed-anchor-unseen');
  assert.equal(reach([{stable:true,before:{rawIds:['anchor']},after:{rawIds:['anchor']}}],{},'anchor',[]).state,'anchor-observed-in-stable-probe');
 });
+
+test('V0.9.08 toolbar popup contains all anchor inputs and hands off only to the existing probe',()=>{
+ const html=fs.readFileSync(require.resolve('./gal-popup.html'),'utf8'),popup=fs.readFileSync(require.resolve('./gal-popup.js'),'utf8'),content=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ for(const id of ['anchorTools','anchorId','anchorY','anchorHeight','anchorClock','anchorNeighbors','anchorProbe'])assert.ok(html.includes('id="'+id+'"'));
+ assert.match(popup,/\$\('anchorProbe'\)\.onclick=\(\)=>probeAnchor\(\)/);
+ const probe=popup.slice(popup.indexOf('async function probeAnchor('),popup.indexOf("$('anchorProbe').onclick"));
+ assert.match(probe,/type:'gal-scan-open',profile:\{\.\.\.p,managerNames\},anchorInputs/);
+ assert.ok(!probe.includes('gal-scan-start'));assert.ok(!probe.includes('location.reload'));
+ const handler=content.slice(content.indexOf(" if(msg?.type==='gal-scan-open'){"),content.indexOf(" if(msg?.type==='gal-scan-ping')"));
+ const inputs={id:'anchor-1',y:'100',height:'1000',clock:'3000/01/03 19:15',neighbors:'neighbor-1'},profile={cycleId:'cycle-1',worldName:'世界',managerNames:['測試']};
+ const simulate=(msg,busy,owner='mine',senderId='mine')=>{
+  const nodes=Object.fromEntries(['gal-anchor-id','gal-anchor-y','gal-anchor-height','gal-anchor-clock','gal-anchor-neighbors','gal-anchor-tools'].map(k=>[k,{}]));
+  nodes.panel={dataset:{galExtensionId:owner,galScannerVersion:'0.9.8'}};
+  let calls=0,result;
+  new Function('msg','sender','respond','busy','core','SCANNER_VERSION','formatEvidenceReady','$','PANEL','chrome','anchorHintTime','mount','anchorRecoveryProbe','status','target',handler)(msg,{id:senderId},r=>result=r,busy,{version:'0.9.8'},'0.9.8',()=>true,id=>nodes[id],'panel',{runtime:{id:'mine'}},()=>1,()=>{},()=>{calls++;return Promise.resolve()},()=>{},null);
+  return {result,calls,nodes};
+ };
+ const ok=simulate({type:'gal-scan-open',profile,anchorInputs:inputs},false);
+ assert.equal(ok.calls,1);assert.equal(ok.result.anchorStarted,true);assert.equal(ok.nodes['gal-anchor-id'].value,inputs.id);assert.equal(ok.nodes['gal-anchor-tools'].open,true);
+ for(const bad of [simulate({type:'gal-scan-open',profile,anchorInputs:inputs},true),simulate({type:'gal-scan-open',profile,anchorInputs:inputs},false,'other'),simulate({type:'gal-scan-open',profile,anchorInputs:{...inputs,y:'-1'}},false),simulate({type:'gal-scan-open',profile,anchorInputs:inputs},false,'mine','other')]){
+  assert.equal(bad.result.ok,false);assert.equal(bad.calls,0);
+ }
+});
