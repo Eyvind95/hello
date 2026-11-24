@@ -315,3 +315,33 @@ test('website uses actual production clock parser for long terminal and news sca
  context.GalArchiveCore=null;
  assert.ok(context.galNativeVerify(x,original).fail.some(s=>s.includes('共用劇情時間核心')));
 });
+
+test('verified invalid adventure date imports and reads back separately from unknown time; never sorts on an invented date',()=>{
+ const x=fixture(),world='身為冒險者就可以這樣那樣',f='\x60\x60\x60';
+ const hud=(time,location)=>[f,'**'+time+' I '+location+'**','🔹【基礎】🔹','等級：1 I 0%','血量：10/10','🔹【共鳴契】🔹','對象：無','深度：無','🔹【狀態】🔹','測試狀態',f,'測試正文。'].join('\n');
+ x.target.worldName=world;x.opening=hud('3000年01月01日 08:00','冒險者公會');x.events=[];
+ const [me,ai]=x.messages;me.scanIndex=1;ai.scanIndex=2;me.messageOrder=1;ai.messageOrder=2;
+ me.gameTime=ai.gameTime=null;ai.text=hud('3000年02月29日 00:00','測試地點');
+ const proof={kind:'verified-original-invalid-calendar-date',...GalArchiveCore.invalidAdventureDate(ai.text),sourceMessageId:'synthetic-invalid-date-id',markerCount:1,sender:'character',sourceKind:'ordinary-message'};
+ ai.nativeClockEvidence=proof.kind;ai.nativeInvalidDateEvidence=proof;ai.nativeSourceMessageId=proof.sourceMessageId;me.nativePairedInvalidDate={civil:proof.civil,sourceMessageId:proof.sourceMessageId};
+ x.scannerVersion=x.coreVersion='0.9.10';x.rawRows=3;
+ Object.assign(x.validation,{pairs:1,events:0,integrityOk:true,nativeFormatComplete:true,gameTimeCount:0,unknownGameTimeCount:0,verifiedUntimedCount:0,invalidDateReplyCount:1,invalidDateRowCount:2});
+ x.nativeFormatAudit={complete:true,checked:2,verified:2,failed:0};x.eventAudit={complete:true,exportedEvents:0,ordinaryAiTotal:1,ordinaryAiVerified:1,unresolvedAccepted:0,unresolvedHeaders:0,unreadableHistoryMarkers:0,unverifiedCards:[]};
+ const {context,original}=archive(x);
+ const verified=context.galNativeVerify(x,original);assert.deepEqual(asJSON(verified.fail),[]);
+ assert.equal(verified.unknownGameTimeCount,0);assert.equal(verified.invalidDateRowCount,2);
+ for(const change of [o=>o.messages[1].gameTime='3000-02-28T16:00:00.000Z',o=>delete o.messages[1].nativeInvalidDateEvidence,o=>o.messages[1].nativeInvalidDateEvidence.markerCount=2,o=>o.messages[1].nativeInvalidDateEvidence.civil='3000/03/01 00:00',o=>o.messages[1].text=o.messages[1].text.replace('02月29日','03月01日'),o=>delete o.messages[0].nativePairedInvalidDate,o=>o.messages[0].nativePairedInvalidDate.sourceMessageId='wrong-id',o=>o.messages[0].nativeSourceMessageId=proof.sourceMessageId,o=>o.messages[1].nativeClockEvidence='verified-original-without-game-time',o=>o.validation.invalidDateReplyCount=0]){
+  const bad=structuredClone(x);change(bad);assert.ok(context.galNativeVerify(bad,original).fail.length>0);
+ }
+ vm.runInContext(section('function archiveNativeTimeReadback(', 'const archiveExtraDrafts='),context);
+ assert.equal(context.archiveNativeTimeReadback(x,x),true);const damaged=structuredClone(x);delete damaged.messages[1].nativeInvalidDateEvidence;assert.equal(context.archiveNativeTimeReadback(x,damaged),false);
+ vm.runInContext(section('function archiveReceivedMillis(', '/* V5.31:'),context);
+ vm.runInContext(section('function archiveRealChronologyTime(', '// Only trim at the END'),context);
+ vm.runInContext(section('function archiveHasManualSortTime(', 'function archiveSortTimedSection('),context);
+ const validMe={...me,id:'later-me',gameTime:'3000-02-28T16:05:00.000Z',scanIndex:3,messageOrder:3};delete validMe.nativePairedInvalidDate;
+ const validAi={...ai,id:'later-ai',gameTime:validMe.gameTime,scanIndex:4,messageOrder:4,text:hud('3000年03月01日 00:05','測試地點')};delete validAi.nativeInvalidDateEvidence;delete validAi.nativeClockEvidence;delete validAi.nativeSourceMessageId;
+ const messages=[me,ai,validMe,validAi],clocks=context.archiveGalTimeContext(messages);
+ assert.equal(clocks.has(me),false);assert.equal(clocks.has(ai),false);assert.equal(clocks.has(validAi),true);
+ assert.equal(context.archiveChronologyTime({...ai,sourceCreatedAt:'2026-01-01T00:00:00Z'},clocks).basis,'invalid-native-date');
+ assert.equal(context.archiveSortableUnitClock([me,ai],clocks).tier,'pinned');
+});

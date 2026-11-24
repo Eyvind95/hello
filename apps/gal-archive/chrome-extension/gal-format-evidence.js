@@ -84,6 +84,7 @@
     compared=core.compareNativeParagraphs(row.text,source.text,{
      source:row.eventType==='event'?'whif-event-content':'whif-message-content',
      event:row.eventType==='event',opening:index===0,
+     allowInvalidNativeDate:index>0&&!!core.verifiedInvalidAdventureReply?.(row,rows),
      eventTitle:row.eventType==='event'?String(row.text).split('\n')[0]:undefined,
      chapterTitle:source.chapterTitle,
      statusText:row.formatSource?.statusText,
