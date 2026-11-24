@@ -968,3 +968,96 @@ test('source-proven untimed replies do not weaken regular timed AI or explicit u
  );
  assert.equal(wronglyLabeled.text,null);
 });
+
+
+test('V0.8.35 accepts one exactly proven untimed WHIF wrapper/fence/image projection across 756 characters',()=>{
+ const title='【舊式無時間回覆】';
+ const first='隊員們回到走廊。';
+ const last='沒有任何遺失的正文。';
+ const filler='字'.repeat(756-[...title].length-[...first].length-[...last].length);
+ const displayed=[title,first,filler,last].join('\n');
+ const native=[title,'{{合法隱藏情境參照}}',first,
+  '\x60\x60\x60\n'+filler+'\n\x60\x60\x60',last,'{{img:scene-picture}}'].join('\n');
+ assert.equal([...displayed.replace(/\s/g,'')].length,756);
+ const reply={role:'ai',text:displayed,formatSource:{nativeReply:{
+  reason:'available',markerCount:1,messageId:'unique-whif-1685',
+  scannedText:displayed,text:native
+ }}};
+ const rows=[{role:'ai',text:'這是一則無時間開場。'},
+  {role:'me',text:'玩家繼續。'},reply];
+ const v=validate(rows);
+ assert.equal(v.ok,true,JSON.stringify(v.errors));
+ assert.equal(v.pairs,1);
+ assert.equal(v.verifiedUntimedCount,1);
+ assert.equal(v.unknownGameTimeCount,2);
+ assert.equal(v.messages[0].gameTime,null);
+ assert.equal(v.messages[1].gameTime,null);
+ assert.equal(v.messages[1].verifiedUntimedNative,true);
+ const result=context.GalArchiveCore.compareNativeParagraphs(displayed,native,{
+  source:'whif-message-content',verifiedUntimedNative:true
+ });
+ assert.equal(result.comparison.contentEqual,true);
+ assert.equal(result.comparison.clockEqual,true);
+ assert.equal(result.comparison.verifiedNoClock,true);
+ assert.equal(result.comparison.untimedWrappedProjection.templateCount,1);
+ assert.equal(result.comparison.untimedWrappedProjection.bareFencePairs,1);
+ assert.equal(result.comparison.untimedWrappedProjection.terminalImageMarker,true);
+ assert.deepEqual(result.comparison.formatMarkers.map(v=>v.kind),[
+  'terminal-image-marker','untimed-verified-hidden-context','untimed-verified-bare-fence'
+ ]);
+ assert.equal(result.comparison.remainingUnexplained.scanned,0);
+ assert.equal(result.comparison.remainingUnexplained.native,0);
+ assert.equal(result.text.replace(/\s/g,''),displayed.replace(/\s/g,''));
+ assert.ok(v.warnings.some(w=>w.includes('保留 null')));
+});
+
+test('V0.8.35 never allows untimed story changes or unverified wrapper removal',()=>{
+ const title='【標題】';
+ const display=title+'\n甲段\n內文仍是原文\n乙段';
+ const good=title+'\n{{合法情境}}\n甲段\n\x60\x60\x60\n內文仍是原文\n\x60\x60\x60\n乙段\n{{img:tail}}';
+ const reply=(src,overrides={})=>({
+  role:'ai',text:display,formatSource:{nativeReply:{
+   reason:'available',markerCount:1,messageId:'unique-id',
+   scannedText:display,text:src,...overrides
+  }}
+ });
+ const prefix=[{role:'ai',text:'原生開場內容。'},{role:'me',text:'走進去。'}];
+ const failures=[
+  good.replace('仍是原文','已被更改'),
+  good.replace('\x60\x60\x60\n內文','\x60\x60\x60js\n內文'),
+  good.replace('\n{{img:tail}}',''),
+  good.replace('{{合法情境}}','{{第一模板}}\n{{第二模板}}'),
+  good.replace('{{合法情境}}','{{img:not-a-hidden-context}}'),
+  good.replace('{{合法情境}}','{{合法情境}}\n｜2026年8月22日｜\n｜🕒18:43｜'),
+  good.replace('{{合法情境}}','真實正文{{合法情境}}'),
+ ];
+ for(const text of failures){
+  const v=validate([...prefix,reply(text)]);
+  assert.equal(v.ok,false,text.slice(0,100));
+  assert.match(v.errors.join(' '),/原生無時間來源未通過/);
+ }
+ assert.equal(validate([...prefix,reply(good,{markerCount:2})]).ok,false);
+ assert.equal(validate([...prefix,reply(good,{messageId:null})]).ok,false);
+ assert.equal(validate([...prefix,reply(good),reply(good)]).ok,false);
+ assert.equal(validate([...prefix,reply(good,{scannedText:'另一則訊息'})]).ok,false);
+ const ordinaryTimed='｜2026年8月22日｜\n｜🕒18:45｜\n'+display;
+ const cmp=context.GalArchiveCore.compareNativeParagraphs(ordinaryTimed,good,{
+  source:'whif-message-content',verifiedUntimedNative:true
+ });
+ assert.equal(cmp.text,null);
+});
+
+test('V0.8.35 does not silently reinterpret events as untimed ordinary messages',()=>{
+ const visible='【事件】\n內容';
+ const source='{{隱藏}}\n'+visible;
+ const result=context.GalArchiveCore.compareNativeParagraphs(visible,source,{
+  source:'whif-event-content',event:true,verifiedUntimedNative:true
+ });
+ assert.equal(result.comparison.untimedWrappedProjection,null);
+ const rows=[{role:'ai',text:'獨立開場。'},{role:'me',text:'開始。'},
+  {role:'ai',text:visible,eventType:'event',formatSource:{nativeReply:{
+   reason:'available',markerCount:1,messageId:'event-123',scannedText:visible,text:source
+  }}}];
+ const v=validate(rows);
+ assert.equal(v.verifiedUntimedCount,0);
+});
