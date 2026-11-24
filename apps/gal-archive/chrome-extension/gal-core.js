@@ -6,7 +6,25 @@ const txt=x=>String(x==null?'':x);
 const clean=x=>txt(x).replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').trim();
 const normalizedWorld=x=>clean(x).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase();
 function parseGameTime(input){
-  const head=clean(input).split('\n').slice(0,18).join('\n').slice(0,1600);
+  const lines=clean(input).split('\n');
+  let head=lines.slice(0,18).join('\n').slice(0,1600);
+  // Recognized notification/news headers may precede a real HUD by many
+  // lines. Extend only for a unique consecutive date/time/location header.
+  if(/^【(?:終端|基甫納熱搜)】$/u.test(lines[0]?.trim()||'')){
+   const candidates=[];
+   for(let i=1;i<Math.min(lines.length-2,48);i++){
+    if(!/^[｜|│]\s*\d{4}(?:年|[-/])/u.test(lines[i].trim())||
+       !/^[｜|│]\s*(?:🕒\s*)?\d{1,2}[：:]\d{2}(?:[.:：]\d{1,2})?\s*[｜|│]/u.test(lines[i+1].trim())||
+       !/^[｜|│]\s*📍/u.test(lines[i+2].trim()))continue;
+    const prefix=lines.slice(0,i).join('\n');
+    if(prefix.length>4000)continue;
+    if(lines[0].trim()==='【基甫納熱搜】'&&
+       !/(?:^|\n)[ \t]*\*{3}[ \t]*(?:\n\s*\{\{[^{}\n]{1,200}\}\})?(?:\n\s*\x60{3})?\s*$/u.test(prefix))continue;
+    if(lines[0].trim()==='【終端】'&&!/📨任務通知[：:]/u.test(prefix))continue;
+    candidates.push(i);
+   }
+   if(candidates.length===1)head=lines.slice(candidates[0],candidates[0]+3).join('\n');
+  }
   // A Gal AI event may place the entire status header on ONE rendered line.
   // Keep the search in the header and prefer the clock closest after its date.
   const date=head.match(/(?:^|\n|[｜|│]\s*)(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u)
@@ -963,7 +981,113 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
    }
   }
  }
- const comparableText=timedCompositeProjection?.comparableText??eventPostStatusProjection?.comparableText??
+ // Bounded prefix/HUD combinations. Only try this when previous proofs
+ // failed. Preserve the source text and require exact visible correspondence.
+ let prefixedHudProjection=null;
+ const previousComparable=timedCompositeProjection?.comparableText??eventPostStatusProjection?.comparableText??
+  untimedCombinedProjection?.comparableText??openingQuoteProjection?.comparableText??
+  legacyMessageProjection?.comparableText??eventQuoteProjection?.comparableText??text;
+ if(!options.opening&&unspaced(previousComparable)!==unspaced(scanned)){
+  const proof=(source,visible)=>{
+   const chars=[...unspaced(visible)];let pos=0,depth=0,omitted=0;
+   for(const ch of source){
+    if(/\s/u.test(ch))continue;
+    if(ch===chars[pos]){pos++;continue}
+    if(ch==='「'){depth++;omitted++;continue}
+    if(ch==='」'&&depth>0){depth--;omitted++;continue}
+    return null;
+   }
+   return pos===chars.length&&depth===0?{omitted}:null;
+  };
+  const changes=[];
+  const remove=(kind,value,tokens=1)=>changes.push({kind,tokens,nonWhitespaceChars:count(value)});
+  const eligible=match=>match&&match[1]?.trim()&&
+   !/^(?:(?:user|char|character)(?:\s*(?:\||:|=|$))|(?:img|image)\s*:)/i.test(match[1].trim())&&
+   !scanned.includes(match[0].trim());
+  const stripEndTemplate=value=>{
+   const m=value.match(/(?:^|\n)[ \t]*\{\{([^{}\n]{1,200})\}\}[ \t]*\s*$/u);
+   if(!eligible(m))return value;
+   remove('verified-prefixed-pre-hud-template',m[0]);
+   return value.slice(0,m.index).trimEnd();
+  };
+  const stripStartTemplate=value=>{
+   const m=value.match(/^\s*\{\{([^{}\n]{1,200})\}\}[ \t]*(?=\n|$)\s*/u);
+   if(!eligible(m))return value;
+   remove('verified-prefixed-post-hud-template',m[0]);
+   return value.slice(m[0].length);
+  };
+  const lines=scanned.split('\n');
+  const dateIndex=lines.findIndex(line=>/^[｜|│]\s*\d{4}(?:年|[/-])/u.test(line.trim()));
+  const clock=parseGameTime(scanned)?.iso;
+  let candidate=null;
+  if(dateIndex>0&&dateIndex<48&&clock&&clock===parseGameTime(original)?.iso){
+   const hud=[];
+   for(const line of lines.slice(dateIndex)){
+    if(!/^[｜|│][\s\S]*[｜|│]$/u.test(line.trim()))break;
+    hud.push(line);
+   }
+   const hudKey=unspaced(hud.join('\n'));
+   const prefix=lines.slice(0,dateIndex).join('\n');
+   const rest=lines.slice(dateIndex+hud.length);
+   const fence=String.fromCharCode(96).repeat(3);
+   if(hud.length>=3&&parseGameTime(hud.join('\n'))?.iso===clock){
+    if(options.event===true&&options.source==='whif-event-content'&&dateIndex===1&&
+       titleKey===unspaced(prefix)&&prefix.endsWith(fence)&&rest[0]?.trim()===fence){
+     const lead=original.match(preamble);
+     if(lead&&/^\s*below context is an event which has just occurred\./i.test(lead[1])){
+      const source=original.slice(lead[0].length).split('\n');
+      const close=source.findIndex((line,i)=>i>0&&line.trim()===fence);
+      if(unspaced(source[0])===unspaced(prefix)&&close===hud.length+1&&
+         unspaced(source.slice(1,close).join('\n'))===hudKey){
+       remove('verified-prefixed-event-context',lead[0]);
+       const tail=stripStartTemplate(source.slice(close+1).join('\n'));
+       if(proof(tail,rest.slice(1).join('\n')))
+        candidate=source.slice(0,close+1).join('\n')+'\n\n'+tail.trimStart();
+      }
+     }
+    }else if(options.event!==true&&options.source==='whif-message-content'&&
+       /^(?:【終端】|【基甫納熱搜】|【7F今日行程】|《[^》\n]+》)(?:\n|$)/u.test(prefix)&&
+       statusKey===hudKey&&codeKeys.has(hudKey)){
+     const firstFence=/^[ \t]*\x60{3}[ \t]*\n/m.exec(original);
+     const block=firstFence&&original.slice(firstFence.index).match(statusFence);
+     if(block&&unspaced(block[1])===hudKey){
+      const pre=stripEndTemplate(original.slice(0,firstFence.index).trimEnd());
+      let tail=stripStartTemplate(original.slice(firstFence.index+block[0].length));
+      const img=tail.match(imageMarker);
+      if(img&&!imageMarker.test(scanned)){remove('terminal-image-marker',img[0]);tail=tail.replace(imageMarker,'').trimEnd()}
+      // At most one context template across the two HUD boundaries.
+      if(changes.filter(x=>x.kind.endsWith('-template')).length<=1&&proof(pre,prefix)&&proof(tail,rest.join('\n'))){
+       remove('verified-prefixed-status-fence',fence+fence,2);
+       candidate=pre+'\n\n'+block[1]+'\n\n'+tail.trimStart();
+      }
+     }
+    }
+   }
+  }else if(dateIndex<0&&options.verifiedUntimedNative===true&&options.event!==true&&
+     options.source==='whif-message-content'&&!clock&&!parseGameTime(original)&&
+     !isExplicitUnknownGameTime(scanned)&&!isExplicitUnknownGameTime(original)&&
+     /^【終端】\n/u.test(scanned)&&!/(?:^|\n)[ \t]*[｜|│]\s*(?:\d{4}\s*(?:年|[-/])|日期|(?:🕒\s*)?時間|\d{1,2}:\d{2})/u.test(original)){
+   const srcLines=original.split('\n');
+   const m=srcLines.findIndex(line=>/^[ \t]*\{\{[^{}\n]{1,200}\}\}[ \t]*$/u.test(line));
+   const pre=srcLines.slice(0,m).join('\n');
+   const template=m>0&&srcLines[m].match(/^[ \t]*\{\{([^{}\n]{1,200})\}\}[ \t]*$/u);
+   if(m>0&&m<48&&eligible(template)&&/📨任務通知[：:]/u.test(srcLines[m-1])&&
+      unspaced(scanned).startsWith(unspaced(pre))){
+    remove('verified-untimed-notification-context',template[0]);
+    candidate=pre+'\n'+srcLines.slice(m+1).join('\n');
+   }
+  }
+  if(candidate){
+   const all=proof(candidate,scanned);
+   if(all&&all.omitted>0&&changes.length&&parseGameTime(candidate)?.iso===clock){
+    markers.length=0;markers.push(...changes);
+    markers.push({kind:'verified-prefixed-balanced-native-quotes',tokens:all.omitted,nonWhitespaceChars:all.omitted});
+    text=candidate;
+    prefixedHudProjection={comparableText:scanned,omittedQuotePairs:all.omitted/2,provenEntireText:true,untimed:!clock};
+   }
+  }
+ }
+ const comparableText=prefixedHudProjection?.comparableText??timedCompositeProjection?.comparableText??eventPostStatusProjection?.comparableText??
   (untimedCombinedProjection?.comparableText??
   (openingQuoteProjection?.comparableText??
    (legacyMessageProjection?.comparableText??(eventQuoteProjection?eventQuoteProjection.comparableText:text))));
@@ -1058,6 +1182,10 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
   return {text:null,comparison,localContext:{scanned:context(scanChars),native:context(nativeChars)}};
  }
  if(!text||!clockEqual)return {text:null,comparison};
+ if(prefixedHudProjection){
+  comparison.prefixedHudProjection={...prefixedHudProjection,comparableText:undefined};
+  return {text,comparison};
+ }
  if(timedCompositeProjection){
   comparison.timedCompositeProjection={...timedCompositeProjection,comparableText:undefined};
   return {text,comparison};
@@ -1115,5 +1243,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.42'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.8.43'};
 })();
