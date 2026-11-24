@@ -163,7 +163,7 @@ test('escape and script load integration: actual website includes both tools, sh
  assert.match(html,/window\.ArchiveObservatoryBridge=/);
  assert.match(html,/cycleComparator:\(a,b\)=>archiveCompareCycleList\(a,b\)/);
  assert.match(js,/cycleComparator:bridge\.cycleComparator/);
- assert.match(sw,/gal-archive-pwa-v99/);
+ assert.match(sw,/gal-archive-pwa-v100/);
  assert.match(html,/<script src="\.\/archive-observatory-core\.js\?v=2"><\/script>/);
  assert.match(html,/<script src="\.\/archive-observatory\.js\?v=2"><\/script>/);
  assert.match(html,/archive-observatory\.css\?v=1/);
