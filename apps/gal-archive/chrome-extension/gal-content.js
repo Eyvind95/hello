@@ -237,13 +237,16 @@ async function saveProgressSnapshot(){
  }
  const run=activeRun;
  const data=unverifiedEvidence(activeScanRows,run,'人工保全已讀進度',diagnostic||{});
+ status('🧷 正在保全 '+data.collectedCount+' 則；若背景佇列未回應將啟用本頁備援下載。');
  if(run?.scanRunId&&run?.batchFolder){
   try{
-   const result=await chrome.runtime.sendMessage({type:'gal-run-manual-save',
-    scanRunId:run.scanRunId,cycleId:run.cycleId,unverified:JSON.stringify(data)});
-   if(result?.ok){
+   let timer;
+   const result=await Promise.race([chrome.runtime.sendMessage({type:'gal-run-manual-save',
+    scanRunId:run.scanRunId,cycleId:run.cycleId,unverified:JSON.stringify(data)}),
+    new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('背景下載佇列等待超過 12 秒')),12000)})]).finally(()=>clearTimeout(timer));
+   if(result?.ok&&result.status?.files?.unverified&&(result.status?.unverifiedCount??0)>=data.collectedCount){
     status('🧷 '+(target?.cycleTitle||'輪迴')+' 已保全 '+
-     activeScanRows.length+' 則。\\n'+
+     data.collectedCount+' 則。\\n'+
      '批次：'+result.status.batchFolder+'\\n'+
      'Chrome 已核對：'+(result.status.files?.unverified||'未驗證掃描資料.json')+
      '\\n不得直接匯入正式正史。');
@@ -258,6 +261,7 @@ async function saveProgressSnapshot(){
  // Fallback solely for an already-invalidated extension worker. It MUST
  // remain non-importable; do not sacrifice user evidence to folder aesthetics.
  downloadJson('Gal_AI_緊急未驗證保全_',data);
+ status('🧷 已請 Chrome 緊急下載 '+data.collectedCount+' 則未驗證保全；請核對下載完成。原始批次仍保留。');
  return true;
 }
 function downloadJson(prefix,data){
@@ -1618,8 +1622,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
     if(bottomFrames>=3){
      const proofStarted=Date.now(),proofHeight=root.scrollHeight;
      const tailSignature=rows=>rows.slice(-8).map(row=>
-      row.formatSource?.nativeReply?.messageId||row.formatSource?.eventEvidence?.messageId||
-      row.role+'|'+hash(row.text)).join('|');
+      [row.formatSource?.nativeReply?.messageId||row.formatSource?.eventEvidence?.messageId||'',
+       row.role,row.eventType||'',hash(row.text)].join(':')).join('|');
      const proofSignature=tailSignature(shot.rows);
      let changed=false,reason='stable';
      status('⏳ 已到目前頁面底部；等待 '+Math.round(BOTTOM_CONFIRM_MS/1000)+
@@ -1638,7 +1642,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
       }
      }
      bottomProof={stable:!changed,reason,waitedMs:Date.now()-proofStarted,
-      collected:collected.length,initialScrollHeight:proofHeight,finalScrollHeight:root.scrollHeight};
+      collected:collected.length,retries:bottomRetries,initialScrollHeight:proofHeight,finalScrollHeight:root.scrollHeight};
      diagnostic={...(diagnostic||inspect()),bottomProof};
      if(!changed){phaseStatus('bottom-confirmed','✅ 頁尾已穩定 '+(bottomProof.waitedMs/1000).toFixed(2)+' 秒；開始資料驗收。');await yieldUi();break;}
      bottomRetries++;bottomFrames=0;
