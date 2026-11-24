@@ -1848,7 +1848,10 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
   }
   const duration=result.endedAt&&result.startedAt
    ?Math.max(0,Math.round((Date.parse(result.endedAt)-Date.parse(result.startedAt))/1000)):null;
-  const files=Object.entries(result.files||{}).map(([kind,path])=>kind+'：'+path);
+  const files=[
+   ...(result.statusPath?['掃描狀態：'+result.statusPath]:[]),
+   ...Object.entries(result.files||{}).map(([kind,path])=>kind+'：'+path)
+  ];
   const message=(result.state==='completed'?'✅':'⚠')+' '+(result.cycleTitle||'輪迴')+
    '｜'+(result.scope||'掃描')+'｜'+result.state+
    '\n已讀：'+(result.scanned??'未知')+' 則；耗時：'+(duration===null?'未知':duration+' 秒')+
