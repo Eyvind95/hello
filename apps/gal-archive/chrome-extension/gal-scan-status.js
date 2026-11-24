@@ -183,6 +183,15 @@ function installGalScanStatus(api){
   const run=runs[message.scanRunId];
   if(!isOwner(run,sender)||run.cycleId!==message.cycleId)
    throw Error('工作不屬於這個 WHIF 分頁');
+  if(message.type==='gal-run-progress'){
+   if(run.state!=='running'||run.exportPending)return publicStatus(run);
+   if(!Number.isInteger(message.scanned)||message.scanned<run.scanned||
+      message.scanned>20000)throw Error('掃描進度不可倒退');
+   run.scanned=message.scanned;
+   run.at=now();await save(runs);
+   run.statusPath=await signal(run);await save(runs);
+   return publicStatus(run);
+  }
   if(message.type==='gal-run-manual-save'){
    if(run.exportPending)throw Error('正在整理終態下載，請等下載完成再操作');
    const data=JSON.parse(message.unverified);
@@ -265,7 +274,7 @@ function installGalScanStatus(api){
   return publicStatus(runs[run.scanRunId]);
  }
  api.runtime.onMessage.addListener((message,sender,reply)=>{
-  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save'].includes(message?.type))return false;
+  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save','gal-run-progress'].includes(message?.type))return false;
   serial(()=>handle(message,sender)).then(s=>reply({ok:true,status:s}),
    error=>reply({ok:false,error:String(error.message||error)}));
   return true;
