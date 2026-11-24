@@ -3,13 +3,14 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const source=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
-const start=source.indexOf('function analyzePlayerSourceDifference(');
+const start=source.indexOf('function proveMergedPlayerSources(');
 const end=source.indexOf('function summarizeEventAudit(',start);
 assert.ok(start>0&&end>start);
-const scope=new Function('hash',source.slice(start,end)+'; return {verifyAutoContinueAudit,analyzePlayerSourceDifference};')(
+const scope=new Function('hash',source.slice(start,end)+'; return {verifyAutoContinueAudit,analyzePlayerSourceDifference,proveMergedPlayerSources};')(
  value=>'source-'+String(value).length);
 const verify=scope.verifyAutoContinueAudit;
 const analyze=scope.analyzePlayerSourceDifference;
+const prove=scope.proveMergedPlayerSources;
 function fixture(){
  const rows=Array.from({length:22},(_,i)=>({role:'me',text:'玩家'+i}));
  const history=new Map(),senders=new Map();
@@ -146,9 +147,95 @@ test('two extra native user markers preserve refusal and reveal detailed explana
  assert.equal(result.gaps.every(g=>g.ok),true);
 });
 
+
+function source(id,text){return {id,sender:'user',kind:'ordinary-message',
+ nativeReason:'available',nativeText:text,nativeMessageId:id,nativeSender:'user',
+ hasText:true,hasMedia:false};}
+function twoNativeSourcesFixture(){
+ const x=fixture(),links=new Map(),indices=x.rows.flatMap((row,index)=>row.role==='me'?[index]:[]);
+ for(let j=0;j<indices.length;j++){
+  const index=indices[j],id='u-'+j;
+  x.rows[index].formatSource={playerSources:[source(id,'內容'+j)],
+   playerGapHasMedia:false};
+  x.rows[index].text='內容'+j;
+  x.history.set(id,'ordinary-message');x.senders.set(id,'user');
+  links.set(id,new Set([index]));
+ }
+ const extraId='u-extra';
+ const special=indices[3],firstId='u-3';
+ x.rows[special].formatSource.playerSources=[source(firstId,'第一份「玩家」'),
+  source(extraId,'第二份玩家')];
+ x.rows[special].text='第一份「玩家」\n\n第二份玩家';
+ x.history.set(extraId,'ordinary-message');x.senders.set(extraId,'user');
+ links.set(extraId,new Set([special]));
+ return {x,links,special,extraId};
+}
+test('two native user messages inside one player turn are accepted ONLY with exact ordered source contents',()=>{
+ const {x,links,special}=twoNativeSourcesFixture();
+ const result=verify(x.rows,x.candidates,x.history,x.senders,links,new Map());
+ assert.equal(result.ok,true,JSON.stringify(result.problems));
+ assert.equal(result.playerSourceAudit.safeSourceMerge,true);
+ assert.equal(result.playerSourceAudit.explainedExtraNativeIds,1);
+ const detail=result.playerSourceAudit.multipleNativeSourceDetails.find(r=>r.scanIndex===special);
+ assert.equal(detail.contentProof.ok,true);
+ assert.equal(detail.contentProof.sourceCount,2);
+ assert.equal(detail.contentProof.originalNonWhitespaceChars,detail.contentProof.renderedNonWhitespaceChars);
+ assert.equal(result.gaps.every(g=>g.ok),true);
+});
+test('missing source text, swapped order, hidden text, mismatched IDs, media or unexpected HTML all fail closed',()=>{
+ const cases=[
+  x=>{x.rows[x.special].formatSource.playerSources[1].nativeText=null;},
+  x=>{x.rows[x.special].formatSource.playerSources.reverse();},
+  x=>{x.rows[x.special].text+='遺漏的尾文';},
+  x=>{x.rows[x.special].formatSource.playerSources[0].nativeMessageId='bad-id';},
+  x=>{x.rows[x.special].formatSource.playerSources[1].sender='character';},
+  x=>{x.rows[x.special].formatSource.playerSources[0].nativeReason='unavailable';},
+  x=>{x.rows[x.special].formatSource.playerSources[0].hasMedia=true;},
+  x=>{x.rows[x.special].formatSource.playerGapHasMedia=true;},
+  x=>{x.rows[x.special].formatSource.playerSources[0].nativeText+='{{img:secret}}';}
+ ];
+ for(const sabotage of cases){
+  const {x,links,special}=twoNativeSourcesFixture();
+  const entry={...x,links,special};
+  sabotage(entry);
+  const result=verify(x.rows,x.candidates,x.history,x.senders,links,new Map());
+  assert.equal(result.ok,false,sabotage.toString());
+  const detail=result.playerSourceAudit.multipleNativeSourceDetails.find(r=>r.scanIndex===special);
+  assert.equal(detail.contentProof.ok,false,sabotage.toString());
+  assert.equal(result.playerSourceAudit.safeSourceMerge,false);
+ }
+});
+test('two separate double-source player turns explain exactly two surplus WHIF user markers',()=>{
+ const {x,links,special}=twoNativeSourcesFixture();
+ const another=x.rows.findIndex((row,index)=>row.role==='me'&&index>special);
+ const secondId='u-second-extra',firstId=[...links].find(([,indices])=>indices.has(another))[0];
+ x.rows[another].formatSource.playerSources=[source(firstId,'甲'),source(secondId,'乙')];
+ x.rows[another].text='甲乙';
+ x.history.set(secondId,'ordinary-message');x.senders.set(secondId,'user');
+ links.set(secondId,new Set([another]));
+ const result=verify(x.rows,x.candidates,x.history,x.senders,links,new Map());
+ assert.equal(result.ok,true,JSON.stringify(result.problems));
+ assert.equal(result.playerSourceAudit.countDifference,2);
+ assert.equal(result.playerSourceAudit.rowsWithMultipleNativeUserSources,2);
+ assert.equal(result.playerSourceAudit.safeSourceMerge,true);
+});
+test('the native-source proof captures originals but exports diagnostic hashes, not source message text',()=>{
+ const {x,links,special}=twoNativeSourcesFixture();
+ const detail=analyze(x.rows,x.history,x.senders,links,new Map())
+  .multipleNativeSourceDetails.find(r=>r.scanIndex===special);
+ assert.equal(detail.contentProof.ok,true);
+ assert.equal(JSON.stringify(detail).includes('第一份「玩家」'),false);
+ assert.equal(JSON.stringify(detail).includes('第二份玩家'),false);
+ assert.match(source.toString(),/original\.text/);
+ assert.match(source.toString(),/sources\.map\(s=>s\.nativeText\)/);
+});
+
 test('test helper validates the exact continuation audit implementation, not a copied approximation',()=>{
- assert.match(source,/autoContinueAudit=continuedPositions\.length/);
+ assert.match(source,/autoContinueAudit=!preview&&eventAudit\.history\.size/);
  assert.match(source,/\?verifyAutoContinueAudit\(collected,continuedPositions,/);
+ assert.match(source,/safeSourceMerge/);
+ assert.match(source,/nativeUserSegments/);
+ assert.match(source,/playerGapHasMedia/);
  assert.match(source,/eventAudit.history,eventAudit.senders/);
  assert.match(source,/eventAudit.playerSourceRows,eventAudit.userNearby/);
  assert.match(source,/nativePlayerSourcesBetween/);
