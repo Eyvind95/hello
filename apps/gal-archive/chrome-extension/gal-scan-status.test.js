@@ -154,10 +154,10 @@ test('a scan crossing Taiwan midnight still uses its original batch path',async(
  const path=h.liveStatus().batchFolder;
  assert.equal((await h.dispatch({type:'gal-run-progress',scanRunId:RUN1,
   cycleId:CYCLE_A,scanned:123})).ok,true);
- await h.finish('failed',RUN1,h.sender(),'full',3);
+ await h.finish('failed',RUN1,h.sender(),'full',123);
  assert.equal(h.liveStatus().batchFolder,path);
  assert.ok(h.items.every(x=>!x.filename.includes('failed_')));
- assert.equal(h.liveStatus().scanned,3);
+ assert.equal(h.liveStatus().scanned,123);
 });
 test('validation failure downloads exact raw 382 rows and diagnostic, but never formal result',async()=>{
  const h=harness();await h.start();
