@@ -389,7 +389,14 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
   Boolean(!a&&!b&&!roadClockEvidence(visible)&&!roadClockEvidence(original)&&(options.event||options.verifiedUntimedNative));
  const blocks=[...original.matchAll(/^[ \t]*\x60{3}[ \t]*\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm)];
  const fenceLines=original.split('\n').filter(l=>l.trim().startsWith(ADVENTURE_FENCE));
- const fencesValid=fenceLines.length===2*blocks.length&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE);
+ // Only a genuine event source can project the exact WHIF event wrapper.
+ const eventBound=options.event===true&&options.source==='whif-event-content'&&!options.opening&&isRoadWorld(options.worldName);
+ const leadEvent=original.match(/^(\{\{Below context is an event which has just occurred\. ([^{}\n]{1,100}) should not skip this moment — chime in naturally as ([^{}\n]{1,100}) would react\. This event is to make the story dynamic and fresh\.\}\})[ \t]*\n(?:[ \t]*\n){0,2}/u);
+ const eventWrapper=eventBound&&leadEvent&&leadEvent[2]===leadEvent[3]&&isRoadWorld(leadEvent[2])&&!visible.includes(leadEvent[1])?leadEvent:null;
+ const afterClosed=blocks.length?blocks.at(-1).index+blocks.at(-1)[0].length:0;
+ const openTail=eventBound&&fenceLines.length===2*blocks.length+1&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE)&&
+  /^\s*\x60{3}[ \t]*\n⏰/u.test(original.slice(afterClosed))&&!!parseRoadClock(original.slice(afterClosed));
+ const fencesValid=(fenceLines.length===2*blocks.length||openTail)&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE);
  const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
  let pos=0,sourcePos=0,omitted=0,quotePairs=0,hiddenContext='',hiddenImage='';
  const bounded=options.source==='whif-message-content'&&!options.event&&!options.opening;
@@ -409,6 +416,7 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
   pos=cursor;quotePairs+=pairs;return true;
  };
  let matched=fencesValid&&proof.length===blocks.length;
+ if(matched&&eventWrapper)sourcePos=eventWrapper[0].length;
  // Project a single standalone leading context only for an independently
  // sourced ordinary reply, and only if ALL subsequent blocks/prose match.
  const leading=original.match(/^(\{\{[^{}\n]{1,200}\}\})[ \t]*\n(?:[ \t]*\n){0,2}/u);
@@ -432,9 +440,12 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  if(matched&&bounded&&blocks.length&&image&&!visible.includes(image[1])&&parseRoadClock(blocks.at(-1)[1])){
   hiddenImage=image[1];tail='';
  }
- matched=matched&&take(tail,true)&&pos===actual.length;
+ // An unclosed event HUD is literal source text, not a synthetic repaired box.
+ matched=matched&&take(tail,!openTail)&&pos===actual.length;
  const literal=fencesValid&&actual===compact(original),contentEqual=Boolean(literal||matched);
  const markers=[];
+ if(contentEqual&&!literal&&eventWrapper)markers.push({kind:'road-exact-event-context',tokens:1,nonWhitespaceChars:compact(eventWrapper[1]).length});
+ if(contentEqual&&openTail)markers.push({kind:'road-literal-unclosed-event-hud',tokens:0,nonWhitespaceChars:0});
  if(contentEqual&&!literal&&hiddenContext)markers.push({kind:'road-leading-context-template',tokens:1,nonWhitespaceChars:compact(hiddenContext).length});
  if(contentEqual&&!literal&&hiddenImage)markers.push({kind:'road-terminal-image-template',tokens:1,nonWhitespaceChars:compact(hiddenImage).length});
  if(contentEqual&&!literal&&omitted)markers.push({kind:'road-proven-ordered-code-fences',tokens:omitted,nonWhitespaceChars:omitted*3});
@@ -1960,5 +1971,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.1'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.2'};
 })();

@@ -2030,3 +2030,25 @@ test('road unselected energy and terminal image metadata preserve the complete n
  assert.equal(c.compareNativeParagraphs(openDom,opening,{opening:true,source:'whif-message-content',codeBlocks:['【世界規則正在重構】\n【唯一公路】','【請選擇你的初始能源】']}).text,opening);
  assert.equal(c.validate([{role:'ai',text:opening},{role:'me',text:'測試'},{role:'ai',text:dom}],world).ok,true);
 });
+
+test('road event exact hidden wrapper and literal unclosed HUD preserve every original character',()=>{
+ const context=vm.createContext({});vm.runInContext(fs.readFileSync(require.resolve('./gal-core.js'),'utf8'),context);
+ const c=context.GalArchiveCore,world='🔞公路求生－我是求生者！🔞',fence=String.fromCharCode(96).repeat(3);
+ const wrapper='{{Below context is an event which has just occurred. '+world+' should not skip this moment — chime in naturally as '+world+' would react. This event is to make the story dynamic and fresh.}}';
+ const hud=['⏰：來到公路第1日｜01.01．08:45．天氣：☁','🚗：柴油車｜等級1','🔋：柴油｜28.7／50公升','🔧：100／100','📦：18／100','🧩：4／10','🛣：10.1公里／每日規定15公里','🍖：飢餓度：14｜💧：口渴度：14','⚡：90／100','❤：正常','🎒：測試物資','⚔️：無','💰：20','📜：無｜💋：否','💦：無'].join('\n');
+ const sys='【測試事件】\n【測試任務】',body='測試敘事';
+ const native=wrapper+'\n'+body+'\n\n'+fence+'\n'+sys+'\n'+fence+'\n\n'+fence+'\n'+hud;
+ const dom=body+'\n'+sys+'\n'+fence+'\n'+hud;
+ const opts={source:'whif-event-content',event:true,worldName:world,codeBlocks:[sys]};
+ const result=c.compareNativeParagraphs(dom,native,opts);
+ assert.equal(result.text,native);assert.equal(result.comparison.clockEqual,true);
+ assert.equal(result.comparison.explainedNonWhitespace,wrapper.replace(/\s/gu,'').length+6);
+ assert.ok(result.comparison.formatMarkers.some(x=>x.kind==='road-literal-unclosed-event-hud'));
+ for(const bad of [native.replace('測試敘事','其他敘事'),native.replace('測試物資','其他物資'),native.replace('08:45','08:46'),native.replace('would react','would ignore'),native.replace(world,'其他世界'),native+'\n任意敘事',native+'\n'+fence]){
+  assert.equal(c.compareNativeParagraphs(dom,bad,opts).text,null);
+ }
+ for(const bad of [{...opts,event:false},{...opts,worldName:'其他世界'},{...opts,source:'whif-message-content'},{...opts,codeBlocks:[]},{...opts,codeBlocks:['其他任務']}])assert.equal(c.compareNativeParagraphs(dom,native,bad).text,null);
+ assert.equal(c.compareNativeParagraphs(dom.replace(fence+'\n',''),native,opts).text,null);
+ const closed=native+'\n'+fence;
+ assert.equal(c.compareNativeParagraphs(body+'\n'+sys+'\n'+hud,closed,{...opts,codeBlocks:[sys,hud]}).text,closed);
+});
