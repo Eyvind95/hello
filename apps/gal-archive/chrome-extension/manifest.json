@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.26",
-  "version_name": "V0.10.26 前輩超長距離分段返回",
-  "description": "輪迴檔案館：前輩底端脫離與有限分段返回。",
+  "version": "0.10.27",
+  "version_name": "V0.10.27 前輩分段落點與高度修正",
+  "description": "輪迴檔案館：前輩分段定位原座標及高度補償核對。",
   "permissions": [
     "storage",
     "activeTab",
