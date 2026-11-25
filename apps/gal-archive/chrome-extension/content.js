@@ -1668,19 +1668,27 @@
     if(button.disabled||button.getAttribute('aria-disabled')==='true')return {reason:'disabled-button'};
     return {button};
   }
+  // Only strictly verified earlier rows replenish the local retry budget.
+  function historyNativeProgress(b,kind){
+    const stats=b.nativeHistoryRetry;
+    if(!stats||!stats.sinceProgress)return;
+    stats.trace.push({at:new Date().toISOString(),event:'verified-progress-reset',kind,count:b.rows.length,minIndex:b.resume?.minIndex??null,previousAttempts:stats.sinceProgress,totalAttempts:stats.attempts});
+    stats.sinceProgress=0;stats.progressResets++;
+  }
   async function historyNativeRetry(b,until){
     let detected=historyNativeFailure(b.host);
     if(!detected)return false;
-    const stats=b.nativeHistoryRetry||(b.nativeHistoryRetry={attempts:0,cleared:0,trace:[]});
+    const stats=b.nativeHistoryRetry||(b.nativeHistoryRetry={attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]});
     const record=(event,details={})=>stats.trace.push({at:new Date().toISOString(),event,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,count:b.rows.length,...details});
     while(detected){
       historyGuard(b);
       if(Date.now()>=until){record('deadline');throw Error('原生歷史載入失敗：已達無進展期限')}
       if(!detected.button){record('blocked',{reason:detected.reason});throw Error('原生歷史載入失敗：無法唯一確認可用重試按鈕')}
-      if(stats.attempts>=3){record('exhausted');throw Error('原生歷史載入失敗：已達3次重試上限')}
-      const attempt=++stats.attempts;
-      historyStatus(b,'原生歷史載入失敗，重試 '+attempt+'/3');
-      record('click',{attempt});
+      if(stats.attempts>=12){record('total-exhausted');throw Error('原生歷史載入失敗：已達單批12次重試上限')}
+      if(stats.sinceProgress>=3){record('exhausted');throw Error('原生歷史載入失敗：未取得核對進展，已達3次重試上限')}
+      const attempt=++stats.attempts,localAttempt=++stats.sinceProgress;
+      historyStatus(b,'原生歷史載入失敗，重試 '+localAttempt+'/3（全批 '+attempt+'/12）');
+      record('click',{attempt,localAttempt});
       detected.button.click();
       // No scroll during this observation. An absent error is not proof
       // of history growth; the usual stable read and strict overlap follow.
@@ -1870,7 +1878,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+data.count:'')+'.json';
@@ -1965,7 +1973,7 @@
               if(merged.length>b.rows.length&&!q.frontier)throw Error('續掃前沿未核對，不能增加舊訊息');
               b.resume.checkedWindows++;
               if(q.minIndex<b.resume.minIndex){
-                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);
+                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'resume-earlier-index');
                 state.frontier={id:b.resumeRows[q.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
                 historyTrace(b,'resume-progress',{minIndex:q.minIndex,matched:q.matched});
               }
@@ -2001,7 +2009,7 @@
         if(b.rows.length>lastCount){
           if(state.attempts){b.scrollStats.breakthroughSuccesses=(b.scrollStats.breakthroughSuccesses||0)+1;historyTrace(b,'breakthrough-progress',{attempts:state.attempts,resets:state.resets,previousCount:lastCount});}
           historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos,firstId:rows[0]?.id,lastId:rows.at(-1)?.id});
-          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);
+          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'new-rows');
           state.frontier={id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight};
         }
         else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
