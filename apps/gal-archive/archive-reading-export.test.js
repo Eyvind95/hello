@@ -6,7 +6,7 @@ test('reading ZIP names and boundaries match library conventions',()=>{
  a.ok(names.some(k=>k.endsWith('公路求生｜第01輪迴・燃冰｜完整劇情｜001_00001-00001.txt')));
  a.ok(names.some(k=>k.endsWith('公路求生｜第01輪迴・燃冰｜完整劇情｜002_00002-00002.txt')));
  const joined=names.filter(k=>k.includes('含事件閱讀版｜')).map(k=>Buffer.from(files.get(k)).toString()).join('');
- a.ok(joined.indexOf('玩家')<joined.indexOf('已接事件'));a.doesNotMatch(joined,/\n未定位\n/);
+ const player=joined.indexOf('\n玩家\n'),event=joined.indexOf('\n已接事件\n');a.ok(player>=0&&event>player);a.doesNotMatch(joined,/\n未定位\n/);
  const index=JSON.parse(Buffer.from(files.get('00・閱讀索引.json')));a.deepEqual(index.cycles[0].unplacedAcceptedEventIndexes,[2]);a.equal(JSON.stringify(f),before);a.equal(index.canonical,false);
  a.throws(()=>c.plan([f,f],[]),/重複/);
 });
@@ -23,4 +23,11 @@ test('ZIP UTF-8 filenames, CRC32, central directory and exact content',async()=>
 test('website entry, standalone HTML and PWA include reading exporter',()=>{
  const html=fs.readFileSync(p.join(__dirname,'index.html'),'utf8'),sw=fs.readFileSync(p.join(__dirname,'sw.js'),'utf8');
  a.match(html,/id="readingZipBtn"/);a.match(html,/ArchiveReadingExport\.plan\(cycles,WORLDS\)/);a.match(html,/downloadReadingZip\(records,/);a.match(html,/downloadReadingZip\(\[r\],b\)/);a.match(html,/ArchiveReadingExport\.cycleReadingName/);a.ok(html.includes("'archive-reading-export.js?v=1'"));a.ok(sw.includes('archive-reading-export.js?v=1'));a.ok(html.includes('V5.122'));a.ok(html.includes('0.10.31'));
+});
+
+test('three known world names and identical cycle titles remain separated',()=>{
+ const worlds=['sentinel','adventure','road'].map((id,i)=>({id,name:['全員精神穩定，感情除外','身為冒險者就可以這樣那樣','公路求生'][i]}));
+ const cycles=worlds.map((w,i)=>({...fixture(),id:'cycle-'+i,world:w.id}));
+ const names=[...c.plan(cycles,worlds).keys()];
+ for(const w of ['哨嚮','冒險者','公路求生'])a.ok(names.some(k=>k.startsWith(w+'/')&&k.includes(w+'｜第01輪迴・燃冰｜完整劇情｜')));
 });
