@@ -778,3 +778,21 @@ test('offline extension import page accepts paste, checks complete hash, and nev
  await nodes.save.onclick();a.match(nodes.result.textContent,/已記住 2 則/);a.match(nodes.result.textContent,/已回讀核對/);a.equal((await mem.read(storage,raw.sourceUrl,c)).hash,hash);
  a.equal(nodes.save.disabled,true);a.equal(nodes.chunk.disabled,true);
 });
+
+test('installed checkpoint imports only own non-web-accessible resource, verifies hash and readback',async()=>{
+ const mem=require('./predecessor-checkpoint-memory'),id='a'.repeat(32),runtime={id,getURL:p=>'chrome-extension://'+id+'/'+p};
+ const partial={...raw,status:'failed',error:'partial',evidence:{...raw.evidence,topReached:false,topStableMs:0,continuity:false,windows:2,hostProof:{maxRange:100,observedMovement:true}}};
+ const bytes=new TextEncoder().encode('\uFEFF'+JSON.stringify(partial)+'\r\n'),hash=await mem.digest(bytes),store={},storage={get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)};
+ let calls=0;
+ const fetcher=async (url,opts)=>{calls++;a.equal(url,'chrome-extension://'+id+'/local-checkpoints/abc.json');a.equal(opts.redirect,'error');a.equal(opts.credentials,'omit');return new Response(bytes)};
+ await a.rejects(mem.importInstalled(storage,runtime,raw.sourceUrl,c,'0'.repeat(64),fetcher));a.deepEqual(store,{});
+ await a.rejects(mem.importInstalled(storage,{...runtime,getURL:()=> 'https://example.com/file.json'},raw.sourceUrl,c,hash,fetcher));a.deepEqual(store,{});
+ await a.rejects(mem.importInstalled(storage,runtime,'https://chatgpt.com/c/other',c,hash,async()=>new Response(bytes)));a.deepEqual(store,{});
+ await a.rejects(mem.importInstalled(storage,runtime,raw.sourceUrl,c,hash,async()=>new Response(null,{status:404})));a.deepEqual(store,{});
+ const saved=await mem.importInstalled(storage,runtime,raw.sourceUrl,c,hash,fetcher);
+ a.equal(saved.readback,true);a.equal(saved.count,2);a.equal(saved.hash,hash);
+ a.equal((await mem.read(storage,raw.sourceUrl,c)).hash,hash);
+ const again=await mem.importInstalled(storage,runtime,raw.sourceUrl,c,hash,async()=>{throw Error('must not fetch')});a.equal(again.unchanged,true);a.equal(calls,2);
+ const manifest=JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname,'manifest.json'),'utf8'));
+ a.ok(!manifest.web_accessible_resources);a.ok(!manifest.host_permissions.some(x=>x.includes('127.0.0.1')||x.includes('file:')));
+});
