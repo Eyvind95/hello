@@ -2076,3 +2076,28 @@ test('road full history accepts observed HUD aliases, visible world label compan
  assert.equal(c.compareNativeParagraphs(openDom,event,eventOpts).text,event);
  assert.equal(c.compareNativeParagraphs(openDom,event,{...eventOpts,worldName:'其他世界'}).text,null);
 });
+
+test('road rank HUD aliases and exact event-only omitted inventory preserve strict clocks',()=>{
+ const context=vm.createContext({});vm.runInContext(fs.readFileSync(require.resolve('./gal-core.js'),'utf8'),context);
+ const c=context.GalArchiveCore,w='🔞公路求生－我是求生者！🔞',f=String.fromCharCode(96).repeat(3);
+ const h=['⏰：來到公路第5日｜01.05．20:40．天氣：☁','🚙：測試車｜S級（升級完成）','🔋：柴油｜20L／50L','🔧：100／100','🚚：3／50','🧩：0／10','🛣️：今日剩餘里程：0.0公里／每日規定15公里（已完成）','🍖：飢餓度：10｜💧：口渴度：10','⚡：100／100','❤：正常','🎒：測試物品','⚔：無','💰：10','📜：無','💦：無','📐：無'].join('\n');
+ const box=s=>f+'\n'+s+'\n'+f;
+ assert.equal(c.parseGameTime(h).civil,'第5日｜01.05 20:40');
+ for(const icon of ['🛻','🛈','📦'])assert.ok(c.parseGameTime(h.replace('🚚',icon)));
+ assert.ok(c.parseGameTime(h.replace('S級','E級')));
+ for(const bad of [h.replace('S級','Z級'),h.replace('🚚','❓'),h.replace('20:40','25:40'),h+'\n額外正文'])assert.equal(c.parseGameTime(bad),null);
+ const shorter=h.split('\n').filter(x=>!x.startsWith('🎒')&&!x.startsWith('⚔')).join('\n');
+ assert.equal(c.parseGameTime(shorter),null);
+ assert.ok(c.parseGameTime(w+':\n'+shorter));
+ const wrap='{{Below context is an event which has just occurred. '+w+' should not skip this moment — chime in naturally as '+w+' would react. This event is to make the story dynamic and fresh.}}';
+ const label=w+':',ctx='{{測試情境}}',body='測試正文',sys='【測試公告】';
+ const native=wrap+'\n'+label+' '+ctx+'\n'+body+'\n'+box(sys)+'\n'+box(shorter)+'，原生句尾';
+ const visible=label+'\n'+body+'\n'+sys+'\n'+shorter;
+ const opts={worldName:w,source:'whif-event-content',event:true,codeBlocks:[sys,shorter]};
+ const verified=c.compareNativeParagraphs(visible,native,opts);
+ assert.equal(verified.text,native);
+ assert.ok(verified.comparison.formatMarkers.some(x=>x.kind==='road-native-only-inline-event-suffix'));
+ for(const bad of [native.replace('測試正文','不同正文'),native.replace('20:40','20:41'),native+'\n額外正文'])assert.equal(c.compareNativeParagraphs(visible,bad,opts).text,null);
+ assert.equal(c.compareNativeParagraphs(visible,native,{...opts,event:false}).text,null);
+ assert.equal(c.compareNativeParagraphs(visible,native,{...opts,codeBlocks:[sys,shorter.replace('100／100','50／100')]}).text,null);
+});

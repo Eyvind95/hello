@@ -272,3 +272,20 @@ test('new player probe never changes existing strict continuation acceptance',()
  const x=fixture();x.rows[10].formatSource.playerGap.markers=[{sourceRef:'empty-user',sender:'user',hasText:false,hasMedia:false}];
  assert.equal(audit(x).ok,false);
 });
+
+test('hidden road player is preserved only with unique stable native template and matching adjacent marker',()=>{
+ const start=source.indexOf('function proveHiddenRoadPlayer('),end=source.indexOf('function boundaryRead(',start);
+ const hash=x=>'hash-'+x;
+ const prove=new Function('hash',source.slice(start,end)+';return proveHiddenRoadPlayer;')(hash);
+ const id='hidden-player',p='previous-ai',n='next-ai';
+ const player={id,sender:'user',kind:'ordinary-message',nativeReason:'available',nativeSender:'user',nativeMessageId:id,
+  hiddenNativeStable:true,hasText:false,hasMedia:false,nativeText:'{{測試設定}}\n{{測試條件}}'};
+ const gap={loading:false,markers:[{sourceRef:hash(id),sender:'user',hasText:false,hasMedia:false}]};
+ const result=prove([player],gap,p,n);
+ assert.equal(result.sourceMessageId,id);assert.equal(result.templateCount,2);
+ for(const bad of [{...player,hiddenNativeStable:false},{...player,nativeText:''},{...player,nativeText:'{{測試設定}}額外正文'},{...player,nativeText:'{{img::test}}'},{...player,hasMedia:true},{...player,nativeMessageId:'other'}])assert.equal(prove([bad],gap,p,n),null);
+ assert.equal(prove([player,player],gap,p,n),null);
+ assert.equal(prove([player],{...gap,loading:true},p,n),null);
+ assert.equal(prove([player],{...gap,markers:[]},p,n),null);
+ assert.equal(prove([player],gap,id,n),null);
+});
