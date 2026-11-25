@@ -1850,7 +1850,7 @@
     bar.append(compact,move);render();return bar;
   }
   function historyStatus(b,msg){
-    const count=b.sample?Math.min(b.sample,b.rows.length)+' / '+b.sample:b.rows.length;
+    const count=b.isolated?b.isolated.originalRows.length+'（另有隔離取證 '+b.rows.length+' 則，含重疊）':b.sample?Math.min(b.sample,b.rows.length)+' / '+b.sample:b.rows.length;
     b.info.textContent=msg+'\n已保全 '+count+' 則；不會上傳 Firebase。';
     if(b.summary)b.summary.textContent='已保全 '+count+' 則｜'+(b.download.hidden?(b.cancelled?'停止中':'掃描中'):'已結束，詳情可展開');
   }
@@ -1858,7 +1858,7 @@
   function historyScroll(host,at){host.scrollTo({top:Math.max(0,at),behavior:'instant'})}
   function historyTrace(b,event,details={}){
     const trace=b.scrollTrace;
-    const entry={at:new Date().toISOString(),event,count:b.rows.length,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,clientHeight:b.host.clientHeight,...details};
+    const entry={at:new Date().toISOString(),event,count:b.rows.length,...(b.isolated?{scope:'isolated-frontier'}:{}),scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,clientHeight:b.host.clientHeight,...details};
     trace.push(entry);
     if(trace.length>40)trace.shift();
     if(event.startsWith('bottom-escape-')){
@@ -1892,7 +1892,8 @@
     b.attachmentChangeKeys.add(key);b.attachmentChanges.push(change);
   }
   function historyPayload(b,status,error){
-    const rows=(b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
+    const rows=(b.isolated?b.isolated.originalRows:b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
+    if(b.isolated)warnings.push('前沿圖片參照仍有未解衝突；正式 rows 保留原有則數，不合併隔離取證。獨立原文段見 evidence.isolatedSegment，禁止當完整聊天或正式續掃斷點。');
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
     if(b.nativeHistoryRetry?.attempts)warnings.push('曾觸發原生歷史載入重試；錯誤消失不代表訊息已取得，仍依原文重疊及前沿核對。');
     if(b.trustedWheelCount)warnings.push('掃描期間觀測到可信滾輪輸入，不能當成無人工介入的自動驗收；來源可能是使用者或瀏覽器自動化。');
@@ -1907,10 +1908,10 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
   }
   function historyDownload(data){
-    const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+data.count:'')+'.json';
+    const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+(data.evidence.isolatedSegment?.count??data.count):'')+'.json';
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=(data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
     return a.download;
@@ -1951,7 +1952,7 @@
         const state=b.breakthrough,frontier=pc.frontierPosition(state.frontier,b.host.scrollHeight,b.host.clientHeight);
         const boost=state.recoveryAvoidFrontier?0:pc.breakthroughStep(state,b.host.clientHeight);
         const origin=boost&&frontier!==null?Math.min(pos,frontier):pos;
-        const rapid=b.resume&&!b.resume.frontierVerified?pc.resumeStep(b.host.clientHeight,b.resume.minIndex):0;
+        const rapid=b.resume&&!b.isolated&&!b.resume.frontierVerified?pc.resumeStep(b.host.clientHeight,b.resume.minIndex):0;
         const step=boost||rapid||pc.scrollStep(b.host.clientHeight,unchanged);
         if(boost&&origin>2){
           state.attempts++;b.scrollStats.breakthroughAttempts=(b.scrollStats.breakthroughAttempts||0)+1;
@@ -1998,7 +1999,7 @@
           try{
             const changes=[];
             const merged=pc.mergeUp(b.rows,rows,change=>changes.push(change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256,attachmentBridges:b.acceptedAttachmentBridges});
-            if(b.resume&&!b.resume.frontierVerified){
+            if(b.resume&&!b.isolated&&!b.resume.frontierVerified){
               const q=pc.resumeWindow(b.resumeRows,rows);
               if(merged.length>b.rows.length&&!q.frontier)throw Error('續掃前沿未核對，不能增加舊訊息');
               b.resume.checkedWindows++;
@@ -2013,25 +2014,43 @@
               }
             }
             b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),merged,rows);
-            b.rows=merged;for(const change of changes)historyAttachmentChange(b,change);b.windows++;
+            b.rows=merged;for(const change of changes)historyAttachmentChange(b,change);b.windows++;if(b.isolated)b.isolated.windows++;
             if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
             lastError='';break;
           }catch(e){
             b.scrollStats.overlapRetries++;lastError=String(e.message||e);
             historyTrace(b,'overlap-retry',{ratio,step,target,targetHeight,reason:lastError,firstId:rows[0]?.id,lastId:rows.at(-1)?.id,liveIds:rows.map(r=>r.id),savedFirstId:b.rows[0]?.id});
             if(e.overlapEvidence){if(b.overlapIssues.length>=8)b.overlapIssues.shift();b.overlapIssues.push({at:new Date().toISOString(),ratio,scrollTop:b.host.scrollTop,reason:lastError,...e.overlapEvidence})}
+            // Do not merge a disjoint attachment conflict. Capture a separate
+            // independent earlier segment only if its complete visible window
+            // proves a contiguous old prefix and actual earlier rows.
+            if(!b.sample&&!b.isolated&&b.resume?.tailVerified&&!b.resume.frontierVerified&&e.overlapEvidence?.messageId===b.rows[0]?.id){
+              const proof=pc.isolateFrontierWindow(b.rows,rows);
+              if(proof){
+                b.isolated={originalRows:b.rows,anchor:proof,startedAt:new Date().toISOString(),windows:1};
+                b.rows=rows.slice();b.acceptedAttachmentBridges=new Map();
+                lastCount=rows.length-proof.newPrefixCount;unchanged=0;topSignature=null;topSince=0;edgeAttempt=0;
+                b.windows++;historyTrace(b,'isolated-frontier-start',{newPrefixCount:proof.newPrefixCount,matchedNeighbors:proof.matchedNeighbors});
+                lastError='';break;
+              }
+            }
             rows=null;recovering=true;
           }
         }
         if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
         historyHostObservation(b);
-        historyStatus(b,b.sample?'最近'+b.sample+'則測試':b.resume&&!b.resume.frontierVerified?'急速返回・已核對舊索引 '+(b.resume.minIndex+1)+'／'+b.resume.baseCount:'向上掃描');
+        historyStatus(b,b.isolated?'附件待核對・獨立向上取證':b.sample?'最近'+b.sample+'則測試':b.resume&&!b.resume.frontierVerified?'急速返回・已核對舊索引 '+(b.resume.minIndex+1)+'／'+b.resume.baseCount:'向上掃描');
         if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample)){historyTrace(b,'sample-completed',{step,from:pos});status='completed';break}
         const atTop=b.host.scrollTop<=2,sig=JSON.stringify([rows[0]?.id,b.rows.length,b.host.scrollHeight]);
         if(atTop){
           if(!edgeAttempt)edgeAttempt=Date.now();
           if(sig!==topSignature){topSignature=sig;topSince=Date.now()}
           if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host)||!!historyNativeFailure(b.host),...historyEdgeOrdinal(b,'top')})){
+            if(b.isolated){
+              if(pc.scrollRange(b.host.scrollHeight,b.host.clientHeight)<=8||!b.hostProof?.observedMovement)throw Error('隔離取證疑似假頂端，原檔仍未完成');
+              b.isolated.topReached=true;b.isolated.topStableMs=Date.now()-topSince;
+              throw Error('隔離取證已達觀測頂端；附件仍待核對，正式掃描未完成');
+            }
             if(b.resume&&!b.resume.frontierVerified)throw Error('續掃尚未核對原斷點，禁止完成');
             if(!pc.fullCoverageGate(b.rows.length,b.sample?0:b.knownMinimum,b.hostProof.maxRange,b.hostProof.observedMovement)||pc.scrollRange(b.host.scrollHeight,b.host.clientHeight)<=8){historyTrace(b,'false-top-rejected',{knownMinimum:b.knownMinimum,hostProof:b.hostProof});throw Error('疑似假頂端：捲動證據不足或未達已知最低訊息數 '+b.knownMinimum)}
             b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
@@ -2044,7 +2063,8 @@
           state.frontier={id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight};
         }
         else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
-        if(!b.sample&&b.rows.length>=nextCheckpoint&&(!b.resume||b.resume.frontierVerified)){
+        if(b.isolated&&nextCheckpoint>b.rows.length+100)nextCheckpoint=Math.floor(b.rows.length/100)*100+100;
+        if(!b.sample&&b.rows.length>=nextCheckpoint&&(b.isolated||!b.resume||b.resume.frontierVerified)){
           nextCheckpoint=Math.floor(b.rows.length/100)*100+100;
           try{
             const snapshot=historyPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔');
@@ -2059,7 +2079,7 @@
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
     const data=historyPayload(b,status,error);
     // Counts are only a local lower bound; never mix previous rows into this run.
-    if(b.bottomReached&&!b.sample&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
+    if(b.bottomReached&&!b.sample&&!b.isolated&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
     try{(b.sample?pc.validateSample:pc.validateRaw)(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false}
     b.download.onclick=()=>{try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};
     b.download.hidden=false;b.stop.textContent='關閉';b.stop.onclick=()=>b.pane.remove();
