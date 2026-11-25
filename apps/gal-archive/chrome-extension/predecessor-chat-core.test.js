@@ -283,3 +283,25 @@ test('resume validates tail, fast return interior, and two adjacent frontier row
  a.deepEqual(c.mergeUp(saved,[r('earlier'),...saved.slice(0,2)]).map(x=>x.id),['earlier',...saved.map(x=>x.id)]);
  a.throws(()=>c.validateRaw({...raw,evidence:{...raw.evidence,resume:{baseCount:2,tailVerified:true,frontierVerified:false,sourceSha256:'a'.repeat(64)}}}));
 });
+
+test('actual historyRun resumes from a validated tail, fast returns and then extends the checkpoint',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const saved=Array.from({length:30},(_,i)=>r(String(i))),older=r('older');
+ let now=1000,output,up=0;const trace=[],targets=[];
+ const host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
+ const b={host,rows:[],sample:0,knownMinimum:30,resumeRows:saved,resume:{baseCount:30,tailVerified:false,frontierVerified:false,minIndex:30,checkedWindows:0},hostProof:{maxRange:10000,observedMovement:true},bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{},chat:'/c/abc'};
+ const ctx={Date:{now:()=>now},pc:{...c,validateRaw:()=>{}},state:{bulk:b},chrome:{storage:{local:{set:async()=>{}}}},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{
+   now+=1000;if(!o.upward)return saved.slice(-3);
+   targets.push(o.target);up++;
+   if(up===1)return saved.slice(24,28);
+   if(up===2)return saved.slice(8,12);
+   if(up===3)return saved.slice(0,3);
+   host.scrollTop=0;return [older,...saved.slice(0,3)];
+ },historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push(event),sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length,rows:b.rows,evidence:{resume:b.resume}}),historyDownload:d=>{output=d;return 'resume.json'}};
+ vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+ a.equal(output.status,'completed');a.equal(output.count,31);a.equal(output.rows[0].id,'older');
+ a.equal(output.evidence.resume.tailVerified,true);a.equal(output.evidence.resume.frontierVerified,true);
+ a.equal(targets[0],9500);a.ok(trace.includes('resume-tail-verified'));a.ok(trace.includes('resume-frontier-verified'));
+});
