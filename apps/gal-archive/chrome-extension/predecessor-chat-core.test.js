@@ -337,3 +337,49 @@ test('actual historyRun tries another overlap plan after bounded recovery failur
  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
  a.equal(output.status,'completed');a.equal(output.count,2);a.equal(targets[1].allowBoost,false);a.equal(b.scrollStats.recoveryPlanRetries,1);
 });
+
+test('two resets per stable old window retain cross-window cycle evidence',()=>{
+ const state={resets:4,attempts:3};
+ let p=c.recoveryPolicy(state);
+ c.recoveryCycle(p,10199.8,674);c.recoveryCycle(p,15832.8,674);
+ // A successful read of the same old window is not historical progress.
+ p=c.recoveryPolicy(state);
+ const lock=c.recoveryCycle(p,10199.8,674);
+ a.equal(lock.detected,true);a.equal(lock.crossWindow,true);a.equal(lock.destination,10199.8);
+ a.equal(c.recoveryCycle(p,15832.8,674).destination,10199.8);
+ p=c.recoveryPolicy(state);
+ a.equal(c.recoveryCycle(p,10199.8,674).delay,2400);
+ a.equal(c.recoveryCycle(p,15832.8,674).exhausted,true);
+ c.alternateRecoveryPolicy(state);a.equal(state.recoveryAvoidFrontier,true);
+ a.equal(c.recoveryPolicy(state).locked,null);
+ c.clearRecoveryPolicy(state);a.equal(state.recoveryAvoidFrontier,undefined);
+ a.deepEqual(c.recoveryPolicy(state).recent,[]);
+});
+test('actual historyRecoverScroll preserves a new probe rather than competing frontier compensation',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  async function historySettled('));
+ const b={host:{scrollTop:765609,scrollHeight:766283,clientHeight:674},scrollStats:{scrollResets:0},rows:[r('anchor')],breakthrough:{resets:4,attempts:3,frontier:{id:'anchor',top:5700.8,height:761784}}};
+ const ctx={pc:c,historyTrace:()=>{},historyScroll:(h,to)=>h.scrollTop=to};
+ vm.runInNewContext(block+';globalThis.recover=historyRecoverScroll;',ctx);
+ a.ok(Math.abs(ctx.recover(b,14137.4,766273,'test').target-10199.8)<.01);
+ c.alternateRecoveryPolicy(b.breakthrough);b.host.scrollTop=765609;
+ a.equal(ctx.recover(b,14137.4,766273,'test',false).target,14137.4);
+ a.equal(b.scrollStats.frontierRestores,1);
+});
+test('actual historySettled detects A/B/A across independently stable old windows',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
+ let now=1000,phase=0,scrolls=0;const trace=[],rows=[r('old')];
+ const b={host:{scrollTop:765609,scrollHeight:766283,clientHeight:674},scrollStats:{scrollResets:0,fingerprintChanges:0},stabilityIssues:[],rows,breakthrough:{resets:0,attempts:3,frontier:{id:'old',top:5700.8,height:761784}}};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>rows,historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>{h.scrollTop=to;scrolls++},sleep:async ms=>{now+=ms;if(phase===0&&scrolls===1){b.host.scrollHeight=771916;b.host.scrollTop=771242}}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ await ctx.settle(b,{upward:true,target:14137.4,targetHeight:766273,allowBoost:false});
+ a.equal(b.scrollStats.scrollResets,2);a.equal(b.scrollStats.recoveryCycles,undefined);
+ phase=1;b.host.scrollHeight=766283;b.host.scrollTop=765609;
+ await ctx.settle(b,{upward:true,target:14137.4,targetHeight:766273,allowBoost:false});
+ a.equal(b.scrollStats.crossWindowCycles,1);
+ a.equal(trace.find(x=>x.event==='recovery-cycle').crossWindow,true);
+ a.equal(b.rows.length,1);
+});

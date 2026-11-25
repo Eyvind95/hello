@@ -1619,13 +1619,13 @@
     state.resets++;
     const frontier=pc.frontierPosition(state.frontier,currentHeight,b.host.clientHeight);
     let destination=recovery;
-    if(frontier!==null&&frontier<destination-b.host.clientHeight){
+    if(!state.recoveryAvoidFrontier&&frontier!==null&&frontier<destination-b.host.clientHeight){
       destination=frontier;
       b.scrollStats.frontierRestores=(b.scrollStats.frontierRestores||0)+1;
       historyTrace(b,'frontier-restore',{anchor:state.frontier.id,estimated:frontier,recovery});
     }
     const boost=pc.breakthroughStep(state,b.host.clientHeight);
-    if(allowBoost&&boost&&destination>2&&policy?.locked==null){
+    if(allowBoost&&!state.recoveryAvoidFrontier&&boost&&destination>2&&policy?.locked==null){
       // Try moving beyond the obstruction. The outer loop still requires
       // strict overlap and can return to the last confirmed position.
       state.attempts++;
@@ -1633,17 +1633,18 @@
       const from=destination;destination=Math.max(0,destination-boost);
       historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from,to:destination,step:boost,anchor:state.frontier?.id||null});
     }
+    if(state.recoveryAvoidFrontier)destination=target; // preserve the alternative probe's coordinate; overlap remains mandatory
     const originalDestination=destination;
     const strategy=policy?pc.recoveryCycle(policy,destination,b.host.clientHeight):{destination,delay:180,detected:false,exhausted:false};
     destination=Math.max(0,Math.min(pc.scrollRange(currentHeight,b.host.clientHeight),strategy.destination));
-    if(strategy.detected){b.scrollStats.recoveryCycles=(b.scrollStats.recoveryCycles||0)+1;historyTrace(b,'recovery-cycle',{recent:policy.recent.slice(),locked:policy.locked,delay:strategy.delay,stage})}
+    if(strategy.detected){b.scrollStats.recoveryCycles=(b.scrollStats.recoveryCycles||0)+1;if(strategy.crossWindow)b.scrollStats.crossWindowCycles=(b.scrollStats.crossWindowCycles||0)+1;historyTrace(b,'recovery-cycle',{recent:policy.recent.slice(),windows:policy.recentCalls.slice(),crossWindow:strategy.crossWindow,locked:policy.locked,delay:strategy.delay,stage})}
     if(policy?.locked!=null){b.scrollStats.cycleHolds=(b.scrollStats.cycleHolds||0)+1;historyTrace(b,'recovery-hold',{originalDestination,destination,delay:strategy.delay,holds:policy.holds,exhausted:strategy.exhausted})}
     historyTrace(b,'scroll-reset',{target,actual,expectedHeight:height,currentHeight,recovery,destination,stage,resetsSinceGrowth:state.resets});
     if(!strategy.exhausted)historyScroll(b.host,destination);
     return {target:destination,height:currentHeight,delay:strategy.delay,exhausted:strategy.exhausted};
   }
   async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true}={}){
-    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;const policy={recent:[],locked:null,holds:0};
+    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;const policy=upward?pc.recoveryPolicy(b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null})):null;
     const retryError=()=>Object.assign(Error('頁面反覆自動返回底端；本次定位策略無法穩定'),{code:'HISTORY_RECOVERY_RETRY'});
     while(Date.now()<until){
       historyGuard(b);
@@ -1764,7 +1765,7 @@
         historyGuard(b);
         const pos=b.host.scrollTop;
         const state=b.breakthrough,frontier=pc.frontierPosition(state.frontier,b.host.scrollHeight,b.host.clientHeight);
-        const boost=pc.breakthroughStep(state,b.host.clientHeight);
+        const boost=state.recoveryAvoidFrontier?0:pc.breakthroughStep(state,b.host.clientHeight);
         const origin=boost&&frontier!==null?Math.min(pos,frontier):pos;
         const rapid=b.resume&&!b.resume.frontierVerified?pc.resumeStep(b.host.clientHeight,b.resume.minIndex):0;
         const step=boost||rapid||pc.scrollStep(b.host.clientHeight,unchanged);
@@ -1779,19 +1780,20 @@
         // Rebase each retry, and never trigger another breakthrough while
         // attempting to rejoin a lost overlap.
         const anchor={top:pos,height:b.host.scrollHeight};
-        const plans=[{ratio:1},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
+        const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
           ...[1,-1,2,-2,4,-4].map(offset=>({ratio:0,offset})),
           {ratio:0,rebase:false}];
         let recovering=false,attempted=new Set();
         for(const plan of plans){
-          const {ratio,offset=0,rebase=true}=plan;
+          const {ratio,offset=0,rebase=true,alternate=false}=plan;
+          if(alternate&&!lastError.startsWith('頁面反覆自動返回底端'))continue;
           if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息'&&!lastError.startsWith('頁面反覆自動返回底端'))break;
           historyGuard(b);
           if(Date.now()>=deadline)break;
           const targetHeight=b.host.scrollHeight;
           const baseAnchor=ratio===1&&!recovering?{top:origin,height:anchor.height}:anchor;
           const target=pc.rejoinTarget(baseAnchor,targetHeight,b.host.clientHeight,offset*b.host.clientHeight-step*ratio,rebase);
-          const key=JSON.stringify([Math.round(target),targetHeight]);
+          const key=JSON.stringify([Math.round(target),targetHeight,!!state.recoveryAvoidFrontier]);
           if(recovering&&attempted.has(key))continue;
           attempted.add(key);
           if(recovering){
@@ -1805,6 +1807,7 @@
             historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
             if(e.code!=='HISTORY_RECOVERY_RETRY')throw e;
             lastError=String(e.message||e);recovering=true;rows=null;
+            pc.alternateRecoveryPolicy(state);
             b.scrollStats.recoveryPlanRetries=(b.scrollStats.recoveryPlanRetries||0)+1;
             historyTrace(b,'recovery-next-plan',{ratio,offset,rebase,target});
             continue;
@@ -1817,7 +1820,7 @@
               if(merged.length>b.rows.length&&!q.frontier)throw Error('續掃前沿未核對，不能增加舊訊息');
               b.resume.checkedWindows++;
               if(q.minIndex<b.resume.minIndex){
-                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;
+                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);
                 state.frontier={id:b.resumeRows[q.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
                 historyTrace(b,'resume-progress',{minIndex:q.minIndex,matched:q.matched});
               }
@@ -1853,7 +1856,7 @@
         if(b.rows.length>lastCount){
           if(state.attempts){b.scrollStats.breakthroughSuccesses=(b.scrollStats.breakthroughSuccesses||0)+1;historyTrace(b,'breakthrough-progress',{attempts:state.attempts,resets:state.resets,previousCount:lastCount});}
           historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos,firstId:rows[0]?.id,lastId:rows.at(-1)?.id});
-          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;
+          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);
           state.frontier={id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight};
         }
         else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
@@ -1887,7 +1890,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,recoveryCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,recoveryCycles:0,crossWindowCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     if(checkpoint){
       if(b.sample)return {ok:false,error:'測試不能續掃'};
       try{
