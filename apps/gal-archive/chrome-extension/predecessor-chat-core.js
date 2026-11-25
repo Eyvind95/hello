@@ -249,6 +249,12 @@ function frontierPosition(frontier,height,viewport){
  if(!frontier||![frontier.top,frontier.height,height,viewport].every(Number.isFinite))return null;
  return Math.max(0,Math.min(height-viewport,frontier.top+height-frontier.height));
 }
+function verifiedViewportAnchor(verified,actual,height,viewport){
+ if(!verified||![verified.top,verified.height,actual,height,viewport].every(Number.isFinite)||viewport<=0)return null;
+ const predicted=frontierPosition(verified,height,viewport),max=scrollRange(height,viewport);
+ if(max<=viewport*4||actual<max-6||predicted===null||actual-predicted<viewport*4)return null;
+ return {top:verified.top,height:verified.height};
+}
 function breakthroughStep(state,viewport){
  if(!state||state.resets<5||state.attempts>=3)return 0;
  return scrollStep(viewport,8)*(2+state.attempts);
@@ -345,5 +351,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });

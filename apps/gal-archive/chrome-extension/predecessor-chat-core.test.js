@@ -691,3 +691,40 @@ test('actual historyRun keeps original rows and exports independent earlier segm
  a.deepEqual(Array.from(output.evidence.isolatedSegment.rows,x=>x.id),['earlier','p','pa','u','a','u2']);
  a.equal(storageWrites,0);a.ok(trace.includes('isolated-frontier-start'));a.equal(c.validateRaw(output).size,6);a.throws(()=>c.validateCheckpoint(output,'https://chatgpt.com/c/abc'));
 });
+
+test('inter-window bottom jump restores last accepted viewport coordinate frame',()=>{
+ const verified={top:0,height:1473455},height=1480395,viewport=730,bottom=1479664.75;
+ const anchor=c.verifiedViewportAnchor(verified,bottom,height,viewport);
+ a.deepEqual(anchor,verified);a.equal(c.rejoinTarget(anchor,height,viewport,-1095),5845);
+ a.equal(c.rejoinTarget(anchor,height,viewport),6940);
+ a.equal(c.verifiedViewportAnchor(verified,268,height,viewport),null);
+ a.equal(c.verifiedViewportAnchor({top:1472725,height:1473455},bottom,height,viewport),null);
+ a.equal(c.verifiedViewportAnchor(null,bottom,height,viewport),null);
+ a.equal(c.verifiedViewportAnchor({top:0,height:800},100,830,730),null);
+});
+test('actual historyRun returns to verified isolated viewport after between-window bottom snap',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  function historyPayload('),src.indexOf('  function historyDownload('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const img=n=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/00000000-0000-4000-8000-'+String(n).padStart(12,'0')});
+ const saved=[{...r('u'),attachments:[img(1)]},r('a','assistant'),r('u2'),r('a2','assistant'),r('u3'),r('a3','assistant')];
+ const live={...saved[0],attachments:[img(2),img(3)]},prefix=[r('p'),r('pa','assistant')],initial=[...prefix,live,...saved.slice(1,3)],earliest=r('earlier','assistant');
+ let now=1000,output,up=0,storageWrites=0,snapped=false;const trace=[];
+ const host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
+ const b={host,rows:[],sample:0,knownMinimum:6,resumeRows:saved,resume:{baseCount:6,sourceSha256:'a'.repeat(64),tailVerified:false,frontierVerified:false,minIndex:6,checkedWindows:0},hostProof:{maxRange:10000,observedMovement:true},bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{},chat:'/c/abc',runId:'run',title:'test',startedAt:new Date(1000).toISOString(),attachmentChanges:[],foldObservations:new Map(),scrollTrace:[],stabilityIssues:[]};
+ const ctx={Date:class extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}},pc:c,state:{bulk:b},location:{origin:'https://chatgpt.com'},chrome:{runtime:{getManifest:()=>({version:'0.10.37'})},storage:{local:{set:async()=>storageWrites++}}},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{
+   now+=1000;if(!o.upward)return saved.slice(2);
+   up++;
+   if(up===1){host.scrollTop=400;return initial}
+   if(up===2){host.scrollTop=100;return [earliest,...prefix]}
+   if(up===3){a.ok(o.target<1000,'must not probe snapped bottom');}
+   host.scrollTop=0;return [earliest,...prefix];
+ },historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push(event),sleep:async ms=>{now+=ms;if(ms===150&&up===2&&!snapped){host.scrollHeight+=500;host.scrollTop=host.scrollHeight-host.clientHeight;snapped=true}},historyDownload:d=>{output=d;return 'isolated.json'}};
+ vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+ a.equal(output.status,'failed',output.error);a.match(output.error,/隔離取證已達觀測頂端/);a.equal(output.count,6);
+ a.deepEqual(JSON.parse(JSON.stringify(output.rows)),saved.map((x,index)=>({...x,index})));
+ a.equal(output.evidence.continuity,false);a.equal(output.evidence.topReached,false);a.equal(output.evidence.resume.frontierVerified,false);
+ a.equal(output.evidence.isolatedSegment.topReached,true);a.equal(output.evidence.isolatedSegment.importable,false);
+ a.deepEqual(Array.from(output.evidence.isolatedSegment.rows,x=>x.id),['earlier','p','pa','u','a','u2']);
+ a.equal(storageWrites,0);a.ok(trace.includes('isolated-frontier-start'));a.ok(trace.includes('inter-window-bottom-return'));a.equal(output.evidence.scrollStats.interWindowBottomReturns,1);a.equal(c.validateRaw(output).size,6);a.throws(()=>c.validateCheckpoint(output,'https://chatgpt.com/c/abc'));
+});

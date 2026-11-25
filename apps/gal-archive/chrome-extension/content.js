@@ -1945,6 +1945,7 @@
         b.breakthrough.frontier={id:b.resumeRows[seed.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
         historyTrace(b,'resume-tail-verified',{baseCount:b.resume.baseCount,minIndex:seed.minIndex,matched:seed.matched});
       }
+      let verifiedViewport={top:b.host.scrollTop,height:b.host.scrollHeight};
       let nextCheckpoint=Math.floor(b.rows.length/100)*100+100;
       while(status!=='completed'){
         historyGuard(b);
@@ -1964,7 +1965,13 @@
         // Keep the last verified viewport in its original coordinate frame.
         // Rebase each retry, and never trigger another breakthrough while
         // attempting to rejoin a lost overlap.
-        const anchor={top:pos,height:b.host.scrollHeight};
+        const currentHeight=b.host.scrollHeight;
+        const savedAnchor=pc.verifiedViewportAnchor(verifiedViewport,pos,currentHeight,b.host.clientHeight);
+        const anchor=savedAnchor||{top:pos,height:currentHeight};
+        if(savedAnchor){
+          b.scrollStats.interWindowBottomReturns=(b.scrollStats.interWindowBottomReturns||0)+1;
+          historyTrace(b,'inter-window-bottom-return',{actual:pos,height:currentHeight,verifiedTop:anchor.top,verifiedHeight:anchor.height,estimated:pc.frontierPosition(anchor,currentHeight,b.host.clientHeight)});
+        }
         const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
           ...[1,-1,2,-2,4,-4].map(offset=>({ratio:0,offset})),
           {ratio:0,rebase:false}];
@@ -1976,7 +1983,7 @@
           historyGuard(b);
           if(Date.now()>=deadline)break;
           const targetHeight=b.host.scrollHeight;
-          const baseAnchor=ratio===1&&!recovering?{top:origin,height:anchor.height}:anchor;
+          const baseAnchor=ratio===1&&!recovering&&!savedAnchor?{top:origin,height:anchor.height}:anchor;
           const target=pc.rejoinTarget(baseAnchor,targetHeight,b.host.clientHeight,offset*b.host.clientHeight-step*ratio,rebase);
           const key=JSON.stringify([Math.round(target),targetHeight,!!state.recoveryAvoidFrontier]);
           if(recovering&&attempted.has(key))continue;
@@ -2038,6 +2045,7 @@
           }
         }
         if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
+        verifiedViewport={top:b.host.scrollTop,height:b.host.scrollHeight};
         historyHostObservation(b);
         historyStatus(b,b.isolated?'附件待核對・獨立向上取證':b.sample?'最近'+b.sample+'則測試':b.resume&&!b.resume.frontierVerified?'急速返回・已核對舊索引 '+(b.resume.minIndex+1)+'／'+b.resume.baseCount:'向上掃描');
         if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample)){historyTrace(b,'sample-completed',{step,from:pos});status='completed';break}
