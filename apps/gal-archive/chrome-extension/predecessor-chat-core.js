@@ -62,6 +62,17 @@ function foldedTailEvidence(previous,current,fields,context){
  if(!observation)return null;
  return {type:'folded-user-tail-variant',messageId:previous.id,fields:['text'],previous,current,sourceFoldObservation:observation,sourceSha256:context.sourceSha256,fullTextVerified:false};
 }
+// Only accepted windows in this run can bridge a temporary image URL change.
+const genericUserImages=a=>a.length>0&&a.every(x=>transientImage(x)&&x.label==='使用者附件')&&new Set(a.map(x=>x.url)).size===a.length;
+function rememberAttachmentObservations(map,saved,live){
+ const byId=new Map(saved.map(r=>[r.id,r]));
+ for(const row of live){
+  const prior=byId.get(row.id);
+  if(!prior||row.role!=='user'||!row.text.trim()||!genericUserImages(row.attachments)||!genericUserImages(prior.attachments)||!compareRow(prior,row).equal||same(prior.attachments,row.attachments)){map.delete(row.id);continue}
+  map.set(row.id,row);
+ }
+ return map;
+}
 function reconcileOverlap(previous,current,foldContext){
  const comparison=compareRow(previous,current);
  if(comparison.equal)return {...comparison,row:previous};
@@ -69,7 +80,7 @@ function reconcileOverlap(previous,current,foldContext){
  if(fold)return {equal:true,fields:[],row:previous,changes:[fold]};
  if(codeRenderEquivalent(previous,current,comparison.fields))return {equal:true,fields:[],row:previous,changes:[{type:'code-render-label-variant',messageId:previous.id,fields:comparison.fields,previous,current}]};
  if(comparison.fields.length!==1||comparison.fields[0]!=='attachments'||previous.role!=='user'||!previous.text.trim())return comparison;
- const images=a=>a.length>0&&a.every(x=>transientImage(x)&&x.label==='使用者附件')&&new Set(a.map(x=>x.url)).size===a.length;
+ const images=genericUserImages;
  const appeared=previous.attachments.length===0&&images(current.attachments);
  const disappeared=current.attachments.length===0&&images(previous.attachments);
  // A strict ordered subsequence of exact references is evidence of a
@@ -81,7 +92,16 @@ function reconcileOverlap(previous,current,foldContext){
  };
  const enriched=orderedSubset(previous.attachments,current.attachments);
  const partial=orderedSubset(current.attachments,previous.attachments);
- if(!appeared&&!disappeared&&!enriched&&!partial)return comparison;
+ if(!appeared&&!disappeared&&!enriched&&!partial){
+  const bridge=foldContext?.attachmentBridges?.get(previous.id);
+  if(!bridge||bridge.id!==previous.id||!images(previous.attachments)||!images(bridge.attachments)||
+     same(previous.attachments,bridge.attachments)||!compareRow(previous,bridge).equal||
+     !orderedSubset(bridge.attachments,current.attachments))return comparison;
+  return {equal:true,fields:[],row:{...previous,attachments:current.attachments.slice()},changes:[{
+   type:'image-reference-accepted-window-bridge-enriched',messageId:previous.id,
+   previousAttachments:previous.attachments,bridgeAttachments:bridge.attachments,currentAttachments:current.attachments,
+   bridgeBasis:'same-run-accepted-window',bytesVerified:false,attachmentCountVerified:false}]};
+ }
  const type=appeared?'image-reference-appeared':disappeared?'image-reference-not-observed':enriched?'image-reference-subset-enriched':'image-reference-subset-not-observed';
  return {equal:true,fields:[],row:appeared||enriched?{...previous,attachments:current.attachments.slice()}:previous,changes:[{messageId:previous.id,type,previousAttachments:previous.attachments,currentAttachments:current.attachments,bytesVerified:false,attachmentCountVerified:false}]};
 }
@@ -299,5 +319,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });

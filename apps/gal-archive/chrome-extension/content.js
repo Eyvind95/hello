@@ -1876,6 +1876,7 @@
     if(b.trustedWheelCount)warnings.push('掃描期間觀測到可信滾輪輸入，不能當成無人工介入的自動驗收；來源可能是使用者或瀏覽器自動化。');
     if(b.foldObservations.size)warnings.push('前輩掃描不點擊展開／收合；已掛載正文照讀，折疊觀測及確定移除的尾端介面標籤另存證據，未獨立驗證折疊正文完整性，需後續核對。');
     if(b.attachmentChanges.some(x=>!x.type))warnings.push('臨時圖片 blob 網址曾變動；僅核對附件參照位置與標籤，未驗證圖片位元組。');
+    if(b.attachmentChanges.some(x=>x.type==='image-reference-accepted-window-bridge-enriched'))warnings.push('圖片參照透過同批已核對視窗的暫時網址補接；保留三份參照，未驗證圖片位元組或原始附件數量。');
     if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
     if(b.renderChanges?.length)warnings.push('程式碼框介面標籤與文字節點拆分經逐字核對等價；原先收錄不改寫，兩份觀測保存在 codeRenderVariants，非伺服器原始格式。');
     if(b.foldTailVariants?.length)warnings.push('玩家折疊尾端差異僅核對同ID及其他原文欄位；保留舊正文、兩份觀測及折疊證據，完整原文尚未驗證，請見 foldTailVariants。');
@@ -1914,7 +1915,8 @@
       b.breakthrough={resets:0,attempts:0,frontier:{id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight}};
       if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample))status='completed';
       if(b.resume){
-        const seed=pc.resumeSeed(b.resumeRows,b.rows,change=>historyAttachmentChange(b,change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256});
+        const seed=pc.resumeSeed(b.resumeRows,b.rows,change=>historyAttachmentChange(b,change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256,attachmentBridges:b.acceptedAttachmentBridges});
+        b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),seed.rows,b.rows);
         b.rows=seed.rows;b.resume.tailVerified=true;b.resume.tailVerifiedAt=new Date().toISOString();b.resume.frontierVerified=seed.frontier;if(seed.frontier)b.resume.frontierVerifiedAt=b.resume.tailVerifiedAt;b.resume.minIndex=seed.minIndex;b.resume.checkedWindows=1;
         lastCount=b.rows.length;lastGrowth=Date.now();
         b.breakthrough.frontier={id:b.resumeRows[seed.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
@@ -1973,7 +1975,7 @@
           }
           try{
             const changes=[];
-            const merged=pc.mergeUp(b.rows,rows,change=>changes.push(change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256});
+            const merged=pc.mergeUp(b.rows,rows,change=>changes.push(change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256,attachmentBridges:b.acceptedAttachmentBridges});
             if(b.resume&&!b.resume.frontierVerified){
               const q=pc.resumeWindow(b.resumeRows,rows);
               if(merged.length>b.rows.length&&!q.frontier)throw Error('續掃前沿未核對，不能增加舊訊息');
@@ -1988,6 +1990,7 @@
                 historyTrace(b,'resume-frontier-verified',{id:b.resumeRows[0].id,matched:q.matched});
               }
             }
+            b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),merged,rows);
             b.rows=merged;for(const change of changes)historyAttachmentChange(b,change);b.windows++;
             if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
             lastError='';break;

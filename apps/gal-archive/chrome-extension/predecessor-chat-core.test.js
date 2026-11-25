@@ -615,3 +615,21 @@ test('folded user trailing ellipsis requires exact source evidence and preserves
  a.throws(()=>c.mergeUp([live],[old],null,ctx));
  a.throws(()=>c.mergeUp([old,r('next','assistant')],[live,r('different','assistant')],null,ctx));
 });
+
+test('same-run accepted image observation bridges later exact ordered subset without claiming bytes',()=>{
+ const img=n=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/00000000-0000-4000-8000-'+String(n).padStart(12,'0')});
+ const old={...r('u'),attachments:[img(1)]},bridge={...old,attachments:[img(2)]},current={...old,attachments:[img(3),img(2)]},tail=r('a','assistant'),map=new Map(),changes=[];
+ a.throws(()=>c.mergeUp([old,tail],[current,tail],null,{attachmentBridges:map}));
+ const accepted=c.mergeUp([old,tail],[bridge,tail]);
+ a.deepEqual(accepted,[old,tail]);c.rememberAttachmentObservations(map,accepted,[bridge,tail]);
+ a.equal(map.get('u'),bridge);
+ const result=c.mergeUp(accepted,[r('older','assistant'),current,tail],x=>changes.push(x),{attachmentBridges:map});
+ a.deepEqual(result,[r('older','assistant'),current,tail]);a.equal(changes[0].type,'image-reference-accepted-window-bridge-enriched');
+ a.deepEqual(changes[0].previousAttachments,old.attachments);a.deepEqual(changes[0].bridgeAttachments,bridge.attachments);a.deepEqual(changes[0].currentAttachments,current.attachments);
+ a.equal(changes[0].bytesVerified,false);a.equal(changes[0].attachmentCountVerified,false);
+ for(const bad of [{...current,attachments:[img(3),img(4)]},{...current,attachments:[img(2),img(2)]},{...current,text:'changed'}])a.throws(()=>c.mergeUp(accepted,[bad,tail],null,{attachmentBridges:map}));
+ a.throws(()=>c.mergeUp(accepted,[current,r('wrong','assistant')],null,{attachmentBridges:map}));
+ const invalid=new Map();c.rememberAttachmentObservations(invalid,accepted,[{...bridge,text:'changed'}]);a.equal(invalid.size,0);
+ c.rememberAttachmentObservations(map,accepted,[old,tail]);a.equal(map.size,0);
+ a.throws(()=>c.mergeUp(accepted,[current,tail],null,{attachmentBridges:map}));
+});
