@@ -219,3 +219,34 @@ test('zero range and known minimum prevent false completed tail',()=>{
  a.throws(()=>c.validateRaw({...raw,scannerVersion:'0.10.20'}),/缺少可捲動容器/);
  a.equal(c.validateRaw({...raw,scannerVersion:'0.10.20',evidence:{...raw.evidence,knownMinimum:2,hostProof:{maxRange:2000,observedMovement:true}}}).size,2);
 });
+
+test('overlap retry coordinates are rebased after virtualized height growth',()=>{
+ const anchor={top:7245.6,height:189467};
+ a.equal(c.rejoinTarget(anchor,210101,674,0),27879.6);
+ a.equal(c.rejoinTarget(anchor,207817,674,0),25595.6);
+ a.equal(c.rejoinTarget(anchor,207817,674,0,false),7245.6);
+ a.equal(c.rejoinTarget(anchor,207817,674,-674),24921.6);
+ a.equal(c.rejoinTarget(anchor,1000,674,-100000),0);
+ a.throws(()=>c.mergeUp([r('anchor')],[r('unrelated')]),/沒有重疊/);
+});
+test('rejoin recovery suppresses further breakthroughs without dropping reset evidence',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  async function historySettled('));
+ const b={host:{scrollTop:209427,scrollHeight:210101,clientHeight:674},scrollStats:{scrollResets:0},rows:[r('anchor')],breakthrough:{resets:4,attempts:0,frontier:null}};
+ const ctx={pc:c,historyTrace:()=>{},historyScroll:(h,to)=>h.scrollTop=to};
+ vm.runInNewContext(block+';globalThis.recover=historyRecoverScroll;',ctx);
+ const actual=ctx.recover(b,7245.6,189467,'test',false);
+ a.equal(actual.target,27879.6);a.equal(b.breakthrough.resets,5);a.equal(b.breakthrough.attempts,0);
+});
+test('actual historyRun rejoins after height changes during an unsuccessful upward probe',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ let now=1000,output,up=0,targets=[];
+ const tail=[r('tail')],older=[r('older'),r('tail')],host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
+ const b={host,rows:[],sample:10,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
+ const ctx={Date:{now:()=>now},pc:{...c,sampleReady:rs=>rs.length===2,validateSample:()=>{}},state:{bulk:b},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{now+=700;if(!o.upward)return tail;targets.push({target:o.target,allowBoost:o.allowBoost});if(++up===1){host.scrollHeight+=20000;return [r('unrelated')]}return older},historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:()=>{},sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length}),historyDownload:d=>{output=d;return 'sample.json'}};
+ vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+ a.equal(output.status,'completed');a.equal(output.count,2);a.equal(targets[0].target,9915);a.equal(targets[1].target,29957.5);a.equal(targets[1].allowBoost,false);a.equal(b.scrollStats.rejoinSuccesses,1);
+});

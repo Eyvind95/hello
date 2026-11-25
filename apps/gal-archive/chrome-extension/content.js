@@ -1610,7 +1610,7 @@
     return position>0&&total>=position&&Number.isInteger(position)&&Number.isInteger(total)?{position,total}:{};
   }
   // Preserve intended scroll position across ChatGPT auto-scroll and expansion.
-  function historyRecoverScroll(b,target,height,stage){
+  function historyRecoverScroll(b,target,height,stage,allowBoost=true){
     const actual=b.host.scrollTop,currentHeight=b.host.scrollHeight;
     const recovery=pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight);
     if(recovery===null)return null;
@@ -1625,7 +1625,7 @@
       historyTrace(b,'frontier-restore',{anchor:state.frontier.id,estimated:frontier,recovery});
     }
     const boost=pc.breakthroughStep(state,b.host.clientHeight);
-    if(boost&&destination>2){
+    if(allowBoost&&boost&&destination>2){
       // Try moving beyond the obstruction. The outer loop still requires
       // strict overlap and can return to the last confirmed position.
       state.attempts++;
@@ -1637,11 +1637,11 @@
     historyScroll(b.host,destination);
     return {target:destination,height:currentHeight};
   }
-  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null}={}){
+  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true}={}){
     const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;
     while(Date.now()<until){
       historyGuard(b);
-      const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read'):null;
+      const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read',allowBoost):null;
       if(recovered){
         target=recovered.target;targetHeight=recovered.height;
         last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8)throw Error('頁面反覆自動返回底端；強力突破後仍無法穩定');await sleep(180);continue;
@@ -1666,7 +1666,7 @@
             }
             lastRows=rows;
             if(last===fingerprint&&Date.now()-lastAt>=550){
-              const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read'):null;
+              const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost):null;
               if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8)throw Error('頁面反覆自動返回底端；強力突破後仍無法穩定');await sleep(180);continue}
               return rows;
             }
@@ -1759,14 +1759,43 @@
         if(pc.noNewRows(lastGrowth,Date.now())&&pos>2){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
         const deadline=pos<=2?(edgeAttempt||Date.now())+60000:lastGrowth+60000;
         let rows=null,lastError='';
-        // Small upward steps, then return toward the last confirmed position
-        // and retry with a smaller step if virtualized windows lose overlap.
-        for(const ratio of [1,.5,.25,.125,0]){
-          historyGuard(b);const target=Math.max(0,(ratio===0?pos:origin)-step*ratio),targetHeight=b.host.scrollHeight;historyScroll(b.host,target);
+        // Keep the last verified viewport in its original coordinate frame.
+        // Rebase each retry, and never trigger another breakthrough while
+        // attempting to rejoin a lost overlap.
+        const anchor={top:pos,height:b.host.scrollHeight};
+        const plans=[{ratio:1},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
+          ...[1,-1,2,-2,4,-4].map(offset=>({ratio:0,offset})),
+          {ratio:0,rebase:false}];
+        let recovering=false,attempted=new Set();
+        for(const plan of plans){
+          const {ratio,offset=0,rebase=true}=plan;
+          if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息')break;
+          historyGuard(b);
+          if(Date.now()>=deadline)break;
+          const targetHeight=b.host.scrollHeight;
+          const baseAnchor=ratio===1&&!recovering?{top:origin,height:anchor.height}:anchor;
+          const target=pc.rejoinTarget(baseAnchor,targetHeight,b.host.clientHeight,offset*b.host.clientHeight-step*ratio,rebase);
+          const key=JSON.stringify([Math.round(target),targetHeight]);
+          if(recovering&&attempted.has(key))continue;
+          attempted.add(key);
+          if(recovering){
+            b.scrollStats.rejoinAttempts=(b.scrollStats.rejoinAttempts||0)+1;
+            historyTrace(b,'rejoin-attempt',{ratio,offset,rebase,target,anchorTop:anchor.top,anchorHeight:anchor.height,expectedHeight:targetHeight,anchorId:state.frontier?.id||null});
+          }
+          historyScroll(b.host,target);
           await sleep(180);
           b.scrollStats.attempts++;
-          try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight})}catch(e){historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});throw e}
-          try{b.rows=pc.mergeUp(b.rows,rows,change=>historyAttachmentChange(b,change));b.windows++;lastError='';break}catch(e){b.scrollStats.overlapRetries++;historyTrace(b,'overlap-retry',{ratio,step,reason:String(e.message||e)});lastError=String(e.message||e);if(e.overlapEvidence){if(b.overlapIssues.length>=8)b.overlapIssues.shift();b.overlapIssues.push({at:new Date().toISOString(),ratio,scrollTop:b.host.scrollTop,reason:lastError,...e.overlapEvidence})}rows=null}
+          try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight,allowBoost:!recovering})}catch(e){historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});throw e}
+          try{
+            b.rows=pc.mergeUp(b.rows,rows,change=>historyAttachmentChange(b,change));b.windows++;
+            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
+            lastError='';break;
+          }catch(e){
+            b.scrollStats.overlapRetries++;lastError=String(e.message||e);
+            historyTrace(b,'overlap-retry',{ratio,step,target,targetHeight,reason:lastError,firstId:rows[0]?.id,lastId:rows.at(-1)?.id,liveIds:rows.map(r=>r.id),savedFirstId:b.rows[0]?.id});
+            if(e.overlapEvidence){if(b.overlapIssues.length>=8)b.overlapIssues.shift();b.overlapIssues.push({at:new Date().toISOString(),ratio,scrollTop:b.host.scrollTop,reason:lastError,...e.overlapEvidence})}
+            rows=null;recovering=true;
+          }
         }
         if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
         historyHostObservation(b);
@@ -1809,7 +1838,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     state.bulk=b;
     try{
       // Disable only this chat's existing automatic upload so scrolling over
