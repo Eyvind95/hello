@@ -1,7 +1,7 @@
 /* Extension-local checkpoint memory. No cloud upload. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.GalCheckpointMemory=api})(globalThis,()=>{
 'use strict';
-const MAX=100*1024*1024, ENDPOINT='http://127.0.0.1:18765/checkpoint.json';
+const MAX=100*1024*1024, CHUNK_MAX=1024*1024, PARTS_MAX=4096;
 const key=(source,slot='pinned')=>'ga-predecessor-checkpoint:'+new URL(source).pathname.replace(/\/$/,'')+':'+slot;
 const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');
 async function decode(bytes,source,core,expected){
@@ -34,16 +34,33 @@ async function save(storage,bytes,source,core,expected,automatic=false){
  await storage.set({[k]:{raw:checkpoint.raw,hash:checkpoint.hash,count:checkpoint.data.count,runId:checkpoint.data.runId}});
  return {slot,count:checkpoint.data.count,hash:checkpoint.hash,runId:checkpoint.data.runId};
 }
-async function fetchLocal(expected,fetcher=fetch){
- if(!/^[a-f0-9]{64}$/.test(expected))throw Error('請輸入原始檔 SHA-256');
- const response=await fetcher(ENDPOINT,{credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(30000)});
- if(!response.ok||!response.body)throw Error('本機保全橋接未就緒：HTTP '+response.status);
- if(Number(response.headers.get('content-length'))>MAX)throw Error('斷點超過100MiB');
- const reader=response.body.getReader(),chunks=[];let length=0;
- try{for(;;){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>MAX)throw Error('斷點超過100MiB');chunks.push(value)}}finally{await reader.cancel().catch(()=>{})}
- const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength}
- if(await digest(bytes)!==expected)throw Error('本機來源 SHA-256 不符');
- return bytes;
+// GA1 parts are decoded separately so the Windows clipboard never needs the
+// whole file. Nothing is saved before all parts and the original hash agree.
+function createReceiver(){
+ let parts=[],length=0,total=0;
+ const status=()=>({received:parts.length,total,bytes:length,ready:total>0&&parts.length===total});
+ function append(text){
+  if(typeof text!=='string'||text.length>Math.ceil(CHUNK_MAX/3)*4+80)throw Error('單段過大');
+  const m=/^GA1 ([1-9][0-9]{0,3})\/([1-9][0-9]{0,3})\r?\n([A-Za-z0-9+/]+={0,2})$/.exec(text.trim());
+  if(!m)throw Error('不是 GA1 本機保全分段');
+  const index=Number(m[1]),n=Number(m[2]),encoded=m[3];
+  if(n>PARTS_MAX||index>n||index!==parts.length+1||(total&&total!==n))throw Error('分段順序或總段數不符');
+  if(encoded.length%4)throw Error('Base64 格式不符');
+  const bin=atob(encoded);
+  if(btoa(bin)!==encoded)throw Error('Base64 非標準編碼');
+  if(!bin.length||bin.length>CHUNK_MAX||length+bin.length>MAX)throw Error('保全資料超過容量限制');
+  const bytes=Uint8Array.from(bin,x=>x.charCodeAt(0));
+  parts.push(bytes);length+=bytes.length;total=n;
+  return status();
+ }
+ function bytes(){
+  if(!status().ready)throw Error('分段尚未齊全');
+  const out=new Uint8Array(length);let offset=0;
+  for(const part of parts){out.set(part,offset);offset+=part.length}
+  return out;
+ }
+ function reset(){parts=[];length=0;total=0;return status()}
+ return {append,bytes,reset,status};
 }
-return {MAX,ENDPOINT,key,digest,decode,read,save,fetchLocal};
+return {MAX,CHUNK_MAX,PARTS_MAX,key,digest,decode,read,save,createReceiver};
 });

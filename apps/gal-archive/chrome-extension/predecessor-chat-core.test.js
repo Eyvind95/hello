@@ -745,8 +745,36 @@ test('local checkpoint memory preserves bytes, separates chat and candidate, rej
  await a.rejects(mem.save(storage,new TextEncoder().encode(JSON.stringify({...partial,evidence:{...partial.evidence,resume:{tailVerified:true,frontierVerified:false}}})),src,c));
  store[mem.key(src)].raw+=' ';await a.rejects(mem.read(storage,src,c));
 });
-test('local bridge uses only fixed loopback, no redirects or credentials, and exact expected hash',async()=>{
- const mem=require('./predecessor-checkpoint-memory'),bytes=new TextEncoder().encode('test'),hash=await mem.digest(bytes);
- const mock=async (url,opts)=>{a.equal(url,'http://127.0.0.1:18765/checkpoint.json');a.equal(opts.redirect,'error');a.equal(opts.credentials,'omit');return new Response(bytes)};
- a.deepEqual(await mem.fetchLocal(hash,mock),bytes);await a.rejects(mem.fetchLocal('f'.repeat(64),mock));await a.rejects(mem.fetchLocal('https://example.com',mock));
+test('offline checkpoint chunks require strict order, complete exact bytes and original hash before save',async()=>{
+ const mem=require('./predecessor-checkpoint-memory'),receiver=mem.createReceiver();
+ const partial={...raw,status:'failed',error:'partial',evidence:{...raw.evidence,topReached:false,topStableMs:0,continuity:false,windows:2,hostProof:{maxRange:100,observedMovement:true}}};
+ const bytes=new TextEncoder().encode('\uFEFF'+JSON.stringify(partial)+'\r\n'),hash=await mem.digest(bytes),mid=Math.floor(bytes.length/2);
+ const part=(i,data)=>'GA1 '+i+'/2\n'+Buffer.from(data).toString('base64');
+ const first=part(1,bytes.slice(0,mid)),second=part(2,bytes.slice(mid));
+ a.throws(()=>receiver.append(second));a.throws(()=>receiver.append('GA1 1/2\nAB=='));
+ a.equal(receiver.append(first).received,1);a.throws(()=>receiver.bytes());a.throws(()=>receiver.append(first));
+ a.throws(()=>receiver.append(second.replace('/2','/3')));
+ a.equal(receiver.append(second).ready,true);a.deepEqual(receiver.bytes(),bytes);
+ const store={},storage={get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)};
+ await a.rejects(mem.save(storage,receiver.bytes(),raw.sourceUrl,c,'0'.repeat(64)));a.deepEqual(store,{});
+ await a.rejects(mem.save(storage,receiver.bytes(),'https://chatgpt.com/c/other',c,hash));a.deepEqual(store,{});
+ a.equal((await mem.save(storage,receiver.bytes(),raw.sourceUrl,c,hash)).count,2);
+ a.equal((await mem.read(storage,raw.sourceUrl,c)).hash,hash);
+ a.equal(receiver.reset().received,0);a.throws(()=>receiver.bytes());
+ a.throws(()=>receiver.append('GA1 1/4097\nYQ=='));
+ a.throws(()=>receiver.append('GA1 1/1\n'+Buffer.alloc(mem.CHUNK_MAX+1).toString('base64')));
+});
+test('offline extension import page accepts paste, checks complete hash, and never calls network',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),mem=require('./predecessor-checkpoint-memory');
+ const partial={...raw,status:'failed',error:'partial',evidence:{...raw.evidence,topReached:false,topStableMs:0,continuity:false,windows:2,hostProof:{maxRange:100,observedMovement:true}}};
+ const bytes=new TextEncoder().encode(JSON.stringify(partial)),hash=await mem.digest(bytes),store={},nodes={};
+ for(const id of ['chunk','save','reset','result','progress','source','hash'])nodes[id]={value:'',addEventListener(k,f){this[k]=f},focus(){}};
+ const storage={get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)};
+ const ctx={document:{getElementById:k=>nodes[k]},location:{search:'?'+new URLSearchParams({source:raw.sourceUrl,sha256:hash})},URLSearchParams,GalPredecessorChat:c,GalCheckpointMemory:mem,chrome:{storage:{local:storage}},fetch(){throw Error('network forbidden')}};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(__dirname,'checkpoint-import.js'),'utf8'),ctx);
+ a.equal(nodes.save.disabled,true);
+ nodes.chunk.paste({preventDefault(){},clipboardData:{getData:()=> 'GA1 1/1\n'+Buffer.from(bytes).toString('base64')}});
+ a.equal(nodes.chunk.value,'');a.equal(nodes.save.disabled,false);a.deepEqual(store,{});
+ await nodes.save.onclick();a.match(nodes.result.textContent,/已記住 2 則/);a.match(nodes.result.textContent,/已回讀核對/);a.equal((await mem.read(storage,raw.sourceUrl,c)).hash,hash);
+ a.equal(nodes.save.disabled,true);a.equal(nodes.chunk.disabled,true);
 });
