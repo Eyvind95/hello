@@ -86,7 +86,7 @@ test('adaptive scan accelerates over repeated windows, never resets no-growth de
 test('actual historyRun exits no-growth despite continued scroll movements',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  let now=1000,output,positions=[];
  const rows=[r('1'),r('2','assistant')];
  const host={scrollTop:100000,scrollHeight:100100,clientHeight:100};
@@ -242,7 +242,7 @@ test('rejoin recovery suppresses further breakthroughs without dropping reset ev
 test('actual historyRun rejoins after height changes during an unsuccessful upward probe',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  let now=1000,output,up=0,targets=[];
  const tail=[r('tail')],older=[r('older'),r('tail')],host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
  const b={host,rows:[],sample:10,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
@@ -288,7 +288,7 @@ test('resume validates tail, fast return interior, and two adjacent frontier row
 test('actual historyRun resumes from a validated tail, fast returns and then extends the checkpoint',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  const saved=Array.from({length:30},(_,i)=>r(String(i))),older=r('older');
  let now=1000,output,up=0;const trace=[],targets=[];
  const host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
@@ -330,7 +330,7 @@ test('actual historySettled bounds recovery cycle and emits recoverable error',a
 test('actual historyRun tries another overlap plan after bounded recovery failure',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  let now=1000,output,up=0;const targets=[];
  const tail=[r('tail')],older=[r('older'),r('tail')],host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
  const b={host,rows:[],sample:10,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
@@ -538,4 +538,45 @@ test('predecessor status panel stays at bottom, supports compact view and moves 
  b.showPanelDetails();a.equal(b.info.hidden,false);b.download.hidden=false;ctx.status(b,'已下載');a.match(b.summary.textContent,/已結束/);
  a.equal(b.rows.length,1);a.equal(src.includes("top:auto;box-sizing:border-box;max-width:calc(100vw - 24px)"),true);
  a.equal(src.includes("active.scrollIntoView({block:'nearest'})"),false);
+});
+
+test('native history retry targets only unique sibling button outside turns',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('));
+ const ctx={historyVisible:n=>n.visible!==false};vm.runInNewContext(block+';globalThis.find=historyNativeFailure;',ctx);
+ const row={closest:()=>null,children:[]},status={textContent:'無法載入較早的訊息',closest:()=>null,parentElement:row},button={tagName:'BUTTON',textContent:'重試',getAttribute:()=>null};
+ row.children=[status,button];const host={querySelectorAll:()=>[status],contains:n=>n===row};
+ a.equal(ctx.find(host).button,button);status.closest=()=>({});a.equal(ctx.find(host),null);status.closest=()=>null;
+ row.children=[status,button,{...button}];a.equal(ctx.find(host).reason,'ambiguous-button');row.children=[status,button];
+ button.disabled=true;a.equal(ctx.find(host).reason,'disabled-button');button.disabled=false;
+ status.textContent='正在載入較早的訊息…';a.equal(ctx.find(host),null);
+});
+test('native retry is bounded, deadline-preserving, and never certifies rows',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('));
+ for(const mode of ['clear','persistent','deadline','ambiguous']){
+  let now=1000,clicks=0,present=true;
+  const row={closest:()=>null,children:[]},status={textContent:'無法載入較早的訊息',closest:()=>null,parentElement:row},button={tagName:'BUTTON',textContent:'重試',getAttribute:()=>null,click(){clicks++;if(mode==='clear')present=false}};
+  row.children=[status,button];if(mode==='ambiguous')row.children.push({...button});
+  const host={querySelectorAll:()=>present?[status]:[],contains:n=>n===row,scrollTop:0,scrollHeight:537121};
+  const b={host,rows:[r('anchor')]};class Clock extends Date{constructor(){super(now)}static now(){return now}}
+  const ctx={Date:Clock,historyVisible:()=>true,historyGuard:()=>{},historyStatus:()=>{},sleep:async ms=>{now+=ms}};
+  vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;',ctx);
+  const run=ctx.retry(b,mode==='deadline'?1500:61000);
+  if(mode==='clear'){a.equal(await run,true);a.equal(clicks,1);a.equal(b.nativeHistoryRetry.cleared,1)}
+  else{await a.rejects(run,/原生歷史載入失敗/);a.equal(clicks,mode==='persistent'?3:mode==='deadline'?1:0);a.equal(b.nativeHistoryRetry.cleared,0)}
+  a.equal(b.rows.length,1);a.equal(host.scrollTop,0);a.equal(b.resume,undefined);
+  if(mode==='deadline')a.equal(now,1500);
+ }
+});
+test('history progress timeout includes false top and retry cannot reset it',()=>{
+ const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const run=src.slice(src.indexOf('  async function historyRun('),src.indexOf('  async function historyBegin('));
+ a.match(run,/const deadline=lastGrowth\+60000;/);a.doesNotMatch(run,/noNewRows\(lastGrowth,Date.now\(\)\)&&pos>2/);
+ a.match(run,/nativeRetried\?null:target/);
+});
+
+test('native error cannot certify top while visible',()=>{
+ const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ a.ok(src.includes("stableMs:Date.now()-topSince,loading:historyLoading(b.host)||!!historyNativeFailure(b.host)"));
 });

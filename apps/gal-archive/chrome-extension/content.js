@@ -1651,6 +1651,48 @@
     if(!strategy.exhausted)historyScroll(b.host,destination);
     return {target:destination,height:currentHeight,delay:strategy.delay,exhausted:strategy.exhausted};
   }
+  // Observed native history failure: status and retry are siblings inside
+  // the same row, outside conversation turns. Never use a global text click.
+  function historyNativeFailure(host){
+    if(!host?.querySelectorAll)return null;
+    const excluded='[data-turn-key],[data-message-author-role],[data-testid^="conversation-turn-"],#ga-predecessor-history-panel,#ga-predecessor-page-config';
+    const norm=v=>String(v||'').trim().replace(/\s+/g,' ');
+    const matches=[...host.querySelectorAll('[role="status"]')].filter(n=>norm(n.textContent)==='無法載入較早的訊息'&&!n.closest(excluded)&&historyVisible(n));
+    if(!matches.length)return null;
+    if(matches.length!==1)return {reason:'ambiguous-status'};
+    const status=matches[0],row=status.parentElement;
+    if(!row||!host.contains(row)||row.closest(excluded))return {reason:'invalid-row'};
+    const buttons=[...row.children].filter(n=>n.tagName==='BUTTON'&&norm(n.textContent)==='重試'&&historyVisible(n));
+    if(buttons.length!==1)return {reason:'ambiguous-button'};
+    const button=buttons[0];
+    if(button.disabled||button.getAttribute('aria-disabled')==='true')return {reason:'disabled-button'};
+    return {button};
+  }
+  async function historyNativeRetry(b,until){
+    let detected=historyNativeFailure(b.host);
+    if(!detected)return false;
+    const stats=b.nativeHistoryRetry||(b.nativeHistoryRetry={attempts:0,cleared:0,trace:[]});
+    const record=(event,details={})=>stats.trace.push({at:new Date().toISOString(),event,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,count:b.rows.length,...details});
+    while(detected){
+      historyGuard(b);
+      if(Date.now()>=until){record('deadline');throw Error('原生歷史載入失敗：已達無進展期限')}
+      if(!detected.button){record('blocked',{reason:detected.reason});throw Error('原生歷史載入失敗：無法唯一確認可用重試按鈕')}
+      if(stats.attempts>=3){record('exhausted');throw Error('原生歷史載入失敗：已達3次重試上限')}
+      const attempt=++stats.attempts;
+      historyStatus(b,'原生歷史載入失敗，重試 '+attempt+'/3');
+      record('click',{attempt});
+      detected.button.click();
+      // No scroll during this observation. An absent error is not proof
+      // of history growth; the usual stable read and strict overlap follow.
+      const waitEnd=Math.min(until,Date.now()+2000);
+      while(Date.now()<waitEnd){await sleep(Math.min(250,waitEnd-Date.now()));historyGuard(b)}
+      if(Date.now()>=until){record('deadline',{attempt});throw Error('原生歷史載入失敗：重試等待逾時')}
+      detected=historyNativeFailure(b.host);
+      if(!detected){stats.cleared++;record('error-cleared',{attempt});return true}
+      record('still-present',{attempt});
+    }
+    return true;
+  }
   async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true}={}){
     const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;const policy=upward?pc.recoveryPolicy(b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null})):null;
     const retryError=()=>Object.assign(Error('頁面反覆自動返回底端；本次定位策略無法穩定'),{code:'HISTORY_RECOVERY_RETRY'});
@@ -1706,6 +1748,7 @@
     };
     while(Date.now()<until){
       historyGuard(b);
+      if(upward&&await historyNativeRetry(b,until)){target=null;targetHeight=null;last=null;lastRows=null;spinAt=0;continue}
       const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read',allowBoost,policy):null;
       if(recovered){
         target=recovered.target;targetHeight=recovered.height;
@@ -1731,6 +1774,7 @@
             }
             lastRows=rows;
             if(last===fingerprint&&Date.now()-lastAt>=550){
+              if(upward&&historyNativeFailure(b.host)){last=null;lastRows=null;continue}
               const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost,policy):null;
               if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);const result=await recoverWait(recovered);target=result.target;targetHeight=result.height;continue}
               return rows;
@@ -1815,6 +1859,7 @@
   function historyPayload(b,status,error){
     const rows=(b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
+    if(b.nativeHistoryRetry?.attempts)warnings.push('曾觸發原生歷史載入重試；錯誤消失不代表訊息已取得，仍依原文重疊及前沿核對。');
     if(b.trustedWheelCount)warnings.push('掃描期間觀測到可信滾輪輸入，不能當成無人工介入的自動驗收；來源可能是使用者或瀏覽器自動化。');
     if(b.foldObservations.size)warnings.push('前輩掃描不點擊展開／收合；已掛載正文照讀，折疊觀測及確定移除的尾端介面標籤另存證據，未獨立驗證折疊正文完整性，需後續核對。');
     if(b.attachmentChanges.some(x=>!x.type))warnings.push('臨時圖片 blob 網址曾變動；僅核對附件參照位置與標籤，未驗證圖片位元組。');
@@ -1825,7 +1870,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+data.count:'')+'.json';
@@ -1874,8 +1919,8 @@
           state.attempts++;b.scrollStats.breakthroughAttempts=(b.scrollStats.breakthroughAttempts||0)+1;
           historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from:origin,to:Math.max(0,origin-step),step,anchor:state.frontier?.id||null});
         }
-        if(pc.noNewRows(lastGrowth,Date.now())&&pos>2){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
-        const deadline=pos<=2?(edgeAttempt||Date.now())+60000:lastGrowth+60000;
+        if(pc.noNewRows(lastGrowth,Date.now())){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
+        const deadline=lastGrowth+60000;
         let rows=null,lastError='';
         // Keep the last verified viewport in its original coordinate frame.
         // Rebase each retry, and never trigger another breakthrough while
@@ -1901,10 +1946,9 @@
             b.scrollStats.rejoinAttempts=(b.scrollStats.rejoinAttempts||0)+1;
             historyTrace(b,'rejoin-attempt',{ratio,offset,rebase,target,anchorTop:anchor.top,anchorHeight:anchor.height,expectedHeight:targetHeight,anchorId:state.frontier?.id||null});
           }
-          historyScroll(b.host,target);
-          await sleep(180);
-          b.scrollStats.attempts++;
-          try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight,allowBoost:!recovering})}catch(e){
+          const nativeRetried=await historyNativeRetry(b,deadline);
+          if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
+          try{rows=await historySettled(b,{deadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering})}catch(e){
             historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
             if(e.code!=='HISTORY_RECOVERY_RETRY')throw e;
             lastError=String(e.message||e);recovering=true;rows=null;
@@ -1948,7 +1992,7 @@
         if(atTop){
           if(!edgeAttempt)edgeAttempt=Date.now();
           if(sig!==topSignature){topSignature=sig;topSince=Date.now()}
-          if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){
+          if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host)||!!historyNativeFailure(b.host),...historyEdgeOrdinal(b,'top')})){
             if(b.resume&&!b.resume.frontierVerified)throw Error('續掃尚未核對原斷點，禁止完成');
             if(!pc.fullCoverageGate(b.rows.length,b.sample?0:b.knownMinimum,b.hostProof.maxRange,b.hostProof.observedMovement)||pc.scrollRange(b.host.scrollHeight,b.host.clientHeight)<=8){historyTrace(b,'false-top-rejected',{knownMinimum:b.knownMinimum,hostProof:b.hostProof});throw Error('疑似假頂端：捲動證據不足或未達已知最低訊息數 '+b.knownMinimum)}
             b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
@@ -1970,7 +2014,7 @@
             historyTrace(b,'checkpoint-download',{count:b.rows.length,file});
           }catch(e){historyTrace(b,'checkpoint-download-failed',{reason:String(e.message||e)})}
         }
-        if(!atTop&&pc.noNewRows(lastGrowth,Date.now()))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
+        if(pc.noNewRows(lastGrowth,Date.now()))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
         await sleep(150);
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
