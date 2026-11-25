@@ -23,8 +23,8 @@ async function save(storage,bytes,source,core,expected,automatic=false){
  const checkpoint=await decode(bytes,source,core,expected);
  const pinned=await read(storage,source,core);
  let slot='pinned';
- if(automatic&&pinned){
-  if(checkpoint.data.count<=pinned.data.count)return {slot:'pinned',count:pinned.data.count,hash:pinned.hash,unchanged:true};
+ if(automatic){
+  if(pinned&&checkpoint.data.count<=pinned.data.count)return {slot:'pinned',count:pinned.data.count,hash:pinned.hash,unchanged:true};
   // A larger candidate never replaces the explicitly chosen baseline.
   slot='candidate';
   const candidate=await read(storage,source,core,slot);
