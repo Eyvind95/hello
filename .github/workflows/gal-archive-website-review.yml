@@ -26,7 +26,8 @@ jobs:
           node --check apps/gal-archive/archive-auto-sync.js
           node --check apps/gal-archive/handover-cloud.js
           node --check apps/gal-archive/handover.js
-          node --test apps/gal-archive/tools/predecessor-library.test.js
+          node --test apps/gal-archive/tools/predecessor-library.test.js apps/gal-archive/archive-reading-export.test.js
+          node --check apps/gal-archive/archive-reading-export.js
           node --check apps/gal-archive/tools/predecessor-library.js
           node --check apps/gal-archive/archive-replay.js
           node --test apps/gal-archive/chrome-extension/predecessor-composite-dom.test.js apps/gal-archive/chrome-extension/predecessor-page-launcher.test.js apps/gal-archive/chrome-extension/predecessor-chat-core.test.js apps/gal-archive/tools/predecessor-chat-library.test.js
