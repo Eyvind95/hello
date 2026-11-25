@@ -71,11 +71,19 @@ function block(m,i,kind){
  if(Array.isArray(m.nativeImageReferences)&&m.nativeImageReferences.length)s+='\n【原站圖片參照：'+JSON.stringify(m.nativeImageReferences)+'；未擅自下載】';
  return s+'\n\n';
 }
-function writeVolumes(add,dir,label,items,heading,limit=32000){
+const shortWorld=(w,name)=>({sentinel:'哨嚮',adventure:'冒險者',road:'公路求生'}[w]||part(name));
+function cycleReadingName(w,name,title,hero){
+ const m=title.match(/^第\s*(\d+)\s*(?:輪迴|周目|週目)$/u);
+ const cycle=m?'第'+m[1].padStart(2,'0')+'輪迴':part(title);
+ return shortWorld(w,name)+'｜'+cycle+(hero?'・'+part(hero):'');
+}
+const VOLUME_LABELS={'02・完整劇情原始對話':'完整劇情','03・副駕駛聊天':'副駕駛聊天','06・事件簿':'事件簿','02b・已證明定位的劇情閱讀順序':'含事件閱讀版','07a・10題':'10題','07b・修改紀錄':'修改紀錄','文字與評語':'文字與評語'};
+function writeVolumes(add,dir,label,items,heading,prefix,limit=32000){
+ const addVolume=(suffix,bytes)=>add(dir+'/'+label+'/'+prefix+'｜'+VOLUME_LABELS[label]+'｜'+suffix,bytes,true);
  let buffer='',first=1,volume=1;
- const flush=end=>{if(!buffer)return;add(dir+'/'+label+'/'+String(volume++).padStart(3,'0')+'_'+String(first).padStart(5,'0')+'-'+String(end).padStart(5,'0')+'.txt',utf(heading+'\n本卷閱讀序號（1 起算；每則內另標原始陣列索引）：'+first+'–'+end+'\n\n'+buffer));buffer=''};
+ const flush=end=>{if(!buffer)return;addVolume(String(volume++).padStart(3,'0')+'_'+String(first).padStart(5,'0')+'-'+String(end).padStart(5,'0')+'.txt',utf(heading+'\n本卷閱讀序號（1 起算；每則內另標原始陣列索引）：'+first+'–'+end+'\n\n'+buffer));buffer=''};
  items.forEach((s,i)=>{if(buffer&&buffer.length+s.length>limit){flush(i);first=i+1}buffer+=s});flush(items.length);
- if(!items.length)add(dir+'/'+label+'/000_尚無資料.txt',utf(heading+'\n來源未收錄此類資料。\n'));
+ if(!items.length)addVolume('000_尚無資料.txt',utf(heading+'\n來源未收錄此類資料。\n'));
 }
 function timeline(c){
  const ms=list(c.messages,'完整對話'),es=list(c.events,'事件簿'),ids=new Set(ms.map(m=>m.id)),groups=new Map(),unplaced=[];
@@ -91,8 +99,8 @@ function timeline(c){
  return {out,unplaced};
 }
 function plan(b){
- const parsed=parseGab(b), {archive,handovers,at}=parsed, digest=sha(b),files=new Map(),people=new Map(),cycles=[],threads=[],worlds=[];
- const add=(name,data)=>{assert(!files.has(name),'匯出路徑重複：'+name);files.set(name,Buffer.isBuffer(data)?data:utf(data))};
+ const parsed=parseGab(b), {archive,handovers,at}=parsed, digest=sha(b),files=new Map(),people=new Map(),cycles=[],threads=[],worlds=[],volumePaths=new Set();
+ const add=(name,data,volume=false)=>{assert(!files.has(name),'匯出路徑重複：'+name);files.set(name,Buffer.isBuffer(data)?data:utf(data));if(volume)volumePaths.add(name)};
  const byWorld=new Map(archive.worlds.map(w=>[w.id,w]));
  for(const c of archive.cycles)id(c.world);
  const worldIds=new Set([...byWorld.keys(),...archive.cycles.map(c=>c.world),...handovers.map(h=>h.manifest.worldId)]);
@@ -114,15 +122,15 @@ function plan(b){
   cycles.push(meta);
   managers.forEach(n=>linkPerson(n,{worldId:c.world,title,path:dir,cycleId:c.id},'檔案館標記的輪迴管理者（不是完整前後輩身分證明）'));
   add(dir+'/01・輪迴原始資料.json',raw);
-  const head=name+'｜'+title+'｜輪迴 ID '+c.id;
-  writeVolumes(add,dir,'02・完整劇情原始對話',msgs.map((m,i)=>block(m,i,'story')),head+'｜messages 陣列原序（事件另見事件簿）');
-  writeVolumes(add,dir,'03・副駕駛聊天',pilot.map((m,i)=>block(m,i,'pilot')),head+'｜非 Gal AI 正史');
-  writeVolumes(add,dir,'06・事件簿',events.map((m,i)=>block(m,i,'event')),head+'｜全部狀態，不等於全部已接取');
+  const head=name+'｜'+title+'｜輪迴 ID '+c.id,prefix=cycleReadingName(c.world,name,title,text(c.hero));
+  writeVolumes(add,dir,'02・完整劇情原始對話',msgs.map((m,i)=>block(m,i,'story')),head+'｜messages 陣列原序（事件另見事件簿）',prefix);
+  writeVolumes(add,dir,'03・副駕駛聊天',pilot.map((m,i)=>block(m,i,'pilot')),head+'｜非 Gal AI 正史',prefix);
+  writeVolumes(add,dir,'06・事件簿',events.map((m,i)=>block(m,i,'event')),head+'｜全部狀態，不等於全部已接取',prefix);
   const tl=timeline(c);
-  writeVolumes(add,dir,'02b・已證明定位的劇情閱讀順序',tl.out,head+'｜只按明確 storyPlacement 插入已接事件；未定位事件見索引，不推測時間或位置');
+  writeVolumes(add,dir,'02b・已證明定位的劇情閱讀順序',tl.out,head+'｜只按明確 storyPlacement 插入已接事件；未定位事件見索引，不推測時間或位置',prefix);
   add(dir+'/04・角色與人格設定.txt',utf('【主角】\n'+text(c.hero)+'\n【重要角色】\n'+text(c.partner)+'\n【此輪開場】\n'+text(c.opening)+'\n【舊版輪迴專屬設定】\n'+text(c.lore)+'\n【人格設定】\n'+text(c.personality)+'\n【補充筆記】\n'+(Array.isArray(c.noteSections)?c.noteSections.map(n=>text(n.title)+'\n'+text(n.text)).join('\n\n'):text(c.notes))));
   add(dir+'/05・彩蛋.txt',utf(text(c.easterEggs)||'來源尚未填寫。'));
-  for(const [k,label] of [['quizLogs','07a・10題'],['changeLogs','07b・修改紀錄']])writeVolumes(add,dir,label,list(c[k],label).map((m,i)=>block(m,i,k)),head+'｜非正史');
+  for(const [k,label] of [['quizLogs','07a・10題'],['changeLogs','07b・修改紀錄']])writeVolumes(add,dir,label,list(c[k],label).map((m,i)=>block(m,i,k)),head+'｜非正史',prefix);
   const extras=(k,fields)=>list(c[k],k).filter(x=>!x.deleted).map(x=>fields.map(f=>f+'：'+text(x[f])).join('\n')).join('\n\n')||'來源尚未填寫。';
   add(dir+'/08・GPT評語與總結.txt',utf(extras('gptEvaluations',['author','review','summary'])));
   add(dir+'/09・角色關係圖鑑.txt',utf(extras('characterRelations',['from','to','relation','phase','description','evidence','sourceId'])));
@@ -140,7 +148,7 @@ function plan(b){
    const dir=base+'/交接-'+key(thread.id)+'/版本-'+revision(raw,name).slice(0,20);
    add(dir+'/交接稿原始資料.json',raw);
    const rows=entries.filter(e=>e.kind!=='file');
-   writeVolumes(add,dir,'文字與評語',rows.map(e=>'【'+e.kind+'｜'+text(e.reviewer)+'｜'+text(e.subject)+'｜'+text(e.title)+'｜ID '+e.id+'】\n'+text(e.text)+'\n\n'),name+'｜'+text(thread.title)+'｜非正史');
+   writeVolumes(add,dir,'文字與評語',rows.map(e=>'【'+e.kind+'｜'+text(e.reviewer)+'｜'+text(e.subject)+'｜'+text(e.title)+'｜ID '+e.id+'】\n'+text(e.text)+'\n\n'),name+'｜'+text(thread.title)+'｜非正史',shortWorld(w,name)+'｜'+part(text(thread.title)||'未命名交接'));
    for(const e of entries.filter(e=>e.kind==='file'))add(dir+'/附件/'+key(e.id)+'_'+attachmentName(e.name),h.files.get(e.id));
    const ref={worldId:w,id:thread.id,title:text(thread.title),author:text(thread.author),path:dir,files:attachments.length,reviewsPath:rd};
    threads.push(ref);linkPerson(thread.author,ref,'交接稿明確撰寫者');
@@ -152,13 +160,13 @@ function plan(b){
   const dir=PEOPLE+'/自動索引-'+digest.slice(0,20),file=dir+'/'+part(name)+'-'+key(name)+'.md';
   add(file,utf('# '+name+'\n\n僅列原檔明確記載的關聯，並非經確認的身分或前後輩關係。手動名冊以使用者資料為準。\n\n'+refs.map(x=>'- '+x.relation+'｜'+x.title+'｜'+x.worldId+'\n  '+x.path).join('\n')+'\n'));
  }
- const meta={format:'gal-predecessor-library',version:1,sourceSha256:digest,sourceExportedAt:at,worlds,cycles,threads,people:[...people.keys()],rawPath:RAW+'/'+digest+'.gab'};
+ const meta={format:'gal-predecessor-library',version:1,namingVersion:2,sourceSha256:digest,sourceExportedAt:at,worlds,cycles,threads,people:[...people.keys()],rawPath:RAW+'/'+digest+'.gab'};
  add(meta.rawPath,b);
- const idx=INDEX+'/批次索引/'+digest;
+ const idx=INDEX+'/批次索引/'+digest+'-命名v2';
  const lines=['# 前輩記憶館・本次完整備份索引','','來源時間：'+at,'來源 SHA-256：'+digest,'世界觀：'+worlds.length+'｜輪迴：'+cycles.length+'｜交接對話：'+threads.length,'','## 世界觀',...worlds.map(w=>'- '+w.name+'｜'+w.path+(w.sharedReviews?'｜共用評語 '+w.sharedReviews:'')),'','## 輪迴',...cycles.map(c=>'- '+c.worldId+'｜'+c.title+'｜'+c.hero+'｜'+c.messages+'則對話／'+c.accepted+'已接事件／'+c.pilot+'副駕駛｜'+c.path),'','## 交接稿',...threads.map(t=>'- '+t.worldId+'｜'+t.title+'｜'+t.author+'｜'+t.path),'','個人索引：'+PEOPLE+'/自動索引-'+digest.slice(0,20),'原始備份：'+meta.rawPath,'','以上僅為目前備份中存在的資料；茶話會、未歸檔聊天、前後輩關係及稱號需由使用者提供，不自行猜測。'];
- const inventory=[...files].map(([path,b])=>({path,bytes:b.length,sha256:sha(b)}));
+ const inventory=[...files].map(([path,b])=>({path,bytes:b.length,sha256:sha(b)})).sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
  add(idx+'.json',json({...meta,inventory}));const indexText=utf(lines.join('\n')+'\n');add(idx+'.md',indexText);
- return {meta,files,indexText,idx,inventory};
+ return {meta,files,indexText,idx,inventory,volumePaths};
 }
 function inside(root,rel){
  assert(!p.isAbsolute(rel)&&!rel.split('/').some(x=>!x||x==='.'||x==='..'),'不安全的匯出路徑');
@@ -173,14 +181,36 @@ function sync(root,planned,apply=false){
  let fd;try{fd=fs.openSync(lock,'wx')}catch(e){if(e.code==='EEXIST')throw Error('已有匯出執行或先前中斷留下鎖定；確認所有匯出程序已停止，再人工核對鎖定檔 '+lock);throw e}
  try{return syncLocked(root,planned,true)}finally{fs.closeSync(fd);fs.unlinkSync(lock)}
 }
-function syncLocked(root,planned,apply){const latest=inside(root,INDEX+'/最新匯出索引.md');
+// Read existing equivalent volumes without renaming or duplicating them.
+ // The bytes include source ID and original range, so equality is strict.
+function reuseVolumeNames(root,planned){
+ const files=new Map(planned.files),dirs=new Map();
+ for(const rel of planned.volumePaths||[]){
+  const f=inside(root,rel);if(fs.existsSync(f))continue;
+  const parent=p.dirname(f);if(!fs.existsSync(parent))continue;
+  if(!dirs.has(parent))dirs.set(parent,fs.readdirSync(parent).filter(n=>n.endsWith('.txt')));
+  const bytes=files.get(rel),matches=[];
+  for(const n of dirs.get(parent)){
+   const candidate=rel.slice(0,rel.lastIndexOf('/')+1)+n,existing=inside(root,candidate);
+   if(fs.statSync(existing).isFile()&&fs.statSync(existing).size===bytes.length&&fs.readFileSync(existing).equals(bytes))matches.push(candidate);
+  }
+  assert(matches.length<=1,'同內容閱讀卷有多個既有檔案，需人工確認：'+rel);
+  if(matches.length){assert(!files.has(matches[0]),'既有閱讀卷重複歸屬：'+matches[0]);files.delete(rel);files.set(matches[0],bytes)}
+ }
+ const inventory=[...files].filter(([rel])=>rel!==planned.idx+'.json'&&rel!==planned.idx+'.md').map(([path,b])=>({path,bytes:b.length,sha256:sha(b)})).sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
+ files.set(planned.idx+'.json',json({...planned.meta,inventory}));
+ return {...planned,files,inventory};
+}
+function syncLocked(root,planned,apply){
+ planned=reuseVolumeNames(root,planned);
+ const latest=inside(root,INDEX+'/最新匯出索引.md');
  const existing=fs.existsSync(latest)?fs.readFileSync(latest):null;
  let newer=true;
  if(existing){
   const s=decode(existing),m=s.match(/^來源 SHA-256：([a-f0-9]{64})$/m),d=s.match(/^來源時間：(.*)$/m);
   assert(m&&d,'最新索引並非本工具生成，禁止覆蓋');
-  const prior=inside(root,INDEX+'/批次索引/'+m[1]+'.md');
-  assert(fs.existsSync(prior)&&fs.readFileSync(prior).equals(existing),'最新索引遭修改或歷史索引缺失，禁止覆蓋');
+  const prior=[m[1]+'.md',m[1]+'-命名v2.md'].map(n=>inside(root,INDEX+'/批次索引/'+n));
+  assert(prior.some(f=>fs.existsSync(f)&&fs.readFileSync(f).equals(existing)),'最新索引遭修改或歷史索引缺失，禁止覆蓋');
   newer=Date.parse(planned.meta.sourceExportedAt)>=Date.parse(date(d[1]));
   if(Date.parse(planned.meta.sourceExportedAt)===Date.parse(date(d[1]))&&m[1]!==planned.meta.sourceSha256)throw Error('同時間不同備份，需人工核對，不覆蓋索引');
  }
