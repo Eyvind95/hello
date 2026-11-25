@@ -733,6 +733,7 @@ test('local checkpoint memory preserves bytes, separates chat and candidate, rej
  const mem=require('./predecessor-checkpoint-memory'),store={},storage={get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)};
  const src=raw.sourceUrl,partial={...raw,status:'failed',error:'partial',evidence:{...raw.evidence,topReached:false,topStableMs:0,continuity:false,windows:2,hostProof:{maxRange:100,observedMovement:true}}};
  const bytes=new TextEncoder().encode('\uFEFF'+JSON.stringify(partial)),hash=await mem.digest(bytes);
+ const auto=await mem.save(storage,bytes,src,c,hash,true);a.equal(auto.slot,'candidate');a.equal(await mem.read(storage,src,c),null);
  const pinned=await mem.save(storage,bytes,src,c,hash);
  a.equal(pinned.count,2);a.equal((await mem.read(storage,src,c)).hash,hash);
  a.equal(await mem.read(storage,'https://chatgpt.com/c/other',c),null);
