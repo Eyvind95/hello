@@ -67,7 +67,13 @@ function tombstoneMap(items){
 async function localSnapshot(){
  const db=await dbOpen();
  try{
-  const threads=await readAll(db,THREADS),entries=await readAll(db,ENTRIES),deletes=await readAll(db,DELETES);
+  const {threads,entries,deletes}=await new Promise((resolve,reject)=>{
+   const tx=db.transaction([THREADS,ENTRIES,DELETES],'readonly');
+   const t=tx.objectStore(THREADS).getAll(),e=tx.objectStore(ENTRIES).getAll(),d=tx.objectStore(DELETES).getAll();
+   tx.oncomplete=()=>resolve({threads:t.result||[],entries:e.result||[],deletes:d.result||[]});
+   tx.onerror=()=>reject(tx.error||Error('讀取交接稿快照失敗'));
+   tx.onabort=()=>reject(tx.error||Error('交接稿快照中止'));
+  });
   if(threads.length>MAX_RECORDS||entries.length>MAX_RECORDS||deletes.length>MAX_RECORDS)throw Error('交接稿數量超過安全上限');
   return {threads,entries,deletes};
  }finally{db.close()}
@@ -298,13 +304,36 @@ async function pull({db,user,progress=()=>{},safeAuto=false}){
   await new Promise((resolve,reject)=>{
    const tx=localDb.transaction([THREADS,ENTRIES,DELETES],'readwrite'),
     ts=tx.objectStore(THREADS),es=tx.objectStore(ENTRIES),ds=tx.objectStore(DELETES);
-   for(const mark of newMarkers)ds.put(mark);
-   for(const t of threads)ts.put(t);
-   for(const e of entries)es.put(e);
-   for(const id of removedThreads)ts.delete(id);
-   for(const id of removedEntries)es.delete(id);
+   // A user may edit a review while a large attachment is downloading.
+   // Compare each affected record against the snapshot in the same local
+   // transaction before applying any write. Abort the entire merge on change.
+   let conflict=null;
+   const equal=(a,b)=>{
+    if(!a||!b)return !a&&!b;
+    if(a.blob||b.blob){
+     if(!(a.blob instanceof Blob)||!(b.blob instanceof Blob)||a.blob.size!==b.blob.size||a.blob.type!==b.blob.type)return false;
+    }
+    return JSON.stringify(safeObj(a))===JSON.stringify(safeObj(b));
+   };
+   const checked=(store,id,expected,apply)=>{
+    const req=store.get(id);
+    req.onsuccess=()=>{
+     if(conflict)return;
+     if(!equal(req.result,expected)){
+      conflict=Error('同步期間本機交接稿已修改，保留本機並取消這次合併，請重新核對');
+      tx.abort();return;
+     }
+     apply();
+    };
+   };
+   const oldThreads=new Map(local.threads.map(x=>[x.id,x])),oldEntries=new Map(local.entries.map(x=>[x.id,x])),oldMarkers=new Map(local.deletes.map(x=>[x.id,x]));
+   for(const mark of newMarkers)checked(ds,mark.id,oldMarkers.get(mark.id),()=>ds.put(mark));
+   for(const t of threads)checked(ts,t.id,oldThreads.get(t.id),()=>ts.put(t));
+   for(const e of entries)checked(es,e.id,oldEntries.get(e.id),()=>es.put(e));
+   for(const id of removedThreads)checked(ts,id,oldThreads.get(id),()=>ts.delete(id));
+   for(const id of removedEntries)checked(es,id,oldEntries.get(id),()=>es.delete(id));
    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||Error('下載合併寫入失敗'));
-   tx.onabort=()=>reject(tx.error||Error('下載合併交易取消'));
+   tx.onabort=()=>reject(conflict||tx.error||Error('下載合併交易取消'));
   });
  }finally{localDb.close()}
  await window.ArchiveHandover?.reload?.();

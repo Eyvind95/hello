@@ -5069,7 +5069,7 @@ async function pullCloud(){
     +'舊版 users 僅補足新版不存在的輪迴；跳過可能覆蓋新版的舊項目 '+legacySkipped+' 筆。');
 }
 $('cloudPush').onclick=async()=>{
- if(window.__archiveAutoApplyingCloud)return cloudStatus('自動同步正在進行，請完成後再使用手動上傳。',true);
+ if(archiveManualBusy||window.__archiveAutoApplyingCloud||window.__archiveAutoSyncBusy)return cloudStatus('另一個雲端同步正在進行，請完成後再使用手動上傳。',true);
  archiveManualBusy=true;
  const btn=$('cloudPush');btn.disabled=true;let canonDone=false;
  try{
@@ -5084,7 +5084,7 @@ $('cloudPush').onclick=async()=>{
  }finally{btn.disabled=false;archiveManualBusy=false}
 };
 $('cloudPull').onclick=async()=>{
- if(window.__archiveAutoApplyingCloud)return cloudStatus('自動同步正在進行，請完成後再使用手動合併。',true);
+ if(archiveManualBusy||window.__archiveAutoApplyingCloud||window.__archiveAutoSyncBusy)return cloudStatus('另一個雲端同步正在進行，請完成後再使用手動合併。',true);
  archiveManualBusy=true;
  const btn=$('cloudPull');btn.disabled=true;let canonDone=false;
  try{

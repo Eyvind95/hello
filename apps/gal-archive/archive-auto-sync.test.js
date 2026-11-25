@@ -149,3 +149,13 @@ test('handover local writes always emit user-edit event; visible polling and ind
  assert.match(html,/id="archiveHandoverSyncNow"/);
  assert.match(js,/run\('manual-handover',true\)/);
 });
+
+test('manual and automatic cloud operations cannot overlap in the same tab',()=>{
+ const js=fs.readFileSync(path.join(root,'archive-auto-sync.js'),'utf8'),html=fs.readFileSync(path.join(root,'index.html'),'utf8'),h=fs.readFileSync(path.join(root,'handover-cloud.js'),'utf8');
+ assert.match(js,/window\.__archiveAutoSyncBusy=true/);
+ assert.match(js,/window\.__archiveAutoSyncBusy=false/);
+ assert.equal((html.match(/if\(archiveManualBusy\|\|window\.__archiveAutoApplyingCloud\|\|window\.__archiveAutoSyncBusy\)/g)||[]).length,2);
+ assert.match(h,/db\.transaction\(\[THREADS,ENTRIES,DELETES\],'readonly'\)/);
+ assert.match(h,/if\(!equal\(req\.result,expected\)\)/);
+ assert.match(h,/tx\.abort\(\)/);
+});

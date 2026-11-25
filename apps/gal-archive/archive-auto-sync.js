@@ -168,7 +168,7 @@ async function syncOnce(handoverOnly=false){
 async function run(reason,handoverOnly=false){
  if(inProgress){if(handoverOnly)pendingHandover=true;else queued=true;return}
  if(!uid||!localReady||(!enabled&&!handoverOnly)||!app.isSignedIn(uid))return;
- inProgress=true;runningUid=uid;
+ inProgress=true;runningUid=uid;window.__archiveAutoSyncBusy=true;
  try{
   const result=await underExclusiveLock(()=>syncOnce(handoverOnly));
   if(result?.busyOtherTab||result?.manual){
@@ -180,7 +180,7 @@ async function run(reason,handoverOnly=false){
   status('⚠ 自動同步暫停：'+String(e.message||e).slice(0,190),'error');
   console.error('[檔案館自動同步]',reason,e);
  }finally{
-  inProgress=false;runningUid=null;
+  inProgress=false;runningUid=null;window.__archiveAutoSyncBusy=false;
   if(pendingHandover){pendingHandover=false;const retryUid=uid;setTimeout(()=>{if(uid===retryUid)run('handover-queued',true)},3000)}
   if(queued&&!blocked){queued=false;request('queued',3000)}
   else queued=false;
