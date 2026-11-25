@@ -74,3 +74,11 @@ test('twenty-message bounded proof and generic title rejection',()=>{
  for(const title of ['新對話','New chat','ChatGPT','新聊天 - ChatGPT'])a.equal(c.chatTitle(title),'');
  a.equal(c.chatTitle('小貓前輩 - ChatGPT'),'小貓前輩');
 });
+
+test('adaptive scan accelerates over repeated windows, never resets no-growth deadline on scrolling',()=>{
+ a.equal(c.scrollStep(1000,0),850);a.equal(c.scrollStep(1000,3),1500);a.equal(c.scrollStep(1000,8),2500);
+ a.equal(c.noNewRows(1000,60999),false);a.equal(c.noNewRows(1000,61000),true);
+ a.equal(c.noNewRows(60000,61000),false);
+ a.throws(()=>c.mergeUp([r('3')],[r('1')]));
+ a.deepEqual(c.mergeUp([r('3')],[r('1'),r('2'),r('3')]).map(x=>x.id),['1','2','3']);
+});

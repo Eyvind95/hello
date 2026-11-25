@@ -75,6 +75,9 @@ function validateRaw(data){
  if(data.status==='completed')check(data.rows.length&&data.evidence.bottomStableMs>=3000&&data.evidence.topStableMs>=8000&&data.evidence.topReached===true&&data.evidence.bottomReached===true&&data.evidence.continuity===true&&data.evidence.firstId===data.rows[0].id&&data.evidence.lastId===data.rows.at(-1).id&&!data.error,'完成檔缺少首尾或連續性證據');
  return ids;
 }
+// Larger steps still require exact overlap.
+const scrollStep=(height,unchanged=0)=>Math.max(24,Math.floor(height*(unchanged>=8?2.5:unchanged>=3?1.5:.85)));
+const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;
 function sampleReady(rows,bottomReached,topReached,limit=SAMPLE_LIMIT){
  return !!sampleLimit(limit)&&bottomReached===true&&rows.length>0&&(rows.length>=limit||topReached===true);
 }
@@ -98,5 +101,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,fingerprint};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,fingerprint,scrollStep,noNewRows};
 });
