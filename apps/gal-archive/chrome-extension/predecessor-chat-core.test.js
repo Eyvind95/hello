@@ -575,3 +575,8 @@ test('history progress timeout includes false top and retry cannot reset it',()=
  a.match(run,/const deadline=lastGrowth\+60000;/);a.doesNotMatch(run,/noNewRows\(lastGrowth,Date.now\(\)\)&&pos>2/);
  a.match(run,/nativeRetried\?null:target/);
 });
+
+test('native error cannot certify top while visible',()=>{
+ const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ a.ok(src.includes("stableMs:Date.now()-topSince,loading:historyLoading(b.host)||!!historyNativeFailure(b.host)"));
+});

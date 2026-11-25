@@ -1774,6 +1774,7 @@
             }
             lastRows=rows;
             if(last===fingerprint&&Date.now()-lastAt>=550){
+              if(upward&&historyNativeFailure(b.host)){last=null;lastRows=null;continue}
               const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost,policy):null;
               if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);const result=await recoverWait(recovered);target=result.target;targetHeight=result.height;continue}
               return rows;
@@ -1991,7 +1992,7 @@
         if(atTop){
           if(!edgeAttempt)edgeAttempt=Date.now();
           if(sig!==topSignature){topSignature=sig;topSince=Date.now()}
-          if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){
+          if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host)||!!historyNativeFailure(b.host),...historyEdgeOrdinal(b,'top')})){
             if(b.resume&&!b.resume.frontierVerified)throw Error('續掃尚未核對原斷點，禁止完成');
             if(!pc.fullCoverageGate(b.rows.length,b.sample?0:b.knownMinimum,b.hostProof.maxRange,b.hostProof.observedMovement)||pc.scrollRange(b.host.scrollHeight,b.host.clientHeight)<=8){historyTrace(b,'false-top-rejected',{knownMinimum:b.knownMinimum,hostProof:b.hostProof});throw Error('疑似假頂端：捲動證據不足或未達已知最低訊息數 '+b.knownMinimum)}
             b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
