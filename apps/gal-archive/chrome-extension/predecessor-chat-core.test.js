@@ -38,3 +38,13 @@ test('attachment-only rows accepted, repeated source IDs and positional evidence
  a.throws(()=>c.validateRows([{...media,identityBasis:'position'}]));
  a.throws(()=>c.validateRows([media,media]));
 });
+
+test('composite read retains uncapped body and requires stable unique role evidence',()=>{
+ const text='長'.repeat(45000)+'\n\n最後一句';
+ const good={stableTurn:'turn-1',playerCount:1,parts:[{text,hasMedia:false},{text:'第二部分',hasMedia:false}],roleEvidence:['assistant-label:H5']};
+ assert.deepEqual(c.compositeDecision(good),{ok:true,text:text+'\n第二部分'});
+ for(const patch of [{stableTurn:''},{playerCount:2},{roleEvidence:[]},{unresolved:true}])assert.equal(c.compositeDecision({...good,...patch}).ok,false);
+ assert.equal(c.compositeDecision({...good,parts:[],roleEvidence:[]}).empty,true);
+ assert.equal(c.compositeDecision({...good,parts:[]}).empty,false);
+ assert.equal(c.compositeDecision({...good,parts:[{text:'',hasMedia:true}]}).ok,true);
+});

@@ -1390,26 +1390,80 @@
       const r=el.getBoundingClientRect();return historyVisible(el)&&r.bottom>=v.top&&r.top<=v.bottom;
     })||isGenerating();
   }
+
+  // Structural composite-turn read; the passive 30k fallback is never used.
+  const HISTORY_UI='button,[role="button"],[role="menu"],nav,footer,script,style,textarea,input,select,svg,[aria-hidden="true"],[hidden],.sr-only,[class~="sr-only"],[data-testid="conversation-turn-tools"],[data-testid="turn-actions"],.turn-action-controls,[class*="turn-action-controls"],[data-radix-popper-content-wrapper]';
+  const HISTORY_ASSISTANT_LABEL=/^(?:ChatGPT\s*(?:說|said)|Assistant)\s*[:：]?$/i;
+  const HISTORY_ASSISTANT_ACTION='[data-testid="good-response-turn-action-button"],[data-testid="bad-response-turn-action-button"],[data-testid="regenerate-turn-action-button"],[data-testid="read-aloud-turn-action-button"],[data-testid="good-response"],[data-testid="bad-response"]';
+  function historyFailureEvidence(owner,reason){
+    if(!owner)return {reason,owner:null};
+    const attrs=n=>({tag:n.tagName,role:n.getAttribute('data-message-author-role'),turn:n.getAttribute('data-turn-key'),testid:n.getAttribute('data-testid'),messageId:n.getAttribute('data-message-id'),label:n.getAttribute('aria-label'),class:String(n.className?.baseVal??n.className??'').slice(0,600)});
+    const text=owner.innerText||'',nodes=[...owner.querySelectorAll('*')];
+    return {reason,owner:attrs(owner),textLength:text.length,visibleText:text.slice(0,160000),textTruncated:text.length>160000,nodes:nodes.slice(0,400).map(n=>({...attrs(n),depth:(()=>{let d=0;for(let p=n;p&&p!==owner;p=p.parentElement)d++;return d})(),textLength:(n.innerText||'').length,leafText:n.children.length?null:(n.innerText||'').slice(0,180)})),nodeCount:nodes.length};
+  }
+  function historyError(owner,reason){
+    const err=Error(reason);err.historyEvidence=historyFailureEvidence(owner,reason);return err;
+  }
+  function historyComposite(owner){
+    const players=outerUsers().filter(n=>owner.contains(n)&&historyVisible(n));
+    const stableTurn=owner.getAttribute('data-turn-key');
+    if(players.length!==1||!stableTurn)throw historyError(owner,'複合回合沒有唯一玩家或穩定 turn key');
+    const user=players[0],branches=[];
+    // Non-overlapping sibling branches after the player, inside the same turn.
+    for(let n=user;n&&n!==owner;n=n.parentElement){
+      for(let sib=n.nextElementSibling;sib;sib=sib.nextElementSibling)branches.push(sib);
+    }
+    branches.sort((a,b)=>a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1);
+    const after=n=>!user.contains(n)&&!!(user.compareDocumentPosition(n)&Node.DOCUMENT_POSITION_FOLLOWING);
+    const labels=[...owner.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],[aria-label]')].filter(n=>after(n)&&!n.closest('[data-message-author-role="user"]')&&HISTORY_ASSISTANT_LABEL.test((n.getAttribute('aria-label')||n.textContent||'').trim()));
+    const actions=[...owner.querySelectorAll(HISTORY_ASSISTANT_ACTION)].filter(after);
+    const roleEvidence=[...labels.map(n=>'assistant-label:'+String(n.tagName)),...actions.map(n=>'assistant-action:'+n.getAttribute('data-testid'))];
+    const parts=[];let unresolved=false;
+    const isLabel=n=>labels.includes(n)&&HISTORY_ASSISTANT_LABEL.test((n.textContent||n.getAttribute('aria-label')||'').trim());
+    function visit(n){
+      if(!n||n.matches(HISTORY_UI)||isLabel(n)||!historyVisible(n))return;
+      if(n.querySelector('[data-message-author-role="user"],'+USER_SELECTOR+','+USER_BUBBLE_SELECTOR)){unresolved=true;return}
+      const controls=n.querySelector(HISTORY_UI),containsLabel=labels.some(l=>n.contains(l)&&isLabel(l));
+      // Preserve content roots intact. Split wrappers only around identified
+      // UI and role labels. Mixed raw text beside controls is not safe to guess.
+      if(controls||containsLabel){
+        if([...n.childNodes].some(x=>x.nodeType===3&&x.nodeValue.trim())){unresolved=true;return}
+        for(const child of n.children)visit(child);
+        return;
+      }
+      const text=n.innerText||'',hasMedia=!!(n.matches('img,[data-testid*="attachment"],[data-testid*="file-chip"]')||n.querySelector('img,[data-testid*="attachment"],[data-testid*="file-chip"]'));
+      if(text.trim()||hasMedia)parts.push({node:n,text,hasMedia});
+    }
+    for(const n of branches)visit(n);
+    const decision=pc.compositeDecision({stableTurn,playerCount:players.length,parts:parts.map(({text,hasMedia})=>({text,hasMedia})),roleEvidence,unresolved});
+    if(decision.empty)return null;
+    if(!decision.ok)throw historyError(owner,decision.reason);
+    return {parts:parts.map(x=>x.node),text:decision.text,roleEvidence};
+  }
+
   function historyRead(host){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
-    const add=(role,el,body,identityHint,fallback=false)=>{
+    const add=(role,el,body,identityHint,composite=null)=>{
       if(!el||!body||!root.contains(el)||!historyVisible(el))return;
-      const owner=historyOwner(el),native=el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
+      const owner=historyOwner(el),native=composite?null:(el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id'));
       const turn=owner.getAttribute('data-turn-key'); // data-testid ordinal alone is not a source ID
-      if(fallback)throw Error('未能確認完整 GPT 正文容器，不能使用可能截斷的備援文字');
-      if(!native&&!turn)throw Error('訊息缺少穩定來源 ID（禁止使用畫面位置）');
+      if(!native&&!turn)throw historyError(owner,'訊息缺少穩定來源 ID（禁止使用畫面位置）');
       const roleMarker=el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
       if(roleMarker&&roleMarker!==role)throw Error('角色標記衝突');
       const stable=role+'|'+(native?'message:'+native:'turn:'+turn);
-      const text=body.innerText||''; // preserve literal text; do not strip an apparent UI label
+      const text=composite?composite.text:(body.innerText||''); // preserve literal text
+      const bodies=composite?composite.parts:[body];
       if(TRUNCATED_TAIL.test(text)&&expandButtons(owner).length)throw Error('原始訊息仍折疊');
-      const structure=[...body.querySelectorAll('pre,blockquote,table,h1,h2,h3,h4,h5,h6,ul,ol,em,strong,code,del')].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
-      const attachments=[...el.querySelectorAll('img,a[href],[data-testid*="attachment"],[data-testid*="file-chip"]')].filter(historyVisible).map(n=>{
+      const fmt='pre,blockquote,table,h1,h2,h3,h4,h5,h6,ul,ol,em,strong,code,del';
+      const structure=bodies.flatMap(b=>[...(b.matches(fmt)?[b]:[]),...b.querySelectorAll(fmt)]).filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
+      const media='img,a[href],[data-testid*="attachment"],[data-testid*="file-chip"]';
+      const attachments=[...new Set((composite?bodies:[el]).flatMap(b=>[...(b.matches(media)?[b]:[]),...b.querySelectorAll(media)]))].filter(historyVisible).map(n=>{
         const src=n.tagName==='IMG'?n.getAttribute('src'):n.tagName==='A'?n.getAttribute('href'):null;
         return {kind:n.tagName==='IMG'?'image-reference':n.tagName==='A'?'link':'attachment-reference',label:n.getAttribute('alt')||n.getAttribute('aria-label')||n.innerText||'',url:src||null};
       });
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
-      const row={id:stable,role,text,identityBasis:native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments};
+      const row={id:stable,role,text,identityBasis:native?'native-dom-id':'turn-key',sourceCreatedAt:composite?null:getVisibleSourceTime(el),structure,attachments};
+      if(composite)row.compositeEvidence={roleEvidence:composite.roleEvidence,bodyCount:composite.parts.length};
       const sameOwner=owners.get(owner)||[];
       if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
       sameOwner.push({row,el,owner});owners.set(owner,sameOwner);entries.push({row,el,owner});
@@ -1434,13 +1488,18 @@
       const matching=explicit.filter(x=>x.role===role&&(x.el.contains(el)||el.contains(x.el)||x.owner===owner));
       if(matching.length){if(matching.length>1&&!matching.some(x=>x.el.contains(el)))throw Error('回合內多個同角色來源無法唯一核對');continue}
       const body=role==='user'?(el.querySelector(USER_BUBBLE_SELECTOR)||el):el;
-      add(role,el,body,null,role==='assistant'&&assistantFallbackTexts.has(el));
+      if(role==='assistant'&&assistantFallbackTexts.has(el)){
+        const resolved=historyComposite(owner);
+        if(resolved)add(role,resolved.parts[0],resolved.parts[0],null,resolved);
+        continue;
+      }
+      add(role,el,body,null);
     }
     // A mounted, visible turn with no captured role must never be silently skipped.
     const turns=[...root.querySelectorAll('[data-turn-key],[data-testid^="conversation-turn-"]')].filter(el=>
       !el.parentElement?.closest('[data-turn-key],[data-testid^="conversation-turn-"]')&&historyVisible(el)&&
       (el.hasAttribute('data-turn-key')||/^conversation-turn-\d+$/.test(el.getAttribute('data-testid')||'')));
-    for(const turn of turns)if(!entries.some(x=>turn.contains(x.el)||x.owner===turn))throw Error('已掛載回合未辨識到完整訊息');
+    for(const turn of turns)if(!entries.some(x=>turn.contains(x.el)||x.owner===turn))throw historyError(turn,'已掛載回合未辨識到完整訊息');
     entries.sort((a,b)=>a.el===b.el?0:(a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1));
     const rows=entries.map(x=>x.row);pc.validateRows(rows);
     if(!rows.length)throw Error('尚未讀到對話訊息');
@@ -1470,7 +1529,7 @@
             if(last!==fingerprint){last=fingerprint;lastAt=Date.now()}
             reason='等待原文與格式穩定';
           }
-        }catch(e){last=null;reason=String(e.message||e)}
+        }catch(e){last=null;reason=String(e.message||e);if(e.historyEvidence)b.lastReadEvidence=e.historyEvidence}
       }
       historyStatus(b,reason+'（最多等待60秒）');await sleep(650);
     }
@@ -1490,7 +1549,7 @@
     for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
-    return {format:pc.FORMAT,version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest'}};
+    return {format:pc.FORMAT,version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadFailure:status==='completed'?null:(b.lastReadEvidence||null)}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
@@ -1539,6 +1598,9 @@
         await sleep(480);
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
+    if(status!=='completed'&&!b.lastReadEvidence&&path()===b.chat){
+      try{const root=historyRoot(b.host),turns=[...root.querySelectorAll('[data-turn-key],[data-testid^="conversation-turn-"]')].filter(historyVisible);b.lastReadEvidence={reason:error,visibleTurns:turns.length,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,clientHeight:b.host.clientHeight,first:historyFailureEvidence(turns[0],error),last:historyFailureEvidence(turns.at(-1),error)}}catch(_){}
+    }
     const data=historyPayload(b,status,error);
     try{pc.validateRaw(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false}
     b.download.onclick=()=>{try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};

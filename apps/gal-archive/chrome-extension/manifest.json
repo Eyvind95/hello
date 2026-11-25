@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.10",
-  "version_name": "V0.10.10 前輩網頁小按鈕",
-  "description": "輪迴檔案館：ChatGPT 網頁內前輩聊天掃描入口，無須工具列。",
+  "version": "0.10.11",
+  "version_name": "V0.10.11 前輩複合回合與失敗取證",
+  "description": "輪迴檔案館：複合回合正文讀取、角色證據及失敗DOM保全。",
   "permissions": [
     "storage",
     "activeTab",

@@ -35,6 +35,15 @@ function mergeUp(previous,live){
  check(first.i===0||first.at===0,'新增訊息沒有接在已保全的最前端');
  return [...live.slice(0,first.i),...previous];
 }
+// A composite user/GPT turn requires structural role and body evidence.
+// Never accept the passive observer's truncated text as the complete reply.
+function compositeDecision({stableTurn,playerCount,parts,roleEvidence,unresolved=false}){
+ if(!stableTurn||playerCount!==1||!Array.isArray(parts)||unresolved)return {ok:false,reason:'複合回合來源／邊界無法唯一確認'};
+ if(!parts.length)return {ok:false,empty:!roleEvidence?.length,reason:'沒有可辨認的回覆正文'};
+ if(!Array.isArray(roleEvidence)||!roleEvidence.length)return {ok:false,reason:'缺少獨立 GPT 角色標記'};
+ if(parts.some(x=>typeof x.text!=='string'||!x.text.trim()&&!x.hasMedia))return {ok:false,reason:'回覆正文空白或未驗證'};
+ return {ok:true,text:parts.map(x=>x.text).join('\n')};
+}
 function edgeProof(rows,all,{atEdge,stableMs,edge,loading=false,position=null,total=null}={}){
  if(!atEdge||loading||!rows.length||!all.length||!Number.isFinite(stableMs))return false;
  if(edge==='top')return stableMs>=8000&&rows[0].id===all[0].id&&(!Number.isInteger(position)||position===1);
@@ -67,5 +76,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification};
+return {FORMAT,CLASS,VERSION,categories,validateRows,mergeUp,compositeDecision,edgeProof,sourceId,validateRaw,validateClassification};
 });
