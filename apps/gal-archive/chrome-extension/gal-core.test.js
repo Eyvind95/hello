@@ -2011,3 +2011,22 @@ test('road world uses a unique terminal day HUD, not a fabricated calendar year'
  assert.equal(c.worldInText('與'+world+'的事件'),world);
  assert.equal(c.isEvent('與'+world+'的事件'),true);
 });
+
+test('road unselected energy and terminal image metadata preserve the complete native reply',()=>{
+ const context=vm.createContext({});vm.runInContext(fs.readFileSync(require.resolve('./gal-core.js'),'utf8'),context);
+ const c=context.GalArchiveCore,world='🔞公路求生－我是求生者！🔞',fence=String.fromCharCode(96).repeat(3);
+ const h=['⏰：來到公路第1日｜01.01．00:05．天氣：☁','🚗：未選擇｜未解鎖','🔋：無｜0／0','🔧：0／0','🚐：0／0','🧩：0／10','🛣：15公里／每日規定15公里','🥩：飢餓度：10｜💧：口渴度：10','⚡：100／100','❤：健康','🎒：無','⚔：無','💰：0','📜：無｜💋：否','💦：無｜無｜無','📐：無'].join('\n');
+ const box=s=>fence+'\n'+s+'\n'+fence,ctx='{{測試情境}}',img='{{img::TEST01}}',sys='【關於「測試」之說明】',renderedSys='【關於\n「測試」\n之說明】';
+ const dom='測試敘事\n'+renderedSys+'\n'+h,native=ctx+'\n\n測試敘事\n\n'+box(sys)+'\n\n'+box(h)+'\n'+img;
+ const opts={source:'whif-message-content',worldName:world,codeBlocks:[renderedSys,h]};
+ assert.equal(c.parseGameTime(dom).civil,'第1日｜01.01 00:05');assert.equal(c.parseGameTime(native).civil,'第1日｜01.01 00:05');
+ const r=c.compareNativeParagraphs(dom,native,opts);assert.equal(r.text,native);assert.equal(r.comparison.explainedNonWhitespace,ctx.length+img.length+12);
+ for(const bad of [native+'\n任意正文',native.replace(ctx,'{{user}}'),native.replace(img,'{{任意正文}}'),native.replace('測試敘事','丟失敘事'),native.replace('未解鎖','已解鎖')])assert.equal(c.compareNativeParagraphs(dom,bad,opts).text,null);
+ assert.equal(c.compareNativeParagraphs(dom,native,{...opts,source:'unknown'}).text,null);
+ assert.equal(c.compareNativeParagraphs(dom,native,{...opts,codeBlocks:[h,renderedSys]}).text,null);
+ assert.equal(c.parseGameTime(h.replace('未解鎖','已解鎖')),null);
+ const opening='公路求生\n'+box('【世界規則正在重構】\n【唯一公路】')+'\n'+box('**【請選擇你的初始能源】**');
+ const openDom=opening.replaceAll(fence,'');
+ assert.equal(c.compareNativeParagraphs(openDom,opening,{opening:true,source:'whif-message-content',codeBlocks:['【世界規則正在重構】\n【唯一公路】','【請選擇你的初始能源】']}).text,opening);
+ assert.equal(c.validate([{role:'ai',text:opening},{role:'me',text:'測試'},{role:'ai',text:dom}],world).ok,true);
+});

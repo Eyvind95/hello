@@ -339,7 +339,7 @@ const clockProfile=w=>isRoadWorld(w)?'road':isAdventureWorld(w)?'adventure':'sen
 const roadHead=/^⏰\uFE0F?\s*[：:]\s*來到公路第\s*(\d{1,6})\s*日\s*[｜|]\s*(\d{1,2})[.．/](\d{1,2})\s*[.．]\s*(\d{1,2})[：:](\d{2})\s*[.．]\s*天氣[：:]\s*(\S.*)$/u;
 const roadClockEvidence=input=>clean(input).split('\n').some(line=>/^(?:\*\*)?⏰\uFE0F?\s*[：:]?\s*來到公路第/u.test(line.trim()));
 const roadFields=[
- /^🚗\uFE0F?[：:]\s*\S.*[｜|]\s*等級\s*\d+/u,
+ /^🚗\uFE0F?[：:]\s*(?:未選擇\s*[｜|]\s*未解鎖|\S.*[｜|]\s*等級\s*\d+)\s*$/u,
  /^🔋\uFE0F?[：:]\s*\S.*[｜|]/u,
  /^🔧\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
  /^(?:🚐|📦)\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
@@ -362,6 +362,9 @@ function parseRoadClock(input){
  const i=at[0],head=lines[i],m=(head.startsWith('**')&&head.endsWith('**')?head.slice(2,-2):head).match(roadHead);
  if(!m)return null;
  const fields=lines.slice(i+1);
+ // A terminal WHIF image template is metadata only when it follows the
+ // closing HUD fence. It must never hide arbitrary trailing narrative.
+ if(/^\{\{(?:img|image)::[A-Za-z0-9_-]{1,100}\}\}$/iu.test(fields.at(-1)||'')&&fields.at(-2)===ADVENTURE_FENCE)fields.pop();
  if(fields.at(-1)===ADVENTURE_FENCE)fields.pop();
  // The observed event can end after the backpack; a normal full HUD has
  // five more fields. Accept only ordered prefixes, never random prose.
@@ -388,7 +391,8 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  const fenceLines=original.split('\n').filter(l=>l.trim().startsWith(ADVENTURE_FENCE));
  const fencesValid=fenceLines.length===2*blocks.length&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE);
  const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
- let pos=0,sourcePos=0,omitted=0,quotePairs=0;
+ let pos=0,sourcePos=0,omitted=0,quotePairs=0,hiddenContext='',hiddenImage='';
+ const bounded=options.source==='whif-message-content'&&!options.event&&!options.opening;
  const starts=new Set(),ends=new Set();let linePos=0;
  for(const line of visible.split('\n')){const v=compact(line);if(v){starts.add(linePos);linePos+=v.length;ends.add(linePos);}}
  const take=(v,prose=false)=>{
@@ -405,6 +409,12 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
   pos=cursor;quotePairs+=pairs;return true;
  };
  let matched=fencesValid&&proof.length===blocks.length;
+ // Project a single standalone leading context only for an independently
+ // sourced ordinary reply, and only if ALL subsequent blocks/prose match.
+ const leading=original.match(/^(\{\{[^{}\n]{1,200}\}\})[ \t]*\n(?:[ \t]*\n){0,2}/u);
+ if(matched&&bounded&&leading&&adventureContextLine(leading[1])&&!visible.includes(leading[1])&&blocks.length&&leading[0].length<=blocks[0].index){
+  hiddenContext=leading[1];sourcePos=leading[0].length;
+ }
  if(matched)for(let i=0;i<blocks.length;i++){
   const block=blocks[i],raw=block[1],dom=String(proof[i]??''),k=compact(dom);
   if(!take(original.slice(sourcePos,block.index),true)||!(compact(raw)===k||systemBoxProof(raw,k))){matched=false;break}
@@ -417,9 +427,16 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
   if(!ok){matched=false;break}
   sourcePos=block.index+block[0].length;
  }
- matched=matched&&take(original.slice(sourcePos),true)&&pos===actual.length;
+ let tail=original.slice(sourcePos);
+ const image=tail.match(/^\s*(\{\{(?:img|image)::[A-Za-z0-9_-]{1,100}\}\})\s*$/iu);
+ if(matched&&bounded&&blocks.length&&image&&!visible.includes(image[1])&&parseRoadClock(blocks.at(-1)[1])){
+  hiddenImage=image[1];tail='';
+ }
+ matched=matched&&take(tail,true)&&pos===actual.length;
  const literal=fencesValid&&actual===compact(original),contentEqual=Boolean(literal||matched);
  const markers=[];
+ if(contentEqual&&!literal&&hiddenContext)markers.push({kind:'road-leading-context-template',tokens:1,nonWhitespaceChars:compact(hiddenContext).length});
+ if(contentEqual&&!literal&&hiddenImage)markers.push({kind:'road-terminal-image-template',tokens:1,nonWhitespaceChars:compact(hiddenImage).length});
  if(contentEqual&&!literal&&omitted)markers.push({kind:'road-proven-ordered-code-fences',tokens:omitted,nonWhitespaceChars:omitted*3});
  if(contentEqual&&!literal&&quotePairs)markers.push({kind:'road-proven-dialogue-quote-pairs',tokens:quotePairs*2,nonWhitespaceChars:quotePairs*2});
  const comparison={scannedLength:visible.length,nativeLength:original.length,scannedNonWhitespace:actual.length,nativeNonWhitespace:compact(original).length,comparableNativeNonWhitespace:contentEqual?actual.length:compact(original).length,whitespaceOnlyEqual:literal,contentEqual,clockEqual:Boolean(clockEqual),formatMarkers:markers,formatMarkerCount:markers.reduce((n,x)=>n+x.tokens,0),explainedNonWhitespace:markers.reduce((n,x)=>n+x.nonWhitespaceChars,0),remainingUnexplained:{scanned:contentEqual?0:Math.max(0,actual.length-pos),native:contentEqual?0:Math.max(0,compact(original).length-pos)},ignoredDifferences:markers.map(x=>x.kind),roadProjection:{nativeBlocks:blocks.length,domBlocks:proof.length,allOrdered:contentEqual}};
@@ -1943,5 +1960,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.0'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.1'};
 })();
