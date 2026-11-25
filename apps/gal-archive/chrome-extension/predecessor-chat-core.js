@@ -21,11 +21,35 @@ function compareRow(previous,current){
  }
  return {equal:fields.length===0,fields,changes};
 }
+// A specific composite DOM code rendering transition: a single text node
+// is replaced by a code-header div and split spans. No global text stripping.
+// Require the unchanged semantic code structure and a unique code occurrence.
+function codeRenderEquivalent(a,b,fields){
+ const allowed=['text','sourceTextNodes','sourceTextCharacters','domTextSegments'];
+ if(fields.length!==allowed.length||!fields.every(k=>allowed.includes(k))||a.role!=='assistant'||a.contentBasis!=='composite-after-user-dom'||b.contentBasis!==a.contentBasis)return false;
+ const short=a.text.length<b.text.length?a:b,long=short===a?b:a,label='程式碼';
+ if(long.text.length-short.text.length!==label.length+1)return false;
+ const valid=r=>Array.isArray(r.domTextSegments)&&r.domTextSegments.every(x=>x&&typeof x.tag==='string'&&typeof x.text==='string')&&r.sourceTextNodes===r.domTextSegments.length&&r.sourceTextCharacters===r.domTextSegments.reduce((n,x)=>n+x.text.length,0);
+ if(!valid(short)||!valid(long))return false;
+ const x=short.domTextSegments,y=long.domTextSegments;
+ for(let i=0;i<x.length;i++){
+  if(!same(x.slice(0,i),y.slice(0,i)))break;
+  const block=x[i].text;
+  if(x[i].tag!=='span'||!block.includes('\n')||!same(y[i],{tag:'div',text:label}))continue;
+  if(short.structure.filter(z=>z.tag==='code'&&z.text===block).length!==1)continue;
+  const at=short.text.indexOf(block);
+  if(at<0||short.text.indexOf(block,at+block.length)!==-1||long.text!==short.text.slice(0,at)+label+'\n'+short.text.slice(at))continue;
+  const end=y.length-(x.length-i-1),parts=y.slice(i+1,end);
+  if(parts.length>1&&parts.every(z=>z.tag==='span')&&parts.map(z=>z.text).join('')===block&&same(x.slice(i+1),y.slice(end)))return true;
+ }
+ return false;
+}
 // Only previously unobserved generic user image references may be enriched.
 // The two DOM observations are not proof of the original attachment bytes.
 function reconcileOverlap(previous,current){
  const comparison=compareRow(previous,current);
  if(comparison.equal)return {...comparison,row:previous};
+ if(codeRenderEquivalent(previous,current,comparison.fields))return {equal:true,fields:[],row:previous,changes:[{type:'code-render-label-variant',messageId:previous.id,fields:comparison.fields,previous,current}]};
  if(comparison.fields.length!==1||comparison.fields[0]!=='attachments'||previous.role!=='user'||!previous.text.trim())return comparison;
  const images=a=>a.length>0&&a.every(x=>transientImage(x)&&x.label==='使用者附件')&&new Set(a.map(x=>x.url)).size===a.length;
  const appeared=previous.attachments.length===0&&images(current.attachments);
@@ -187,8 +211,18 @@ function recoveryPolicy(state){
  p.currentWindow++;
  return p;
 }
-function clearRecoveryPolicy(state){delete state.recoveryPolicy;delete state.recoveryAvoidFrontier}
+function clearRecoveryPolicy(state){delete state.recoveryPolicy;delete state.recoveryAvoidFrontier;delete state.bottomEscapeHits;delete state.bottomEscapeAttempts}
 function alternateRecoveryPolicy(state){delete state.recoveryPolicy;state.recoveryAvoidFrontier=true}
+// Only actual bottom landings after near-top targets count. The maneuver
+// is bounded per accepted progress interval and never proves continuity.
+function bottomEscape(state,target,actual,height,viewport){
+ const max=scrollRange(height,viewport);
+ if(max<=viewport*4||Math.abs(actual-max)>6||target>viewport*2){state.bottomEscapeHits=0;return null}
+ state.bottomEscapeHits=(state.bottomEscapeHits||0)+1;
+ if(state.bottomEscapeHits<3||state.resets<5||(state.bottomEscapeAttempts||0)>=2)return null;
+ state.bottomEscapeHits=0;state.bottomEscapeAttempts=(state.bottomEscapeAttempts||0)+1;
+ return Math.max(0,max-Math.max(24,Math.floor(viewport*.5)));
+}
 const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;
 function sampleReady(rows,bottomReached,topReached,limit=SAMPLE_LIMIT){
  return !!sampleLimit(limit)&&bottomReached===true&&rows.length>0&&(rows.length>=limit||topReached===true);
@@ -213,5 +247,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape};
 });

@@ -383,3 +383,36 @@ test('actual historySettled detects A/B/A across independently stable old window
  a.equal(trace.find(x=>x.event==='recovery-cycle').crossWindow,true);
  a.equal(b.rows.length,1);
 });
+
+test('only proven composite code label and span split is equivalent; preserve both observations',()=>{
+ const code='line one\n\nline two 99.7%',text='before\n'+code+'\nafter';
+ const row={...r('code','assistant'),text,contentBasis:'composite-after-user-dom',structure:[{tag:'code',text:code}],domTextSegments:[{tag:'span',text:'before'},{tag:'span',text:code},{tag:'span',text:'after'}]};
+ const metrics=x=>({...x,sourceTextNodes:x.domTextSegments.length,sourceTextCharacters:x.domTextSegments.reduce((n,z)=>n+z.text.length,0)});
+ const a0=metrics(row),b0=metrics({...row,text:'before\n程式碼\n'+code+'\nafter',domTextSegments:[row.domTextSegments[0],{tag:'div',text:'程式碼'},{tag:'span',text:'line one'},{tag:'span',text:'\n\n'},{tag:'span',text:'line two 99'},{tag:'span',text:'.7%'},row.domTextSegments[2]]});
+ const changes=[];a.deepEqual(c.mergeUp([a0],[b0],x=>changes.push(x)),[a0]);a.equal(changes[0].type,'code-render-label-variant');a.deepEqual(changes[0].current,b0);
+ a.deepEqual(c.mergeUp([b0],[a0]),[b0]);
+ a.throws(()=>c.mergeUp([a0],[{...b0,structure:[]}]));
+ a.throws(()=>c.mergeUp([a0],[{...b0,text:b0.text.replace('99.7','99.8')}]));
+ a.throws(()=>c.mergeUp([a0],[metrics({...b0,domTextSegments:b0.domTextSegments.map((z,i)=>i===1?{...z,tag:'span'}:z)})]));
+ a.throws(()=>c.mergeUp([a0],[{...b0,sourceTextNodes:99}]));
+});
+test('bottom escape requires repeated actual edge resets, limited to two until progress',()=>{
+ const state={resets:5};
+ a.equal(c.bottomEscape(state,500,50000,51000,674),null);
+ for(let i=0;i<2;i++)a.equal(c.bottomEscape(state,500,50326,51000,674),null);
+ a.equal(c.bottomEscape(state,500,50326,51000,674),49989);
+ for(let i=0;i<2;i++)a.equal(c.bottomEscape(state,500,50326,51000,674),null);
+ a.equal(c.bottomEscape(state,500,50326,51000,674),49989);
+ for(let i=0;i<4;i++)a.equal(c.bottomEscape(state,500,50326,51000,674),null);
+ c.clearRecoveryPolicy(state);a.equal(state.bottomEscapeAttempts,undefined);
+});
+test('actual settle nudges up from bottom before returning to upper target',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
+ let now=1000;const trace=[],moves=[],rows=[r('anchor')];
+ const b={host:{scrollTop:50326,scrollHeight:51000,clientHeight:674},scrollStats:{scrollResets:0},rows,breakthrough:{resets:4,attempts:3,frontier:null,bottomEscapeHits:2}};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>rows,historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push(event),historyScroll:(h,to)=>{h.scrollTop=to;moves.push(to)},sleep:async ms=>{now+=ms}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ await ctx.settle(b,{upward:true,target:500,targetHeight:51000,allowBoost:false});
+ a.deepEqual(moves,[49989,500]);a.equal(b.scrollStats.bottomEscapeAttempts,1);a.equal(b.scrollStats.bottomEscapeDepartures,1);a.ok(trace.includes('bottom-escape-return'));a.equal(b.rows.length,1);
+});

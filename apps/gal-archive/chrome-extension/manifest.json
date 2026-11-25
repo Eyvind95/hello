@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.24",
-  "version_name": "V0.10.24 前輩跨視窗回跳循環",
-  "description": "輪迴檔案館：前輩跨視窗回跳循環與替代定位。",
+  "version": "0.10.25",
+  "version_name": "V0.10.25 前輩程式碼渲染與底端脫離",
+  "description": "輪迴檔案館：前輩程式碼標籤等價核對及底端小幅脫離。",
   "permissions": [
     "storage",
     "activeTab",
