@@ -24,7 +24,7 @@ function harness(){
  vm.runInContext(fs.readFileSync(require.resolve('./gal-scan-files.js'),'utf8'),blobContext);
  const offscreenSend=message=>new Promise(resolve=>{
   const r=offscreenListen(message,{id,url:'chrome-extension://'+id+'/background.js'},resolve);
-  if(r!==true&&!message.type.startsWith('gal-run-blob-'))resolve(null);
+  if(r!==true)resolve(null);
  });
  let seq=1,listen,interrupt,alarm,updated,removed,changed,emergencySnapshot=null;
  const api={
@@ -105,6 +105,7 @@ function harness(){
   provideEmergency:x=>emergencySnapshot=x,
   install:async()=>{events.installed();for(let i=0;i<6;i++)await new Promise(ok=>setImmediate(ok))},
   alarm:async name=>{alarm({name});for(let i=0;i<6;i++)await new Promise(ok=>setImmediate(ok))},
+  changed:async delta=>{changed(delta);for(let i=0;i<6;i++)await new Promise(ok=>setImmediate(ok))},
   liveStatus(runId=RUN1){return store.galScanRuns[runId]}};
 }
 test('Taiwan batch paths are unique, frozen, sanitized and support special cycle names',()=>{
@@ -416,4 +417,29 @@ test('offscreen rejects missing or conflicting chunks and duplicate identical ch
  const end=await h.offscreenSend({type:'gal-run-blob-end',token});
  assert.equal(end.ok,true);assert.equal(await h.blobs.get(end.url).text(),value);
  assert.deepEqual(await h.offscreenSend({type:'gal-run-blob-end',token}),end);
+});
+
+test('interrupted export does not mark partial downloads completed; the same validated batch can resume',async()=>{
+ const h=harness();assert.equal((await h.start()).ok,true);
+ const run=h.liveStatus();
+ const id=999,url='blob:chrome-extension://'+String(run.tabId)+'/partial';
+ h.items.push({id,state:'complete',filename:run.batchFolder+'/原生正史.json',url,byExtensionId:'gal-archive-extension-test'});
+ Object.assign(run,{state:'running',exportPending:true,finishState:'completed',scanned:4,expectedFiles:['result','diagnostic'],
+  files:{result:{id,url}}});
+ await h.changed({id,state:{current:'complete'}});
+ assert.equal(h.liveStatus().state,'running');
+ const res=await h.finish('completed');
+ assert.equal(res.ok,true,res.error);assert.equal(res.status.state,'completed');
+ assert.ok(res.status.files.result);assert.ok(res.status.files.diagnostic);
+});
+test('transport-failed completed scan can retry but still cannot bypass native format checks',async()=>{
+ const h=harness();assert.equal((await h.start()).ok,true);
+ const res=await h.dispatch({type:'gal-run-export-failed',scanRunId:RUN1,cycleId:CYCLE_A,scanned:4,scanOutcome:'completed',transportError:'transport interrupted'});
+ assert.equal(res.ok,true);assert.equal(res.status.exportFailure,true);
+ assert.equal(res.status.scanOutcome,'completed');assert.equal(res.status.state,'failed');
+ const bad=JSON.parse(h.result());bad.validation.nativeFormatComplete=false;
+ const rejected=await h.dispatch({type:'gal-run-finish',scanRunId:RUN1,cycleId:CYCLE_A,state:'completed',scanned:4,result:JSON.stringify(bad),diagnostic:h.diag()});
+ assert.equal(rejected.ok,false);
+ const done=await h.finish('completed');assert.equal(done.ok,true,done.error);
+ assert.equal(done.status.state,'completed');assert.equal(done.status.exportFailure,false);
 });

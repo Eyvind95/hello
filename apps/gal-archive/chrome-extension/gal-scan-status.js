@@ -225,15 +225,16 @@ function installGalScanStatus(api){
    next.statusPath=path;await save(runs);
   }catch(error){
    // Actual download failure must not be reported as success.
-   next.state='failed';next.reason='掃描狀態檔下載未完成：'+String(error.message||error);
+   next.state='failed';next.exportFailure=true;next.reason='掃描狀態檔下載未完成：'+String(error.message||error);
    await save(runs);
   }
   await api.tabs.sendMessage(next.tabId,{type:'gal-run-page-status',status:publicStatus(next)},
    {documentId:next.documentId}).catch(()=>{});
   return next;
  }
+ const missingExpected=run=>Array.isArray(run.expectedFiles)&&run.expectedFiles.some(kind=>!run.files?.[kind]?.id);
  async function reconcile(runs,run){
-  if(!run.exportPending||run.state!=='running')return;
+  if(!run.exportPending||run.state!=='running'||missingExpected(run))return;
   try{
    if(!(await pendingFiles(runs,run)))return;
    await finish(runs,run,run.finishState,run.reason);
@@ -332,7 +333,7 @@ function installGalScanStatus(api){
    return publicStatus(run);
   }
   if(message.type==='gal-run-export-failed'){
-   if(run.state==='running'&&!run.exportPending){
+   if(run.state==='running'&&(!run.exportPending||missingExpected(run))){
     run.scanned=Math.max(run.scanned,Number.isInteger(message.scanned)&&message.scanned<=20000?message.scanned:0);
     run.exportFailure=true;
     if(terminal.has(message.scanOutcome))run.finishState=message.scanOutcome;
@@ -372,7 +373,14 @@ function installGalScanStatus(api){
   if(message.type!=='gal-run-finish')throw Error('未知掃描指令');
   const late=run.state==='failed'&&(run.reason==='掃描或下載逾時'||run.exportFailure===true)&&message.state==='completed'&&
    !Object.values(runs).some(r=>r.scanRunId!==run.scanRunId&&r.state==='running'&&r.source===run.source);
-  if((terminal.has(run.state)&&!late)||run.exportPending)return publicStatus(run);
+  if(terminal.has(run.state)&&!late)return publicStatus(run);
+  // A worker may have stopped after writing only the first file. The original
+  // page may resubmit the complete verified envelope, but cannot change outcome
+  // or row count while that export is incomplete.
+  if(run.exportPending){
+   if(!missingExpected(run))return publicStatus(run);
+   if(run.finishState!==message.state||run.scanned!==message.scanned)throw Error('中斷的輸出只能以原驗收結果與筆數重新提交');
+  }
   if(!terminal.has(message.state)||!Number.isInteger(message.scanned)||
      message.scanned<0||message.scanned>20000||message.scanned<run.scanned)
     throw Error('終態掃描數不得小於已確認進度');
@@ -403,10 +411,19 @@ function installGalScanStatus(api){
     }
    }
   }
-  const next=record(runs,run,{state:'running',lateCompletionRecovered:late,
+  const resultKind=run.scope==='event-three'?'eventResult':
+     run.scope==='position-seven'?'positionResult':run.scope==='missing'?'missingResult':run.scope==='history-source'?'historyResult':'result';
+  const expectedFiles=['diagnostic',...(message.state==='completed'?[resultKind]:message.unverified?['unverified']:[])];
+  if(run.exportPending){
+   for(const [kind,file] of Object.entries(run.files||{}))if(expectedFiles.includes(kind)){
+    if(!file.path&&file.id)await api.downloads.cancel(file.id).catch(()=>{});
+    if(file.url)await api.runtime.sendMessage({type:'gal-run-blob-release',url:file.url}).catch(()=>{});
+   }
+  }
+  const next=record(runs,run,{state:'running',lateCompletionRecovered:late,expectedFiles,
    finishState:message.state,exportFailure:false,scanned:message.scanned,
    reason:message.state==='completed'?null:String(message.reason||'掃描中斷').slice(0,500),
-   exportPending:true,files:Object.fromEntries(Object.entries(run.files||{}).filter(([,file])=>file.path))});
+   exportPending:true,files:Object.fromEntries(Object.entries(run.files||{}).filter(([kind,file])=>file.path&&!expectedFiles.includes(kind)))});
   await save(runs);
   await api.alarms.create(ALARM+run.scanRunId,{delayInMinutes:EXPORT_DEADLINE});
   try{
@@ -414,9 +431,7 @@ function installGalScanStatus(api){
     next.summary={messages:completedResult.messages?.length||completedResult.rows?.length||0,
      pairs:completedResult.validation?.pairs||0,events:completedResult.events?.length||0,
      autoContinues:completedResult.validation?.autoContinues||0};
-    const kind=run.scope==='event-three'?'eventResult':
-     run.scope==='position-seven'?'positionResult':run.scope==='missing'?'missingResult':run.scope==='history-source'?'historyResult':'result';
-    next.files[kind]=await makeFile(run,kind,message.result);await save(runs);
+    next.files[resultKind]=await makeFile(run,resultKind,message.result);await save(runs);
    }else if(message.unverified){
     const data=JSON.parse(attachIdentity(run,message.unverified));
     if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||
