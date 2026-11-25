@@ -528,3 +528,6 @@ V0.9.10：依原生訊息歸屬排除玩家正文內的世界觀／事件假標�
 
 
 V0.10.05 測試版：大型原生正史、失敗診斷及保全資料採用分段傳輸，核對SHA-256後再輸出；若傳輸失敗請保留掃描頁面並使用人工保全。不得匯入未驗證資料。
+
+
+V0.10.06：重疊錯誤上下文改為 errorContextEvidence.rows 唯一來源表，錯誤 message/context 使用 scanIndex 與 sourceMessageId 引用，原始證據不刪除；archive-replay.js 的 expandErrorContexts 可還原舊式內容，原始保全 rows 與正史驗收規則不變。

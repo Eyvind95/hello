@@ -282,7 +282,7 @@ test('scan script includes original text, native text, 3+3 context, and source-a
  const s=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
  for(const q of ['gal-ai-unverified-scan','importable:false','nativeText:',
   'nativeUnavailableReason:','nativeParsedTime:','cascadePossible:',
-  'errorContexts=failureContexts(','scanIndex+4','positionSevenProbe(',
+  'Object.assign(diagnostic,failureContexts(','scanIndex+4','positionSevenProbe(',
   'selectedSourceId:sourceId','matches.length!==1','gal-run-manual-save',
   'gal-scan-emergency-snapshot'])assert.ok(s.includes(q),q);
 });
@@ -442,4 +442,25 @@ test('transport-failed completed scan can retry but still cannot bypass native f
  assert.equal(rejected.ok,false);
  const done=await h.finish('completed');assert.equal(done.ok,true,done.error);
  assert.equal(done.status.state,'completed');assert.equal(done.status.exportFailure,false);
+});
+
+test('overlapping failure contexts retain each original diagnostic row once and preserve every reference',()=>{
+ const vm=require('node:vm'),source=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const start=source.indexOf('function failureContexts('),end=source.indexOf('async function saveProgressSnapshot',start);
+ const core={clean:s=>s,parseGameTime:()=>null,isExplicitUnknownGameTime:()=>false,compareNativeParagraphs:()=>({text:'ok'})};
+ const context=vm.createContext({core});vm.runInContext(source.slice(start,end)+';this.run=failureContexts;',context);
+ const rows=Array.from({length:20},(_,i)=>({role:'ai',text:'測試'+i+'x'.repeat(1000),formatSource:{nativeReply:{reason:'available',text:'native'+i,messageId:'id'+i}}}));
+ const result=context.run(rows,{errors:rows.map((_,i)=>'第 '+(i+1)+' 則 測試')},null);
+ assert.equal(result.errorContextEvidence.rows.length,20);
+ assert.equal(result.errorContexts.length,20);
+ const expand=require('../archive-replay.js').expandErrorContexts;
+ const restored=expand(JSON.parse(JSON.stringify(result)));
+ assert.equal(restored[8].message.domText,rows[8].text);
+ assert.equal(restored[8].context.length,7);
+ assert.equal(restored[8].context[0].nativeText,'native5');
+ assert.equal(restored[8].context[6].sourceMessageId,'id11');
+ assert.equal(expand({errors:restored}),restored);
+ assert.ok(JSON.stringify(result).length<JSON.stringify(restored).length/3);
+ const broken=JSON.parse(JSON.stringify(result));broken.errorContextEvidence.rows.splice(8,1);
+ assert.throws(()=>expand(broken),/引用缺漏/);
 });
