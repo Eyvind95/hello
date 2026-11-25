@@ -1375,7 +1375,210 @@
     bulkTraverse(b).catch(e=>bulkFinish(b,'範圍掃描失敗：'+String(e?.message||e)+'。尚未傳送本次掃描結果。',true));
   }
 
+
+  // V0.10.09: independent predecessor conversation capture, no Firebase upload.
+  // Source is rendered ChatGPT DOM; not a native/server-side history API.
+  const pc=globalThis.GalPredecessorChat;
+  const HISTORY_PANEL='ga-predecessor-history-panel';
+  function historyRoot(host){return host===document.scrollingElement||host===document.documentElement?document.body:host}
+  function historyVisible(el){return !!el?.isConnected&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden'&&!el.closest('[aria-hidden="true"],[hidden]')}
+  function historyOwner(el){return el.closest('[data-turn-key]')||el.closest('[data-testid^="conversation-turn-"]')||el.closest('[data-message-author-role]')||el}
+  function historyLoading(host){
+    const root=historyRoot(host),v=bulkViewport(host);
+    return [...root.querySelectorAll('[aria-busy="true"],[role="progressbar"],[data-testid*="loading"],[class~="animate-spin"]')].some(el=>{
+      if(el.closest('#'+HISTORY_PANEL+', [data-message-author-role]'))return false;
+      const r=el.getBoundingClientRect();return historyVisible(el)&&r.bottom>=v.top&&r.top<=v.bottom;
+    })||isGenerating();
+  }
+  function historyRead(host){
+    const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
+    const add=(role,el,body,identityHint,fallback=false)=>{
+      if(!el||!body||!root.contains(el)||!historyVisible(el))return;
+      const owner=historyOwner(el),native=el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
+      const turn=owner.getAttribute('data-turn-key'); // data-testid ordinal alone is not a source ID
+      if(fallback)throw Error('未能確認完整 GPT 正文容器，不能使用可能截斷的備援文字');
+      if(!native&&!turn)throw Error('訊息缺少穩定來源 ID（禁止使用畫面位置）');
+      const roleMarker=el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
+      if(roleMarker&&roleMarker!==role)throw Error('角色標記衝突');
+      const stable=role+'|'+(native?'message:'+native:'turn:'+turn);
+      const text=body.innerText||''; // preserve literal text; do not strip an apparent UI label
+      if(TRUNCATED_TAIL.test(text)&&expandButtons(owner).length)throw Error('原始訊息仍折疊');
+      const structure=[...body.querySelectorAll('pre,blockquote,table,h1,h2,h3,h4,h5,h6,ul,ol,em,strong,code,del')].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
+      const attachments=[...el.querySelectorAll('img,a[href],[data-testid*="attachment"],[data-testid*="file-chip"]')].filter(historyVisible).map(n=>{
+        const src=n.tagName==='IMG'?n.getAttribute('src'):n.tagName==='A'?n.getAttribute('href'):null;
+        return {kind:n.tagName==='IMG'?'image-reference':n.tagName==='A'?'link':'attachment-reference',label:n.getAttribute('alt')||n.getAttribute('aria-label')||n.innerText||'',url:src||null};
+      });
+      if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
+      const row={id:stable,role,text,identityBasis:native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments};
+      const sameOwner=owners.get(owner)||[];
+      if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
+      sameOwner.push({row,el,owner});owners.set(owner,sameOwner);entries.push({row,el,owner});
+    };
+    // Explicit author-role roots take precedence, including attachment-only messages.
+    for(const el of root.querySelectorAll('[data-message-author-role]')){
+      if(el.parentElement?.closest('[data-message-author-role]')||!historyVisible(el))continue;
+      const role=el.getAttribute('data-message-author-role');
+      if(!['user','assistant'].includes(role))throw Error('遇到未支援的明確訊息角色：'+role);
+      const candidates=role==='user'?[...el.querySelectorAll(USER_BUBBLE_SELECTOR+', .whitespace-pre-wrap')]:[...el.querySelectorAll('[data-markdown-copy="contents"],.markdown,[data-dil-message-id]')];
+      const roots=candidates.filter(n=>!candidates.some(other=>other!==n&&other.contains(n)));
+      // A role root with multiple separate content bodies must be preserved
+      // in full rather than selecting just the first Markdown/DIL segment.
+      const body=roots.length===1?roots[0]:el;
+      add(role,el,body,null);explicit.push({el,role,owner:historyOwner(el)});
+    }
+    // Existing known ChatGPT layouts, but no text-based deduplication or
+    // fallback text extraction (the legacy fallback truncates at 30k).
+    for(const el of [...outerUsers(),...assistantElements()]){
+      const role=isUserDescendant(el)?'user':'assistant',owner=historyOwner(el);
+      if(!root.contains(el)||!historyVisible(el))continue;
+      const matching=explicit.filter(x=>x.role===role&&(x.el.contains(el)||el.contains(x.el)||x.owner===owner));
+      if(matching.length){if(matching.length>1&&!matching.some(x=>x.el.contains(el)))throw Error('回合內多個同角色來源無法唯一核對');continue}
+      const body=role==='user'?(el.querySelector(USER_BUBBLE_SELECTOR)||el):el;
+      add(role,el,body,null,role==='assistant'&&assistantFallbackTexts.has(el));
+    }
+    // A mounted, visible turn with no captured role must never be silently skipped.
+    const turns=[...root.querySelectorAll('[data-turn-key],[data-testid^="conversation-turn-"]')].filter(el=>
+      !el.parentElement?.closest('[data-turn-key],[data-testid^="conversation-turn-"]')&&historyVisible(el)&&
+      (el.hasAttribute('data-turn-key')||/^conversation-turn-\d+$/.test(el.getAttribute('data-testid')||'')));
+    for(const turn of turns)if(!entries.some(x=>turn.contains(x.el)||x.owner===turn))throw Error('已掛載回合未辨識到完整訊息');
+    entries.sort((a,b)=>a.el===b.el?0:(a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1));
+    const rows=entries.map(x=>x.row);pc.validateRows(rows);
+    if(!rows.length)throw Error('尚未讀到對話訊息');
+    return rows;
+  }
+  function historyEdgeOrdinal(b,edge){
+    // Only explicit accessibility list metadata is strong enough to reject
+    // an apparent edge. Never infer total count from a testid or text length.
+    const nodes=[...historyRoot(b.host).querySelectorAll('[aria-posinset][aria-setsize]')].filter(n=>historyVisible(n)&&(n.hasAttribute('data-turn-key')||n.hasAttribute('data-message-author-role')||/^conversation-turn-\d+$/.test(n.getAttribute('data-testid')||'')));
+    if(!nodes.length)return {};
+    const n=edge==='top'?nodes[0]:nodes.at(-1),position=Number(n.getAttribute('aria-posinset')),total=Number(n.getAttribute('aria-setsize'));
+    return position>0&&total>=position&&Number.isInteger(position)&&Number.isInteger(total)?{position,total}:{};
+  }
+  async function historySettled(b){
+    const until=Date.now()+60000;let last=null,lastAt=0,reason='';
+    while(Date.now()<until){
+      historyGuard(b);
+      if(historyLoading(b.host)){last=null;reason='等待載入轉圈';}
+      else{
+        try{
+          const root=historyRoot(b.host);
+          const controls=[...root.querySelectorAll('[data-turn-key],[data-message-author-role]')].filter(historyVisible).flatMap(expandButtons);
+          if(controls.length){for(const c of [...new Set(controls)].slice(0,12)){if(!c.disabled)c.click()}last=null;reason='等待長訊息展開';}
+          else{
+            const rows=historyRead(b.host),fingerprint=JSON.stringify(rows);
+            if(last===fingerprint&&Date.now()-lastAt>=550)return rows;
+            if(last!==fingerprint){last=fingerprint;lastAt=Date.now()}
+            reason='等待原文與格式穩定';
+          }
+        }catch(e){last=null;reason=String(e.message||e)}
+      }
+      historyStatus(b,reason+'（最多等待60秒）');await sleep(650);
+    }
+    throw Error('等待逾時：'+reason);
+  }
+  function historyGuard(b){
+    if(b.cancelled)throw Error('使用者停止');
+    if(state.bulk!==b||!valid()||path()!==b.chat||!b.host.isConnected)throw Error('聊天來源或捲動容器已變更');
+  }
+  function historyStatus(b,msg){
+    b.info.textContent=msg+'\n已保全 '+b.rows.length+' 則；不會上傳 Firebase。';
+  }
+  function historyAtBottom(host){return host.scrollHeight-host.clientHeight-host.scrollTop<=6}
+  function historyScroll(host,at){host.scrollTo({top:Math.max(0,at),behavior:'instant'})}
+  function historyPayload(b,status,error){
+    const rows=b.rows.map((r,index)=>({...r,index})),warnings=[];
+    for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
+    if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
+    if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
+    return {format:pc.FORMAT,version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest'}};
+  }
+  function historyDownload(data){
+    const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download='前輩聊天_'+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    return a.download;
+  }
+  async function historyRun(b){
+    let status='failed',error=null;
+    try{
+      historyStatus(b,'定位聊天最底端');
+      let stable=0,prev=null,bottomDeadline=Date.now()+60000;
+      for(;;){
+        historyGuard(b);if(Date.now()>bottomDeadline)throw Error('60秒內無法確認完整底端');
+        historyScroll(b.host,b.host.scrollHeight);const rows=await historySettled(b);
+        const sig=JSON.stringify([rows,b.host.scrollHeight]);
+        if(historyAtBottom(b.host)&&sig===prev){if(!stable)stable=Date.now();if(pc.edgeProof(rows,rows,{edge:'bottom',atEdge:true,stableMs:Date.now()-stable,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'bottom')})){b.bottomStableMs=Date.now()-stable;b.bottomReached=true;b.rows=pc.mergeUp([],rows);b.windows++;break}}
+        else{stable=0;prev=sig}
+        // Keep the most recent observed tail as emergency evidence only.
+        b.rows=rows;await sleep(650);
+      }
+      let topSince=0,topSignature=null,stallAt=Date.now(),lastCount=b.rows.length,edgeAttempt=0;
+      for(;;){
+        historyGuard(b);
+        const pos=b.host.scrollTop,step=Math.max(24,Math.floor(b.host.clientHeight*.27));
+        let rows=null,lastError='';
+        // Small upward steps, then return toward the last confirmed position
+        // and retry with a smaller step if virtualized windows lose overlap.
+        for(const ratio of [1,.5,.25,0]){
+          historyGuard(b);historyScroll(b.host,pos-step*ratio);
+          await sleep(480);
+          rows=await historySettled(b);
+          try{b.rows=pc.mergeUp(b.rows,rows);b.windows++;lastError='';break}catch(e){lastError=String(e.message||e);rows=null}
+        }
+        if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
+        historyStatus(b,'向上掃描');
+        const atTop=b.host.scrollTop<=2,sig=JSON.stringify([rows[0]?.id,b.rows.length,b.host.scrollHeight]);
+        if(atTop){
+          if(!edgeAttempt)edgeAttempt=Date.now();
+          if(sig!==topSignature){topSignature=sig;topSince=Date.now()}
+          if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
+          if(Date.now()-edgeAttempt>60000)throw Error('頁面已在頂端，但首則訊息或頂端穩定證據不符');
+        }else{topSince=0;topSignature=null;edgeAttempt=0}
+        if(b.rows.length!==lastCount||Math.abs(pos-b.host.scrollTop)>2){lastCount=b.rows.length;stallAt=Date.now()}
+        else if(!atTop&&Date.now()-stallAt>60000)throw Error('向上捲動超過60秒無進展');
+        await sleep(480);
+      }
+    }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
+    const data=historyPayload(b,status,error);
+    try{pc.validateRaw(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false}
+    b.download.onclick=()=>{try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};
+    b.download.hidden=false;b.stop.textContent='關閉';b.stop.onclick=()=>b.pane.remove();
+    if(state.bulk===b)state.bulk=null;
+    try{historyStatus(b,(data.status==='completed'?'已抵達頂端；':'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。')}
+    catch(e){historyStatus(b,'保全已留在本頁，下載觸發失敗：'+e.message)}
+  }
+  async function historyBegin(requestedTitle){
+    if(!pc||!valid())return {ok:false,error:'請開啟具體 ChatGPT 聊天並載入新版'};
+    if(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating())return {ok:false,error:'此聊天正在監看擷取、掃描或生成，稍後再開始'};
+    if(document.getElementById(HISTORY_PANEL))return {ok:false,error:'前一批保全仍在頁面，請確認下載並關閉面板後再開始'};
+    const title=String(requestedTitle||document.title||'').replace(/\s*[-–|]\s*ChatGPT\s*$/i,'').trim();
+    if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
+    const host=bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
+    const b={mode:'predecessor-history',chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    state.bulk=b;
+    try{
+      // Disable only this chat's existing automatic upload so scrolling over
+      // historical messages cannot upload them after the scan ends.
+      const {watch={}}=await chrome.storage.local.get(['watch']);
+      if(watch[b.chat]===true){delete watch[b.chat];await chrome.storage.local.set({watch})}
+      state.enabled=false;state.watchedPath=null;candidates.clear();
+      historyGuard(b);
+      document.getElementById(HISTORY_PANEL)?.remove();
+      const pane=document.createElement('section');pane.id=HISTORY_PANEL;
+      pane.style.cssText='position:fixed;z-index:2147483646;right:12px;top:12px;width:min(360px,90vw);background:#202840;color:#fff;border:1px solid #9ba9cb;padding:14px;border-radius:12px;font:14px system-ui;box-shadow:0 3px 20px #0006';
+      const h=document.createElement('strong');h.textContent='前輩完整聊天・向上掃描';
+      b.info=document.createElement('pre');b.info.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0';
+      b.stop=document.createElement('button');b.stop.textContent='停止並保全';b.stop.onclick=()=>{b.cancelled=true};
+      b.download=document.createElement('button');b.download.textContent='重新下載 JSON';b.download.hidden=true;
+      pane.append(h,b.info,b.stop,b.download);document.body.append(pane);b.pane=pane;
+      historyRun(b);return {ok:true,title};
+    }catch(e){if(state.bulk===b)state.bulk=null;return {ok:false,error:String(e.message||e)}}
+  }
+
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if(message?.type==='predecessor-history-up'){historyBegin(message.title).then(respond,e=>respond({ok:false,error:String(e.message||e)}));return true}
+    if(state.bulk?.mode==='predecessor-history'&&['bulk-down','bulk-range','backfill-visible','begin-watch','end-watch','test-last-time'].includes(message?.type)){respond({ok:false,error:'前輩聊天掃描中，不得開始其他操作'});return;}
+
     if(message?.type==='bulk-down'){
       bulkBeginDown(message.replay===true).then(respond,e=>respond({ok:false,error:String(e?.message||e)}));
       return true;

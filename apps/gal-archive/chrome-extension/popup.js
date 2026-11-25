@@ -20,6 +20,7 @@ function showWatch(watched){$('start').disabled=!chat||watched||!activeBinding;$
 (async()=>{
   const [active]=await chrome.tabs.query({active:true,currentWindow:true});
   tab=active;
+  $('predecessorTitle').value=String(tab?.title||'').replace(/\s*[-–|]\s*ChatGPT\s*$/i,'');
   try {const u=new URL(tab.url);if(u.origin==='https://chatgpt.com'&&CHAT_PATTERN.test(u.pathname))chat=u.pathname.replace(/\/$/,'');}catch(_){}
   const data=await getStorage(['profile','profilesByChat','watch','last','lastByChat','autoTimeCapture','lastTimeCapture','lastTimeUpload','lastTimeCaptureByChat','lastTimeUploadByChat','bulkByChat']);
   const map=data.profilesByChat||{};
@@ -169,3 +170,4 @@ chrome.storage.onChanged.addListener((changes,area)=>{
   }
 });
 refreshDiagnostics();
+$('predecessorUp').onclick=async()=>{if(!chat)return notice('請先開啟 ChatGPT 聊天',true);const title=$('predecessorTitle').value.trim();if(!title)return notice('請填寫聊天名稱',true);const r=await sendTab({type:'predecessor-history-up',title});notice(r?.ok?'已開始；請回聊天頁面查看向上掃描狀態。':'無法開始：'+(r?.error||'請重新整理該聊天頁面'),!r?.ok)};

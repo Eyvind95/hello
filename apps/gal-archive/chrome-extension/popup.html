@@ -24,7 +24,7 @@ body{font-family:system-ui,'Microsoft JhengHei',sans-serif;background:#101729;co
 <div class="sectionhead">🧭 Gal AI 劇情時間與跳過線索（唯讀）</div>
 <div class="notice" id="storyHintsStatus">正在檢查目前可見訊息中的劇情時間…</div>
 <div class="hint">網站 V5.31 會將 Gal AI 回覆內的時間優先用於「我／他」同回合排序。這裡只從已載入的皮卡訊息尋找「他：」狀態表和 made in heaven／做愛跳過，不修改 ChatGPT 原始時間、不自動補寫缺漏。</div>
-<div class="sectionhead">🔎 歷史範圍掃描（必須有完整回覆）</div>
+<div class="sectionhead">📚 前輩完整聊天（獨立 JSON，不上傳）</div><input id="predecessorTitle" placeholder="聊天名稱（自動帶入，可更正）"><button id="predecessorUp" class="secondary" style="width:100%">↑ 從最底端向上完整掃描</button><div class="hint">不必綁定輪迴；自動停止此聊天的原有監看。掃到頂端才完成，轉圈最多等待60秒，異常保全下載。</div><div class="sectionhead">🔎 歷史範圍掃描（必須有完整回覆）</div>
 <div class="buttons"><button id="scanDown" class="secondary">↓ 從現在畫面掃描到底</button><button id="pickRange" class="secondary">▧ 在頁面框選範圍</button></div>
 <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;margin:7px 0 11px"><input id="replayExisting" type="checkbox" style="width:auto;margin-top:3px"/> <span><strong>本次掃描重新傳送「已傳過」的訊息</strong><span class="hint" style="display:block">清空舊版副駕駛聊天後，要重新擷取同一段 ChatGPT 對話時才勾選。只影響這一次掃描；原本正史來源若仍存在，Firebase 會拒絕重複。請先確認輪迴綁定與掃描範圍。</span></span></label>
 <div class="notice" id="bulkStatus">範圍掃描：尚未執行</div>
