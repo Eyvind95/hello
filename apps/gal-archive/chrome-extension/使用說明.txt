@@ -531,3 +531,6 @@ V0.10.05 測試版：大型原生正史、失敗診斷及保全資料採用分�
 
 
 V0.10.06：重疊錯誤上下文改為 errorContextEvidence.rows 唯一來源表，錯誤 message/context 使用 scanIndex 與 sourceMessageId 引用，原始證據不刪除；archive-replay.js 的 expandErrorContexts 可還原舊式內容，原始保全 rows 與正史驗收規則不變。
+
+
+V0.10.07：公路求生唯一隱藏玩家模板由原生來源雙讀、相鄰ID、空白DOM與無媒體證據核對，保留原文而非視作自動繼續。支援實際觀察的載具等級、貨艙圖示、里程與事件HUD變體；不修改歷史資料或放寬通用驗收。

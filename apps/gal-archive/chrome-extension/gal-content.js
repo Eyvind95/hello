@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.10.6: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.7: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.10.6';
+const SCANNER_VERSION='0.10.7';
  // Large JSON is retained in the isolated page and pulled by its owning
  // background document in small, independently checked pieces. No story
  // content is sent to the network or persisted outside the existing exports.
@@ -710,7 +710,7 @@ function boundaryFragmentText(start,end,role='ai',trace,metadata,event=false){
 
 // Identify individual native WHIF user markers in a rendered player gap.
 // Native source IDs remain internal; diagnostics publish hashes only.
-function nativePlayerSourcesBetween(start,end){
+function nativePlayerSourcesBetween(start,end,hiddenProof=false){
  if(!boundaryFollows(start,end))return [];
  const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
  const ancestor=range.commonAncestorContainer;
@@ -742,6 +742,18 @@ function nativePlayerSourcesBetween(start,end){
    nativePlayerTextCache.set(item.id,proof);
   }
   Object.assign(item,proof);
+  if(hiddenProof&&!item.hasText&&!item.hasMedia){
+   const first=readNativeNode(item.sourceNode,false,false,true);
+   const second=readNativeNode(item.sourceNode,false,false,true);
+   item.hiddenNativeStable=first.reason==='player-anchor-evidence'&&second.reason===first.reason&&
+    first.text===second.text&&first.text===proof.nativeText&&
+    first.eventEvidence?.messageId===item.id&&second.eventEvidence?.messageId===item.id&&
+    first.eventEvidence?.sender==='user'&&second.eventEvidence?.sender==='user'&&
+    first.eventEvidence?.kind==='ordinary-message'&&second.eventEvidence?.kind==='ordinary-message'&&
+    JSON.stringify(first.metadataKeys)===JSON.stringify(second.metadataKeys)&&
+    JSON.stringify(first.metadataScalars)===JSON.stringify(second.metadataScalars)&&
+    !first.metadataTruncated&&!second.metadataTruncated;
+  }
   delete item.sourceNode; // Never retain DOM node pointers in snapshots.
  }
  return [...out.values()];
@@ -763,6 +775,26 @@ function candidatePlayerGap(start,end,previousId,currentId){
   .some(node=>range.intersectsNode(node));
  return {markers:[...markers.values()],loading};
 }
+// A hidden player is a real turn only if exactly one source is proven in
+// the bounded gap. Do not convert it into an AI continuation or invent text.
+function proveHiddenRoadPlayer(sources,gap,previousId,currentId){
+ if(!previousId||!currentId||previousId===currentId||gap?.loading!==false||
+    !Array.isArray(sources)||sources.length!==1||gap.markers?.length!==1)return null;
+ const source=sources[0],marker=gap.markers[0];
+ if(!source.id||source.id===previousId||source.id===currentId||source.sender!=='user'||
+    source.kind!=='ordinary-message'||source.nativeReason!=='available'||
+    source.nativeSender!=='user'||source.nativeMessageId!==source.id||
+    source.hiddenNativeStable!==true||source.hasText!==false||source.hasMedia!==false||
+    marker.sourceRef!==hash(source.id)||marker.sender!=='user'||marker.hasText!==false||marker.hasMedia!==false)return null;
+ const text=source.nativeText;
+ if(typeof text!=='string'||!text.trim()||text.length>30000)return null;
+ const parts=[...text.matchAll(/\{\{([^{}\n]{1,1000})\}\}/gu)];
+ if(!parts.length||text.replace(/\{\{[^{}\n]{1,1000}\}\}/gu,'').trim()||
+    parts.some(m=>!m[1].trim()||/^(?:img|image|user|char|character)(?:\s*(?:[:|=]|$))/iu.test(m[1].trim())))return null;
+ return {kind:'verified-hidden-native-player-template',sourceMessageId:source.id,
+  previousId,currentId,nativeHash:hash(text),nativeLength:text.length,templateCount:parts.length};
+}
+
 function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null){
  const ownerCache=new Map();
  const headings=boundaryHeaders(root,ownerCache),tools=boundaryToolbars(root);
@@ -822,14 +854,22 @@ function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null)
      formatSource:captureNative?{playerSources,playerGapHasMedia}:undefined});
     debug.playerGaps++;
    }else if(item.metadata&&item.kind==='reply'&&pairs[i-1].kind==='reply'){
-    item.metadata.playerGap={
-     previousId:pairs[i-1].metadata?.nativeReply?.messageId||null,
-     currentId:item.metadata.nativeReply?.messageId||null,
-     previous:pairs[i-1].metadata?.nativeReply?.eventEvidence?.sender||null,
-     current:item.metadata.nativeReply?.eventEvidence?.sender||null,
-     ...candidatePlayerGap(pairs[i-1].end,item.start,
-      pairs[i-1].metadata?.nativeReply?.messageId,item.metadata.nativeReply?.messageId)
-    };
+    const previous=pairs[i-1].metadata?.nativeReply,current=item.metadata.nativeReply;
+    const previousId=previous?.messageId||null,currentId=current?.messageId||null;
+    const gapProof=candidatePlayerGap(pairs[i-1].end,item.start,previousId,currentId);
+    let hidden=null,sources=[];
+    if(captureNative&&core.isRoadWorld(target?.worldName)&&gapProof.markers.length===1&&!gapProof.loading&&
+       previous?.markerCount===1&&current?.markerCount===1&&
+       [previous,current].every(x=>x?.eventEvidence?.sender==='character'&&x.eventEvidence.kind==='ordinary-message'&&x.messageId===x.eventEvidence.messageId)){
+     sources=nativePlayerSourcesBetween(pairs[i-1].end,item.start,true);
+     hidden=proveHiddenRoadPlayer(sources,gapProof,previousId,currentId);
+    }
+    if(hidden){
+     rows.push({role:'me',text:sources[0].nativeText,id:hidden.sourceMessageId,top:item.start.getBoundingClientRect().top-1,
+      formatSource:{playerSources:sources,playerGapHasMedia:false,hiddenPlayerSource:hidden}});
+     debug.playerGaps++;
+    }else item.metadata.playerGap={previousId,currentId,previous:previous?.eventEvidence?.sender||null,
+     current:current?.eventEvidence?.sender||null,...gapProof};
    }
   }
   const row={role:'ai',text:item.text,id:'',top:item.start.getBoundingClientRect().top,
@@ -891,6 +931,8 @@ function snapshot(fixedRoot=null,preferredMode='auto',traceFirst=false,captureNa
  * by text: merge overlapping windows as an ORDERED sequence instead. */
 function sameRow(a,b){
  if(a.role!==b.role||(a.eventType||null)!==(b.eventType||null))return false;
+ const aHidden=a.formatSource?.hiddenPlayerSource?.sourceMessageId,bHidden=b.formatSource?.hiddenPlayerSource?.sourceMessageId;
+ if(aHidden||bHidden)return !!aHidden&&aHidden===bHidden&&a.text===b.text;
  const aNative=a.formatSource?.nativeReply?.messageId,bNative=b.formatSource?.nativeReply?.messageId;
  if(aNative&&bNative&&aNative!==bNative)return false;
  return a.id&&b.id&&a.id===b.id||a.text===b.text;
@@ -1965,6 +2007,12 @@ function canonical(rows,valid,preview){
    messages[i].nativeSourceMessageId=row.nativeInvalidDateEvidence.sourceMessageId;
   }
   if(row.nativePairedInvalidDate)messages[i].nativePairedInvalidDate=row.nativePairedInvalidDate;
+  const hidden=rows[row.scanIndex]?.formatSource?.hiddenPlayerSource;
+  if(row.role==='me'&&hidden){
+   messages[i].text=rows[row.scanIndex].text;
+   messages[i].nativeSourceMessageId=hidden.sourceMessageId;
+   messages[i].nativeHiddenPlayer=hidden;
+  }
   if(Array.isArray(row.nativeUserSegments)){
    messages[i].nativeUserSegments=row.nativeUserSegments;
    messages[i].nativeUserMergeVerified=true;
