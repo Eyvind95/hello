@@ -472,7 +472,7 @@ test('exact transport replay sends original large forensic bytes through both ho
  const msg={type:'gal-run-transport-replay',cycleId:CYCLE_A,scanRunId:RUN1,sha256,text:{galWire:1,token,length:raw.length,count:Math.ceil(raw.length/(256*1024)),sha256}};
  const result=await h.dispatch(msg,from);assert.equal(result.ok,true);assert.equal(result.status.sha256,sha256);assert.equal(result.status.originalRunId,'original-run');
  assert.equal(h.items.length,1);assert.match(h.items[0].filename,/傳輸重播/);
- assert.equal(await h.blobs.get(h.items[0].url).text(),raw);assert.equal(h.liveStatus(RUN1),undefined);
+ assert.equal(await h.blobs.get(h.items[0].url).text(),raw);assert.equal(h.store.galScanRuns?.[RUN1],undefined);
  assert.equal((await h.dispatch({...msg,scanRunId:RUN2,sha256:'wrong'},from)).ok,false);
  assert.equal((await h.dispatch({...msg,scanRunId:RUN2},h.sender(B))).ok,false);
 });

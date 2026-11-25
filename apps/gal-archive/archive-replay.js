@@ -151,8 +151,18 @@
   return autoOk&&playerIssues.length===0&&imageProofs.length===mediaDetails.length;
  }
 
+ function checkpointIdentity(cp,core){
+  const t=cp.target||{},world=t.worldName;
+  const known=core.isRoadWorld(world)?'road':core.isAdventureWorld(world)?'adventure':core.normalizedWorld(world)===core.normalizedWorld('《全員精神穩定，感情除外》')?'sentinel':null;
+  const num=String(t.cycleTitle||'').normalize('NFKC').match(/^第\s*(\d{1,4})\s*(?:周目|週目|輪迴|輪目|周|週)/u);
+  const identity={cycleId:t.cycleId,cycleTitle:t.cycleTitle,worldName:world,worldKey:t.worldKey??cp.worldKey??known,cycleNumber:t.cycleNumber??cp.cycleNumber??(num?+num[1]:null)};
+  identity.archiveKey=identity.worldKey+'::'+identity.cycleId;
+  assert(identity.cycleId&&identity.cycleTitle&&world&&identity.worldKey&&Number.isInteger(identity.cycleNumber)&&identity.cycleNumber>0&&(!known||identity.worldKey===known)&&(!num||+num[1]===identity.cycleNumber)&&Object.keys(identity).every(k=>[t[k],cp[k]].every(v=>v==null||v===identity[k])),'原保全世界觀及輪迴歸屬不一致');
+  return identity;
+ }
  function restoreHiddenPlayerRows(cp,probes,core){
   assert(cp?.format==='gal-ai-unverified-scan'&&cp.importable===false&&cp.forensicOnly===true&&Array.isArray(cp.rows)&&Array.isArray(cp.historySourceManifest),'缺少未驗證原檔及獨立歷史清單');
+  const identity=checkpointIdentity(cp,core);
   const manifest=cp.historySourceManifest,rows=cp.rows,hidden=probes.filter(x=>x?.format==='gal-ai-hidden-player-source-proof');
   assert(hidden.length<=32&&new Set(hidden.map(p=>p.input?.anchorId)).size===hidden.length,'隱藏玩家證據重複');
   const order=[],existing=new Set(),sourceMap=new Map(),append=(id,kind,sender,index)=>{assert(typeof id==='string'&&id&&!existing.has(id),'保全來源ID重複');existing.add(id);order.push(id);sourceMap.set(id,{kind,sender,index})};
@@ -175,7 +185,7 @@
   for(const proof of hidden){
    const id=proof.input?.anchorId,at=manifest.findIndex(x=>x.id===id),neighbors=proof.input?.neighbors;
    assert(at>0&&at<manifest.length-1&&!existing.has(id)&&eq(neighbors,[manifest[at-1].id,manifest[at+1].id]),'隱藏玩家不在原始歷史鄰接位置');
-   assert(proof.version===1&&/^0\.(?:10|[1-9]\d+)\.\d+$/.test(proof.scannerVersion)&&proof.forensicOnly===true&&proof.importable===false&&proof.complete===true&&proof.stable===true&&!proof.reason&&proof.scope==='visible-player-anchor'&&proof.scanRunId&&proof.scanRunId!==cp.scanRunId&&proof.source?.url===cp.source?.url&&proof.scannerVersion===proof.coreVersion&&['cycleId','cycleTitle','worldName','worldKey','cycleNumber','archiveKey'].every(k=>proof.target?.[k]===cp.target?.[k]&&cp.target?.[k]!=null),'隱藏玩家取證歸屬不符');
+   assert(proof.version===1&&/^0\.(?:10|[1-9]\d+)\.\d+$/.test(proof.scannerVersion)&&proof.forensicOnly===true&&proof.importable===false&&proof.complete===true&&proof.stable===true&&!proof.reason&&proof.scope==='visible-player-anchor'&&proof.scanRunId&&proof.scanRunId!==cp.scanRunId&&proof.source?.url===cp.source?.url&&proof.scannerVersion===proof.coreVersion&&Object.keys(identity).every(k=>proof.target?.[k]===identity[k]),'隱藏玩家取證歸屬不符');
    const next=rows.findIndex(r=>r.sourceMessageId===neighbors[1]),prev=rows[next-1];
    assert(next>=2&&prev?.sourceMessageId===neighbors[0]&&prev.role==='ai'&&rows[next].role==='ai'&&!prev.eventType&&!rows[next].eventType&&!rows[next].autoContinue&&!insertions.has(next),'相鄰AI不唯一或已存在自動繼續');
    const snapshots=[proof.first,proof.second];

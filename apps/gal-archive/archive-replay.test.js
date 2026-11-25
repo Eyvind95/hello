@@ -159,3 +159,38 @@ test('story display preserves all player templates and hides only AI templates w
  assert.equal(show(raw,'me'),raw);assert.equal(show(raw,'ai'),'前文後文');
  assert.equal(show('前文{{未閉合','ai'),'前文{{未閉合');
 });
+
+test('full original terminal batch can promote a stable hidden player proof, but a running batch cannot',()=>{
+ const f=fixture(),target={...f.cp.target,worldKey:'test',cycleNumber:1,archiveKey:'test::synthetic-cycle'};
+ f.cp.target=target;Object.assign(f.diag,target);Object.assign(f.state,target);
+ f.cp.failedPhase=f.diag.failedPhase='integrity';f.diag.validationPhases.integrity='failed';
+ f.cp.phaseHistory=f.diag.phaseHistory=['bottom-confirmed','integrity','failure'].map(phase=>({phase}));
+ f.diag.autoContinueCandidates=[];f.diag.autoContinueAudit=null;f.diag.playerSourceAudit=null;
+ const prev=f.cp.rows[2],next=structuredClone(prev);next.scanIndex=3;next.sourceMessageId='native-4';next.sourceEvidence.messageId='native-4';next.formatSource.nativeReply.messageId='native-4';next.formatSource.nativeReply.eventEvidence.messageId='native-4';
+ f.cp.rows.push(next);f.cp.rawRows=f.cp.collectedCount=f.diag.trustedCount=f.state.scanned=f.state.unverifiedCount=4;
+ f.cp.bottomProof.collected=f.diag.bottomProof.collected=4;
+ f.cp.eventAudit.historyMarkersObserved=f.diag.eventAudit.historyMarkersObserved=5;
+ const manifest=[{id:'native-0',kind:'ordinary-message',sender:'chapter',playerRows:[]},{id:'native-1',kind:'ordinary-message',sender:'user',playerRows:[1]},{id:'native-2',kind:'ordinary-message',sender:'character',playerRows:[]},{id:'native-3',kind:'ordinary-message',sender:'user',playerRows:[]},{id:'native-4',kind:'ordinary-message',sender:'character',playerRows:[]}];
+ f.cp.historySourceManifest=structuredClone(manifest);f.diag.historySourceManifest=structuredClone(manifest);
+ const id='native-3',raw='{{測試原文}}',native={reason:'player-anchor-evidence',text:raw,eventEvidence:{messageId:id,kind:'ordinary-message',sender:'user'},nativeHash:hash(raw),nativeNormHash:hash(raw),nativeLength:raw.length};
+ const dom=attr=>({outerHTML:'<div '+attr+'="'+id+'"></div>',textContent:'',innerText:'',geometry:{ownerId:id}});
+ const snapshot={sourceId:id,native,hasMedia:false,loading:false,order:['native-2',id,'native-4'],markerDom:dom('data-selection-copy-message-id'),wrapperDom:dom('data-message-id'),adjacent:[prev,next].map(r=>({id:r.sourceMessageId,source:r.sourceEvidence,nativeHash:hash(r.nativeText),nativeLength:r.nativeText.length}))};
+ const proof={format:'gal-ai-hidden-player-source-proof',version:1,forensicOnly:true,importable:false,complete:true,stable:true,scope:'visible-player-anchor',scanRunId:'probe-run',source:f.cp.source,target,scannerVersion:'0.10.6',coreVersion:'0.10.6',input:{anchorId:id,neighbors:['native-2','native-4']},first:snapshot,second:structuredClone(snapshot)};
+ const before=JSON.stringify(f),result=replay(f.cp,f.diag,f.state,core,evidence,[proof]);
+ assert.equal(JSON.stringify(f),before);assert.ok(result.canonical);assert.equal(result.canonical.rawRows,5);
+ assert.equal(result.canonical.messages[2].text,raw);assert.equal(result.canonical.offlineRecovery.originalRows,4);
+ assert.equal(result.report.sourceAuditMethod,'saved-history-manifest-with-stable-hidden-player-proof');
+ assert.throws(()=>replay(f.cp,f.diag,{...f.state,state:'running'},core,evidence,[proof]));
+});
+test('emergency road checkpoint identity may be derived for forensic proof only',()=>{
+ const api=require('./archive-replay.js'),raw='{{測試}}',world='🔞公路求生－我是求生者！🔞',id='p',url='https://www.whif.io/chat/test';
+ const target={cycleId:'cycle',cycleTitle:'第1輪迴',worldName:world};
+ const row=(id,text,i)=>{const e={messageId:id,kind:'ordinary-message',sender:'character'};return {role:'ai',scanIndex:i,sourceMessageId:id,sourceEvidence:e,nativeText:text,domText:text,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:id,text,scannedText:text,eventEvidence:e}}}};
+ const cp={format:'gal-ai-unverified-scan',importable:false,forensicOnly:true,scanRunId:'old',source:{url},target,cycleNumber:1,rows:[row('open','開場',0),row('a','前方',1),row('b','後方',2)],historySourceManifest:['open','a','p','b'].map(id=>({id,kind:'ordinary-message',sender:id==='p'?'user':'character',playerRows:[]}))};
+ const h=api.hash,native={reason:'player-anchor-evidence',text:raw,eventEvidence:{messageId:id,kind:'ordinary-message',sender:'user'},nativeHash:h(raw),nativeNormHash:h(raw),nativeLength:raw.length};
+ const dom=attr=>({outerHTML:'<div '+attr+'="p"></div>',textContent:'',innerText:'',geometry:{ownerId:id}});
+ const snapshot={sourceId:id,native,hasMedia:false,loading:false,order:['a','p','b'],markerDom:dom('data-selection-copy-message-id'),wrapperDom:dom('data-message-id'),adjacent:[['a','前方'],['b','後方']].map(([id,s])=>({id,source:{messageId:id,sender:'character',kind:'ordinary-message'},nativeHash:h(s),nativeLength:s.length}))};
+ const proof={format:'gal-ai-hidden-player-source-proof',version:1,forensicOnly:true,importable:false,complete:true,stable:true,scope:'visible-player-anchor',scanRunId:'new',source:{url},target:{...target,worldKey:'road',cycleNumber:1,archiveKey:'road::cycle'},scannerVersion:'0.10.6',coreVersion:'0.10.6',input:{anchorId:'p',neighbors:['a','b']},first:snapshot,second:structuredClone(snapshot)};
+ assert.equal(api.restoreHiddenPlayerRows(cp,[proof],core).rows.length,4);assert.equal(cp.target.archiveKey,undefined);
+ assert.throws(()=>api.restoreHiddenPlayerRows({...cp,worldKey:'adventure'},[proof],core));
+});

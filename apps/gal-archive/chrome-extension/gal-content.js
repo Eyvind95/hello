@@ -2839,12 +2839,12 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
      new Set(managerNames.map(name=>name.trim())).size!==managerNames.length){
    respond({ok:false,error:'綁定中的副駕駛資料無效，請回擴充功能重新儲存'});return false;
   }
+  if(busy){respond({ok:false,error:'掃描或取證進行中'});return false}
+  const mounted=$(PANEL);
+  if(mounted&&(mounted.dataset.galExtensionId!==chrome.runtime.id||mounted.dataset.galScannerVersion!==SCANNER_VERSION)){
+   respond({ok:false,error:'此頁已有其他版本掃描面板'});return false;
+  }
   if(msg.anchorInputs){
-   if(busy){respond({ok:false,error:'掃描或取證進行中'});return false}
-   const mounted=$(PANEL);
-   if(mounted&&(mounted.dataset.galExtensionId!==chrome.runtime.id||mounted.dataset.galScannerVersion!==SCANNER_VERSION)){
-    respond({ok:false,error:'此頁已有其他版本掃描面板'});return false;
-   }
    const a=msg.anchorInputs;
    if(sender.id!==chrome.runtime.id||Object.keys(a).some(k=>!['id','y','height','clock','neighbors'].includes(k))||
     ['id','y','height','clock','neighbors'].some(k=>typeof a[k]!=='string')||
