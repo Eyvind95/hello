@@ -1549,30 +1549,72 @@
     const n=edge==='top'?nodes[0]:nodes.at(-1),position=Number(n.getAttribute('aria-posinset')),total=Number(n.getAttribute('aria-setsize'));
     return position>0&&total>=position&&Number.isInteger(position)&&Number.isInteger(total)?{position,total}:{};
   }
-  async function historySettled(b,{deadline=Infinity,upward=false}={}){
-    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0;
+  // Preserve intended scroll position across ChatGPT auto-scroll and expansion.
+  function historyRecoverScroll(b,target,height,stage){
+    if(!pc.scrollReset(target,b.host.scrollTop,b.host.scrollHeight,height,b.host.clientHeight))return false;
+    b.scrollStats.scrollResets++;
+    historyTrace(b,'scroll-reset',{target,actual:b.host.scrollTop,stage});
+    historyScroll(b.host,target);
+    return true;
+  }
+  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null}={}){
+    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;
     while(Date.now()<until){
       historyGuard(b);
+      if(upward&&target!==null&&historyRecoverScroll(b,target,targetHeight,'settle-before-read')){
+        last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>4)throw Error('頁面反覆自動返回底端');await sleep(180);continue;
+      }
       if(historyLoading(b.host)){
         last=null;reason='等待載入轉圈';b.scrollStats.loadingPolls++;
         const now=Date.now();if(!spinAt)spinAt=now;
         if(upward&&!isGenerating()&&now-spinAt>=8000&&now-lastNudge>=8000&&nudges<3&&b.host.scrollTop>2){
           const from=b.host.scrollTop;historyScroll(b.host,from-Math.max(24,Math.floor(b.host.clientHeight*.2)));
-          lastNudge=now;nudges++;b.scrollStats.loadingNudges++;
+          lastNudge=now;nudges++;b.scrollStats.loadingNudges++;target=b.host.scrollTop;targetHeight=b.host.scrollHeight;
           historyTrace(b,'loading-nudge',{from,to:b.host.scrollTop});
         }
       }
       else{spinAt=0;
         try{
           const root=historyRoot(b.host);
-          const controls=[...root.querySelectorAll('[data-turn-key],[data-message-author-role]')].filter(historyVisible).flatMap(expandButtons);
-          if(controls.length){for(const c of [...new Set(controls)].slice(0,12)){if(!c.disabled)c.click()}last=null;reason='等待長訊息展開';}
+          const controls=[...new Set([...root.querySelectorAll('[data-turn-key],[data-message-author-role]')].filter(historyVisible).flatMap(expandButtons))].filter(historyVisible);
+          if(controls.length){
+            // Click only verified expansion controls, never collapse controls.
+            // Do not repeatedly click the same mounted control while it settles.
+            const c=controls.find(x=>!x.disabled&&!b.expansionAttempts.has(x));
+            if(c){
+              const owner=historyOwner(c),from=b.host.scrollTop,beforeHeight=b.host.scrollHeight;
+              b.expansionAttempts.add(c);b.scrollStats.expansionClicks++;
+              historyTrace(b,'expand-click',{from,turnKey:owner.getAttribute('data-turn-key'),label:String(c.innerText||c.textContent||c.getAttribute('aria-label')||'').trim()});
+              c.click();await sleep(180);
+              historyTrace(b,'expand-result',{from,beforeHeight,actual:b.host.scrollTop});
+              if(upward){
+                // When layout height changes, the old absolute coordinate is
+                // not reliable. Restore the prior position only for a clear
+                // jump to the bottom, then require fresh strict overlap.
+                if(b.host.scrollTop>from+Math.max(32,b.host.clientHeight*.75)&&historyAtBottom(b.host)){
+                  b.scrollStats.expansionRestores++;historyScroll(b.host,from);
+                }
+                target=b.host.scrollTop;targetHeight=b.host.scrollHeight;
+              }
+            }
+            last=null;lastRows=null;reason='等待長訊息展開';
+          }
           else{
             const rows=historyRead(b.host),fingerprint=pc.fingerprint(rows);
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
+            if(lastRows&&last!==null&&last!==fingerprint){
+              const before=new Map(lastRows.map(r=>[r.id,r]));const after=new Set(rows.map(r=>r.id));const changed=rows.filter(r=>before.has(r.id)).map(r=>({id:r.id,fields:pc.compareRow(before.get(r.id),r).fields})).filter(r=>r.fields.length);
+              b.stabilityIssues.push({at:new Date().toISOString(),scrollTop:b.host.scrollTop,added:rows.filter(r=>!before.has(r.id)).map(r=>r.id),removed:lastRows.filter(r=>!after.has(r.id)).map(r=>r.id),changed});if(b.stabilityIssues.length>12)b.stabilityIssues.shift();
+            }
             lastRows=rows;
-            if(last===fingerprint&&Date.now()-lastAt>=550)return rows;
-            if(last!==fingerprint){last=fingerprint;lastAt=Date.now()}
+            if(last===fingerprint&&Date.now()-lastAt>=550){
+              if(upward&&target!==null&&historyRecoverScroll(b,target,targetHeight,'settle-after-read')){last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>4)throw Error('頁面反覆自動返回底端');await sleep(180);continue}
+              return rows;
+            }
+            if(last!==fingerprint){
+              if(lastRows&&last!==null){b.scrollStats.fingerprintChanges++;}
+              last=fingerprint;lastAt=Date.now();
+            }
             reason='等待原文與格式穩定';
           }
         }catch(e){last=null;reason=String(e.message||e);b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null}}
@@ -1609,7 +1651,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,scrollStats:b.scrollStats,scrollTrace:b.scrollTrace}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,scrollStats:b.scrollStats,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
@@ -1644,10 +1686,10 @@
         // Small upward steps, then return toward the last confirmed position
         // and retry with a smaller step if virtualized windows lose overlap.
         for(const ratio of [1,.5,.25,.125,0]){
-          historyGuard(b);historyScroll(b.host,pos-step*ratio);
+          historyGuard(b);const target=Math.max(0,pos-step*ratio),targetHeight=b.host.scrollHeight;historyScroll(b.host,target);
           await sleep(180);
           b.scrollStats.attempts++;
-          try{rows=await historySettled(b,{deadline,upward:true})}catch(e){historyTrace(b,'settle-failed',{ratio,step,reason:String(e.message||e)});throw e}
+          try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight})}catch(e){historyTrace(b,'settle-failed',{ratio,step,reason:String(e.message||e)});throw e}
           try{b.rows=pc.mergeUp(b.rows,rows,change=>historyAttachmentChange(b,change));b.windows++;lastError='';break}catch(e){b.scrollStats.overlapRetries++;historyTrace(b,'overlap-retry',{ratio,step,reason:String(e.message||e)});lastError=String(e.message||e);if(e.overlapEvidence){if(b.overlapIssues.length>=8)b.overlapIssues.shift();b.overlapIssues.push({at:new Date().toISOString(),ratio,scrollTop:b.host.scrollTop,reason:lastError,...e.overlapEvidence})}rows=null}
         }
         if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
@@ -1681,7 +1723,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],expansionAttempts:new WeakSet(),scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     state.bulk=b;
     try{
       // Disable only this chat's existing automatic upload so scrolling over
