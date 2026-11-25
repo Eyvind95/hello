@@ -2,11 +2,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),p=require('node:path');
 const source=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=source.slice(source.indexOf("  const HISTORY_LAUNCHER="),source.indexOf("  chrome.runtime.onMessage.addListener"));
 function fixture(){
- const nodes=new Map(),calls=[];let route='/c/first',result={ok:true};
+ const nodes=new Map(),calls=[];let route='/c/first',result={ok:true},saved=null;
  const element=tag=>({tag,id:'',dataset:{},style:{},children:[],append(...children){this.children.push(...children);for(const n of children)if(n.id)nodes.set(n.id,n)},remove(){nodes.delete(this.id);for(const n of this.children)if(n.id)nodes.delete(n.id)},setAttribute(){},scrollIntoView(){calls.push('existing')}});
- const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},chrome:{runtime:{getManifest:()=>({version:'0.10.10'})}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum)=>{calls.push(sample?[title,sample]:minimum?[title,minimum]:title);return result}};
+ const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async()=>saved},chrome:{storage:{local:{get:async()=>({})}},runtime:{getManifest:()=>({version:'0.10.10'})}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
  vm.createContext(ctx);vm.runInContext(block+';globalThis.launch=historyLauncher;',ctx);
- return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x}};
+ return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x},saved:x=>{saved=x}};
 }
 test('web button appears once, opens named scan directly without browser toolbar',async()=>{
  const f=fixture();f.launch();const button=f.nodes.get('ga-predecessor-page-launcher');assert.ok(button);f.launch();assert.equal(f.nodes.get(button.id),button);
@@ -46,3 +46,5 @@ test('resume picker does not launch without a selected checkpoint',async()=>{
  await f.nodes.get('ga-predecessor-page-resume').onclick();assert.deepEqual(f.calls,[]);
  assert.ok(f.nodes.get('ga-predecessor-page-config'));
 });
+
+test('resume can use remembered checkpoint without file picker',async()=>{const f=fixture();f.saved({data:{},hash:'a'.repeat(64)});f.launch();f.nodes.get('ga-predecessor-page-launcher').onclick();await f.nodes.get('ga-predecessor-page-resume').onclick();assert.deepEqual(f.calls,[['測試前輩','a'.repeat(64)]]);assert.equal(f.nodes.has('ga-predecessor-page-config'),false)});
