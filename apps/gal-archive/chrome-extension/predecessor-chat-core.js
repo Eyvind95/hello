@@ -140,6 +140,24 @@ function mergeUp(previous,live,onChange,foldContext){
  if(typeof onChange==='function')for(const change of changes)onChange(change);
  return [...live.slice(0,first.i),...merged];
 }
+// Evidence-only alternative, never an accepted merge. Require a contiguous
+// old prefix, a new earlier prefix, and at least two unaffected adjacent rows.
+// The attachment conflict must be exactly the first old user's disjoint
+// generic temporary image lists of different sizes.
+function isolateFrontierWindow(saved,live){
+ validateRows(saved);validateRows(live);
+ const at=live.findIndex(r=>r.id===saved[0]?.id);
+ if(at<1||live.length-at<3||live.length-at>saved.length)return null;
+ const ids=new Set(saved.map(r=>r.id));
+ if(live.slice(0,at).some(r=>ids.has(r.id)))return null;
+ const old=saved[0],current=live[at],diff=compareRow(old,current);
+ if(old.role!=='user'||!old.text.trim()||diff.fields.length!==1||diff.fields[0]!=='attachments'||
+    !genericUserImages(old.attachments)||!genericUserImages(current.attachments)||
+    old.attachments.length===current.attachments.length||
+    old.attachments.some(x=>current.attachments.some(y=>x.url===y.url)))return null;
+ for(let j=1;j<live.length-at;j++)if(saved[j].id!==live[at+j].id||!compareRow(saved[j],live[at+j]).equal)return null;
+ return {kind:'unresolved-disjoint-image-frontier',old,current,matchedNeighbors:live.length-at-1,newPrefixCount:at,initialWindow:live.slice(),attachmentCountVerified:false,attachmentBytesVerified:false};
+}
 const scrollRange=(height,viewport)=>Number.isFinite(height)&&Number.isFinite(viewport)&&viewport>0?Math.max(0,height-viewport):0;
 const minimumCount=value=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):0;
 function fullCoverageGate(count,minimum,maxRange,observedMovement){
@@ -171,6 +189,13 @@ function validateRaw(data){
   if(version[0]===0&&version[1]===10&&version[2]>=20||version[0]>0||version[0]===0&&version[1]>10)
    check(fullCoverageGate(data.count,ev.knownMinimum,ev.hostProof?.maxRange,ev.hostProof?.observedMovement),'完成檔缺少可捲動容器、移動或已知最低數量證據');
  }
+ if(data.evidence.isolatedSegment){
+  const seg=data.evidence.isolatedSegment;
+  check(data.status!=='completed'&&data.evidence.continuity!==true&&seg.importable===false&&seg.format==='gal-predecessor-frontier-evidence'&&seg.count===seg.rows?.length&&seg.rows.length>0&&seg.rows.every((r,i)=>r.index===i),'隔離取證不得當完整聊天');
+  validateRows(seg.rows);
+  const original=data.rows.map(({index,...r})=>r),proof=isolateFrontierWindow(original,seg.anchor?.initialWindow||[]);
+  check(proof&&same(proof,seg.anchor)&&seg.rows.at(-1).id===proof.initialWindow.at(-1).id,'隔離取證缺少原始前沿證據');
+ }
  if(data.status==='completed'&&data.evidence.resume){
   const q=data.evidence.resume;
   check(q.tailVerified===true&&q.frontierVerified===true&&q.baseCount>=2&&data.count>=q.baseCount&&/^[a-f0-9]{64}$/.test(q.sourceSha256),'續掃完成檔缺少原斷點及前沿核對證據');
@@ -184,6 +209,7 @@ function validateCheckpoint(data,source){
  check(['failed','cancelled'].includes(data.status)&&data.count>=2,'請選擇至少兩則的未完成完整掃描保全檔');
  check(data.chatId===sourceId(source)&&new URL(data.sourceUrl).pathname.replace(/\/$/,'')===new URL(source).pathname.replace(/\/$/,''),'續掃來源不是目前聊天');
  const ev=data.evidence;
+ check(!ev.isolatedSegment,'隔離取證尚未核對附件，不能作為正式續掃斷點');
  check(ev.bottomReached===true&&ev.bottomStableMs>=3000&&ev.firstId===data.rows[0].id&&ev.lastId===data.rows.at(-1).id&&ev.windows>0,'斷點缺少底端或訊息邊界證據');
  check(ev.hostProof?ev.hostProof.maxRange>8&&ev.hostProof.observedMovement===true:Array.isArray(ev.scrollTrace)&&ev.scrollTrace.some(t=>scrollRange(t.scrollHeight,t.clientHeight)>8),'斷點缺少有效捲動證據');
  check(!String(data.error||'').startsWith('輸出核對失敗'),'斷點輸出驗證失敗');
@@ -319,5 +345,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });
