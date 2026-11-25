@@ -110,8 +110,8 @@ test('scroll recovery returns to intended target, records the reset and does not
  const trace=[],b={host:{scrollTop:22200.8,scrollHeight:22875,clientHeight:674},scrollStats:{scrollResets:0},rows:[r('1')]};
  const ctx={pc:c,historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>h.scrollTop=to};
  vm.runInNewContext(block+';globalThis.recover=historyRecoverScroll;',ctx);
- a.equal(ctx.recover(b,7037,22875,'test'),true);a.equal(b.host.scrollTop,7037);a.equal(b.rows.length,1);a.equal(b.scrollStats.scrollResets,1);a.equal(trace[0].event,'scroll-reset');
- a.equal(ctx.recover(b,7037,22875,'test'),false);
+ a.equal(ctx.recover(b,7037,22875,'test').target,7037);a.equal(b.host.scrollTop,7037);a.equal(b.rows.length,1);a.equal(b.scrollStats.scrollResets,1);a.equal(trace[0].event,'scroll-reset');
+ a.equal(ctx.recover(b,7037,22875,'test'),null);
 });
 
 test('late single generic user image observation enriches row, preserves evidence, never removes it',()=>{
@@ -156,4 +156,27 @@ test('passive text keeps complete DOM content and strips only a proven trailing 
  after='真正的後續正文';a.equal(ctx.read(body,owner,'1',()=>{}),body.innerText);
  after='';contained=false;a.equal(ctx.read(body,owner,'1',()=>{}),body.innerText);
  a.equal(observed[0].fullTextVerified,false);
+});
+
+test('virtualized height changes do not mask a large jump to bottom',()=>{
+ // Synthetic coordinates representing the observed failure pattern.
+ a.equal(c.scrollRecoveryTarget(19586,40543.2,41217,40478,674),20325);
+ a.equal(c.scrollRecoveryTarget(27064,41568,42242,41217,674),28089);
+ a.equal(c.scrollRecoveryTarget(15271,40886.4,41560,41217,674),15614);
+ // Normal prepend/resize, small shift near bottom, and upward movement.
+ a.equal(c.scrollRecoveryTarget(19586,20325,41217,40478,674),null);
+ a.equal(c.scrollRecoveryTarget(39800,40543.2,41217,40478,674),null);
+ a.equal(c.scrollRecoveryTarget(19586,19000,41217,40478,674),null);
+ a.equal(c.scrollRecoveryTarget(19586,35000,41217,40478,674),null);
+});
+test('settle recovers across height change before accepting stable rows without expanding',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
+ let now=1000;const rows=[r('1')],trace=[],positions=[];
+ const b={host:{scrollTop:40543.2,scrollHeight:41217,clientHeight:674},scrollStats:{scrollResets:0,fingerprintChanges:0},stabilityIssues:[]};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyLoading:()=>false,historyRead:()=>rows,historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyStatus:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>{h.scrollTop=to;positions.push(to)},sleep:async ms=>{now+=ms}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ a.deepEqual(await ctx.settle(b,{upward:true,target:19586,targetHeight:40478}),rows);
+ a.deepEqual(positions,[20325]);a.equal(b.scrollStats.scrollResets,1);a.equal(trace[0].expectedHeight,40478);a.equal(trace[0].currentHeight,41217);
 });

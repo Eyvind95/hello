@@ -1572,17 +1572,21 @@
   }
   // Preserve intended scroll position across ChatGPT auto-scroll and expansion.
   function historyRecoverScroll(b,target,height,stage){
-    if(!pc.scrollReset(target,b.host.scrollTop,b.host.scrollHeight,height,b.host.clientHeight))return false;
+    const actual=b.host.scrollTop,currentHeight=b.host.scrollHeight;
+    const recovery=pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight);
+    if(recovery===null)return null;
     b.scrollStats.scrollResets++;
-    historyTrace(b,'scroll-reset',{target,actual:b.host.scrollTop,stage});
-    historyScroll(b.host,target);
-    return true;
+    historyTrace(b,'scroll-reset',{target,actual,expectedHeight:height,currentHeight,recovery,stage});
+    historyScroll(b.host,recovery);
+    return {target:recovery,height:currentHeight};
   }
   async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null}={}){
     const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;
     while(Date.now()<until){
       historyGuard(b);
-      if(upward&&target!==null&&historyRecoverScroll(b,target,targetHeight,'settle-before-read')){
+      const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read'):null;
+      if(recovered){
+        target=recovered.target;targetHeight=recovered.height;
         last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>4)throw Error('頁面反覆自動返回底端');await sleep(180);continue;
       }
       if(historyLoading(b.host)){
@@ -1605,7 +1609,8 @@
             }
             lastRows=rows;
             if(last===fingerprint&&Date.now()-lastAt>=550){
-              if(upward&&target!==null&&historyRecoverScroll(b,target,targetHeight,'settle-after-read')){last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>4)throw Error('頁面反覆自動返回底端');await sleep(180);continue}
+              const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read'):null;
+              if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>4)throw Error('頁面反覆自動返回底端');await sleep(180);continue}
               return rows;
             }
             if(last!==fingerprint){
@@ -1692,7 +1697,7 @@
           historyGuard(b);const target=Math.max(0,pos-step*ratio),targetHeight=b.host.scrollHeight;historyScroll(b.host,target);
           await sleep(180);
           b.scrollStats.attempts++;
-          try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight})}catch(e){historyTrace(b,'settle-failed',{ratio,step,reason:String(e.message||e)});throw e}
+          try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight})}catch(e){historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});throw e}
           try{b.rows=pc.mergeUp(b.rows,rows,change=>historyAttachmentChange(b,change));b.windows++;lastError='';break}catch(e){b.scrollStats.overlapRetries++;historyTrace(b,'overlap-retry',{ratio,step,reason:String(e.message||e)});lastError=String(e.message||e);if(e.overlapEvidence){if(b.overlapIssues.length>=8)b.overlapIssues.shift();b.overlapIssues.push({at:new Date().toISOString(),ratio,scrollTop:b.host.scrollTop,reason:lastError,...e.overlapEvidence})}rows=null}
         }
         if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
@@ -1705,8 +1710,8 @@
           if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
           if(Date.now()-edgeAttempt>60000)throw Error('頁面已在頂端，但首則訊息或頂端穩定證據不符');
         }else{topSince=0;topSignature=null;edgeAttempt=0}
-        if(b.rows.length>lastCount){historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos});lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0}
-        else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth})}
+        if(b.rows.length>lastCount){historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos,firstId:rows[0]?.id,lastId:rows.at(-1)?.id});lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0}
+        else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
         if(!atTop&&pc.noNewRows(lastGrowth,Date.now()))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
         await sleep(150);
       }

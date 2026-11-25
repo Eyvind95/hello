@@ -90,8 +90,19 @@ function validateRaw(data){
 }
 // Larger steps still require exact overlap.
 const scrollStep=(height,unchanged=0)=>Math.max(24,Math.floor(height*(unchanged>=8?2.5:unchanged>=3?1.5:.85)));
-// Detect a large downward jump only when scroll height is unchanged.
-const scrollReset=(target,actual,height,expectedHeight,viewport)=>Math.abs(height-expectedHeight)<=2&&actual-target>Math.max(32,viewport*.75);
+// A virtualized chat may change height while jumping to its bottom.
+ // A height-only shift is not a reset. For changed heights require a large
+ // unexplained displacement AND a bottom landing. The adjusted coordinate
+ // is only a recovery attempt; strict message overlap is still required.
+function scrollRecoveryTarget(target,actual,height,expectedHeight,viewport){
+ if(![target,actual,height,expectedHeight,viewport].every(Number.isFinite)||viewport<=0)return null;
+ const max=Math.max(0,height-viewport),delta=height-expectedHeight,threshold=Math.max(32,viewport*.75);
+ if(Math.abs(delta)<=2)return actual-target>threshold?Math.min(max,Math.max(0,target)):null;
+ const adjusted=Math.min(max,Math.max(0,target+delta));
+ const unexplained=actual-Math.max(target,adjusted);
+ return Math.abs(actual-max)<=6&&unexplained>threshold?adjusted:null;
+}
+const scrollReset=(...args)=>scrollRecoveryTarget(...args)!==null;
 const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;
 function sampleReady(rows,bottomReached,topReached,limit=SAMPLE_LIMIT){
  return !!sampleLimit(limit)&&bottomReached===true&&rows.length>0&&(rows.length>=limit||topReached===true);
@@ -116,5 +127,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget};
 });
