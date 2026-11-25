@@ -147,7 +147,8 @@ test('passive text keeps complete DOM content and strips only a proven trailing 
  let label='顯示較多',after='',contained=true;const observed=[];
  const control={get innerText(){return label},getAttribute:()=>null};
  const body={get innerText(){return '正文\n顯示較少\n'+label},contains:()=>contained,childNodes:[control]};
- const owner={querySelectorAll:()=>[control]};
+ const nestedControl={get innerText(){return label},getAttribute:()=>null};
+ const owner={querySelectorAll:()=>[control,nestedControl]};
  const ctx={expandButtons:()=>[control],historyVisible:()=>true,EXPAND_LABEL:/^顯示較多$/,document:{createRange:()=>({setStartAfter:()=>{},setEnd:()=>{},toString:()=>after})}};
  vm.runInNewContext(block+';globalThis.read=historyReadText;',ctx);
  a.equal(ctx.read(body,owner,'1',x=>observed.push(x)),'正文\n顯示較少');

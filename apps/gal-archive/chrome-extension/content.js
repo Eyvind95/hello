@@ -1477,17 +1477,17 @@
   function historyReadText(body,owner,id,onFold){
     const raw=body.innerText||'';
     const controls=[...new Set([...expandButtons(owner),...owner.querySelectorAll('button,[role="button"],a,[tabindex],[class*="cursor-pointer"],[class*="cursor-interaction"]')].filter(c=>historyVisible(c)&&/^(?:顯示較少|顯示較多|顯示更多|顯示全部|展開全文|Show less|Show more|Read more)$/i.test(String(c.innerText||c.textContent||c.getAttribute('aria-label')||'').trim())))];
-    let text=raw;
+    let text=raw,removed=false;
     for(const control of controls){
       const label=String(control.innerText||control.textContent||control.getAttribute('aria-label')||'').trim();
       let removedSuffix='';
       // Strip only an actual trailing UI node in this body. Literal prose
       // with the same words, or a control outside the body, is preserved.
-      if(body!==control&&body.contains(control)){
+      if(!removed&&body!==control&&body.contains(control)){
         const range=document.createRange();
         range.setStartAfter(control);range.setEnd(body,body.childNodes.length);
         if(!range.toString().trim()&&text.endsWith('\n'+label)){
-          removedSuffix='\n'+label;text=text.slice(0,-removedSuffix.length);
+          removedSuffix='\n'+label;text=text.slice(0,-removedSuffix.length);removed=true;
         }
       }
       onFold({messageId:id,label,collapsed:EXPAND_LABEL.test(label),rawLength:raw.length,removedSuffix,fullTextVerified:false});

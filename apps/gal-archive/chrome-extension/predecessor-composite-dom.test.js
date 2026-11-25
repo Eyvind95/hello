@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),p=require('node:path');
-const s=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=s.slice(s.indexOf("  const HISTORY_STRUCT="),s.indexOf("  function historyRead(host)"));
+const s=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=s.slice(s.indexOf("  const HISTORY_STRUCT="),s.indexOf("  function historyRead(host,"));
 function fixture(){
  let order=0;
  const make=(tag,text='',attrs={})=>{
@@ -30,7 +30,7 @@ test('composite boundary rejects missing stable source, ambiguous user or only U
 });
 
 test('composite ordering is tied to the unique paired user even if the DOM anchor is the owner',()=>{
- const compare=s.slice(s.indexOf('    entries.sort((a,b)=>{',s.indexOf('  function historyRead(host)')),s.indexOf('    for(const group of owners.values())',s.indexOf('  function historyRead(host)')));
+ const compare=s.slice(s.indexOf('    entries.sort((a,b)=>{',s.indexOf('  function historyRead(host,')),s.indexOf('    for(const group of owners.values())',s.indexOf('  function historyRead(host,')));
  const owner={compareDocumentPosition:()=>4},user={compareDocumentPosition:()=>2};const entries=[{owner,el:owner,row:{role:'assistant',contentBasis:'composite-after-user-dom'}},{owner,el:user,row:{role:'user'}}];
  vm.runInNewContext(compare,{entries,Node:{DOCUMENT_POSITION_FOLLOWING:4}});assert.deepEqual(entries.map(x=>x.row.role),['user','assistant']);
 });
