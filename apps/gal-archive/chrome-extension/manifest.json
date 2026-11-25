@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.38",
-  "version_name": "V0.10.38 前輩跨視窗回跳恢復",
+  "version": "0.10.39",
+  "version_name": "V0.10.39 前輩本機保全記憶",
   "description": "輪迴檔案館：前輩圖片參照有序子序列補全及被動滾輪取證。",
   "permissions": [
     "storage",
@@ -10,13 +10,15 @@
     "scripting",
     "downloads",
     "offscreen",
-    "alarms"
+    "alarms",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://asia-east1-eyvind95-182f0.cloudfunctions.net/*",
     "https://whif.io/*",
-    "https://www.whif.io/*"
+    "https://www.whif.io/*",
+    "http://127.0.0.1/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -32,6 +34,7 @@
       ],
       "js": [
         "predecessor-chat-core.js",
+        "predecessor-checkpoint-memory.js",
         "content.js"
       ],
       "run_at": "document_idle"

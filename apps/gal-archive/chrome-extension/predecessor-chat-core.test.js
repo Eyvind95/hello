@@ -728,3 +728,25 @@ test('actual historyRun returns to verified isolated viewport after between-wind
  a.deepEqual(Array.from(output.evidence.isolatedSegment.rows,x=>x.id),['earlier','p','pa','u','a','u2']);
  a.equal(storageWrites,0);a.ok(trace.includes('isolated-frontier-start'));a.ok(trace.includes('inter-window-bottom-return'));a.equal(output.evidence.scrollStats.interWindowBottomReturns,1);a.equal(c.validateRaw(output).size,6);a.throws(()=>c.validateCheckpoint(output,'https://chatgpt.com/c/abc'));
 });
+
+test('local checkpoint memory preserves bytes, separates chat and candidate, rejects tampering and invalid checkpoints',async()=>{
+ const mem=require('./predecessor-checkpoint-memory'),store={},storage={get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)};
+ const src=raw.sourceUrl,partial={...raw,status:'failed',error:'partial',evidence:{...raw.evidence,topReached:false,topStableMs:0,continuity:false,windows:2,hostProof:{maxRange:100,observedMovement:true}}};
+ const bytes=new TextEncoder().encode('\uFEFF'+JSON.stringify(partial)),hash=await mem.digest(bytes);
+ const auto=await mem.save(storage,bytes,src,c,hash,true);a.equal(auto.slot,'candidate');a.equal(await mem.read(storage,src,c),null);
+ const pinned=await mem.save(storage,bytes,src,c,hash);
+ a.equal(pinned.count,2);a.equal((await mem.read(storage,src,c)).hash,hash);
+ a.equal(await mem.read(storage,'https://chatgpt.com/c/other',c),null);
+ await a.rejects(mem.save(storage,bytes,'https://chatgpt.com/c/other',c,hash));
+ await a.rejects(mem.save(storage,bytes,src,c,'0'.repeat(64)));
+ const newer={...partial,runId:'new',count:3,rows:[{...r('0'),index:0},...partial.rows.map((x,i)=>({...x,index:i+1}))],evidence:{...partial.evidence,firstId:'0'}};
+ const nb=new TextEncoder().encode(JSON.stringify(newer));a.equal((await mem.save(storage,nb,src,c,undefined,true)).slot,'candidate');
+ a.equal((await mem.read(storage,src,c)).data.count,2);a.equal((await mem.read(storage,src,c,'candidate')).data.count,3);
+ await a.rejects(mem.save(storage,new TextEncoder().encode(JSON.stringify({...partial,evidence:{...partial.evidence,resume:{tailVerified:true,frontierVerified:false}}})),src,c));
+ store[mem.key(src)].raw+=' ';await a.rejects(mem.read(storage,src,c));
+});
+test('local bridge uses only fixed loopback, no redirects or credentials, and exact expected hash',async()=>{
+ const mem=require('./predecessor-checkpoint-memory'),bytes=new TextEncoder().encode('test'),hash=await mem.digest(bytes);
+ const mock=async (url,opts)=>{a.equal(url,'http://127.0.0.1:18765/checkpoint.json');a.equal(opts.redirect,'error');a.equal(opts.credentials,'omit');return new Response(bytes)};
+ a.deepEqual(await mem.fetchLocal(hash,mock),bytes);await a.rejects(mem.fetchLocal('f'.repeat(64),mock));await a.rejects(mem.fetchLocal('https://example.com',mock));
+});

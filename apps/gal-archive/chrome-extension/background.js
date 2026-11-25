@@ -1,5 +1,5 @@
 'use strict';
-importScripts('gal-scan-status.js');
+importScripts('gal-scan-status.js','predecessor-chat-core.js','predecessor-checkpoint-memory.js');
 installGalScanStatus(chrome);
 const ENDPOINT = 'https://asia-east1-eyvind95-182f0.cloudfunctions.net/archiveIngest';
 const CHAT_PREFIX = 'https://chatgpt.com';
@@ -25,6 +25,12 @@ const failures = {};
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if(typeof message?.type==='string'&&message.type.startsWith('gal-run-'))return false;
   (async () => {
+    if(message?.type==='predecessor-local-checkpoint-import'){
+      if(!sender.tab||sender.frameId!==0||!validChat(sender.url||'')||!validChat(sender.tab.url||'')||chatKey(sender.url)!==chatKey(sender.tab.url))return {ok:false,error:'僅限目前 ChatGPT 主聊天頁面'};
+      const source=CHAT_PREFIX+chatKey(sender.url),expected=String(message.expectedHash||'').trim().toLowerCase();
+      const bytes=await GalCheckpointMemory.fetchLocal(expected);
+      return {ok:true,...await GalCheckpointMemory.save(chrome.storage.local,bytes,source,GalPredecessorChat,expected)};
+    }
     if (message?.type === 'gal-page-binding-state') {
       if(!sender.tab||sender.frameId!==0) return {ok:false,error:'只能從 WHIF 主頁面讀取綁定'};
       const source=whifSource(sender.tab.url||'');

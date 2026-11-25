@@ -1916,6 +1916,15 @@
     a.href=url;a.download=(data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
     return a.download;
   }
+  async function historyRemember(b,data){
+    if(b.sample||b.isolated||data.status==='completed'||(b.resume&&(!b.resume.frontierVerified||data.count<=b.resume.baseCount)))return;
+    try{
+      const source=location.origin+b.chat;
+      pc.validateCheckpoint(data,source);
+      const result=await GalCheckpointMemory.save(chrome.storage.local,new TextEncoder().encode(JSON.stringify(data,null,2)),source,pc,undefined,true);
+      b.memoryStatus=result.unchanged?'本機保全未變更':'本機已記住 '+result.count+' 則（'+result.slot+'）';
+    }catch(e){b.memoryStatus='本機保全記憶未更新：'+String(e.message||e)}
+  }
   async function historyRun(b){
     let status='failed',error=null;
     try{
@@ -2077,6 +2086,7 @@
           try{
             const snapshot=historyPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔');
             snapshot.evidence.checkpoint=true;pc.validateRaw(snapshot);
+            try{await historyRemember(b,snapshot)}catch(_){}
             const file=historyDownload(snapshot);(b.checkpointExports||(b.checkpointExports=[])).push({count:b.rows.length,file,triggered:true});
             historyTrace(b,'checkpoint-download',{count:b.rows.length,file});
           }catch(e){historyTrace(b,'checkpoint-download-failed',{reason:String(e.message||e)})}
@@ -2089,10 +2099,13 @@
     // Counts are only a local lower bound; never mix previous rows into this run.
     if(b.bottomReached&&!b.sample&&!b.isolated&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
     try{(b.sample?pc.validateSample:pc.validateRaw)(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false}
+    if(!b.sample&&!b.isolated&&data.status!=='completed'&&(!b.resume||data.count>b.resume.baseCount)){
+      try{await historyRemember(b,data)}catch(_){}
+    }
     b.download.onclick=()=>{try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};
     b.download.hidden=false;b.stop.textContent='關閉';b.stop.onclick=()=>b.pane.remove();
     if(state.bulk===b)state.bulk=null;
-    try{historyStatus(b,(data.status==='completed'?(b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。')}
+    try{historyStatus(b,(data.status==='completed'?(b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。'+(b.memoryStatus?'\n'+b.memoryStatus:''))}
     catch(e){historyStatus(b,'保全已留在本頁，下載觸發失敗：'+e.message)}
   }
   async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null){
@@ -2168,7 +2181,7 @@
       if(document.getElementById(HISTORY_CONFIG)){document.getElementById(HISTORY_CONFIG).remove();return}
       const pane=document.createElement('section');pane.id=HISTORY_CONFIG;pane.dataset.chat=path();
       pane.setAttribute('role','dialog');pane.setAttribute('aria-label','前輩完整聊天掃描設定');
-      pane.style.cssText='position:fixed!important;right:18px!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
+      pane.style.cssText='position:fixed!important;right:18px!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
       const heading=document.createElement('strong');heading.textContent='前輩完整聊天掃描';
       const version=document.createElement('p');version.textContent='V'+chrome.runtime.getManifest().version+'｜獨立 JSON，不上傳正史';
       const label=document.createElement('label');label.textContent='聊天名稱（請確認）';label.htmlFor='ga-predecessor-page-title';
@@ -2177,9 +2190,37 @@
       input.style.cssText='display:block;width:100%;margin:6px 0 12px;padding:8px;background:#111827;color:white;border:1px solid #9ba9cb;border-radius:7px';
       const minLabel=document.createElement('label');minLabel.textContent='已知最低訊息數（完整掃描，未知填0）';minLabel.htmlFor='ga-predecessor-page-minimum';
       const minimum=document.createElement('input');minimum.id='ga-predecessor-page-minimum';minimum.type='number';minimum.min='0';minimum.step='1';minimum.value='0';minimum.style.cssText=input.style.cssText;
-      const checkpointLabel=document.createElement('label');checkpointLabel.textContent='選擇舊完整掃描保全 JSON（續掃專用）';
+      const checkpointLabel=document.createElement('label');checkpointLabel.textContent='選擇舊完整掃描保全 JSON（首次或替換用，可略過）';
       const checkpointFile=document.createElement('input');checkpointFile.id='ga-predecessor-page-checkpoint';checkpointFile.type='file';checkpointFile.accept='.json,application/json';checkpointFile.style.cssText=input.style.cssText;
-      const resumeButton=document.createElement('button');resumeButton.id='ga-predecessor-page-resume';resumeButton.type='button';resumeButton.textContent='⚡ 急速返回・斷點續掃';
+      const resumeButton=document.createElement('button');resumeButton.id='ga-predecessor-page-resume';resumeButton.type='button';resumeButton.textContent='⚡ 使用已記住的保全續掃';
+      const candidateButton=document.createElement('button');candidateButton.id='ga-predecessor-page-resume-candidate';candidateButton.type='button';candidateButton.textContent='使用較新候選保全續掃（需核定）';candidateButton.hidden=true;
+      const savedInfo=document.createElement('p');savedInfo.id='ga-predecessor-page-saved-checkpoint';savedInfo.textContent='尚未讀取本機保全記憶';
+      const hashInput=document.createElement('input');hashInput.id='ga-predecessor-page-checkpoint-hash';hashInput.type='text';hashInput.maxLength=64;hashInput.placeholder='本機橋接：原檔 SHA-256';hashInput.style.cssText=input.style.cssText;
+      const localImport=document.createElement('button');localImport.id='ga-predecessor-page-local-import';localImport.type='button';localImport.textContent='從本機橋接讀取並記住保全';
+      const savedSource=()=>location.origin+pane.dataset.chat;
+      const showSaved=async()=>{
+        try{
+          const source=savedSource(),storage=chrome.storage.local;
+          const keys=['pinned','candidate'].map(slot=>GalCheckpointMemory.key(source,slot)),records=await storage.get(keys);
+          const pinned=records[keys[0]],candidate=records[keys[1]];
+          savedInfo.textContent=pinned?'已記住 '+pinned.count+' 則｜'+pinned.runId+'\nSHA-256 '+pinned.hash:'尚無已記住保全，可首次選檔或本機橋接';
+          candidateButton.hidden=!candidate||(pinned&&candidate.count<=pinned.count);
+          if(candidate&&!candidateButton.hidden)savedInfo.textContent+='\n另有候選 '+candidate.count+' 則｜'+candidate.runId;
+        }catch(e){savedInfo.textContent='本機保全記憶暫不可用：'+String(e.message||e)}
+      };
+      localImport.onclick=async()=>{
+        if(pane.dataset.chat!==path())return;
+        localImport.disabled=true;resumeButton.disabled=true;candidateButton.disabled=true;start.disabled=true;trial.disabled=true;twenty.disabled=true;close.disabled=true;
+        try{
+          const expectedHash=hashInput.value.trim().toLowerCase();
+          if(!/^[a-f0-9]{64}$/.test(expectedHash))throw Error('請輸入原始檔 SHA-256');
+          const result=await chrome.runtime.sendMessage({type:'predecessor-local-checkpoint-import',expectedHash});
+          if(!result?.ok)throw Error(result?.error||'本機橋接匯入失敗');
+          feedback.textContent='已記住 '+result.count+' 則，未啟動掃描';
+          await showSaved();
+        }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
+        finally{localImport.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;start.disabled=false;trial.disabled=false;twenty.disabled=false;close.disabled=false}
+      };
       const note=document.createElement('p');note.textContent='建議先測試最近10則（玩家及GPT各算一則），再完整掃描至頂端。載入最多等待60秒；本聊天的原監看將停止。';
       const feedback=document.createElement('p');feedback.setAttribute('role','status');feedback.style.whiteSpace='pre-wrap';
       const start=document.createElement('button');start.type='button';start.id='ga-predecessor-page-start';start.textContent='↑ 從最底端向上完整掃描';
@@ -2192,25 +2233,32 @@
       const launch=async(sample,resume=false)=>{
         if(pane.dataset.chat!==path()){pane.remove();return}
         if(!pc.chatTitle(input.value)){feedback.textContent='請填寫聊天實際名稱，不能使用新對話等預設名稱';return}
-        start.disabled=true;trial.disabled=true;twenty.disabled=true;resumeButton.disabled=true;close.disabled=true;feedback.textContent='正在開啟掃描…';
+        start.disabled=true;trial.disabled=true;twenty.disabled=true;resumeButton.disabled=true;candidateButton.disabled=true;localImport.disabled=true;close.disabled=true;feedback.textContent='正在開啟掃描…';
         try{
           let checkpoint=null;
           if(resume){
-            const file=checkpointFile.files?.[0];if(!file)throw Error('請先選擇舊完整掃描保全 JSON');
-            if(file.size>100*1024*1024)throw Error('斷點超過100MiB，請保留原檔並回報');
-            const bytes=await file.arrayBuffer(),data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
-            const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
-            checkpoint={data,hash};
+            const source=savedSource(),storage=chrome.storage.local,file=checkpointFile.files?.[0];
+            if(file&&resume!=='candidate'){
+              if(file.size>GalCheckpointMemory.MAX)throw Error('斷點超過100MiB，請保留原檔並回報');
+              const bytes=await file.arrayBuffer();
+              checkpoint=await GalCheckpointMemory.decode(bytes,source,pc);
+              await GalCheckpointMemory.save(storage,bytes,source,pc,checkpoint.hash);
+            }else{
+              checkpoint=await GalCheckpointMemory.read(storage,source,pc,resume==='candidate'?'candidate':'pinned');
+              if(!checkpoint)throw Error('尚無已記住的保全，請先選檔或使用本機橋接');
+            }
+            if(pane.dataset.chat!==path())throw Error('聊天已切換，停止續掃');
           }
           const result=await (sample?historyBegin(input.value.trim(),sample):historyBegin(input.value.trim(),false,pc.minimumCount(minimum.value),checkpoint));
           if(result?.ok){pane.remove();return}
           feedback.textContent='⛔ '+(result?.error||'無法啟動掃描');
         }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
-        finally{start.disabled=false;trial.disabled=false;twenty.disabled=false;resumeButton.disabled=false;close.disabled=false}
+        finally{start.disabled=false;trial.disabled=false;twenty.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;localImport.disabled=false;close.disabled=false}
       };
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
+      candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,label,input,minLabel,minimum,checkpointLabel,checkpointFile,resumeButton,note,trial,twenty,start,close,feedback);document.body.append(pane);
+      pane.append(heading,version,label,input,minLabel,minimum,checkpointLabel,checkpointFile,savedInfo,hashInput,localImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }
