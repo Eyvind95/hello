@@ -9,7 +9,8 @@ document.addEventListener(request,event=>{
  const node=event.target;
  if(!(node instanceof Element))return;
  const historyOnly=event.detail==='history-source-evidence';
- const evidenceOnly=historyOnly||event.detail==='event-evidence';
+ const playerDetail=event.detail==='player-anchor-evidence';
+ const evidenceOnly=historyOnly||event.detail==='event-evidence'||playerDetail;
  const id=node.getAttribute('data-selection-copy-message-id')||
   (evidenceOnly?node.getAttribute('data-message-id'):null);
  if(!id&&!evidenceOnly)return;
@@ -24,6 +25,19 @@ document.addEventListener(request,event=>{
    const sender=message.sender_type||message.type;
    const kind=card?'event-card':sender==='deg_event'?'event-message':
     ['user','character','assistant','chapter','dm'].includes(sender)?'ordinary-message':'unknown-message';
+   if(playerDetail){
+    if(sender==='user'&&kind==='ordinary-message'&&message.content.length<=30000){
+     const meta=message.metadata;
+     const entries=meta&&typeof meta==='object'&&!Array.isArray(meta)?Object.entries(meta).slice(0,100):[];
+     // Capture only bounded scalar metadata locally. Never export other message objects.
+     result={reason:'player-anchor-evidence',text:message.content,
+      eventEvidence:{messageId:message.id,kind,sender,accepted:typeof meta?.accept==='boolean'?meta.accept:null},
+      metadataKeys:entries.map(([k])=>k),
+      metadataScalars:Object.fromEntries(entries.filter(([k,v])=>typeof v==='boolean'||typeof v==='number'&&Number.isFinite(v)||v===null||typeof v==='string'&&v.length<=500)),
+      metadataTruncated:!!meta&&Object.keys(meta).length>entries.length};
+    }
+    break;
+   }
    if(evidenceOnly){
     result={reason:'evidence',eventEvidence:{messageId:message.id,
      kind,sender:typeof sender==='string'?sender:null,
