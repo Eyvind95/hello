@@ -1575,6 +1575,60 @@
     }catch(e){if(state.bulk===b)state.bulk=null;return {ok:false,error:String(e.message||e)}}
   }
 
+
+  // In-page entry: browser automation need not access Chrome toolbar popups.
+  const HISTORY_LAUNCHER='ga-predecessor-page-launcher',HISTORY_CONFIG='ga-predecessor-page-config';
+  function historyLauncher(){
+    const existing=document.getElementById(HISTORY_LAUNCHER);
+    const config=document.getElementById(HISTORY_CONFIG);
+    if(config&&config.dataset.chat!==path())config.remove();
+    if(!valid()){
+      existing?.remove();
+      return;
+    }
+    if(existing)return;
+    const button=document.createElement('button');
+    button.id=HISTORY_LAUNCHER;button.type='button';
+    button.textContent='📚 前輩聊天掃描';
+    button.setAttribute('aria-label','開啟前輩聊天掃描助手');
+    button.title='獨立 ChatGPT 完整聊天 JSON 掃描';
+    button.style.cssText='position:fixed!important;right:18px!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
+    button.onclick=()=>{
+      const active=document.getElementById(HISTORY_PANEL);
+      if(active){active.scrollIntoView({block:'nearest'});return}
+      if(document.getElementById(HISTORY_CONFIG)){document.getElementById(HISTORY_CONFIG).remove();return}
+      const pane=document.createElement('section');pane.id=HISTORY_CONFIG;pane.dataset.chat=path();
+      pane.setAttribute('role','dialog');pane.setAttribute('aria-label','前輩完整聊天掃描設定');
+      pane.style.cssText='position:fixed!important;right:18px!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
+      const heading=document.createElement('strong');heading.textContent='前輩完整聊天掃描';
+      const version=document.createElement('p');version.textContent='V'+chrome.runtime.getManifest().version+'｜獨立 JSON，不上傳正史';
+      const label=document.createElement('label');label.textContent='聊天名稱（請確認）';label.htmlFor='ga-predecessor-page-title';
+      const input=document.createElement('input');input.id='ga-predecessor-page-title';input.type='text';input.maxLength=512;
+      input.value=String(document.title||'').replace(/\s*[-–|]\s*ChatGPT\s*$/i,'').trim();
+      if(input.value==='ChatGPT')input.value='';
+      input.style.cssText='display:block;width:100%;margin:6px 0 12px;padding:8px;background:#111827;color:white;border:1px solid #9ba9cb;border-radius:7px';
+      const note=document.createElement('p');note.textContent='先定位底端，向上掃描至頂端。載入最多等待60秒；本聊天的原監看將停止。不需要綁定輪迴。';
+      const feedback=document.createElement('p');feedback.setAttribute('role','status');feedback.style.whiteSpace='pre-wrap';
+      const start=document.createElement('button');start.type='button';start.id='ga-predecessor-page-start';start.textContent='↑ 從最底端向上完整掃描';
+      start.style.cssText='display:block;width:100%;padding:10px;background:#6456b8;color:white;border:1px solid #c0afff;border-radius:8px;cursor:pointer';
+      const close=document.createElement('button');close.type='button';close.textContent='關閉';close.style.cssText='margin-top:8px;padding:7px 12px;background:#374151;color:white;border-radius:7px;cursor:pointer';
+      close.onclick=()=>pane.remove();
+      start.onclick=async()=>{
+        if(pane.dataset.chat!==path()){pane.remove();return}
+        if(!input.value.trim()){feedback.textContent='請填寫聊天實際名稱';return}
+        start.disabled=true;close.disabled=true;feedback.textContent='正在開啟掃描…';
+        try{
+          const result=await historyBegin(input.value.trim());
+          if(result?.ok){pane.remove();return}
+          feedback.textContent='⛔ '+(result?.error||'無法啟動掃描');
+        }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
+        finally{start.disabled=false;close.disabled=false}
+      };
+      pane.append(heading,version,label,input,note,start,close,feedback);document.body.append(pane);
+    };
+    document.body.append(button);
+  }
+
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if(message?.type==='predecessor-history-up'){historyBegin(message.title).then(respond,e=>respond({ok:false,error:String(e.message||e)}));return true}
     if(state.bulk?.mode==='predecessor-history'&&['bulk-down','bulk-range','backfill-visible','begin-watch','end-watch','test-last-time'].includes(message?.type)){respond({ok:false,error:'前輩聊天掃描中，不得開始其他操作'});return;}
@@ -1653,11 +1707,13 @@
     if(area==='local' && (changes.watch||changes.autoTimeCapture)) syncWatch().catch(err=>diagnostics.error=String(err));
   });
   setInterval(async () => {
+    historyLauncher();
     if (state.scanning || state.bulk) return;
     state.scanning = true;
     try { await syncWatch(); await scan(); }
     catch (e) { diagnostics.error = String(e?.message || e); }
     finally { state.scanning = false; }
   }, 1200);
+  historyLauncher();
   syncWatch().catch(e => diagnostics.error = String(e));
 })();
