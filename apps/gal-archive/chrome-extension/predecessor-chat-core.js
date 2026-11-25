@@ -125,6 +125,13 @@ function breakthroughStep(state,viewport){
  if(!state||state.resets<5||state.attempts>=3)return 0;
  return scrollStep(viewport,8)*(2+state.attempts);
 }
+// Scroll coordinates are estimates, not identity evidence. Rebase every
+// retry on the current height; probe the old coordinate as a fallback
+// when the height change was caused by a resize rather than prepend.
+function rejoinTarget(anchor,height,viewport,offset=0,rebase=true){
+ if(!anchor||![anchor.top,anchor.height,height,viewport,offset].every(Number.isFinite))return null;
+ return Math.max(0,Math.min(scrollRange(height,viewport),anchor.top+(rebase?height-anchor.height:0)+offset));
+}
 const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;
 function sampleReady(rows,bottomReached,topReached,limit=SAMPLE_LIMIT){
  return !!sampleLimit(limit)&&bottomReached===true&&rows.length>0&&(rows.length>=limit||topReached===true);
@@ -149,5 +156,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget};
 });
