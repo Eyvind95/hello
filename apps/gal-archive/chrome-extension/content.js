@@ -1749,6 +1749,15 @@
     if(b.cancelled)throw Error('使用者停止');
     if(state.bulk!==b||!valid()||path()!==b.chat||!b.host.isConnected)throw Error('聊天來源或捲動容器已變更');
   }
+  // Passive trusted wheel evidence only: no synthesized input, no new scroll.
+  function historyObserveWheel(b,event){
+    if(!event.isTrusted||!b.host?.contains(event.target))return;
+    const entry={at:new Date().toISOString(),deltaY:event.deltaY,deltaMode:event.deltaMode,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,count:b.rows.length};
+    b.trustedWheelCount=(b.trustedWheelCount||0)+1;
+    const list=b.trustedWheelTrace||(b.trustedWheelTrace=[]);
+    if(list.length>=64){list.shift();b.trustedWheelOverflow=(b.trustedWheelOverflow||0)+1}
+    list.push(entry);
+  }
   function historyStatus(b,msg){
     b.info.textContent=msg+'\n已保全 '+(b.sample?Math.min(b.sample,b.rows.length)+' / '+b.sample:b.rows.length)+' 則；不會上傳 Firebase。';
   }
@@ -1786,6 +1795,7 @@
   function historyPayload(b,status,error){
     const rows=(b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
+    if(b.trustedWheelCount)warnings.push('掃描期間觀測到可信滾輪輸入，不能當成無人工介入的自動驗收；來源可能是使用者或瀏覽器自動化。');
     if(b.foldObservations.size)warnings.push('前輩掃描不點擊展開／收合；已掛載正文照讀，折疊觀測及確定移除的尾端介面標籤另存證據，未獨立驗證折疊正文完整性，需後續核對。');
     if(b.attachmentChanges.some(x=>!x.type))warnings.push('臨時圖片 blob 網址曾變動；僅核對附件參照位置與標籤，未驗證圖片位元組。');
     if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
@@ -1795,7 +1805,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+data.count:'')+'.json';
@@ -1961,7 +1971,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,bottomEscapeAttempts:0,bottomEscapeDepartures:0,stagedReturns:0,stagedReturnLandings:0,stagedReturnArrivals:0,recoveryCycles:0,crossWindowCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,bottomEscapeAttempts:0,bottomEscapeDepartures:0,stagedReturns:0,stagedReturnLandings:0,stagedReturnArrivals:0,stagedEnvelopeLandings:0,stagedReturnBackoffs:0,recoveryCycles:0,crossWindowCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     if(checkpoint){
       if(b.sample)return {ok:false,error:'測試不能續掃'};
       try{
@@ -1989,7 +1999,9 @@
       b.stop=document.createElement('button');b.stop.textContent='停止並保全';b.stop.onclick=()=>{b.cancelled=true};
       b.download=document.createElement('button');b.download.textContent='重新下載 JSON';b.download.hidden=true;
       pane.append(h,b.info,b.stop,b.download);document.body.append(pane);b.pane=pane;
-      historyRun(b);return {ok:true,title};
+      const wheel=event=>historyObserveWheel(b,event);
+      document.addEventListener('wheel',wheel,{capture:true,passive:true});
+      historyRun(b).finally(()=>document.removeEventListener('wheel',wheel,true));return {ok:true,title};
     }catch(e){if(state.bulk===b)state.bulk=null;return {ok:false,error:String(e.message||e)}}
   }
 
