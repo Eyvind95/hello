@@ -2113,3 +2113,20 @@ test('boundary scan preserves mixed player template without altering AI',()=>{
  assert.equal(result.rows[0].text,'完整原文 99752');
  assert.equal(result.rows[2].text,'完整原文 99754');
 });
+
+test('road observed HUD variants and accepted-event suffix projection preserve native original',()=>{
+ const c=context.GalArchiveCore,w='🔞公路求生－我是求生者！🔞',f=String.fromCharCode(96).repeat(3);
+ const h=['⏰：來到公路第2日｜01.02．08:20．天氣：☁','🚙：測試車｜S級（測試）','🔋：電力｜10／20','🔧：100／100','🚚：10／100','🧩：1／10','🛣：今日剩餘里程：10公里／每日規定15公里','🥩：飢餓度：12｜💧：口渴度：12','⚡：100／100','❤：正常','🪙：20','📜：無','💦：無','📐：無'].join('\n');
+ assert.equal(c.parseGameTime(h).civil,'第2日｜01.02 08:20');
+ assert.equal(c.parseGameTime(h.replace('🚚','❓')),null);
+ assert.equal(c.parseGameTime(h+'\n任意敘事'),null);
+ const wrapper='{{Below context is an event which has just occurred. '+w+' should not skip this moment — chime in naturally as '+w+' would react. This event is to make the story dynamic and fresh.}}';
+ const n=wrapper+'\n{{測試伴隨情境}}\n測試敘事\n'+f+'\n'+h+'\n'+f+'，原文尾句';
+ const dom='測試敘事\n'+h;
+ const opts={worldName:w,source:'whif-event-content',event:true,codeBlocks:[h],nativeEventProof:{messageId:'event-test',sender:'deg_event',kind:'event-message',accepted:true}};
+ assert.equal(c.compareNativeParagraphs(dom,n,opts).text,n);
+ assert.equal(c.compareNativeParagraphs(dom,n,{...opts,nativeEventProof:null}).text,null);
+ assert.equal(c.compareNativeParagraphs(dom,n,{...opts,nativeEventProof:{...opts.nativeEventProof,accepted:false}}).text,null);
+ assert.equal(c.compareNativeParagraphs(dom.replace('測試敘事','其他敘事'),n,opts).text,null);
+ assert.equal(c.compareNativeParagraphs(dom,n,{...opts,codeBlocks:[]}).text,null);
+});

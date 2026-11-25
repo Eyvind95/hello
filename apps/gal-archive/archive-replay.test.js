@@ -47,7 +47,7 @@ test('a remaining native content difference returns only a diagnostic, not canon
 test('website button, separate files, local-only report and cache assets are wired',()=>{
  const html=fs.readFileSync(require.resolve('./index.html'),'utf8'),sw=fs.readFileSync(require.resolve('./sw.js'),'utf8'),js=fs.readFileSync(require.resolve('./archive-replay.js'),'utf8');
  for(const id of ['archiveReplayOpen','archiveReplayRaw','archiveReplayDiag','archiveReplayState','archiveReplayRun','archiveReplayDownload','archiveReplayReport'])assert.ok(html.includes('id="'+id+'"'));
- assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=11/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
+ assert.match(html,/id="archiveReplayDownload"[^>]*disabled/);assert.match(html,/archive-replay\.js\?v=12/);assert.match(sw,/archive-replay\.js/);assert.match(sw,/gal-format-evidence\.js/);
  assert.doesNotMatch(js,/\bfetch\s*\(|indexedDB|firestore|localStorage|sessionStorage/);
 });
 
@@ -129,4 +129,18 @@ test('native player image references only permit bounded WHIF image links',()=>{
  assert.match(html,/nativeImageReferences.*historySupplementRunId/s);
  assert.match(html,/rel="noopener noreferrer">查看 WHIF 原生附圖/);
  assert.match(html,/nativeSourceMessageId','nativeImageReferences'\]\.every/);
+});
+
+test('hidden player proof inserts original content only at manifest-bound neighboring source IDs',()=>{
+ const api=require('./archive-replay.js'),h=api.hash,core=globalThis.GalArchiveCore;
+ const target={cycleId:'cycle',cycleTitle:'第1輪迴',worldName:'測試世界',worldKey:'test',cycleNumber:1,archiveKey:'test::cycle'},url='https://www.whif.io/chat/test';
+ const row=(id,text,i)=>({role:'ai',scanIndex:i,sourceMessageId:id,nativeText:text,domText:text,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:id,text,scannedText:text}}});
+ const cp={format:'gal-ai-unverified-scan',importable:false,forensicOnly:true,scanRunId:'old',source:{url},target,rows:[row('open','開場',0),row('a','前方',1),row('b','後方',2)],historySourceManifest:['open','a','p','b'].map(id=>({id,kind:'ordinary-message',sender:id==='p'?'user':'character',playerRows:[]}))};
+ const raw='{{測試內容}}',native={reason:'player-anchor-evidence',text:raw,eventEvidence:{messageId:'p',kind:'ordinary-message',sender:'user'},nativeHash:h(raw),nativeNormHash:h(raw),nativeLength:raw.length};
+ const dom=(attr)=>({outerHTML:'<div '+attr+'="p"></div>',textContent:'',innerText:'',geometry:{ownerId:'p'}});
+ const snapshot={sourceId:'p',native,hasMedia:false,loading:false,order:['a','p','b'],markerDom:dom('data-selection-copy-message-id'),wrapperDom:dom('data-message-id'),adjacent:[['a','前方'],['b','後方']].map(([id,s])=>({id,source:{messageId:id,sender:'character',kind:'ordinary-message'},nativeHash:h(s),nativeLength:s.length}))};
+ const proof={format:'gal-ai-hidden-player-source-proof',version:1,forensicOnly:true,importable:false,complete:true,stable:true,scope:'visible-player-anchor',scanRunId:'new',source:{url},target,scannerVersion:'0.10.6',coreVersion:'0.10.6',input:{anchorId:'p',neighbors:['a','b']},first:snapshot,second:JSON.parse(JSON.stringify(snapshot))};
+ const result=api.restoreHiddenPlayerRows(cp,[proof],core);
+ assert.equal(result.rows[2].nativeText,raw);assert.equal(result.rows[3].sourceMessageId,'b');assert.deepEqual(result.manifest[2].playerRows,[2]);assert.equal(cp.rows.length,3);
+ for(const bad of [{...proof,stable:false},{...proof,source:{url:'https://www.whif.io/chat/other'}},{...proof,second:{...snapshot,hasMedia:true}},{...proof,second:{...snapshot,order:['p','a','b']}},{...proof,second:{...snapshot,native:{...native,nativeHash:'wrong'}}}])assert.throws(()=>api.restoreHiddenPlayerRows(cp,[bad],core));
 });
