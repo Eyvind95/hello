@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.28",
-  "version_name": "V0.10.28 前輩分段方向與回跳退避",
-  "description": "輪迴檔案館：前輩分段定位原座標及高度補償核對。",
+  "version": "0.10.29",
+  "version_name": "V0.10.29 前輩圖片參照補全與滾輪取證",
+  "description": "輪迴檔案館：前輩圖片參照有序子序列補全及被動滾輪取證。",
   "permissions": [
     "storage",
     "activeTab",

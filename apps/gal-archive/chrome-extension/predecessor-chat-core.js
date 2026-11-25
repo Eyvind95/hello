@@ -54,8 +54,18 @@ function reconcileOverlap(previous,current){
  const images=a=>a.length>0&&a.every(x=>transientImage(x)&&x.label==='使用者附件')&&new Set(a.map(x=>x.url)).size===a.length;
  const appeared=previous.attachments.length===0&&images(current.attachments);
  const disappeared=current.attachments.length===0&&images(previous.attachments);
- if(!appeared&&!disappeared)return comparison;
- return {equal:true,fields:[],row:appeared?{...previous,attachments:current.attachments.slice()}:previous,changes:[{messageId:previous.id,type:appeared?'image-reference-appeared':'image-reference-not-observed',previousAttachments:previous.attachments,currentAttachments:current.attachments,bytesVerified:false,attachmentCountVerified:false}]};
+ // A strict ordered subsequence of exact references is evidence of a
+ // partial observation, not proof of bytes or original attachment count.
+ const orderedSubset=(small,big)=>{
+  if(!images(small)||!images(big)||small.length>=big.length)return false;
+  let i=0;for(const a of big)if(i<small.length&&same(small[i],a))i++;
+  return i===small.length;
+ };
+ const enriched=orderedSubset(previous.attachments,current.attachments);
+ const partial=orderedSubset(current.attachments,previous.attachments);
+ if(!appeared&&!disappeared&&!enriched&&!partial)return comparison;
+ const type=appeared?'image-reference-appeared':disappeared?'image-reference-not-observed':enriched?'image-reference-subset-enriched':'image-reference-subset-not-observed';
+ return {equal:true,fields:[],row:appeared||enriched?{...previous,attachments:current.attachments.slice()}:previous,changes:[{messageId:previous.id,type,previousAttachments:previous.attachments,currentAttachments:current.attachments,bytesVerified:false,attachmentCountVerified:false}]};
 }
 const sampleLimit=x=>x===true||x===10?10:x===20?20:0;
 function chatTitle(value){const title=String(value||'').replace(/\s*[-–|]\s*ChatGPT\s*$/i,'').trim();return /^(?:ChatGPT|新對話|新聊天|New chat|New conversation)$/i.test(title)?'':title}

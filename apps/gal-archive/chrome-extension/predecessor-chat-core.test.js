@@ -251,13 +251,14 @@ test('actual historyRun rejoins after height changes during an unsuccessful upwa
  a.equal(output.status,'completed');a.equal(output.count,2);a.equal(targets[0].target,9915);a.equal(targets[1].target,29957.5);a.equal(targets[1].allowBoost,false);a.equal(b.scrollStats.rejoinSuccesses,1);
 });
 
-test('two distinct delayed generic images enrich an empty observation, not conflicting nonempty counts',()=>{
+test('two distinct delayed generic images enrich empty or exact ordered subset observations',()=>{
  const old=r('multi'),img=i=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/'+i.repeat(8)+'-1111-4111-8111-111111111111'});
  const fresh={...old,attachments:[img('1'),img('2')]},changes=[];
  a.deepEqual(c.mergeUp([old],[fresh],x=>changes.push(x)),[fresh]);
  a.equal(changes[0].currentAttachments.length,2);
  a.deepEqual(c.mergeUp([fresh],[old]),[fresh]);
- a.throws(()=>c.mergeUp([{...old,attachments:[img('1')]}],[fresh]));
+ a.deepEqual(c.mergeUp([{...old,attachments:[img('1')]}],[fresh]),[fresh]);
+ a.throws(()=>c.mergeUp([{...old,attachments:[img('3')]}],[fresh]));
  a.throws(()=>c.mergeUp([old],[{...fresh,attachments:[img('1'),img('1')]}]));
  a.throws(()=>c.mergeUp([old],[{...fresh,text:'changed'}]));
 });
@@ -496,4 +497,30 @@ test('actual bottom snap makes next long return smaller without counting a landi
  b.breakthrough.bottomEscapeHits=2;
  a.deepEqual(await ctx.settle(b,{upward:true,target:1998.8,targetHeight:843054,allowBoost:false}),rows);
  a.deepEqual(trace.filter(x=>x.event==='bottom-escape-return').map(x=>x.stages),[13,26]);a.equal(b.scrollStats.stagedReturnLandings,26);a.equal(b.rows.length,1);c.clearRecoveryPolicy(b.breakthrough);a.equal(b.breakthrough.stagedEscapeBackoff,undefined);
+});
+
+// Synthetic references, no private chat text or URLs.
+test('exact ordered attachment subset preserves both snapshots and allows strict adjacent merge',()=>{
+ const img=i=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/'+i.repeat(8)+'-1111-4111-8111-111111111111'});
+ const A=img('1'),B=img('2'),C=img('3'),old={...r('anchor'),attachments:[A]},live={...old,attachments:[B,A]},tail=r('tail','assistant'),earlier=r('earlier'),changes=[];
+ a.deepEqual(c.mergeUp([old,tail],[earlier,live,tail],x=>changes.push(x)),[earlier,live,tail]);
+ a.deepEqual(old.attachments,[A]);a.equal(changes[0].type,'image-reference-subset-enriched');
+ a.deepEqual(changes[0].previousAttachments,[A]);a.deepEqual(changes[0].currentAttachments,[B,A]);
+ a.equal(changes[0].bytesVerified,false);a.equal(changes[0].attachmentCountVerified,false);
+ a.deepEqual(c.mergeUp([live,tail],[old,tail],x=>changes.push(x)),[live,tail]);a.equal(changes[1].type,'image-reference-subset-not-observed');
+ for(const bad of [{...old,attachments:[B,C]},{...old,attachments:[A,A]},{...old,attachments:[A,{...B,label:'other'}]},{...old,attachments:[A,{...B,url:'https://example.com/image'}]},{...live,text:'changed'},{...live,structure:[{tag:'b',text:'changed'}]}])a.throws(()=>c.mergeUp([old,tail],[bad,tail]));
+ a.throws(()=>c.mergeUp([live,tail],[{...live,attachments:[A,B,C]},tail]));
+ a.throws(()=>c.mergeUp([old,tail],[earlier,live,r('unrelated'),tail]));
+});
+
+test('trusted wheel observation is passive, scoped and bounded',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyObserveWheel('),src.indexOf('  function historyStatus('));
+ const ctx={};vm.runInNewContext(block+';globalThis.observe=historyObserveWheel;',ctx);
+ const host={contains:x=>x==='inside',scrollTop:123,scrollHeight:456},b={host,rows:[r('anchor')]};
+ ctx.observe(b,{isTrusted:false,target:'inside',deltaY:-30,deltaMode:0});
+ ctx.observe(b,{isTrusted:true,target:'outside',deltaY:-30,deltaMode:0});
+ a.equal(b.trustedWheelCount,undefined);
+ for(let i=0;i<65;i++)ctx.observe(b,{isTrusted:true,target:'inside',deltaY:-30,deltaMode:0});
+ a.equal(b.trustedWheelCount,65);a.equal(b.trustedWheelTrace.length,64);a.equal(b.trustedWheelOverflow,1);a.equal(b.trustedWheelTrace[0].scrollTop,123);a.equal(host.scrollTop,123);a.equal(b.rows.length,1);
 });
