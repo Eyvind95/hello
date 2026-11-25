@@ -1663,8 +1663,9 @@
       if(departed)b.scrollStats.bottomEscapeDepartures=(b.scrollStats.bottomEscapeDepartures||0)+1;
       const anchor={top:recovered.target,height:recovered.height},viewport=b.host.clientHeight;
       let target=pc.rejoinTarget(anchor,height,viewport);
-      const stages=pc.escapeStageCount(from,target,viewport);
-      historyTrace(b,'bottom-escape-return',{from,target,departed,height,stages});
+      const baseStages=pc.escapeStageCount(from,target,viewport),backoff=b.breakthrough.stagedEscapeBackoff||1;
+      const stages=baseStages===1?1:Math.min(48,baseStages*backoff);
+      historyTrace(b,'bottom-escape-return',{from,target,departed,height,stages,baseStages,backoff});
       if(stages===1){
         historyScroll(b.host,target);await sleep(Math.min(350,Math.max(0,until-Date.now())));
         return {...recovered,target,height};
@@ -1684,17 +1685,18 @@
         historyGuard(b);
         const actual=b.host.scrollTop,nowHeight=b.host.scrollHeight;
         const expected=pc.rejoinTarget({top:waypoint,height:targetHeight},nowHeight,viewport);
-        const tolerance=Math.max(24,viewport*.5),max=pc.scrollRange(nowHeight,viewport);
-        const direct=Math.max(0,Math.min(max,waypoint));
-        const heldDirect=Math.abs(actual-direct)<=tolerance,heldRebased=Math.abs(actual-expected)<=tolerance;
-        // Height can change from reflow below the waypoint, not only prepended history.
-        // Both are positional hints; a bottom snap is never a valid long-stage landing.
-        const held=actual<max-6&&(heldDirect||heldRebased);
-        const landingBasis=held?(heldDirect?'direct':'height-rebased'):null;
+        const max=pc.scrollRange(nowHeight,viewport),direct=Math.max(0,Math.min(max,waypoint));
+        const landingBasis=pc.escapeLanding({start,waypoint,actual,height:targetHeight,nowHeight,viewport,final:i===stages-1});
+        const held=landingBasis!==null;
         historyTrace(b,'bottom-escape-stage',{stage:i+1,stages,start,waypoint,actual,expected,direct,held,landingBasis,target,nowHeight});
-        if(!held){historyTrace(b,'bottom-escape-stage-failed',{stage:i+1,reason:'waypoint-not-held'});throw retryError()}
+        if(!held){
+          const snap=Math.abs(actual-max)<=6;
+          if(snap){b.breakthrough.stagedEscapeBackoff=Math.min(4,backoff*2);b.scrollStats.stagedReturnBackoffs=(b.scrollStats.stagedReturnBackoffs||0)+1}
+          historyTrace(b,'bottom-escape-stage-failed',{stage:i+1,reason:snap?'bottom-snap':'waypoint-not-held',nextBackoff:b.breakthrough.stagedEscapeBackoff||1});throw retryError();
+        }
         b.scrollStats.stagedReturnLandings=(b.scrollStats.stagedReturnLandings||0)+1;
-        if(i===stages-1){target=heldDirect?direct:expected;targetHeight=nowHeight}
+        if(landingBasis==='height-envelope')b.scrollStats.stagedEnvelopeLandings=(b.scrollStats.stagedEnvelopeLandings||0)+1;
+        if(i===stages-1){target=landingBasis==='direct'?direct:expected;targetHeight=nowHeight}
       }
       b.scrollStats.stagedReturnArrivals=(b.scrollStats.stagedReturnArrivals||0)+1;
       // Return only the coordinates: historySettled still reads a stable
