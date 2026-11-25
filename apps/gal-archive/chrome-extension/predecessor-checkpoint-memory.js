@@ -62,5 +62,31 @@ function createReceiver(){
  function reset(){parts=[];length=0;total=0;return status()}
  return {append,bytes,reset,status};
 }
-return {MAX,CHUNK_MAX,PARTS_MAX,key,digest,decode,read,save,createReceiver};
+// Only an unpacked extension's own private directory; no host permission,
+// no web-accessible resources and no caller-provided URL or file path.
+async function importInstalled(storage,runtime,source,core,expected,fetcher=fetch){
+ if(!/^[a-f0-9]{64}$/.test(expected))throw Error('請輸入原始檔 SHA-256');
+ const chatId=core.sourceId(source);
+ const relative='local-checkpoints/'+chatId+'.json';
+ const url=runtime.getURL(relative);
+ const parsed=new URL(url);
+ if(parsed.protocol!=='chrome-extension:'||parsed.hostname!==runtime.id||!(/^[a-p]{32}$/.test(runtime.id))||parsed.pathname!=='/'+relative||parsed.search||parsed.hash)throw Error('本機保全路徑不符');
+ const existing=await read(storage,source,core);
+ if(existing&&existing.hash===expected)return {slot:'pinned',count:existing.data.count,hash:existing.hash,runId:existing.data.runId,unchanged:true,readback:true};
+ let response;
+ try{response=await fetcher(url,{credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(30000)})}
+ catch(_){throw Error('無法讀取安裝目錄保全檔，請確認 local-checkpoints/'+chatId+'.json 存在')}
+ if(!response.ok||!response.body)throw Error('安裝目錄保全檔無法讀取：HTTP '+response.status);
+ if(Number(response.headers.get('content-length'))>MAX)throw Error('斷點超過100MiB');
+ const reader=response.body.getReader(),chunks=[];let length=0;
+ try{for(;;){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>MAX)throw Error('斷點超過100MiB');chunks.push(value)}}finally{await reader.cancel().catch(()=>{})}
+ const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength}
+ if(await digest(bytes)!==expected)throw Error('安裝目錄保全 SHA-256 不符');
+ let checked;try{checked=await decode(bytes,source,core,expected)}catch(_){throw Error('安裝目錄保全未通過原斷點格式或來源驗收')}
+ const saved=await save(storage,bytes,source,core,expected);
+ const verified=await read(storage,source,core);
+ if(!verified||verified.hash!==expected||verified.data.runId!==checked.data.runId||verified.data.count!==checked.data.count)throw Error('本機保全回讀核對失敗');
+ return {...saved,readback:true};
+}
+return {MAX,CHUNK_MAX,PARTS_MAX,key,digest,decode,read,save,createReceiver,importInstalled};
 });
