@@ -581,7 +581,7 @@ test('native error cannot certify top while visible',()=>{
  a.ok(src.includes("stableMs:Date.now()-topSince,loading:historyLoading(b.host)||!!historyNativeFailure(b.host)"));
 });
 
-test('native retry budget resets only on verified progress, with absolute batch cap',async()=>{
+test('native retry budget resets only on verified progress, without absolute batch cap',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('));
  let now=1000,clicks=0,present=true;
@@ -592,9 +592,13 @@ test('native retry budget resets only on verified progress, with absolute batch 
  vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;globalThis.progress=historyNativeProgress;',ctx);
  for(let i=0;i<3;i++){present=true;a.equal(await ctx.retry(b,61000),true)}
  present=true;await a.rejects(ctx.retry(b,61000),/3次重試上限/);a.equal(clicks,3);
- for(let i=3;i<12;i++){b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;a.equal(await ctx.retry(b,61000),true)}
- b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;await a.rejects(ctx.retry(b,61000),/12次重試上限/);
- a.equal(clicks,12);a.equal(b.rows.length,1);a.equal(b.nativeHistoryRetry.progressResets,10);a.equal(b.nativeHistoryRetry.trace.at(-1).event,'total-exhausted');
+ for(let i=3;i<24;i++){b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;a.equal(await ctx.retry(b,now+60000),true)}
+ a.equal(clicks,24);a.equal(b.nativeHistoryRetry.progressResets,21);
+ for(let i=0;i<2;i++){present=true;a.equal(await ctx.retry(b,now+60000),true)}
+ present=true;await a.rejects(ctx.retry(b,now+60000),/3次重試上限/);
+ a.equal(clicks,26);a.equal(b.rows.length,1);a.equal(b.nativeHistoryRetry.trace.at(-1).event,'exhausted');
+ b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;
+ await a.rejects(ctx.retry(b,now+500),/重試等待逾時/);a.equal(clicks,27);a.equal(b.nativeHistoryRetry.trace.at(-1).event,'deadline');
  const run=src.slice(src.indexOf('  async function historyRun('),src.indexOf('  async function historyBegin('));
  a.equal((run.match(/historyNativeProgress\(b,/g)||[]).length,2);
  a.match(run,/if\(q.minIndex<b.resume.minIndex\)\{[\s\S]*?historyNativeProgress\(b,'resume-earlier-index'\)/);

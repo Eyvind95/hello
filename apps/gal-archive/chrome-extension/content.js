@@ -1684,10 +1684,9 @@
       historyGuard(b);
       if(Date.now()>=until){record('deadline');throw Error('原生歷史載入失敗：已達無進展期限')}
       if(!detected.button){record('blocked',{reason:detected.reason});throw Error('原生歷史載入失敗：無法唯一確認可用重試按鈕')}
-      if(stats.attempts>=12){record('total-exhausted');throw Error('原生歷史載入失敗：已達單批12次重試上限')}
       if(stats.sinceProgress>=3){record('exhausted');throw Error('原生歷史載入失敗：未取得核對進展，已達3次重試上限')}
       const attempt=++stats.attempts,localAttempt=++stats.sinceProgress;
-      historyStatus(b,'原生歷史載入失敗，重試 '+localAttempt+'/3（全批 '+attempt+'/12）');
+      historyStatus(b,'原生歷史載入失敗，重試 '+localAttempt+'/3（累計 '+attempt+'次）');
       record('click',{attempt,localAttempt});
       detected.button.click();
       // No scroll during this observation. An absent error is not proof
