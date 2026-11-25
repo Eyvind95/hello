@@ -1549,12 +1549,20 @@
     const n=edge==='top'?nodes[0]:nodes.at(-1),position=Number(n.getAttribute('aria-posinset')),total=Number(n.getAttribute('aria-setsize'));
     return position>0&&total>=position&&Number.isInteger(position)&&Number.isInteger(total)?{position,total}:{};
   }
-  async function historySettled(b){
-    const until=Date.now()+60000;let last=null,lastRows=null,lastAt=0,reason='';
+  async function historySettled(b,{deadline=Infinity,upward=false}={}){
+    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0;
     while(Date.now()<until){
       historyGuard(b);
-      if(historyLoading(b.host)){last=null;reason='等待載入轉圈';}
-      else{
+      if(historyLoading(b.host)){
+        last=null;reason='等待載入轉圈';b.scrollStats.loadingPolls++;
+        const now=Date.now();if(!spinAt)spinAt=now;
+        if(upward&&!isGenerating()&&now-spinAt>=8000&&now-lastNudge>=8000&&nudges<3&&b.host.scrollTop>2){
+          const from=b.host.scrollTop;historyScroll(b.host,from-Math.max(24,Math.floor(b.host.clientHeight*.2)));
+          lastNudge=now;nudges++;b.scrollStats.loadingNudges++;
+          historyTrace(b,'loading-nudge',{from,to:b.host.scrollTop});
+        }
+      }
+      else{spinAt=0;
         try{
           const root=historyRoot(b.host);
           const controls=[...root.querySelectorAll('[data-turn-key],[data-message-author-role]')].filter(historyVisible).flatMap(expandButtons);
@@ -1569,7 +1577,7 @@
           }
         }catch(e){last=null;reason=String(e.message||e);b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null}}
       }
-      historyStatus(b,reason+'（最多等待60秒）');await sleep(650);
+      historyStatus(b,reason+'（最多等待60秒）');await sleep(350);
     }
     throw Error('等待逾時：'+reason);
   }
@@ -1582,6 +1590,11 @@
   }
   function historyAtBottom(host){return host.scrollHeight-host.clientHeight-host.scrollTop<=6}
   function historyScroll(host,at){host.scrollTo({top:Math.max(0,at),behavior:'instant'})}
+  function historyTrace(b,event,details={}){
+    const trace=b.scrollTrace;
+    trace.push({at:new Date().toISOString(),event,count:b.rows.length,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,clientHeight:b.host.clientHeight,...details});
+    if(trace.length>40)trace.shift();
+  }
   function historyAttachmentChange(b,change){
     const key=JSON.stringify(change);
     if(b.attachmentChangeKeys.has(key))return;
@@ -1596,7 +1609,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,scrollStats:b.scrollStats,scrollTrace:b.scrollTrace}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
@@ -1611,7 +1624,7 @@
       let stable=0,prev=null,prevRows=null,bottomDeadline=Date.now()+60000;
       for(;;){
         historyGuard(b);if(Date.now()>bottomDeadline)throw Error('60秒內無法確認完整底端');
-        historyScroll(b.host,b.host.scrollHeight);const rows=await historySettled(b);
+        historyScroll(b.host,b.host.scrollHeight);const rows=await historySettled(b,{deadline:bottomDeadline});
         const sig=JSON.stringify([pc.fingerprint(rows),b.host.scrollHeight]);
         if(sig===prev&&prevRows)for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(prevRows[i],rows[i]).changes)historyAttachmentChange(b,change);
         prevRows=rows;
@@ -1620,23 +1633,26 @@
         // Keep the most recent observed tail as emergency evidence only.
         b.rows=rows;await sleep(650);
       }
-      let topSince=0,topSignature=null,stallAt=Date.now(),lastCount=b.rows.length,edgeAttempt=0;
+      let topSince=0,topSignature=null,lastGrowth=Date.now(),lastCount=b.rows.length,edgeAttempt=0,unchanged=0;
       if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample))status='completed';
       while(status!=='completed'){
         historyGuard(b);
-        const pos=b.host.scrollTop,step=Math.max(24,Math.floor(b.host.clientHeight*.27));
+        const pos=b.host.scrollTop,step=pc.scrollStep(b.host.clientHeight,unchanged);
+        if(pc.noNewRows(lastGrowth,Date.now())&&pos>2){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
+        const deadline=pos<=2?(edgeAttempt||Date.now())+60000:lastGrowth+60000;
         let rows=null,lastError='';
         // Small upward steps, then return toward the last confirmed position
         // and retry with a smaller step if virtualized windows lose overlap.
-        for(const ratio of [1,.5,.25,0]){
+        for(const ratio of [1,.5,.25,.125,0]){
           historyGuard(b);historyScroll(b.host,pos-step*ratio);
-          await sleep(480);
-          rows=await historySettled(b);
-          try{b.rows=pc.mergeUp(b.rows,rows,change=>historyAttachmentChange(b,change));b.windows++;lastError='';break}catch(e){lastError=String(e.message||e);if(e.overlapEvidence){if(b.overlapIssues.length>=8)b.overlapIssues.shift();b.overlapIssues.push({at:new Date().toISOString(),ratio,scrollTop:b.host.scrollTop,reason:lastError,...e.overlapEvidence})}rows=null}
+          await sleep(180);
+          b.scrollStats.attempts++;
+          try{rows=await historySettled(b,{deadline,upward:true})}catch(e){historyTrace(b,'settle-failed',{ratio,step,reason:String(e.message||e)});throw e}
+          try{b.rows=pc.mergeUp(b.rows,rows,change=>historyAttachmentChange(b,change));b.windows++;lastError='';break}catch(e){b.scrollStats.overlapRetries++;historyTrace(b,'overlap-retry',{ratio,step,reason:String(e.message||e)});lastError=String(e.message||e);if(e.overlapEvidence){if(b.overlapIssues.length>=8)b.overlapIssues.shift();b.overlapIssues.push({at:new Date().toISOString(),ratio,scrollTop:b.host.scrollTop,reason:lastError,...e.overlapEvidence})}rows=null}
         }
         if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
         historyStatus(b,b.sample?'最近'+b.sample+'則測試':'向上掃描');
-        if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample)){status='completed';break}
+        if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample)){historyTrace(b,'sample-completed',{step,from:pos});status='completed';break}
         const atTop=b.host.scrollTop<=2,sig=JSON.stringify([rows[0]?.id,b.rows.length,b.host.scrollHeight]);
         if(atTop){
           if(!edgeAttempt)edgeAttempt=Date.now();
@@ -1644,9 +1660,10 @@
           if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
           if(Date.now()-edgeAttempt>60000)throw Error('頁面已在頂端，但首則訊息或頂端穩定證據不符');
         }else{topSince=0;topSignature=null;edgeAttempt=0}
-        if(b.rows.length!==lastCount||Math.abs(pos-b.host.scrollTop)>2){lastCount=b.rows.length;stallAt=Date.now()}
-        else if(!atTop&&Date.now()-stallAt>60000)throw Error('向上捲動超過60秒無進展');
-        await sleep(480);
+        if(b.rows.length>lastCount){historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos});lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0}
+        else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth})}
+        if(!atTop&&pc.noNewRows(lastGrowth,Date.now()))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
+        await sleep(150);
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
     const data=historyPayload(b,status,error);
@@ -1664,7 +1681,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     state.bulk=b;
     try{
       // Disable only this chat's existing automatic upload so scrolling over

@@ -74,3 +74,25 @@ test('twenty-message bounded proof and generic title rejection',()=>{
  for(const title of ['新對話','New chat','ChatGPT','新聊天 - ChatGPT'])a.equal(c.chatTitle(title),'');
  a.equal(c.chatTitle('小貓前輩 - ChatGPT'),'小貓前輩');
 });
+
+test('adaptive scan accelerates over repeated windows, never resets no-growth deadline on scrolling',()=>{
+ a.equal(c.scrollStep(1000,0),850);a.equal(c.scrollStep(1000,3),1500);a.equal(c.scrollStep(1000,8),2500);
+ a.equal(c.noNewRows(1000,60999),false);a.equal(c.noNewRows(1000,61000),true);
+ a.equal(c.noNewRows(60000,61000),false);
+ a.throws(()=>c.mergeUp([r('3')],[r('1')]));
+ a.deepEqual(c.mergeUp([r('3')],[r('1'),r('2'),r('3')]).map(x=>x.id),['1','2','3']);
+});
+
+test('actual historyRun exits no-growth despite continued scroll movements',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ let now=1000,output,positions=[];
+ const rows=[r('1'),r('2','assistant')];
+ const host={scrollTop:100000,scrollHeight:100100,clientHeight:100};
+ const b={host,rows:[],sample:20,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
+ const ctx={Date:{now:()=>now},pc:{...c,validateSample:()=>{}},state:{bulk:b},historyGuard:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>{h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to));positions.push(h.scrollTop)},historySettled:async()=>{now+=700;return rows},historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:()=>{},sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length}),historyDownload:d=>{output=d;return 'sample.json'}};
+ vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+ a.equal(output.status,'failed');a.match(output.error,/60秒未取得新訊息/);a.equal(output.count,2);
+ a.ok(b.scrollStats.noGrowthWindows>8);a.ok(positions.some((v,i)=>i>0&&positions[i-1]-v>=250));a.ok(now<75000);
+});
