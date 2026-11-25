@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.21",
-  "version_name": "V0.10.21 前輩失去重疊補接",
-  "description": "輪迴檔案館：前輩掃描高度變動後重疊補接與突破隔離。",
+  "version": "0.10.22",
+  "version_name": "V0.10.22 前輩急速返回斷點續掃",
+  "description": "輪迴檔案館：前輩保全斷點續掃、多張延遲圖片參照。",
   "permissions": [
     "storage",
     "activeTab",

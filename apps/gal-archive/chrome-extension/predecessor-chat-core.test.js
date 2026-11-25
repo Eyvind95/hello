@@ -250,3 +250,36 @@ test('actual historyRun rejoins after height changes during an unsuccessful upwa
  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
  a.equal(output.status,'completed');a.equal(output.count,2);a.equal(targets[0].target,9915);a.equal(targets[1].target,29957.5);a.equal(targets[1].allowBoost,false);a.equal(b.scrollStats.rejoinSuccesses,1);
 });
+
+test('two distinct delayed generic images enrich an empty observation, not conflicting nonempty counts',()=>{
+ const old=r('multi'),img=i=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/'+i.repeat(8)+'-1111-4111-8111-111111111111'});
+ const fresh={...old,attachments:[img('1'),img('2')]},changes=[];
+ a.deepEqual(c.mergeUp([old],[fresh],x=>changes.push(x)),[fresh]);
+ a.equal(changes[0].currentAttachments.length,2);
+ a.deepEqual(c.mergeUp([fresh],[old]),[fresh]);
+ a.throws(()=>c.mergeUp([{...old,attachments:[img('1')]}],[fresh]));
+ a.throws(()=>c.mergeUp([old],[{...fresh,attachments:[img('1'),img('1')]}]));
+ a.throws(()=>c.mergeUp([old],[{...fresh,text:'changed'}]));
+});
+test('resume checkpoint rejects samples, false edges, other chats and unverified inherited checkpoints',()=>{
+ const cp={...raw,status:'failed',scannerVersion:'0.10.21',error:'stopped',evidence:{...raw.evidence,topReached:false,continuity:false,windows:3,hostProof:{maxRange:2000,observedMovement:true}}};
+ const rows=c.validateCheckpoint(cp,raw.sourceUrl);
+ a.deepEqual(rows,[r('1'),r('2','assistant')]);
+ a.throws(()=>c.validateCheckpoint(raw,raw.sourceUrl));
+ a.throws(()=>c.validateCheckpoint(cp,'https://chatgpt.com/c/other'));
+ a.throws(()=>c.validateCheckpoint({...cp,evidence:{...cp.evidence,hostProof:{maxRange:0,observedMovement:false}}},raw.sourceUrl));
+ a.throws(()=>c.validateCheckpoint({...cp,evidence:{...cp.evidence,resume:{tailVerified:true,frontierVerified:false}}},raw.sourceUrl));
+});
+test('resume validates tail, fast return interior, and two adjacent frontier rows without accepting gaps',()=>{
+ const saved=Array.from({length:30},(_,i)=>r(String(i)));
+ const seeded=c.resumeSeed(saved,saved.slice(-3));
+ a.equal(seeded.minIndex,27);a.equal(seeded.rows.length,30);a.equal(seeded.frontier,false);
+ a.equal(c.resumeStep(674,27),3370);a.equal(c.resumeStep(674,12),0);
+ a.throws(()=>c.resumeSeed(saved,saved.slice(5,10)));
+ a.throws(()=>c.resumeSeed(saved,[saved[27],saved[29]]));
+ a.throws(()=>c.resumeSeed(saved,[saved[28],{...saved[29],text:'different'}]));
+ a.equal(c.resumeWindow(saved,saved.slice(0,1)).frontier,false);
+ a.equal(c.resumeWindow(saved,saved.slice(0,2)).frontier,true);
+ a.deepEqual(c.mergeUp(saved,[r('earlier'),...saved.slice(0,2)]).map(x=>x.id),['earlier',...saved.map(x=>x.id)]);
+ a.throws(()=>c.validateRaw({...raw,evidence:{...raw.evidence,resume:{baseCount:2,tailVerified:true,frontierVerified:false,sourceSha256:'a'.repeat(64)}}}));
+});
