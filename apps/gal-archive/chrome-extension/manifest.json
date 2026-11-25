@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.10",
-  "version_name": "V0.10.10 前輩網頁小按鈕",
-  "description": "輪迴檔案館：ChatGPT 網頁內前輩聊天掃描入口，無須工具列。",
+  "version": "0.10.11",
+  "version_name": "V0.10.11 無標記GPT完整DOM",
+  "description": "輪迴檔案館：無標記 GPT 回覆完整 DOM 讀取、失敗結構取證。",
   "permissions": [
     "storage",
     "activeTab",

@@ -1390,24 +1390,112 @@
       const r=el.getBoundingClientRect();return historyVisible(el)&&r.bottom>=v.top&&r.top<=v.bottom;
     })||isGenerating();
   }
+
+  // The legacy assistantElements() fallback is a *locator*, not the archive
+  // source: its text walk has a 30k cutoff. Read the complete rendered suffix
+  // of a structurally confirmed composite turn instead, with no length cap.
+  const HISTORY_STRUCT='pre,blockquote,table,h1,h2,h3,h4,h5,h6,ul,ol,em,strong,code,del';
+  const HISTORY_ATTACHMENT='img,a[href],[data-testid*="attachment"],[data-testid*="file-chip"]';
+  const HISTORY_SKIP=FALLBACK_SKIP+', [data-testid="conversation-turn-tools"], [data-testid="turn-actions"], [data-radix-popper-content-wrapper]';
+  function historyAttachment(n){
+    const src=n.tagName==='IMG'?n.getAttribute('src'):n.tagName==='A'?n.getAttribute('href'):null;
+    return {kind:n.tagName==='IMG'?'image-reference':n.tagName==='A'?'link':'attachment-reference',label:n.getAttribute('alt')||n.getAttribute('aria-label')||n.innerText||'',url:src||null};
+  }
+  function historyIssue(message,owner,details={}){
+    const error=Error(message);
+    if(owner){
+      // Local failure evidence only, never sent to Firebase. Retain enough
+      // structure to distinguish an unmarked renderer from a missing turn.
+      const text=String(owner.innerText||'');
+      error.historyEvidence={turnKey:owner.getAttribute('data-turn-key'),testId:owner.getAttribute('data-testid'),role:owner.getAttribute('data-message-author-role'),tag:owner.tagName,visibleTextLength:text.length,visibleText:text.slice(0,200000),textEvidenceTruncated:text.length>200000,children:[...owner.children].slice(0,60).map(n=>({tag:n.tagName,testId:n.getAttribute('data-testid'),role:n.getAttribute('data-message-author-role'),turnKey:n.getAttribute('data-turn-key'),textLength:String(n.innerText||'').length})),...details};
+    }
+    return error;
+  }
+  function historyCompositeRead(owner,users){
+    const turn=owner.getAttribute('data-turn-key');
+    if(!turn||users.length!==1||!owner.contains(users[0])||users[0]===owner)throw historyIssue('無標記 GPT 回覆缺少唯一玩家邊界或穩定回合 ID',owner,{userBoundaries:users.length});
+    const user=users[0],following=Node.DOCUMENT_POSITION_FOLLOWING;
+    const after=n=>!user.contains(n)&&!!(user.compareDocumentPosition(n)&following);
+    const eligible=n=>{
+      if(n.nodeType!==Node.ELEMENT_NODE)return false;
+      if(n===user||user.contains(n)||n.closest(HISTORY_SKIP)||isUserDescendant(n))return false;
+      const css=getComputedStyle(n);
+      return historyVisible(n)||(css.display==='contents'&&css.visibility!=='hidden'&&!n.closest('[aria-hidden="true"],[hidden]'));
+    };
+    const pieces=[],structures=[],attachments=[],segments=[],textNodes=[];
+    let anchor=null,lastBlock=null;
+    const blockFor=n=>{
+      for(let x=n;x&&x!==owner;x=x.parentElement){
+        const display=getComputedStyle(x).display;
+        if(/^(block|list-item|table|table-row|flex|grid|flow-root|table-cell)/.test(display)&&display!=='inline-block')return x;
+        if(x.matches('p,pre,li,blockquote,h1,h2,h3,h4,h5,h6,tr'))return x;
+      }
+      return owner;
+    };
+    const emit=(n,value,hardBreak=false)=>{
+      const parent=n.nodeType===Node.TEXT_NODE?n.parentElement:n;
+      if(!parent||!value)return;
+      if(!anchor&&value.trim())anchor=parent;
+      const block=blockFor(parent);
+      if(lastBlock&&lastBlock!==block&&pieces.length&&!pieces.at(-1).endsWith('\n'))pieces.push('\n');
+      pieces.push(value);lastBlock=block;
+      if(!hardBreak){textNodes.push(value);segments.push({tag:parent.tagName.toLowerCase(),text:value})}
+    };
+    const visit=n=>{
+      if(n.nodeType===Node.TEXT_NODE){
+        if(after(n)&&eligible(n.parentElement)){
+          // Preserve exact text-node characters; indentation-only DOM nodes
+          // are not rendered prose unless inside pre/code or inline siblings.
+          const v=n.nodeValue||'';
+          if(v.trim()||n.parentElement.closest('pre,code')||(!/[\r\n]/.test(v)&&v.length))emit(n,v);
+        }
+        return;
+      }
+      if(n.nodeType!==Node.ELEMENT_NODE||n===user||user.contains(n))return;
+      if(n===owner||n.contains(user)){
+        for(const ch of n.childNodes)visit(ch);
+        return;
+      }
+      if(!after(n)||!eligible(n))return;
+      // Only remove explicit role headings outside an actual prose block;
+      // literal "ChatGPT 說" inside p/pre/code remains ordinary content.
+      if(n.matches('h1,h2,h3,h4,h5,h6,[data-testid="message-author-label"]')&&RESPONSE_LABEL.test(String(n.innerText||'').trim()))return;
+      if(n.matches('br')){emit(n,'\n',true);return}
+      if(n.matches(HISTORY_STRUCT))structures.push({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''});
+      if(n.matches(HISTORY_ATTACHMENT)){attachments.push(historyAttachment(n));if(!anchor)anchor=n}
+      for(const ch of n.childNodes)visit(ch);
+    };
+    visit(owner);
+    const text=pieces.join('');
+    if(!anchor||(!text.trim()&&!attachments.length))throw historyIssue('玩家之後未找到可證明的 GPT 渲染內容',owner,{userBoundaries:users.length});
+    if(!text.trim()&&attachments.every(x=>x.kind==='link'))throw historyIssue('玩家之後只有連結，無法確認 GPT 正文',owner);
+    return {anchor,text,structure:structures,attachments,segments,sourceTextNodes:textNodes.length,sourceTextCharacters:textNodes.reduce((n,v)=>n+v.length,0)};
+  }
+
   function historyRead(host){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
     const add=(role,el,body,identityHint,fallback=false)=>{
       if(!el||!body||!root.contains(el)||!historyVisible(el))return;
       const owner=historyOwner(el),native=el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
       const turn=owner.getAttribute('data-turn-key'); // data-testid ordinal alone is not a source ID
-      if(fallback)throw Error('未能確認完整 GPT 正文容器，不能使用可能截斷的備援文字');
-      if(!native&&!turn)throw Error('訊息缺少穩定來源 ID（禁止使用畫面位置）');
+      if(fallback){
+        if(role!=='assistant'||el!==owner)throw historyIssue('備援 GPT 容器與回合不符',owner);
+        const proof=historyCompositeRead(owner,outerUsers().filter(u=>owner.contains(u)&&historyVisible(u)));
+        const stable='assistant|turn:'+turn;
+        const row={id:stable,role:'assistant',text:proof.text,identityBasis:'turn-key',sourceCreatedAt:null,structure:proof.structure,attachments:proof.attachments,contentBasis:'composite-after-user-dom',sourceTextNodes:proof.sourceTextNodes,sourceTextCharacters:proof.sourceTextCharacters,domTextSegments:proof.segments};
+        const sameOwner=owners.get(owner)||[];
+        if(sameOwner.some(x=>x.row.id===stable))throw historyIssue('重複備援 GPT 回合 ID',owner);
+        const item={row,el:proof.anchor,owner};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
+        return;
+      }
+      if(!native&&!turn)throw historyIssue('訊息缺少穩定來源 ID（禁止使用畫面位置）',owner,{role});
       const roleMarker=el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
-      if(roleMarker&&roleMarker!==role)throw Error('角色標記衝突');
+      if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
       const stable=role+'|'+(native?'message:'+native:'turn:'+turn);
       const text=body.innerText||''; // preserve literal text; do not strip an apparent UI label
       if(TRUNCATED_TAIL.test(text)&&expandButtons(owner).length)throw Error('原始訊息仍折疊');
-      const structure=[...body.querySelectorAll('pre,blockquote,table,h1,h2,h3,h4,h5,h6,ul,ol,em,strong,code,del')].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
-      const attachments=[...el.querySelectorAll('img,a[href],[data-testid*="attachment"],[data-testid*="file-chip"]')].filter(historyVisible).map(n=>{
-        const src=n.tagName==='IMG'?n.getAttribute('src'):n.tagName==='A'?n.getAttribute('href'):null;
-        return {kind:n.tagName==='IMG'?'image-reference':n.tagName==='A'?'link':'attachment-reference',label:n.getAttribute('alt')||n.getAttribute('aria-label')||n.innerText||'',url:src||null};
-      });
+      const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
+      const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
       const row={id:stable,role,text,identityBasis:native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments};
       const sameOwner=owners.get(owner)||[];
@@ -1440,8 +1528,15 @@
     const turns=[...root.querySelectorAll('[data-turn-key],[data-testid^="conversation-turn-"]')].filter(el=>
       !el.parentElement?.closest('[data-turn-key],[data-testid^="conversation-turn-"]')&&historyVisible(el)&&
       (el.hasAttribute('data-turn-key')||/^conversation-turn-\d+$/.test(el.getAttribute('data-testid')||'')));
-    for(const turn of turns)if(!entries.some(x=>turn.contains(x.el)||x.owner===turn))throw Error('已掛載回合未辨識到完整訊息');
-    entries.sort((a,b)=>a.el===b.el?0:(a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1));
+    for(const turn of turns)if(!entries.some(x=>turn.contains(x.el)||x.owner===turn))throw historyIssue('已掛載回合未辨識到完整訊息',turn);
+    entries.sort((a,b)=>{
+      // Direct text after a user may be anchored to the composite owner
+      // itself; its ancestor DOM position must never reverse the two roles.
+      if(a.owner===b.owner&&a.row.role!==b.row.role&&[a.row.contentBasis,b.row.contentBasis].includes('composite-after-user-dom'))return a.row.role==='user'?-1:1;
+      if(a.el===b.el)return 0;
+      return a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1;
+    });
+    for(const group of owners.values())if(group.some(x=>x.row.contentBasis==='composite-after-user-dom')&&(group.filter(x=>x.row.role==='user').length!==1||group.filter(x=>x.row.role==='assistant').length!==1))throw historyIssue('備援 GPT 與玩家來源無法形成唯一回合',group[0].owner);
     const rows=entries.map(x=>x.row);pc.validateRows(rows);
     if(!rows.length)throw Error('尚未讀到對話訊息');
     return rows;
@@ -1470,7 +1565,7 @@
             if(last!==fingerprint){last=fingerprint;lastAt=Date.now()}
             reason='等待原文與格式穩定';
           }
-        }catch(e){last=null;reason=String(e.message||e)}
+        }catch(e){last=null;reason=String(e.message||e);b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null}}
       }
       historyStatus(b,reason+'（最多等待60秒）');await sleep(650);
     }
@@ -1490,7 +1585,8 @@
     for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
-    return {format:pc.FORMAT,version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest'}};
+    if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
+    return {format:pc.FORMAT,version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
