@@ -351,5 +351,34 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+// Navigation hints only; never a coverage or continuity proof. Bounds
+// belong to one scrollHeight and are invalidated on virtualization growth.
+function anchorNavigation(target,indices,geometry,previous={}){
+ const {top,height,client}=geometry;
+ if(!Number.isInteger(target)||target<0||!Number.isFinite(top)||!Number.isFinite(height)||!Number.isFinite(client)||client<=0||height<client)throw Error('錨點定位參數不符');
+ const max=Math.max(0,height-client),known=[...new Set(indices)].filter(Number.isInteger).sort((a,b)=>a-b);
+ if(known.includes(target))return {found:true,top,height};
+ let low=previous.height===height?previous.low:null,high=previous.height===height?previous.high:null;
+ const min=known[0],maxIndex=known.at(-1);
+ if(known.length&&min>target)high=Math.min(high??max,top);
+ else if(known.length&&maxIndex<target)low=Math.max(low??0,top);
+ else if(known.length)return {stop:true,reason:'可見序列跨過目標但沒有指定ID',height};
+ // A rankless window is not an identity or a proven bound. Retreat toward
+ // the last known bound rather than guessing that it belongs to the prefix.
+ let destination;
+ if(!known.length){
+  if(low!==null&&high!==null)destination=(low+high)/2;
+  else if(high!==null)destination=(top+high)/2;
+  else if(low!==null)destination=(top+low)/2;
+  else destination=max;
+ }else if(low!==null&&high!==null&&high>low)destination=(low+high)/2;
+ else{
+  const earlier=min>target,delta=earlier?min-target:target-maxIndex;
+  const step=Math.min(64*client,Math.max(client*.6,delta*client*.65));
+  destination=top+(earlier?-step:step);
+ }
+ destination=Math.max(0,Math.min(max,destination));
+ return {top:destination,height,low,high,knownMin:min??null,knownMax:maxIndex??null};
+}
+return {anchorNavigation,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });
