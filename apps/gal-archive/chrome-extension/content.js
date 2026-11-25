@@ -1472,7 +1472,29 @@
     return {anchor,text,structure:structures,attachments,segments,sourceTextNodes:textNodes.length,sourceTextCharacters:textNodes.reduce((n,v)=>n+v.length,0)};
   }
 
-  function historyRead(host){
+  // The predecessor scanner is read-only except for scrolling. A collapsed
+  // preview is often a CSS clip; never click it to change the live layout.
+  function historyReadText(body,owner,id,onFold){
+    const raw=body.innerText||'';
+    const controls=[...new Set([...expandButtons(owner),...owner.querySelectorAll('button,[role="button"],a,[tabindex],[class*="cursor-pointer"],[class*="cursor-interaction"]')].filter(c=>historyVisible(c)&&/^(?:顯示較少|顯示較多|顯示更多|顯示全部|展開全文|Show less|Show more|Read more)$/i.test(String(c.innerText||c.textContent||c.getAttribute('aria-label')||'').trim())))];
+    let text=raw;
+    for(const control of controls){
+      const label=String(control.innerText||control.textContent||control.getAttribute('aria-label')||'').trim();
+      let removedSuffix='';
+      // Strip only an actual trailing UI node in this body. Literal prose
+      // with the same words, or a control outside the body, is preserved.
+      if(body!==control&&body.contains(control)){
+        const range=document.createRange();
+        range.setStartAfter(control);range.setEnd(body,body.childNodes.length);
+        if(!range.toString().trim()&&text.endsWith('\n'+label)){
+          removedSuffix='\n'+label;text=text.slice(0,-removedSuffix.length);
+        }
+      }
+      onFold({messageId:id,label,collapsed:EXPAND_LABEL.test(label),rawLength:raw.length,removedSuffix,fullTextVerified:false});
+    }
+    return text;
+  }
+  function historyRead(host,onFold=()=>{}){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
     const add=(role,el,body,identityHint,fallback=false)=>{
       if(!el||!body||!root.contains(el)||!historyVisible(el))return;
@@ -1492,8 +1514,7 @@
       const roleMarker=el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
       if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
       const stable=role+'|'+(native?'message:'+native:'turn:'+turn);
-      const text=body.innerText||''; // preserve literal text; do not strip an apparent UI label
-      if(TRUNCATED_TAIL.test(text)&&expandButtons(owner).length)throw Error('原始訊息仍折疊');
+      const text=historyReadText(body,owner,stable,onFold);
       const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
@@ -1575,32 +1596,7 @@
       }
       else{spinAt=0;
         try{
-          const root=historyRoot(b.host);
-          const controls=[...new Set([...root.querySelectorAll('[data-turn-key],[data-message-author-role]')].filter(historyVisible).flatMap(expandButtons))].filter(historyVisible);
-          if(controls.length){
-            // Click only verified expansion controls, never collapse controls.
-            // Do not repeatedly click the same mounted control while it settles.
-            const c=controls.find(x=>!x.disabled&&!b.expansionAttempts.has(x));
-            if(c){
-              const owner=historyOwner(c),from=b.host.scrollTop,beforeHeight=b.host.scrollHeight;
-              b.expansionAttempts.add(c);b.scrollStats.expansionClicks++;
-              historyTrace(b,'expand-click',{from,turnKey:owner.getAttribute('data-turn-key'),label:String(c.innerText||c.textContent||c.getAttribute('aria-label')||'').trim()});
-              c.click();await sleep(180);
-              historyTrace(b,'expand-result',{from,beforeHeight,actual:b.host.scrollTop});
-              if(upward){
-                // When layout height changes, the old absolute coordinate is
-                // not reliable. Restore the prior position only for a clear
-                // jump to the bottom, then require fresh strict overlap.
-                if(b.host.scrollTop>from+Math.max(32,b.host.clientHeight*.75)&&historyAtBottom(b.host)){
-                  b.scrollStats.expansionRestores++;historyScroll(b.host,from);
-                }
-                target=b.host.scrollTop;targetHeight=b.host.scrollHeight;
-              }
-            }
-            last=null;lastRows=null;reason='等待長訊息展開';
-          }
-          else{
-            const rows=historyRead(b.host),fingerprint=pc.fingerprint(rows);
+            const rows=historyRead(b.host,observation=>historyFoldObservation(b,observation)),fingerprint=pc.fingerprint(rows);
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
             if(lastRows&&last!==null&&last!==fingerprint){
               b.scrollStats.fingerprintChanges++;
@@ -1616,7 +1612,6 @@
               last=fingerprint;lastAt=Date.now();
             }
             reason='等待原文與格式穩定';
-          }
         }catch(e){last=null;reason=String(e.message||e);b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null}}
       }
       historyStatus(b,reason+'（最多等待60秒）');await sleep(350);
@@ -1637,6 +1632,12 @@
     trace.push({at:new Date().toISOString(),event,count:b.rows.length,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,clientHeight:b.host.clientHeight,...details});
     if(trace.length>40)trace.shift();
   }
+  function historyFoldObservation(b,observation){
+    const key=JSON.stringify(observation);
+    if(b.foldObservations.has(key))return;
+    if(b.foldObservations.size>=2000){b.foldObservationOverflow++;return}
+    b.foldObservations.set(key,observation);
+  }
   function historyAttachmentChange(b,change){
     const key=JSON.stringify(change);
     if(b.attachmentChangeKeys.has(key))return;
@@ -1646,13 +1647,14 @@
   function historyPayload(b,status,error){
     const rows=(b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
+    if(b.foldObservations.size)warnings.push('前輩掃描不點擊展開／收合；已掛載正文照讀，折疊觀測及確定移除的尾端介面標籤另存證據，未獨立驗證折疊正文完整性，需後續核對。');
     if(b.attachmentChanges.some(x=>!x.type))warnings.push('臨時圖片 blob 網址曾變動；僅核對附件參照位置與標籤，未驗證圖片位元組。');
     if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的單張圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
     for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
@@ -1724,7 +1726,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],expansionAttempts:new WeakSet(),scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     state.bulk=b;
     try{
       // Disable only this chat's existing automatic upload so scrolling over
