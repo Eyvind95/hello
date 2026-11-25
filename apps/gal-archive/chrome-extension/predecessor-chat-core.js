@@ -35,6 +35,12 @@ function mergeUp(previous,live){
  check(first.i===0||first.at===0,'新增訊息沒有接在已保全的最前端');
  return [...live.slice(0,first.i),...previous];
 }
+function edgeProof(rows,all,{atEdge,stableMs,edge,loading=false,position=null,total=null}={}){
+ if(!atEdge||loading||!rows.length||!all.length||!Number.isFinite(stableMs))return false;
+ if(edge==='top')return stableMs>=8000&&rows[0].id===all[0].id&&(!Number.isInteger(position)||position===1);
+ if(edge==='bottom')return stableMs>=3000&&rows.at(-1).id===all.at(-1).id&&(!Number.isInteger(position)||!Number.isInteger(total)||position===total);
+ return false;
+}
 function sourceId(url){
  const u=new URL(url);check(u.origin==='https://chatgpt.com'&&/^\/(?:c\/[A-Za-z0-9-]+|g\/[^/]+\/c\/[A-Za-z0-9-]+)\/?$/.test(u.pathname)&&!u.search&&!u.hash,'聊天來源網址不符');
  return u.pathname.replace(/\/$/,'').split('/').at(-1);
@@ -56,10 +62,10 @@ function validateClassification(raw,data,hash){
  for(const item of data.items){
   check(item&&validId(item.id)&&!seen.has(item.id)&&categories.includes(item.category)&&typeof item.title==='string'&&item.title.trim()&&item.title.length<=300&&Array.isArray(item.messageIds)&&item.messageIds.length&&new Set(item.messageIds).size===item.messageIds.length&&item.messageIds.every(x=>ids.has(x)),'分類項目缺少有效原文證據');
   check(item.note===undefined||typeof item.note==='string'&&item.note.length<=3000,'分類說明過長或不符');
-  check(!Object.hasOwn(item,'text')&&!Object.hasOwn(item,'body')&&!Object.hasOwn(item,'messages'),'分類只能引用，不得覆蓋原始正文');
+  check(Object.keys(item).every(k=>['id','category','title','messageIds','note'].includes(k)),'分類只能引用，不得覆蓋原始正文或夾帶未核對的分類欄位');
   seen.add(item.id);
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,VERSION,categories,validateRows,mergeUp,sourceId,validateRaw,validateClassification};
+return {FORMAT,CLASS,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification};
 });

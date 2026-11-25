@@ -1386,7 +1386,7 @@
   function historyLoading(host){
     const root=historyRoot(host),v=bulkViewport(host);
     return [...root.querySelectorAll('[aria-busy="true"],[role="progressbar"],[data-testid*="loading"],[class~="animate-spin"]')].some(el=>{
-      if(el.closest('#'+HISTORY_PANEL+',button,[data-message-author-role]'))return false;
+      if(el.closest('#'+HISTORY_PANEL+', [data-message-author-role]'))return false;
       const r=el.getBoundingClientRect();return historyVisible(el)&&r.bottom>=v.top&&r.top<=v.bottom;
     })||isGenerating();
   }
@@ -1395,13 +1395,14 @@
     const add=(role,el,body,identityHint,fallback=false)=>{
       if(!el||!body||!root.contains(el)||!historyVisible(el))return;
       const owner=historyOwner(el),native=el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
-      const turn=owner.getAttribute('data-turn-key')||owner.getAttribute('data-testid');
+      const turn=owner.getAttribute('data-turn-key'); // data-testid ordinal alone is not a source ID
       if(fallback)throw Error('未能確認完整 GPT 正文容器，不能使用可能截斷的備援文字');
       if(!native&&!turn)throw Error('訊息缺少穩定來源 ID（禁止使用畫面位置）');
       const roleMarker=el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
       if(roleMarker&&roleMarker!==role)throw Error('角色標記衝突');
       const stable=role+'|'+(native?'message:'+native:'turn:'+turn);
-      const text=cleanArchiveLessTail(body.innerText||'');
+      const text=body.innerText||''; // preserve literal text; do not strip an apparent UI label
+      if(TRUNCATED_TAIL.test(text)&&expandButtons(owner).length)throw Error('原始訊息仍折疊');
       const structure=[...body.querySelectorAll('pre,blockquote,table,h1,h2,h3,h4,h5,h6,ul,ol,em,strong,code,del')].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll('img,a[href],[data-testid*="attachment"],[data-testid*="file-chip"]')].filter(historyVisible).map(n=>{
         const src=n.tagName==='IMG'?n.getAttribute('src'):n.tagName==='A'?n.getAttribute('href'):null;
@@ -1418,7 +1419,11 @@
       if(el.parentElement?.closest('[data-message-author-role]')||!historyVisible(el))continue;
       const role=el.getAttribute('data-message-author-role');
       if(!['user','assistant'].includes(role))throw Error('遇到未支援的明確訊息角色：'+role);
-      const body=role==='user'?(el.querySelector(USER_BUBBLE_SELECTOR)||el.querySelector('.whitespace-pre-wrap')||el):(el.querySelector('[data-markdown-copy="contents"],.markdown,[data-dil-message-id]')||el);
+      const candidates=role==='user'?[...el.querySelectorAll(USER_BUBBLE_SELECTOR+', .whitespace-pre-wrap')]:[...el.querySelectorAll('[data-markdown-copy="contents"],.markdown,[data-dil-message-id]')];
+      const roots=candidates.filter(n=>!candidates.some(other=>other!==n&&other.contains(n)));
+      // A role root with multiple separate content bodies must be preserved
+      // in full rather than selecting just the first Markdown/DIL segment.
+      const body=roots.length===1?roots[0]:el;
       add(role,el,body,null);explicit.push({el,role,owner:historyOwner(el)});
     }
     // Existing known ChatGPT layouts, but no text-based deduplication or
@@ -1440,6 +1445,14 @@
     const rows=entries.map(x=>x.row);pc.validateRows(rows);
     if(!rows.length)throw Error('尚未讀到對話訊息');
     return rows;
+  }
+  function historyEdgeOrdinal(b,edge){
+    // Only explicit accessibility list metadata is strong enough to reject
+    // an apparent edge. Never infer total count from a testid or text length.
+    const nodes=[...historyRoot(b.host).querySelectorAll('[aria-posinset][aria-setsize]')].filter(n=>historyVisible(n)&&(n.hasAttribute('data-turn-key')||n.hasAttribute('data-message-author-role')||/^conversation-turn-\d+$/.test(n.getAttribute('data-testid')||'')));
+    if(!nodes.length)return {};
+    const n=edge==='top'?nodes[0]:nodes.at(-1),position=Number(n.getAttribute('aria-posinset')),total=Number(n.getAttribute('aria-setsize'));
+    return position>0&&total>=position&&Number.isInteger(position)&&Number.isInteger(total)?{position,total}:{};
   }
   async function historySettled(b){
     const until=Date.now()+60000;let last=null,lastAt=0,reason='';
@@ -1489,16 +1502,17 @@
     let status='failed',error=null;
     try{
       historyStatus(b,'定位聊天最底端');
-      let stable=0,prev=null;
+      let stable=0,prev=null,bottomDeadline=Date.now()+60000;
       for(;;){
-        historyGuard(b);historyScroll(b.host,b.host.scrollHeight);const rows=await historySettled(b);
+        historyGuard(b);if(Date.now()>bottomDeadline)throw Error('60秒內無法確認完整底端');
+        historyScroll(b.host,b.host.scrollHeight);const rows=await historySettled(b);
         const sig=JSON.stringify([rows,b.host.scrollHeight]);
-        if(historyAtBottom(b.host)&&sig===prev){if(!stable)stable=Date.now();if(Date.now()-stable>=3100){b.bottomStableMs=Date.now()-stable;b.bottomReached=true;b.rows=pc.mergeUp([],rows);b.windows++;break}}
+        if(historyAtBottom(b.host)&&sig===prev){if(!stable)stable=Date.now();if(pc.edgeProof(rows,rows,{edge:'bottom',atEdge:true,stableMs:Date.now()-stable,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'bottom')})){b.bottomStableMs=Date.now()-stable;b.bottomReached=true;b.rows=pc.mergeUp([],rows);b.windows++;break}}
         else{stable=0;prev=sig}
         // Keep the most recent observed tail as emergency evidence only.
         b.rows=rows;await sleep(650);
       }
-      let topSince=0,topSignature=null,stallAt=Date.now(),lastCount=b.rows.length;
+      let topSince=0,topSignature=null,stallAt=Date.now(),lastCount=b.rows.length,edgeAttempt=0;
       for(;;){
         historyGuard(b);
         const pos=b.host.scrollTop,step=Math.max(24,Math.floor(b.host.clientHeight*.27));
@@ -1515,9 +1529,11 @@
         historyStatus(b,'向上掃描');
         const atTop=b.host.scrollTop<=2,sig=JSON.stringify([rows[0]?.id,b.rows.length,b.host.scrollHeight]);
         if(atTop){
+          if(!edgeAttempt)edgeAttempt=Date.now();
           if(sig!==topSignature){topSignature=sig;topSince=Date.now()}
-          if(Date.now()-topSince>=8400){b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
-        }else{topSince=0;topSignature=null}
+          if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
+          if(Date.now()-edgeAttempt>60000)throw Error('頁面已在頂端，但首則訊息或頂端穩定證據不符');
+        }else{topSince=0;topSignature=null;edgeAttempt=0}
         if(b.rows.length!==lastCount||Math.abs(pos-b.host.scrollTop)>2){lastCount=b.rows.length;stallAt=Date.now()}
         else if(!atTop&&Date.now()-stallAt>60000)throw Error('向上捲動超過60秒無進展');
         await sleep(480);
@@ -1534,6 +1550,7 @@
   async function historyBegin(requestedTitle){
     if(!pc||!valid())return {ok:false,error:'請開啟具體 ChatGPT 聊天並載入新版'};
     if(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating())return {ok:false,error:'此聊天正在監看擷取、掃描或生成，稍後再開始'};
+    if(document.getElementById(HISTORY_PANEL))return {ok:false,error:'前一批保全仍在頁面，請確認下載並關閉面板後再開始'};
     const title=String(requestedTitle||document.title||'').replace(/\s*[-–|]\s*ChatGPT\s*$/i,'').trim();
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};

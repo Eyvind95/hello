@@ -21,3 +21,20 @@ test('independent raw import requires boundary evidence; incomplete is not class
  a.throws(()=>c.validateClassification(raw,{...data,items:[{...data.items[0],messageIds:['not-real']}]},hash));
  a.throws(()=>c.validateClassification(raw,{...data,items:[{...data.items[0],text:'rewrite'}]},hash));
 });
+
+test('top/bottom proof requires stable exact boundaries and respects known accessibility ordinals',()=>{
+ const rows=[r('1'),r('2','assistant'),r('3')];
+ a.equal(c.edgeProof(rows,rows,{edge:'top',atEdge:true,stableMs:8500,position:1,total:3}),true);
+ a.equal(c.edgeProof(rows.slice(1),rows,{edge:'top',atEdge:true,stableMs:8500}),false);
+ a.equal(c.edgeProof(rows,rows,{edge:'top',atEdge:true,stableMs:8500,position:2,total:4}),false);
+ a.equal(c.edgeProof(rows,rows,{edge:'top',atEdge:true,stableMs:8500,loading:true}),false);
+ a.equal(c.edgeProof(rows,rows,{edge:'bottom',atEdge:true,stableMs:3500,position:2,total:3}),false);
+ a.equal(c.edgeProof(rows,rows,{edge:'bottom',atEdge:true,stableMs:3500,position:3,total:3}),true);
+});
+test('attachment-only rows accepted, repeated source IDs and positional evidence rejected',()=>{
+ const media={...r('media'),text:'',attachments:[{kind:'attachment-reference',label:'file.pdf',url:null}]};
+ a.equal(c.validateRows([media]).size,1);
+ a.throws(()=>c.validateRows([{...media,attachments:[]}]));
+ a.throws(()=>c.validateRows([{...media,identityBasis:'position'}]));
+ a.throws(()=>c.validateRows([media,media]));
+});
