@@ -86,7 +86,7 @@ test('adaptive scan accelerates over repeated windows, never resets no-growth de
 test('actual historyRun exits no-growth despite continued scroll movements',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  let now=1000,output,positions=[];
  const rows=[r('1'),r('2','assistant')];
  const host={scrollTop:100000,scrollHeight:100100,clientHeight:100};
@@ -242,7 +242,7 @@ test('rejoin recovery suppresses further breakthroughs without dropping reset ev
 test('actual historyRun rejoins after height changes during an unsuccessful upward probe',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  let now=1000,output,up=0,targets=[];
  const tail=[r('tail')],older=[r('older'),r('tail')],host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
  const b={host,rows:[],sample:10,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
@@ -288,7 +288,7 @@ test('resume validates tail, fast return interior, and two adjacent frontier row
 test('actual historyRun resumes from a validated tail, fast returns and then extends the checkpoint',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  const saved=Array.from({length:30},(_,i)=>r(String(i))),older=r('older');
  let now=1000,output,up=0;const trace=[],targets=[];
  const host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
@@ -330,7 +330,7 @@ test('actual historySettled bounds recovery cycle and emits recoverable error',a
 test('actual historyRun tries another overlap plan after bounded recovery failure',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  let now=1000,output,up=0;const targets=[];
  const tail=[r('tail')],older=[r('older'),r('tail')],host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
  const b={host,rows:[],sample:10,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
