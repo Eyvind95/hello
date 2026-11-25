@@ -22,5 +22,5 @@ test('ZIP UTF-8 filenames, CRC32, central directory and exact content',async()=>
 });
 test('website entry, standalone HTML and PWA include reading exporter',()=>{
  const html=fs.readFileSync(p.join(__dirname,'index.html'),'utf8'),sw=fs.readFileSync(p.join(__dirname,'sw.js'),'utf8');
- a.match(html,/id="readingZipBtn"/);a.match(html,/ArchiveReadingExport\.plan\(records,WORLDS\)/);a.match(html,/ArchiveReadingExport\.cycleReadingName/);a.ok(html.includes("'archive-reading-export.js?v=1'"));a.ok(sw.includes('archive-reading-export.js?v=1'));a.ok(html.includes('V5.122'));a.ok(html.includes('0.10.31'));
+ a.match(html,/id="readingZipBtn"/);a.match(html,/ArchiveReadingExport\.plan\(cycles,WORLDS\)/);a.match(html,/downloadReadingZip\(records,/);a.match(html,/downloadReadingZip\(\[r\],b\)/);a.match(html,/ArchiveReadingExport\.cycleReadingName/);a.ok(html.includes("'archive-reading-export.js?v=1'"));a.ok(sw.includes('archive-reading-export.js?v=1'));a.ok(html.includes('V5.122'));a.ok(html.includes('0.10.31'));
 });
