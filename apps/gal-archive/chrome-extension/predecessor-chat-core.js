@@ -21,6 +21,18 @@ function compareRow(previous,current){
  }
  return {equal:fields.length===0,fields,changes};
 }
+// Only a previously unobserved single generic user image may be enriched.
+// The two DOM observations are not proof of the original attachment bytes.
+function reconcileOverlap(previous,current){
+ const comparison=compareRow(previous,current);
+ if(comparison.equal)return {...comparison,row:previous};
+ if(comparison.fields.length!==1||comparison.fields[0]!=='attachments'||previous.role!=='user'||!previous.text.trim())return comparison;
+ const one=a=>a.length===1&&transientImage(a[0])&&a[0].label==='使用者附件';
+ const appeared=previous.attachments.length===0&&one(current.attachments);
+ const disappeared=current.attachments.length===0&&one(previous.attachments);
+ if(!appeared&&!disappeared)return comparison;
+ return {equal:true,fields:[],row:appeared?{...previous,attachments:current.attachments.slice()}:previous,changes:[{messageId:previous.id,type:appeared?'image-reference-appeared':'image-reference-not-observed',previousAttachments:previous.attachments,currentAttachments:current.attachments,bytesVerified:false,attachmentCountVerified:false}]};
+}
 const sampleLimit=x=>x===true||x===10?10:x===20?20:0;
 function chatTitle(value){const title=String(value||'').replace(/\s*[-–|]\s*ChatGPT\s*$/i,'').trim();return /^(?:ChatGPT|新對話|新聊天|New chat|New conversation)$/i.test(title)?'':title}
 const validId=x=>typeof x==='string'&&x.length>0&&x.length<=512;
@@ -44,16 +56,17 @@ function mergeUp(previous,live,onChange){
  const pos=new Map(previous.map((r,i)=>[r.id,i]));
  const known=live.map((r,i)=>({r,i,at:pos.get(r.id)})).filter(x=>x.at!==undefined);
  check(known.length,'視窗沒有重疊訊息');
- const first=known[0],last=known.at(-1);
+ const first=known[0],last=known.at(-1),merged=previous.slice(),changes=[];
  for(let j=0;j<known.length;j++){
   const x=known[j];check(x.i===first.i+j&&x.at===first.at+j,'重疊區域有缺口、重排或重複');
-  const comparison=compareRow(previous[x.at],x.r);
+  const comparison=reconcileOverlap(previous[x.at],x.r);
   if(!comparison.equal){const error=Error('同一訊息 ID 的內容或格式改變：'+x.r.id+' ['+comparison.fields.join(', ')+']');error.overlapEvidence={messageId:x.r.id,fields:comparison.fields,previous:previous[x.at],current:x.r};throw error}
-  if(typeof onChange==='function')for(const change of comparison.changes)onChange(change);
+  merged[x.at]=comparison.row;changes.push(...comparison.changes);
  }
  check(last.i===live.length-1,'向上掃描發現原尾端之外的新訊息或分支');
  check(first.i===0||first.at===0,'新增訊息沒有接在已保全的最前端');
- return [...live.slice(0,first.i),...previous];
+ if(typeof onChange==='function')for(const change of changes)onChange(change);
+ return [...live.slice(0,first.i),...merged];
 }
 function edgeProof(rows,all,{atEdge,stableMs,edge,loading=false,position=null,total=null}={}){
  if(!atEdge||loading||!rows.length||!all.length||!Number.isFinite(stableMs))return false;
@@ -103,5 +116,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,fingerprint,scrollStep,noNewRows,scrollReset};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset};
 });

@@ -113,3 +113,17 @@ test('scroll recovery returns to intended target, records the reset and does not
  a.equal(ctx.recover(b,7037,22875,'test'),true);a.equal(b.host.scrollTop,7037);a.equal(b.rows.length,1);a.equal(b.scrollStats.scrollResets,1);a.equal(trace[0].event,'scroll-reset');
  a.equal(ctx.recover(b,7037,22875,'test'),false);
 });
+
+test('late single generic user image observation enriches row, preserves evidence, never removes it',()=>{
+ const old=r('late'),fresh={...old,attachments:[{kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/11111111-1111-4111-8111-111111111111'}]};
+ const changes=[];
+ const rows=c.mergeUp([old],[r('older'),fresh],x=>changes.push(x));
+ a.deepEqual(rows,[r('older'),fresh]);a.deepEqual(old.attachments,[]);
+ a.equal(changes[0].type,'image-reference-appeared');a.deepEqual(changes[0].previousAttachments,[]);a.equal(changes[0].attachmentCountVerified,false);
+ a.deepEqual(c.mergeUp(rows,[old],x=>changes.push(x)),rows);
+ a.equal(changes[1].type,'image-reference-not-observed');
+ for(const candidate of [{...fresh,text:'changed'},{...fresh,attachments:[...fresh.attachments,...fresh.attachments]},{...fresh,attachments:[{...fresh.attachments[0],label:'其他'}]},{...fresh,attachments:[{...fresh.attachments[0],url:'https://example.com/file'}]}])a.throws(()=>c.mergeUp([old],[candidate]));
+ a.throws(()=>c.mergeUp([{...old,role:'assistant'}],[{...fresh,role:'assistant'}]));
+ a.throws(()=>c.mergeUp([fresh],[{...fresh,attachments:[...fresh.attachments,...fresh.attachments]}]));
+ const rejected=[];a.throws(()=>c.mergeUp([old,r('next')],[fresh,r('next','user','changed')],x=>rejected.push(x)));a.deepEqual(rejected,[]);
+});

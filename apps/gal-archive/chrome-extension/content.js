@@ -1603,6 +1603,7 @@
             const rows=historyRead(b.host),fingerprint=pc.fingerprint(rows);
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
             if(lastRows&&last!==null&&last!==fingerprint){
+              b.scrollStats.fingerprintChanges++;
               const before=new Map(lastRows.map(r=>[r.id,r]));const after=new Set(rows.map(r=>r.id));const changed=rows.filter(r=>before.has(r.id)).map(r=>({id:r.id,fields:pc.compareRow(before.get(r.id),r).fields})).filter(r=>r.fields.length);
               b.stabilityIssues.push({at:new Date().toISOString(),scrollTop:b.host.scrollTop,added:rows.filter(r=>!before.has(r.id)).map(r=>r.id),removed:lastRows.filter(r=>!after.has(r.id)).map(r=>r.id),changed});if(b.stabilityIssues.length>12)b.stabilityIssues.shift();
             }
@@ -1612,7 +1613,6 @@
               return rows;
             }
             if(last!==fingerprint){
-              if(lastRows&&last!==null){b.scrollStats.fingerprintChanges++;}
               last=fingerprint;lastAt=Date.now();
             }
             reason='等待原文與格式穩定';
@@ -1646,12 +1646,13 @@
   function historyPayload(b,status,error){
     const rows=(b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
-    if(b.attachmentChanges.length)warnings.push('臨時圖片 blob 網址曾變動；僅核對附件參照位置與標籤，未驗證圖片位元組。');
+    if(b.attachmentChanges.some(x=>!x.type))warnings.push('臨時圖片 blob 網址曾變動；僅核對附件參照位置與標籤，未驗證圖片位元組。');
+    if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的單張圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
     for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,scrollStats:b.scrollStats,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';

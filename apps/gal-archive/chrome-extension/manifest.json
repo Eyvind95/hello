@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.15",
-  "version_name": "V0.10.15 前輩捲動回跳恢復",
-  "description": "輪迴檔案館：前輩掃描回跳恢復及展開、穩定性鑑識。",
+  "version": "0.10.16",
+  "version_name": "V0.10.16 前輩圖片延遲補全",
+  "description": "輪迴檔案館：單張玩家圖片延遲觀測保全與嚴格正文驗收。",
   "permissions": [
     "storage",
     "activeTab",
