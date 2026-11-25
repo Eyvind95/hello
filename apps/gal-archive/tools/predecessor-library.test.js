@@ -37,3 +37,28 @@ test('dry run is read only, repeat apply is idempotent, changed data is append-o
 test('truncated data and incorrect manifest cannot be classified as complete',()=>{
  const b=fixture();assert.throws(()=>parseGab(b.subarray(0,b.length-1)));assert.throws(()=>parseGab(Buffer.from('not gab')));
 });
+
+test('reading volume names carry world cycle hero kind and exact ordinal range',()=>{
+ const r=plan(fixture()),expected=['哨嚮','冒險者','公路求生'];
+ for(const [i,c] of r.meta.cycles.entries()){
+  const prefix=expected[i]+'｜第01輪迴・測試｜';
+  const names=[...r.files.keys()].filter(k=>k.startsWith(c.path+'/')&&/\/\d+[^/]*\.txt$/.test(k));
+  assert.ok(names.some(k=>k.endsWith(prefix+'完整劇情｜001_00001-00001.txt')));
+  assert.ok(names.some(k=>k.endsWith(prefix+'含事件閱讀版｜001_00001-00002.txt')));
+  assert.ok(names.some(k=>k.includes(prefix+'副駕駛聊天｜')));
+  assert.ok(names.some(k=>k.includes(prefix+'事件簿｜')));
+ }
+ assert.equal(r.meta.namingVersion,2);assert.ok(r.idx.endsWith('-命名v2'));
+});
+test('existing renamed volume reused byte-exact without changing names or creating duplicate',()=>{
+ const tmp=fs.mkdtempSync(p.join(os.tmpdir(),'gal-library-')),root=p.join(tmp,ROOT);
+ try{
+  fs.mkdirSync(root);for(const d of TOP)fs.mkdirSync(p.join(root,d));
+  const r=plan(fixture()),rel=[...r.volumePaths].find(k=>k.includes('完整劇情｜001_'));
+  const legacy=rel.slice(0,rel.lastIndexOf('/')+1)+'人工已改名.txt';
+  const f=p.join(root,legacy);fs.mkdirSync(p.dirname(f),{recursive:true});fs.writeFileSync(f,r.files.get(rel));
+  sync(root,r,true);assert.ok(fs.existsSync(f));assert.ok(!fs.existsSync(p.join(root,rel)));
+  const index=JSON.parse(fs.readFileSync(p.join(root,r.idx+'.json'),'utf8'));assert.ok(index.inventory.some(x=>x.path===legacy));assert.ok(!index.inventory.some(x=>x.path===rel));
+  assert.equal(sync(root,r,true).newFiles,0);
+ }finally{fs.rmSync(tmp,{recursive:true,force:true})}
+});
