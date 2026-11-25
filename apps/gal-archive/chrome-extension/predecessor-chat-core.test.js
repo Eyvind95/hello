@@ -580,3 +580,23 @@ test('native error cannot certify top while visible',()=>{
  const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
  a.ok(src.includes("stableMs:Date.now()-topSince,loading:historyLoading(b.host)||!!historyNativeFailure(b.host)"));
 });
+
+test('native retry budget resets only on verified progress, with absolute batch cap',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('));
+ let now=1000,clicks=0,present=true;
+ const row={closest:()=>null,children:[]},status={textContent:'無法載入較早的訊息',closest:()=>null,parentElement:row},button={tagName:'BUTTON',textContent:'重試',getAttribute:()=>null,click(){clicks++;present=false}};
+ row.children=[status,button];const host={querySelectorAll:()=>present?[status]:[],contains:n=>n===row,scrollTop:0,scrollHeight:537121};
+ const b={host,rows:[r('anchor')],resume:{minIndex:100}};class Clock extends Date{constructor(){super(now)}static now(){return now}}
+ const ctx={Date:Clock,historyVisible:()=>true,historyGuard:()=>{},historyStatus:()=>{},sleep:async ms=>{now+=ms}};
+ vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;globalThis.progress=historyNativeProgress;',ctx);
+ for(let i=0;i<3;i++){present=true;a.equal(await ctx.retry(b,61000),true)}
+ present=true;await a.rejects(ctx.retry(b,61000),/3次重試上限/);a.equal(clicks,3);
+ for(let i=3;i<12;i++){b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;a.equal(await ctx.retry(b,61000),true)}
+ b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;await a.rejects(ctx.retry(b,61000),/12次重試上限/);
+ a.equal(clicks,12);a.equal(b.rows.length,1);a.equal(b.nativeHistoryRetry.progressResets,10);a.equal(b.nativeHistoryRetry.trace.at(-1).event,'total-exhausted');
+ const run=src.slice(src.indexOf('  async function historyRun('),src.indexOf('  async function historyBegin('));
+ a.equal((run.match(/historyNativeProgress\(b,/g)||[]).length,2);
+ a.match(run,/if\(q.minIndex<b.resume.minIndex\)\{[\s\S]*?historyNativeProgress\(b,'resume-earlier-index'\)/);
+ a.match(run,/if\(b.rows.length>lastCount\)\{[\s\S]*?historyNativeProgress\(b,'new-rows'\)/);
+});
