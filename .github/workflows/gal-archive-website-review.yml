@@ -29,7 +29,7 @@ jobs:
           node --test apps/gal-archive/tools/predecessor-library.test.js
           node --check apps/gal-archive/tools/predecessor-library.js
           node --check apps/gal-archive/archive-replay.js
-          node --test apps/gal-archive/chrome-extension/predecessor-chat-core.test.js apps/gal-archive/tools/predecessor-chat-library.test.js
+          node --test apps/gal-archive/chrome-extension/predecessor-page-launcher.test.js apps/gal-archive/chrome-extension/predecessor-chat-core.test.js apps/gal-archive/tools/predecessor-chat-library.test.js
           node --check apps/gal-archive/chrome-extension/content.js
           node --check apps/gal-archive/predecessor-chats.js
           node --test apps/gal-archive/chrome-extension/gal-core.test.js apps/gal-archive/chrome-extension/gal-format-evidence.test.js apps/gal-archive/chrome-extension/gal-import.test.js apps/gal-archive/chrome-extension/gal-binding.test.js apps/gal-archive/chrome-extension/gal-scroll.test.js apps/gal-archive/chrome-extension/gal-scan-status.test.js apps/gal-archive/chrome-extension/gal-continue-audit.test.js
