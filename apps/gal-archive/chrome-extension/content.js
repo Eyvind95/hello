@@ -1380,6 +1380,45 @@
   // Source is rendered ChatGPT DOM; not a native/server-side history API.
   const pc=globalThis.GalPredecessorChat;
   const HISTORY_PANEL='ga-predecessor-history-panel';
+  // Unlike legacy bulkHost(), never accept the document fallback solely
+  // because it exists. A virtualized chat may not have hydrated yet.
+  function historyHost(){
+    const turns=[...document.querySelectorAll('[data-turn-key],[data-message-author-role],[data-testid^="conversation-turn-"]')].filter(historyVisible);
+    const anchors=turns.length?turns:outerUsers().filter(historyVisible);
+    if(!anchors.length)return null;
+    const first=anchors[0];
+    for(let n=first.parentElement;n;n=n.parentElement){
+      if(!anchors.every(x=>n.contains(x)))continue;
+      const css=getComputedStyle(n);
+      if(n.clientHeight>180&&pc.scrollRange(n.scrollHeight,n.clientHeight)>8&&(/(auto|scroll|overlay)/.test(css.overflowY)||n===document.scrollingElement))return n;
+    }
+    return null;
+  }
+  function historyHostObservation(b){
+    const h=b.host,proof=b.hostProof;
+    if(!h||!proof)return;
+    proof.maxRange=Math.max(proof.maxRange,pc.scrollRange(h.scrollHeight,h.clientHeight));
+    if(proof.lastTop!==null&&Math.abs(h.scrollTop-proof.lastTop)>2)proof.observedMovement=true;
+    proof.lastTop=h.scrollTop;
+    proof.lastHeight=h.scrollHeight;proof.clientHeight=h.clientHeight;
+  }
+  async function historyLocateHost(b){
+    const deadline=Date.now()+60000;
+    while(Date.now()<deadline){
+      if(b.cancelled)throw Error('使用者停止');
+      if(state.bulk!==b||!valid()||path()!==b.chat)throw Error('聊天來源已變更');
+      const host=historyHost();
+      if(host){
+        b.host=host;b.hostProof={maxRange:0,observedMovement:false,lastTop:null,tag:host.tagName||'',id:host.id||'',initialHeight:host.scrollHeight,clientHeight:host.clientHeight};
+        historyHostObservation(b);historyTrace(b,'host-selected');return;
+      }
+      historyStatus(b,'等待有效聊天捲動容器（最多60秒）');await sleep(500);
+    }
+    // Read only the currently mounted tail for emergency evidence; never
+    // certify a boundary from a non-scrollable or unverified container.
+    try{b.rows=historyRead(b.host,observation=>historyFoldObservation(b,observation))}catch(e){b.lastReadIssue={reason:String(e.message||e)}}
+    throw Error('60秒內找不到有效聊天捲動容器；禁止假完成');
+  }
   function historyRoot(host){return host===document.scrollingElement||host===document.documentElement?document.body:host}
   function historyVisible(el){return !!el?.isConnected&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden'&&!el.closest('[aria-hidden="true"],[hidden]')}
   function historyOwner(el){return el.closest('[data-turn-key]')||el.closest('[data-testid^="conversation-turn-"]')||el.closest('[data-message-author-role]')||el}
@@ -1677,7 +1716,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,knownMinimum:b.knownMinimum,hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
@@ -1688,11 +1727,13 @@
   async function historyRun(b){
     let status='failed',error=null;
     try{
+      await historyLocateHost(b);
       historyStatus(b,'定位聊天最底端');
       let stable=0,prev=null,prevRows=null,bottomDeadline=Date.now()+60000;
       for(;;){
         historyGuard(b);if(Date.now()>bottomDeadline)throw Error('60秒內無法確認完整底端');
         historyScroll(b.host,b.host.scrollHeight);const rows=await historySettled(b,{deadline:bottomDeadline});
+        historyHostObservation(b);
         const sig=JSON.stringify([pc.fingerprint(rows),b.host.scrollHeight]);
         if(sig===prev&&prevRows)for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(prevRows[i],rows[i]).changes)historyAttachmentChange(b,change);
         prevRows=rows;
@@ -1728,13 +1769,16 @@
           try{b.rows=pc.mergeUp(b.rows,rows,change=>historyAttachmentChange(b,change));b.windows++;lastError='';break}catch(e){b.scrollStats.overlapRetries++;historyTrace(b,'overlap-retry',{ratio,step,reason:String(e.message||e)});lastError=String(e.message||e);if(e.overlapEvidence){if(b.overlapIssues.length>=8)b.overlapIssues.shift();b.overlapIssues.push({at:new Date().toISOString(),ratio,scrollTop:b.host.scrollTop,reason:lastError,...e.overlapEvidence})}rows=null}
         }
         if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
+        historyHostObservation(b);
         historyStatus(b,b.sample?'最近'+b.sample+'則測試':'向上掃描');
         if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample)){historyTrace(b,'sample-completed',{step,from:pos});status='completed';break}
         const atTop=b.host.scrollTop<=2,sig=JSON.stringify([rows[0]?.id,b.rows.length,b.host.scrollHeight]);
         if(atTop){
           if(!edgeAttempt)edgeAttempt=Date.now();
           if(sig!==topSignature){topSignature=sig;topSince=Date.now()}
-          if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
+          if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){
+            if(!pc.fullCoverageGate(b.rows.length,b.sample?0:b.knownMinimum,b.hostProof.maxRange,b.hostProof.observedMovement)||pc.scrollRange(b.host.scrollHeight,b.host.clientHeight)<=8){historyTrace(b,'false-top-rejected',{knownMinimum:b.knownMinimum,hostProof:b.hostProof});throw Error('疑似假頂端：捲動證據不足或未達已知最低訊息數 '+b.knownMinimum)}
+            b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
           if(Date.now()-edgeAttempt>60000)throw Error('頁面已在頂端，但首則訊息或頂端穩定證據不符');
         }else{topSince=0;topSignature=null;edgeAttempt=0}
         if(b.rows.length>lastCount){
@@ -1749,6 +1793,8 @@
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
     const data=historyPayload(b,status,error);
+    // Counts are only a local lower bound; never mix previous rows into this run.
+    if(b.bottomReached&&!b.sample&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
     try{(b.sample?pc.validateSample:pc.validateRaw)(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false}
     b.download.onclick=()=>{try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};
     b.download.hidden=false;b.stop.textContent='關閉';b.stop.onclick=()=>b.pane.remove();
@@ -1756,19 +1802,21 @@
     try{historyStatus(b,(data.status==='completed'?(b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。')}
     catch(e){historyStatus(b,'保全已留在本頁，下載觸發失敗：'+e.message)}
   }
-  async function historyBegin(requestedTitle,sample=false){
+  async function historyBegin(requestedTitle,sample=false,minimum=0){
     if(!pc||!valid())return {ok:false,error:'請開啟具體 ChatGPT 聊天並載入新版'};
     if(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating())return {ok:false,error:'此聊天正在監看擷取、掃描或生成，稍後再開始'};
     if(document.getElementById(HISTORY_PANEL))return {ok:false,error:'前一批保全仍在頁面，請確認下載並關閉面板後再開始'};
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
-    const host=bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
+    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     state.bulk=b;
     try{
       // Disable only this chat's existing automatic upload so scrolling over
       // historical messages cannot upload them after the scan ends.
-      const {watch={}}=await chrome.storage.local.get(['watch']);
+      const minimumKey='ga-predecessor-min:'+b.chat;
+      const {watch={},[minimumKey]:known=0}=await chrome.storage.local.get(['watch',minimumKey]);
+      b.knownMinimum=Math.max(b.knownMinimum,pc.minimumCount(known));
       if(watch[b.chat]===true){delete watch[b.chat];await chrome.storage.local.set({watch})}
       state.enabled=false;state.watchedPath=null;candidates.clear();
       historyGuard(b);
@@ -1815,6 +1863,8 @@
       const input=document.createElement('input');input.id='ga-predecessor-page-title';input.type='text';input.maxLength=512;
       input.value=pc.chatTitle(document.title);
       input.style.cssText='display:block;width:100%;margin:6px 0 12px;padding:8px;background:#111827;color:white;border:1px solid #9ba9cb;border-radius:7px';
+      const minLabel=document.createElement('label');minLabel.textContent='已知最低訊息數（完整掃描，未知填0）';minLabel.htmlFor='ga-predecessor-page-minimum';
+      const minimum=document.createElement('input');minimum.id='ga-predecessor-page-minimum';minimum.type='number';minimum.min='0';minimum.step='1';minimum.value='0';minimum.style.cssText=input.style.cssText;
       const note=document.createElement('p');note.textContent='建議先測試最近10則（玩家及GPT各算一則），再完整掃描至頂端。載入最多等待60秒；本聊天的原監看將停止。';
       const feedback=document.createElement('p');feedback.setAttribute('role','status');feedback.style.whiteSpace='pre-wrap';
       const start=document.createElement('button');start.type='button';start.id='ga-predecessor-page-start';start.textContent='↑ 從最底端向上完整掃描';
@@ -1829,14 +1879,14 @@
         if(!pc.chatTitle(input.value)){feedback.textContent='請填寫聊天實際名稱，不能使用新對話等預設名稱';return}
         start.disabled=true;trial.disabled=true;twenty.disabled=true;close.disabled=true;feedback.textContent='正在開啟掃描…';
         try{
-          const result=await (sample?historyBegin(input.value.trim(),sample):historyBegin(input.value.trim()));
+          const result=await (sample?historyBegin(input.value.trim(),sample):historyBegin(input.value.trim(),false,pc.minimumCount(minimum.value)));
           if(result?.ok){pane.remove();return}
           feedback.textContent='⛔ '+(result?.error||'無法啟動掃描');
         }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
         finally{start.disabled=false;trial.disabled=false;twenty.disabled=false;close.disabled=false}
       };
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,label,input,note,trial,twenty,start,close,feedback);document.body.append(pane);
+      pane.append(heading,version,label,input,minLabel,minimum,note,trial,twenty,start,close,feedback);document.body.append(pane);
     };
     document.body.append(button);
   }

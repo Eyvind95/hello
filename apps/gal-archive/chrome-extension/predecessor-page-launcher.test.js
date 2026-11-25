@@ -4,7 +4,7 @@ const source=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=source
 function fixture(){
  const nodes=new Map(),calls=[];let route='/c/first',result={ok:true};
  const element=tag=>({tag,id:'',dataset:{},style:{},children:[],append(...children){this.children.push(...children);for(const n of children)if(n.id)nodes.set(n.id,n)},remove(){nodes.delete(this.id);for(const n of this.children)if(n.id)nodes.delete(n.id)},setAttribute(){},scrollIntoView(){calls.push('existing')}});
- const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},chrome:{runtime:{getManifest:()=>({version:'0.10.10'})}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample)=>{calls.push(sample?[title,sample]:title);return result}};
+ const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},chrome:{runtime:{getManifest:()=>({version:'0.10.10'})}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum)=>{calls.push(sample?[title,sample]:minimum?[title,minimum]:title);return result}};
  vm.createContext(ctx);vm.runInContext(block+';globalThis.launch=historyLauncher;',ctx);
  return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x}};
 }
@@ -32,4 +32,10 @@ test('twenty-message option invokes bounded test and generic names are blocked',
  await f.nodes.get('ga-predecessor-page-test-twenty').onclick();assert.deepEqual(f.calls,[]);
  input.value='測試前輩';await f.nodes.get('ga-predecessor-page-test-twenty').onclick();
  assert.deepEqual(f.calls,[['測試前輩',20]]);
+});
+
+test('full scan receives explicit known lower bound',async()=>{
+ const f=fixture();f.launch();f.nodes.get('ga-predecessor-page-launcher').onclick();
+ f.nodes.get('ga-predecessor-page-minimum').value='179';
+ await f.nodes.get('ga-predecessor-page-start').onclick();assert.deepEqual(f.calls,[['測試前輩',179]]);
 });

@@ -68,6 +68,11 @@ function mergeUp(previous,live,onChange){
  if(typeof onChange==='function')for(const change of changes)onChange(change);
  return [...live.slice(0,first.i),...merged];
 }
+const scrollRange=(height,viewport)=>Number.isFinite(height)&&Number.isFinite(viewport)&&viewport>0?Math.max(0,height-viewport):0;
+const minimumCount=value=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):0;
+function fullCoverageGate(count,minimum,maxRange,observedMovement){
+ return count>=minimumCount(minimum)&&maxRange>8&&observedMovement===true;
+}
 function edgeProof(rows,all,{atEdge,stableMs,edge,loading=false,position=null,total=null}={}){
  if(!atEdge||loading||!rows.length||!all.length||!Number.isFinite(stableMs))return false;
  if(edge==='top')return stableMs>=8000&&rows[0].id===all[0].id&&(!Number.isInteger(position)||position===1);
@@ -86,6 +91,14 @@ function validateRaw(data){
  const ids=validateRows(data.rows);check(data.rows.every((r,i)=>r.index===i)&&data.count===data.rows.length,'訊息索引／總數不符');
  check(data.evidence&&Array.isArray(data.warnings)&&data.warnings.every(x=>typeof x==='string'),'缺少掃描證據');
  if(data.status==='completed')check(data.rows.length&&data.evidence.bottomStableMs>=3000&&data.evidence.topStableMs>=8000&&data.evidence.topReached===true&&data.evidence.bottomReached===true&&data.evidence.continuity===true&&data.evidence.firstId===data.rows[0].id&&data.evidence.lastId===data.rows.at(-1).id&&!data.error,'完成檔缺少首尾或連續性證據');
+ if(data.status==='completed'){
+  const ev=data.evidence,version=String(data.scannerVersion||'').split('.').map(Number);
+  // Historical false completions with a documented zero-range host are invalid.
+  if(Array.isArray(ev.scrollTrace)&&ev.scrollTrace.length&&ev.scrollTrace.every(t=>Number.isFinite(t.scrollHeight)&&Number.isFinite(t.clientHeight)&&scrollRange(t.scrollHeight,t.clientHeight)<=8)&&ev.breakthroughState?.frontier?.height===ev.scrollTrace[0].clientHeight)
+   check(false,'完成檔捲動容器無有效捲動距離');
+  if(version[0]===0&&version[1]===10&&version[2]>=20||version[0]>0||version[0]===0&&version[1]>10)
+   check(fullCoverageGate(data.count,ev.knownMinimum,ev.hostProof?.maxRange,ev.hostProof?.observedMovement),'完成檔缺少可捲動容器、移動或已知最低數量證據');
+ }
  return ids;
 }
 // Larger steps still require exact overlap.
@@ -136,5 +149,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate};
 });
