@@ -60,8 +60,8 @@ function sampleReady(rows,bottomReached,topReached){
 }
 function sampleRows(rows){return rows.slice(-SAMPLE_LIMIT)}
 function validateSample(data){
- check(data?.format===SAMPLE&&data.scope==='sample-10'&&data.sampleLimit===SAMPLE_LIMIT&&data.importable===false,'不是獨立十則測試檔');
- const ids=validateRaw({...data,format:FORMAT,status:'failed',scope:undefined});
+ check(data?.format===SAMPLE&&data.scope==='sample-10'&&data.sampleLimit===SAMPLE_LIMIT&&data.importable===false&&['completed','failed','cancelled'].includes(data.status),'不是獨立十則測試檔');
+ const ids=validateRaw({...data,format:FORMAT,status:'failed',scope:undefined,importable:undefined});
  check(data.rows.length<=SAMPLE_LIMIT,'測試超過十則');
  if(data.status==='completed')check(sampleReady(data.rows,data.evidence.bottomReached,data.evidence.topReached)&&data.evidence.bottomStableMs>=3000&&data.evidence.continuity===true&&data.evidence.firstId===data.rows[0].id&&data.evidence.lastId===data.rows.at(-1).id&&!data.error&&(data.rows.length===SAMPLE_LIMIT||data.evidence.topStableMs>=8000),'測試缺少尾端或數量證據');
  return ids;
