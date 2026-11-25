@@ -162,6 +162,22 @@ function rejoinTarget(anchor,height,viewport,offset=0,rebase=true){
  if(!anchor||![anchor.top,anchor.height,height,viewport,offset].every(Number.isFinite))return null;
  return Math.max(0,Math.min(scrollRange(height,viewport),anchor.top+(rebase?height-anchor.height:0)+offset));
 }
+// A/B/A oscillation (or the same failed target repeatedly) means height
+// compensation is chasing an unstable virtual layout. Hold one coordinate
+// for a bounded number of attempts, then let the caller try another probe.
+function recoveryCycle(policy,destination,viewport){
+ const recent=policy.recent||(policy.recent=[]),tol=Math.max(8,Math.min(32,viewport*.05));
+ recent.push(destination);if(recent.length>3)recent.shift();
+ let detected=false;
+ if(policy.locked==null&&recent.length===3&&Math.abs(recent[0]-recent[2])<=tol){
+  policy.locked=recent[2];policy.holds=0;detected=true;
+ }
+ if(policy.locked!=null){
+  policy.holds++;
+  return {destination:policy.locked,delay:Math.min(2400,800*policy.holds),detected,exhausted:policy.holds>3};
+ }
+ return {destination,delay:recent.length>1?350:180,detected:false,exhausted:false};
+}
 const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;
 function sampleReady(rows,bottomReached,topReached,limit=SAMPLE_LIMIT){
  return !!sampleLimit(limit)&&bottomReached===true&&rows.length>0&&(rows.length>=limit||topReached===true);
@@ -186,5 +202,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle};
 });

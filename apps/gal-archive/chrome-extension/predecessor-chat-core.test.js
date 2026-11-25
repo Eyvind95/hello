@@ -292,7 +292,7 @@ test('actual historyRun resumes from a validated tail, fast returns and then ext
  let now=1000,output,up=0;const trace=[],targets=[];
  const host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
  const b={host,rows:[],sample:0,knownMinimum:30,resumeRows:saved,resume:{baseCount:30,tailVerified:false,frontierVerified:false,minIndex:30,checkedWindows:0},hostProof:{maxRange:10000,observedMovement:true},bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{},chat:'/c/abc'};
- const ctx={Date:{now:()=>now},pc:{...c,validateRaw:()=>{}},state:{bulk:b},chrome:{storage:{local:{set:async()=>{}}}},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{
+ const ctx={Date:class extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}},pc:{...c,validateRaw:()=>{}},state:{bulk:b},chrome:{storage:{local:{set:async()=>{}}}},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{
    now+=1000;if(!o.upward)return saved.slice(-3);
    targets.push(o.target);up++;
    if(up===1)return saved.slice(24,28);
@@ -301,7 +301,39 @@ test('actual historyRun resumes from a validated tail, fast returns and then ext
    host.scrollTop=0;return [older,...saved.slice(0,3)];
  },historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push(event),sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length,rows:b.rows,evidence:{resume:b.resume}}),historyDownload:d=>{output=d;return 'resume.json'}};
  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
- a.equal(output.status,'completed');a.equal(output.count,31);a.equal(output.rows[0].id,'older');
+ a.equal(output.status,'completed',output.error);a.equal(output.count,31);a.equal(output.rows[0].id,'older');
  a.equal(output.evidence.resume.tailVerified,true);a.equal(output.evidence.resume.frontierVerified,true);
  a.equal(targets[0],9500);a.ok(trace.includes('resume-tail-verified'));a.ok(trace.includes('resume-frontier-verified'));
+});
+
+test('repeated recovery destinations lock for three attempts instead of chasing alternating heights',()=>{
+ const p={};a.equal(c.recoveryCycle(p,2982,674).delay,180);
+ a.equal(c.recoveryCycle(p,8625,674).detected,false);
+ const lock=c.recoveryCycle(p,2982,674);a.equal(lock.detected,true);a.equal(lock.destination,2982);a.equal(lock.delay,800);
+ a.equal(c.recoveryCycle(p,8625,674).destination,2982);
+ a.equal(c.recoveryCycle(p,2982,674).delay,2400);
+ a.equal(c.recoveryCycle(p,8625,674).exhausted,true);
+});
+test('actual historySettled bounds recovery cycle and emits recoverable error',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
+ let now=1000;const trace=[],delays=[];
+ const b={host:{scrollTop:761642,scrollHeight:762316,clientHeight:674},scrollStats:{scrollResets:0},rows:[r('anchor')],breakthrough:{resets:0,attempts:3,frontier:null}};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>{h.scrollTop=to},sleep:async ms=>{now+=ms;delays.push(ms);b.host.scrollHeight=b.host.scrollHeight===762316?756683:762316;b.host.scrollTop=b.host.scrollHeight-674}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ await a.rejects(ctx.settle(b,{upward:true,target:2982,targetHeight:756683,allowBoost:false}),e=>e.code==='HISTORY_RECOVERY_RETRY');
+ a.equal(b.scrollStats.recoveryCycles,1);a.ok(delays.includes(800));a.ok(delays.includes(1600));a.ok(b.scrollStats.scrollResets<=9);
+ a.equal(b.rows.length,1);
+});
+test('actual historyRun tries another overlap plan after bounded recovery failure',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ let now=1000,output,up=0;const targets=[];
+ const tail=[r('tail')],older=[r('older'),r('tail')],host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
+ const b={host,rows:[],sample:10,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
+ const ctx={Date:{now:()=>now},pc:{...c,sampleReady:rs=>rs.length===2,validateSample:()=>{}},state:{bulk:b},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{now+=700;if(!o.upward)return tail;targets.push(o);if(++up===1)throw Object.assign(Error('頁面反覆自動返回底端；本次定位策略無法穩定'),{code:'HISTORY_RECOVERY_RETRY'});return older},historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:()=>{},sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length}),historyDownload:d=>{output=d;return 'sample.json'}};
+ vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+ a.equal(output.status,'completed');a.equal(output.count,2);a.equal(targets[1].allowBoost,false);a.equal(b.scrollStats.recoveryPlanRetries,1);
 });
