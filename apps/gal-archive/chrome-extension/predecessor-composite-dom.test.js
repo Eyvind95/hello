@@ -16,9 +16,9 @@ function fixture(){
 test('composite GPT full DOM read has no legacy 30000 limit, preserves literal text and formatting after user',()=>{
  const f=fixture(),{make,owner,user}=f;
  const huge='長'.repeat(41000);
- owner.add(make('h2','ChatGPT 說'),make('p','原文 '+huge).add(make('strong','粗體')),make('pre','保留\\n  縮排'),make('p','ChatGPT 說'),make('button','複製'),make('div','工具文字',{'data-testid':'turn-actions'}),make('img','',{src:'blob:attachment',alt:'圖'}));
+ owner.add(make('h2','ChatGPT 說'),make('p','原文 '+huge).add(make('strong','粗體')),make('pre','保留\n  縮排'),make('p','ChatGPT 說'),make('button','複製'),make('div','工具文字',{'data-testid':'turn-actions'}),make('img','',{src:'blob:attachment',alt:'圖'}));
  const r=f.read(owner,[user]);
- assert.ok(r.text.includes(huge));assert.ok(r.text.includes('保留\\n  縮排'));assert.ok(r.text.includes('ChatGPT 說'));
+ assert.ok(r.text.includes(huge));assert.ok(r.text.includes('保留\n  縮排'));assert.ok(r.text.includes('ChatGPT 說'));
  assert.doesNotMatch(r.text,/玩家秘密正文|工具文字|複製/);
  assert.equal(r.structure.find(x=>x.tag==='strong').text,'粗體');assert.equal(r.attachments[0].url,'blob:attachment');assert.ok(r.sourceTextCharacters>41000);assert.equal(r.segments.map(s=>s.text).join('').includes(huge),true);
 });
@@ -27,4 +27,10 @@ test('composite boundary rejects missing stable source, ambiguous user or only U
  assert.throws(()=>f.read(f.owner,[f.user]),/未找到/);
  assert.throws(()=>f.read(f.owner,[]),/唯一玩家/);
  f.owner.attrs['data-turn-key']=null;assert.throws(()=>f.read(f.owner,[f.user]),/穩定回合 ID/);
+});
+
+test('composite ordering is tied to the unique paired user even if the DOM anchor is the owner',()=>{
+ const compare=s.slice(s.indexOf('    entries.sort((a,b)=>{',s.indexOf('  function historyRead(host)')),s.indexOf('    for(const group of owners.values())',s.indexOf('  function historyRead(host)')));
+ const owner={compareDocumentPosition:()=>4},user={compareDocumentPosition:()=>2};const entries=[{owner,el:owner,row:{role:'assistant',contentBasis:'composite-after-user-dom'}},{owner,el:user,row:{role:'user'}}];
+ vm.runInNewContext(compare,{entries,Node:{DOCUMENT_POSITION_FOLLOWING:4}});assert.deepEqual(entries.map(x=>x.row.role),['user','assistant']);
 });

@@ -1529,7 +1529,14 @@
       !el.parentElement?.closest('[data-turn-key],[data-testid^="conversation-turn-"]')&&historyVisible(el)&&
       (el.hasAttribute('data-turn-key')||/^conversation-turn-\d+$/.test(el.getAttribute('data-testid')||'')));
     for(const turn of turns)if(!entries.some(x=>turn.contains(x.el)||x.owner===turn))throw historyIssue('已掛載回合未辨識到完整訊息',turn);
-    entries.sort((a,b)=>a.el===b.el?0:(a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1));
+    entries.sort((a,b)=>{
+      // Direct text after a user may be anchored to the composite owner
+      // itself; its ancestor DOM position must never reverse the two roles.
+      if(a.owner===b.owner&&a.row.role!==b.row.role&&[a.row.contentBasis,b.row.contentBasis].includes('composite-after-user-dom'))return a.row.role==='user'?-1:1;
+      if(a.el===b.el)return 0;
+      return a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1;
+    });
+    for(const group of owners.values())if(group.some(x=>x.row.contentBasis==='composite-after-user-dom')&&(group.filter(x=>x.row.role==='user').length!==1||group.filter(x=>x.row.role==='assistant').length!==1))throw historyIssue('備援 GPT 與玩家來源無法形成唯一回合',group[0].owner);
     const rows=entries.map(x=>x.row);pc.validateRows(rows);
     if(!rows.length)throw Error('尚未讀到對話訊息');
     return rows;
