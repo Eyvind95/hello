@@ -1624,7 +1624,7 @@
       let stable=0,prev=null,prevRows=null,bottomDeadline=Date.now()+60000;
       for(;;){
         historyGuard(b);if(Date.now()>bottomDeadline)throw Error('60秒內無法確認完整底端');
-        historyScroll(b.host,b.host.scrollHeight);const rows=await historySettled(b);
+        historyScroll(b.host,b.host.scrollHeight);const rows=await historySettled(b,{deadline:bottomDeadline});
         const sig=JSON.stringify([pc.fingerprint(rows),b.host.scrollHeight]);
         if(sig===prev&&prevRows)for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(prevRows[i],rows[i]).changes)historyAttachmentChange(b,change);
         prevRows=rows;
