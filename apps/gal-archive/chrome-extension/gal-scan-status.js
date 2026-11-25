@@ -111,6 +111,7 @@ function installGalScanStatus(api){
     .map(([k,f])=>[k,f.path])),
    unverifiedCount:run.unverifiedCount??null,
    exportPending:run.exportPending===true,
+   scanOutcome:run.finishState||null,exportFailure:run.exportFailure===true,
    pendingFiles:Object.entries(run.files||{}).filter(([,f])=>!f.path).map(([kind])=>kind)
   };
  }
@@ -236,7 +237,7 @@ function installGalScanStatus(api){
   try{
    if(!(await pendingFiles(runs,run)))return;
    await finish(runs,run,run.finishState,run.reason);
-  }catch(error){await finish(runs,run,'failed',String(error.message||error))}
+  }catch(error){run.exportFailure=true;await finish(runs,run,'failed',String(error.message||error))}
  }
  const isOwner=(run,sender)=>Boolean(run&&run.tabId===sender.tab?.id&&
   run.documentId===sender.documentId&&run.source===safeUrl(sender.tab?.url||sender.url));
@@ -333,6 +334,8 @@ function installGalScanStatus(api){
   if(message.type==='gal-run-export-failed'){
    if(run.state==='running'&&!run.exportPending){
     run.scanned=Math.max(run.scanned,Number.isInteger(message.scanned)&&message.scanned<=20000?message.scanned:0);
+    run.exportFailure=true;
+    if(terminal.has(message.scanOutcome))run.finishState=message.scanOutcome;
     await finish(runs,run,'failed','掃描輸出傳輸未確認：'+String(message.transportError||'未知').slice(0,500));
    }
    return publicStatus(runs[run.scanRunId]);
@@ -367,7 +370,7 @@ function installGalScanStatus(api){
    return publicStatus(run);
   }
   if(message.type!=='gal-run-finish')throw Error('未知掃描指令');
-  const late=run.state==='failed'&&run.reason==='掃描或下載逾時'&&message.state==='completed'&&
+  const late=run.state==='failed'&&(run.reason==='掃描或下載逾時'||run.exportFailure===true)&&message.state==='completed'&&
    !Object.values(runs).some(r=>r.scanRunId!==run.scanRunId&&r.state==='running'&&r.source===run.source);
   if((terminal.has(run.state)&&!late)||run.exportPending)return publicStatus(run);
   if(!terminal.has(message.state)||!Number.isInteger(message.scanned)||
@@ -401,9 +404,9 @@ function installGalScanStatus(api){
    }
   }
   const next=record(runs,run,{state:'running',lateCompletionRecovered:late,
-   finishState:message.state,scanned:message.scanned,
+   finishState:message.state,exportFailure:false,scanned:message.scanned,
    reason:message.state==='completed'?null:String(message.reason||'掃描中斷').slice(0,500),
-   exportPending:true,files:{...(run.files||{})}});
+   exportPending:true,files:Object.fromEntries(Object.entries(run.files||{}).filter(([,file])=>file.path))});
   await save(runs);
   await api.alarms.create(ALARM+run.scanRunId,{delayInMinutes:EXPORT_DEADLINE});
   try{
@@ -424,7 +427,7 @@ function installGalScanStatus(api){
    }
    next.files.diagnostic=await makeFile(run,'diagnostic',message.diagnostic);await save(runs);
    await reconcile(runs,next);
-  }catch(error){await finish(runs,next,'failed','儲存掃描證據失敗：'+String(error.message||error));throw error}
+  }catch(error){next.exportFailure=true;await finish(runs,next,'failed','儲存掃描證據失敗：'+String(error.message||error));throw error}
   return publicStatus(runs[run.scanRunId]);
  }
  api.runtime.onMessage.addListener((message,sender,reply)=>{

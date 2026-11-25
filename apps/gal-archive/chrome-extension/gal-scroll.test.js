@@ -190,7 +190,7 @@ test('bottom completion hands off to named responsive validation stages',()=>{
  assert.match(content,/checkedNative%8===0/);
  assert.match(content,/await yieldUi\(\);ensureRunning\(\)/);
  assert.match(content,/hash\(row\.text\)\]\.join/);
- assert.match(content,/背景下載佇列等待超過 12 秒/);
+ assert.match(content,/背景下載佇列等待超過 180 秒/);
 });
 
 

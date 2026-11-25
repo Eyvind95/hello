@@ -29,9 +29,25 @@ const SCANNER_VERSION='0.10.5';
   }catch(error){for(const token of tokens)galTransferTexts.delete(token);throw error}
  }
  async function galSendEvidence(message){
-  const {out,tokens}=await galWireEnvelope(message,['result','diagnostic','unverified','text']);
-  try{return await chrome.runtime.sendMessage(out)}
-  finally{for(const token of tokens)galTransferTexts.delete(token)}
+  let tokens=[];
+  try{
+   const envelope=await galWireEnvelope(message,['result','diagnostic','unverified','text']);
+   tokens=envelope.tokens;
+   // A transient worker interruption can request the same page-held bytes again.
+   let response;
+   for(let attempt=0;attempt<2;attempt++){
+    try{response=await chrome.runtime.sendMessage(envelope.out);break}
+    catch(error){if(attempt===1)throw error}
+   }
+   if(!response?.ok&&message.type==='gal-run-finish')throw Error(response?.error||'掃描輸出未確認');
+   return response;
+  }catch(error){
+   if(message.type==='gal-run-finish'){
+    await chrome.runtime.sendMessage({type:'gal-run-export-failed',scanRunId:message.scanRunId,cycleId:message.cycleId,
+     scanned:message.scanned,scanOutcome:message.state,transportError:String(error.message||error).slice(0,500)}).catch(()=>{});
+   }
+   return {ok:false,error:String(error.message||error)};
+  }finally{for(const token of tokens)galTransferTexts.delete(token)}
  }
 
 const core=globalThis.GalArchiveCore;
@@ -166,11 +182,16 @@ function mount(){
  };
  $('gal-scan-close').onclick=()=>{if(busy)cancelled=true;p.remove();css.remove()};
  $('gal-scan-save-progress').onclick=()=>saveProgressSnapshot();
- $('gal-scan-export').onclick=()=>{if(!lastResult||!lastResult.validation?.ok||(!lastResult.validation.nativeFormatComplete&&lastResult.scope!=='opening-first-pair-preview'))return;
-   const preview=lastResult.scope==='opening-first-pair-preview';
-   if(activeRun?.scanRunId&&activeRun?.batchFolder){$('gal-scan-open-folder').click();return;}
-   status('沒有已核對批次，請重新掃描；不在下載根目錄重複建立正式正史。');return;
-   status(preview?'已下載三則測試 JSON，供格式驗收。':'已請瀏覽器下載原生正史 JSON。這一步不會修改檔案館或 Firebase；請到輪迴檔案館「Gal AI 原生匯入」核對後套用。');
+ $('gal-scan-export').onclick=async()=>{if(busy||!lastResult||!lastResult.validation?.ok||(!lastResult.validation.nativeFormatComplete&&lastResult.scope!=='opening-first-pair-preview'))return;
+   if(!activeRun?.scanRunId||!activeRun?.batchFolder||!diagnostic)return status('沒有已核對批次，請重新掃描；不在下載根目錄重複建立正式正史。');
+   busy=true;
+   try{
+    status('正在核對原批次並重試已驗收正史的下載，不重新掃描。');
+    const result=await galSendEvidence({type:'gal-run-finish',...activeRun,state:'completed',scanned:lastResult.rawRows,
+     result:JSON.stringify(lastResult,null,2),diagnostic:JSON.stringify(diagnostic,null,2)});
+    if(!result?.ok||result.status?.state!=='completed')return status('正史下載尚未確認：'+(result?.error||result?.status?.reason||'請等待原批次終態'));
+    $('gal-scan-open-folder').click();
+   }finally{busy=false}
  };
  return p;
 }
@@ -321,16 +342,17 @@ async function downloadJson(prefix,data){
   if(result?.ok){status('已下載獨立證據批次：'+result.status.filePath);return true;}
   throw Error(result?.error||'背景下載無回應');
  }catch(error){
-  if(kind!=='unverified'){status('無法分類下載：'+String(error.message||error));return false;}
+  status('無法分類下載，改用本頁緊急下載：'+String(error.message||error));
   // Only emergency evidence can fall back to a flat browser download. It
   // remains non-importable and is conspicuously labelled for review.
  }
  const a=document.createElement('a');
- const blob=new Blob([JSON.stringify({...payload,cycleNumber:data.cycleNumber??data.target?.cycleNumber??activeRun?.cycleNumber??null,archiveKey:null,classificationPending:true},null,2)],{type:'application/json;charset=utf-8'});
+ const blob=new Blob([JSON.stringify({...payload,importable:false,cycleNumber:data.cycleNumber??data.target?.cycleNumber??activeRun?.cycleNumber??null,archiveKey:null,classificationPending:true},null,2)],{type:'application/json;charset=utf-8'});
  const url=URL.createObjectURL(blob);
  a.href=url;
- a.download='待分類_緊急保全_'+(target?.worldName||'世界觀待確認')+'_'+(target?.cycleTitle||'輪迴').replace(/[\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.json';
+ a.download=(kind==='unverified'?'待分類_緊急保全_':'待分類_緊急診斷_')+(target?.worldName||'世界觀待確認')+'_'+(target?.cycleTitle||'輪迴').replace(/[\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.json';
  document.documentElement.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
+ return true;
 }
 function status(msg){const n=$('gal-scan-info');if(n)n.textContent=String(msg);}
 
@@ -2624,7 +2646,11 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   if(registered){
    const response=await galSendEvidence({type:'gal-run-finish',...run,state:'completed',
     scanned:collected.length,result:JSON.stringify(lastResult,null,2),diagnostic:JSON.stringify(diagnostic,null,2)});
-   if(!response?.ok)throw Error(response?.error||'背景程式未接收掃描結果');
+   if(!response?.ok){
+    failure=String(response?.error||'背景程式未接收掃描結果');
+    status('⚠ 掃描與正史驗收已完成，但輸出傳輸失敗：'+failure+'\n請按「下載原生正史 JSON」重試原批次，勿重載頁面。');
+    return {ok:false,error:failure,scanValidated:true,pairs:lastResult.validation.pairs};
+   }
    if(response.status?.state==='failed'||response.status?.state==='cancelled'){
     status('⚠ 掃描與正史驗證已完成，但背景工作狀態為 '+
      response.status.state+'。請按「下載原生正史 JSON」保全本頁完成結果，再用診斷核對；不要重載頁面。');
