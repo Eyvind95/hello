@@ -2195,15 +2195,15 @@
       const resumeButton=document.createElement('button');resumeButton.id='ga-predecessor-page-resume';resumeButton.type='button';resumeButton.textContent='⚡ 使用已記住的保全續掃';
       const candidateButton=document.createElement('button');candidateButton.id='ga-predecessor-page-resume-candidate';candidateButton.type='button';candidateButton.textContent='使用較新候選保全續掃（需核定）';candidateButton.hidden=true;
       const savedInfo=document.createElement('p');savedInfo.id='ga-predecessor-page-saved-checkpoint';savedInfo.textContent='尚未讀取本機保全記憶';
-      const hashInput=document.createElement('input');hashInput.id='ga-predecessor-page-checkpoint-hash';hashInput.type='text';hashInput.maxLength=64;hashInput.placeholder='本機橋接：原檔 SHA-256';hashInput.style.cssText=input.style.cssText;
-      const localImport=document.createElement('button');localImport.id='ga-predecessor-page-local-import';localImport.type='button';localImport.textContent='從本機橋接讀取並記住保全';
+      const hashInput=document.createElement('input');hashInput.id='ga-predecessor-page-checkpoint-hash';hashInput.type='text';hashInput.maxLength=64;hashInput.placeholder='免選檔匯入：原檔 SHA-256';hashInput.style.cssText=input.style.cssText;
+      const localImport=document.createElement('button');localImport.id='ga-predecessor-page-local-import';localImport.type='button';localImport.textContent='開啟本機保全匯入頁（免選檔）';
       const savedSource=()=>location.origin+pane.dataset.chat;
       const showSaved=async()=>{
         try{
           const source=savedSource(),storage=chrome.storage.local;
           const keys=['pinned','candidate'].map(slot=>GalCheckpointMemory.key(source,slot)),records=await storage.get(keys);
           const pinned=records[keys[0]],candidate=records[keys[1]];
-          savedInfo.textContent=pinned?'已記住 '+pinned.count+' 則｜'+pinned.runId+'\nSHA-256 '+pinned.hash:'尚無已記住保全，可首次選檔或本機橋接';
+          savedInfo.textContent=pinned?'已記住 '+pinned.count+' 則｜'+pinned.runId+'\nSHA-256 '+pinned.hash:'尚無已記住保全，可首次選檔或開啟本機保全匯入頁';
           candidateButton.hidden=!candidate||(pinned&&candidate.count<=pinned.count);
           if(candidate&&!candidateButton.hidden)savedInfo.textContent+='\n另有候選 '+candidate.count+' 則｜'+candidate.runId;
         }catch(e){savedInfo.textContent='本機保全記憶暫不可用：'+String(e.message||e)}
@@ -2214,9 +2214,9 @@
         try{
           const expectedHash=hashInput.value.trim().toLowerCase();
           if(!/^[a-f0-9]{64}$/.test(expectedHash))throw Error('請輸入原始檔 SHA-256');
-          const result=await chrome.runtime.sendMessage({type:'predecessor-local-checkpoint-import',expectedHash});
-          if(!result?.ok)throw Error(result?.error||'本機橋接匯入失敗');
-          feedback.textContent='已記住 '+result.count+' 則，未啟動掃描';
+          const result=await chrome.runtime.sendMessage({type:'predecessor-open-checkpoint-import',expectedHash});
+          if(!result?.ok)throw Error(result?.error||'無法開啟本機保全匯入頁');
+          feedback.textContent='已開啟擴充功能獨立匯入頁。完成後返回此頁，直接續掃或重新開啟設定查看。';
           await showSaved();
         }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
         finally{localImport.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;start.disabled=false;trial.disabled=false;twenty.disabled=false;close.disabled=false}
@@ -2245,7 +2245,7 @@
               await GalCheckpointMemory.save(storage,bytes,source,pc,checkpoint.hash);
             }else{
               checkpoint=await GalCheckpointMemory.read(storage,source,pc,resume==='candidate'?'candidate':'pinned');
-              if(!checkpoint)throw Error('尚無已記住的保全，請先選檔或使用本機橋接');
+              if(!checkpoint)throw Error('尚無已記住的保全，請先選檔或開啟本機保全匯入頁');
             }
             if(pane.dataset.chat!==path())throw Error('聊天已切換，停止續掃');
           }
