@@ -15,13 +15,22 @@ const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function harness(){
  const store={galProfilesByPage:{[A]:{cycleId:CYCLE_A,cycleTitle:'第5輪迴',worldName:'《全員精神穩定，感情除外》'},
   [B]:{cycleId:CYCLE_B,cycleTitle:'第9周目',worldName:'《身為冒險者就可以這樣那樣》'}}};
- const items=[],shown=[],events={};
+ const items=[],shown=[],events={},wireSources=new Map(),blobs=new Map();
+ let offscreenListen;
+ const vm=require('node:vm');
+ const blobContext=vm.createContext({crypto,TextEncoder,Blob,setTimeout:()=>0,
+  URL:{createObjectURL(blob){const url='blob:chrome-extension://'+id+'/'+crypto.randomUUID();blobs.set(url,blob);return url},revokeObjectURL(){}},
+  chrome:{runtime:{id,getURL:s=>'chrome-extension://'+id+'/'+s,onMessage:{addListener:f=>offscreenListen=f}}}});
+ vm.runInContext(fs.readFileSync(require.resolve('./gal-scan-files.js'),'utf8'),blobContext);
+ const offscreenSend=message=>new Promise(resolve=>{
+  const r=offscreenListen(message,{id,url:'chrome-extension://'+id+'/background.js'},resolve);
+  if(r!==true)resolve(null);
+ });
  let seq=1,listen,interrupt,alarm,updated,removed,changed,emergencySnapshot=null;
  const api={
   runtime:{
    id,getURL:s=>'chrome-extension://'+id+'/'+s,getManifest:()=>({version:'0.8.38'}),
-   getContexts:async()=>[{}],sendMessage:async v=>
-    v.type==='gal-run-blob-create'?'blob:chrome-extension://'+id+'/'+items.length:true,
+   getContexts:async()=>[{}],sendMessage:async v=>v.type.startsWith('gal-run-blob-')?offscreenSend(v):true,
    onMessage:{addListener:f=>listen=f},onStartup:{addListener:f=>interrupt=f},
    onInstalled:{addListener:f=>events.installed=f}
   },
@@ -32,7 +41,15 @@ function harness(){
   alarms:{create:async()=>{},clear:async()=>{},onAlarm:{addListener:f=>alarm=f}},
   offscreen:{createDocument:async()=>{}},
   tabs:{
-   sendMessage:async(tab,msg)=>msg?.type==='gal-scan-emergency-snapshot'?emergencySnapshot:null,
+   sendMessage:async(tab,msg)=>{
+    if(msg?.type==='gal-scan-emergency-snapshot')return emergencySnapshot;
+    if(msg?.type==='gal-run-wire-pull'){
+     const text=wireSources.get(msg.token);
+     if(text==null)return null;
+     return {ok:true,token:msg.token,index:msg.index,text:text.slice(msg.index*256*1024,(msg.index+1)*256*1024)};
+    }
+    return null;
+   },
    onUpdated:{addListener:f=>updated=f},onRemoved:{addListener:f=>removed=f}
   },
   downloads:{
@@ -84,10 +101,11 @@ function harness(){
   diagnostic:diag(runId,from),reason:state==='completed'?undefined:'validation failed'
  },from);
  const statuses=()=>items.filter(x=>x.filename.endsWith('/掃描狀態.json'));
- return {store,items,shown,start,finish,dispatch,sender,diag,unverified,result,statuses,helpers,
+ return {store,items,shown,start,finish,dispatch,sender,diag,unverified,result,statuses,helpers,wireSources,blobs,offscreenSend,
   provideEmergency:x=>emergencySnapshot=x,
   install:async()=>{events.installed();for(let i=0;i<6;i++)await new Promise(ok=>setImmediate(ok))},
   alarm:async name=>{alarm({name});for(let i=0;i<6;i++)await new Promise(ok=>setImmediate(ok))},
+  changed:async delta=>{changed(delta);for(let i=0;i<6;i++)await new Promise(ok=>setImmediate(ok))},
   liveStatus(runId=RUN1){return store.galScanRuns[runId]}};
 }
 test('Taiwan batch paths are unique, frozen, sanitized and support special cycle names',()=>{
@@ -344,4 +362,84 @@ test('road label aliases and current tab URL preserve exact cycle binding across
  assert.equal(r.ok,true);assert.equal(r.status.worldKey,'road');assert.equal(r.status.cycleNumber,1);
  assert.match(r.status.batchFolder,/公路求生－我是求生者！\/第01輪迴\/三則測試/);
  assert.equal((await h.dispatch({type:'gal-run-progress',scanRunId:RUN1,cycleId:CYCLE_B,scanned:1},sender)).ok,true);
+});
+
+test('large wire reconstruction is exact across Unicode, retries missing chunks and rejects corrupt bytes',async()=>{
+ const {galReadWire,galWireHash}=require('./gal-scan-status.js');
+ const size=256*1024;
+ for(const mib of [1,40,64,100,200]){
+  const value='中😀'.repeat(Math.floor(mib*1024*1024/7))+'尾';
+  const token=RUN1,descriptor={galWire:1,token,length:value.length,count:Math.ceil(value.length/size),sha256:await galWireHash(value)};
+  let attempts=0;
+  const pull=async(t,i)=>({ok:true,token:t,index:i,text:value.slice(i*size,(i+1)*size)});
+  assert.equal(await galReadWire(descriptor,async(t,i)=>{if(i===0&&attempts++===0)throw Error('transient');return pull(t,i)}),value);
+  if(mib===1){
+   await assert.rejects(()=>galReadWire(descriptor,async()=>null),/缺段/);
+   await assert.rejects(()=>galReadWire(descriptor,async(t,i)=>{const r=await pull(t,i);if(i===0)r.text='x'+r.text.slice(1);return r}),/SHA-256/);
+  }
+ }
+});
+test('large transport uses bounded page and offscreen messages without weakening canonical gates',()=>{
+ const page=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const worker=fs.readFileSync(require.resolve('./gal-scan-status.js'),'utf8');
+ const offscreen=fs.readFileSync(require.resolve('./gal-scan-files.js'),'utf8');
+ assert.match(page,/gal-run-wire-pull/);assert.match(page,/galSendEvidence\(\{type:'gal-run-finish'/);
+ assert.match(worker,/gal-run-blob-chunk/);assert.match(worker,/nativeFormatComplete!==true/);
+ assert.match(offscreen,/分段未收齊/);assert.match(offscreen,/SHA-256不符/);
+});
+
+test('both transport hops preserve the full large JSON and confirm actual downloaded batch file',async()=>{
+ const h=harness();assert.equal((await h.start()).ok,true);
+ const {galWireHash}=require('./gal-scan-status.js');
+ const data=JSON.parse(h.unverified(RUN1,h.sender(),3));data.rows[0].domText='中😀\\'.repeat(400000);
+ const value=JSON.stringify(data),token=RUN2;
+ h.wireSources.set(token,value);
+ const descriptor={galWire:1,token,length:value.length,count:Math.ceil(value.length/(256*1024)),sha256:await galWireHash(value)};
+ const res=await h.dispatch({type:'gal-run-finish',scanRunId:RUN1,cycleId:CYCLE_A,state:'failed',scanned:3,diagnostic:h.diag(),unverified:descriptor});
+ assert.equal(res.ok,true,res.error);assert.equal(res.status.state,'failed');
+ const item=h.items.find(x=>x.filename.endsWith('/未驗證掃描資料.json'));
+ assert.ok(item);const downloaded=JSON.parse(await h.blobs.get(item.url).text());
+ assert.deepEqual(downloaded.rows,data.rows);
+ assert.equal(downloaded.importable,false);
+ assert.ok(res.status.files.unverified);assert.ok(res.status.files.diagnostic);
+});
+test('offscreen rejects missing or conflicting chunks and duplicate identical chunks are idempotent',async()=>{
+ const h=harness(),value='x'.repeat(300000),token=RUN3;
+ const {galWireHash}=require('./gal-scan-status.js');
+ const begin={type:'gal-run-blob-begin',token,length:value.length,count:2,sha256:await galWireHash(value)};
+ assert.equal((await h.offscreenSend(begin)).ok,true);
+ const chunk={type:'gal-run-blob-chunk',token,index:0,text:value.slice(0,256*1024)};
+ assert.equal((await h.offscreenSend(chunk)).ok,true);
+ assert.equal((await h.offscreenSend(chunk)).ok,true);
+ assert.equal((await h.offscreenSend({...chunk,text:'z'+chunk.text.slice(1)})).ok,false);
+ assert.equal((await h.offscreenSend({type:'gal-run-blob-end',token})).ok,false);
+ assert.equal((await h.offscreenSend({type:'gal-run-blob-chunk',token,index:1,text:value.slice(256*1024)})).ok,true);
+ const end=await h.offscreenSend({type:'gal-run-blob-end',token});
+ assert.equal(end.ok,true);assert.equal(await h.blobs.get(end.url).text(),value);
+ assert.deepEqual(await h.offscreenSend({type:'gal-run-blob-end',token}),end);
+});
+
+test('interrupted export does not mark partial downloads completed; the same validated batch can resume',async()=>{
+ const h=harness();assert.equal((await h.start()).ok,true);
+ const run=h.liveStatus();
+ const id=999,url='blob:chrome-extension://'+String(run.tabId)+'/partial';
+ h.items.push({id,state:'complete',filename:run.batchFolder+'/原生正史.json',url,byExtensionId:'gal-archive-extension-test'});
+ Object.assign(run,{state:'running',exportPending:true,finishState:'completed',scanned:4,expectedFiles:['result','diagnostic'],
+  files:{result:{id,url}}});
+ await h.changed({id,state:{current:'complete'}});
+ assert.equal(h.liveStatus().state,'running');
+ const res=await h.finish('completed');
+ assert.equal(res.ok,true,res.error);assert.equal(res.status.state,'completed');
+ assert.ok(res.status.files.result);assert.ok(res.status.files.diagnostic);
+});
+test('transport-failed completed scan can retry but still cannot bypass native format checks',async()=>{
+ const h=harness();assert.equal((await h.start()).ok,true);
+ const res=await h.dispatch({type:'gal-run-export-failed',scanRunId:RUN1,cycleId:CYCLE_A,scanned:4,scanOutcome:'completed',transportError:'transport interrupted'});
+ assert.equal(res.ok,true);assert.equal(res.status.exportFailure,true);
+ assert.equal(res.status.scanOutcome,'completed');assert.equal(res.status.state,'failed');
+ const bad=JSON.parse(h.result());bad.validation.nativeFormatComplete=false;
+ const rejected=await h.dispatch({type:'gal-run-finish',scanRunId:RUN1,cycleId:CYCLE_A,state:'completed',scanned:4,result:JSON.stringify(bad),diagnostic:h.diag()});
+ assert.equal(rejected.ok,false);
+ const done=await h.finish('completed');assert.equal(done.ok,true,done.error);
+ assert.equal(done.status.state,'completed');assert.equal(done.status.exportFailure,false);
 });

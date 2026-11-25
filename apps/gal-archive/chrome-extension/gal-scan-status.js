@@ -27,6 +27,39 @@ function galBatchIdentity(profile){
   cycleId,cycleTitle,cycleNumber,archiveKey:world&&cycleId?world.worldKey+'::'+cycleId:null};
 }
 
+
+const GAL_WIRE_CHARS=256*1024, GAL_WIRE_MAX=256*1024*1024;
+async function galWireHash(text){
+ const bytes=new TextEncoder().encode(text);
+ return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function galWireRetry(action){
+ let last;
+ for(let i=0;i<3;i++)try{return await action()}catch(error){last=error}
+ throw last;
+}
+async function galReadWire(value,pull){
+ if(value==null||typeof value==='string')return value;
+ if(value.galWire!==1||typeof value.token!=='string'||!/^[a-f0-9-]{36}$/i.test(value.token)||
+    !Number.isInteger(value.length)||value.length<=0||value.length>GAL_WIRE_MAX||
+    value.count!==Math.ceil(value.length/GAL_WIRE_CHARS)||!/^[a-f0-9]{64}$/.test(value.sha256))
+  throw Error('大型掃描資料描述不合法');
+ const pieces=[];
+ for(let index=0;index<value.count;index++){
+  const piece=await galWireRetry(async()=>{
+   const reply=await pull(value.token,index);
+   if(!reply?.ok||reply.token!==value.token||reply.index!==index||typeof reply.text!=='string'||
+      reply.text.length!==Math.min(GAL_WIRE_CHARS,value.length-index*GAL_WIRE_CHARS))
+    throw Error('大型掃描資料缺段或序號不符：'+index);
+   return reply.text;
+  });
+  pieces.push(piece);
+ }
+ const text=pieces.join('');
+ if(await galWireHash(text)!==value.sha256)throw Error('大型掃描資料SHA-256不符');
+ return text;
+}
+
 function installGalScanStatus(api){
  const KEY='galScanRuns',ALARM='gal-scan-deadline:';
  const DEADLINE={full:240,preview:45,'event-three':45,'position-seven':45,missing:45,'history-source':240};
@@ -78,6 +111,7 @@ function installGalScanStatus(api){
     .map(([k,f])=>[k,f.path])),
    unverifiedCount:run.unverifiedCount??null,
    exportPending:run.exportPending===true,
+   scanOutcome:run.finishState||null,exportFailure:run.exportFailure===true,
    pendingFiles:Object.entries(run.files||{}).filter(([,f])=>!f.path).map(([kind])=>kind)
   };
  }
@@ -120,15 +154,40 @@ function installGalScanStatus(api){
    cycleTitle:run.cycleTitle,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey};
   return JSON.stringify({...data,...meta,...(data.target?{target:{...data.target,...meta}}:{})},null,2);
  }
+ async function hydrateWire(message,sender,fields){
+  const result={...message};
+  for(const field of fields)if(result[field]!=null&&typeof result[field]!=='string'){
+   result[field]=await galReadWire(result[field],(token,index)=>api.tabs.sendMessage(sender.tab.id,
+    {type:'gal-run-wire-pull',token,index,field,scanRunId:message.scanRunId,cycleId:message.cycleId},
+    {documentId:sender.documentId}));
+  }
+  return result;
+ }
  async function makeFile(run,kind,text){
   if(!filenames[kind]||kind==='status'||typeof text!=='string'||!text||
-     new TextEncoder().encode(text).length>40*1024*1024)
+     text.length>GAL_WIRE_MAX)
    throw Error('輸出檔格式或大小不安全');
   text=attachIdentity(run,text);
-  if(new TextEncoder().encode(text).length>40*1024*1024)throw Error('輸出檔大小超過安全上限');
+  if(text.length>GAL_WIRE_MAX)throw Error('輸出檔超過256Mi UTF-16 units安全上限');
   if(!(await api.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT'],documentUrls:[offscreenUrl]})).length)
    await api.offscreen.createDocument({url:'gal-scan-files.html',reasons:['BLOBS'],justification:'Save raw Gal AI scan evidence'});
-  const url=await api.runtime.sendMessage({type:'gal-run-blob-create',text});
+  let url;
+  if(text.length<=128*1024)url=await api.runtime.sendMessage({type:'gal-run-blob-create',text});
+  else{
+   const token=crypto.randomUUID(),count=Math.ceil(text.length/GAL_WIRE_CHARS),sha256=await galWireHash(text);
+   const send=async message=>{
+    const r=await api.runtime.sendMessage(message);
+    if(!r?.ok)throw Error(r?.error||'offscreen分段傳輸未確認');
+    return r;
+   };
+   try{
+    await galWireRetry(()=>send({type:'gal-run-blob-begin',token,count,length:text.length,sha256}));
+    for(let index=0;index<count;index++)
+     await galWireRetry(()=>send({type:'gal-run-blob-chunk',token,index,text:text.slice(index*GAL_WIRE_CHARS,(index+1)*GAL_WIRE_CHARS)}));
+    const result=await galWireRetry(()=>send({type:'gal-run-blob-end',token}));
+    url=result.url;
+   }finally{await api.runtime.sendMessage({type:'gal-run-blob-abort',token}).catch(()=>{});}
+  }
   if(typeof url!=='string'||!url.startsWith('blob:'+api.runtime.getURL('')))throw Error('無法建立下載來源');
   try{
    const id=await api.downloads.download({url,filename:run.batchFolder+'/'+filenames[kind],
@@ -166,19 +225,20 @@ function installGalScanStatus(api){
    next.statusPath=path;await save(runs);
   }catch(error){
    // Actual download failure must not be reported as success.
-   next.state='failed';next.reason='掃描狀態檔下載未完成：'+String(error.message||error);
+   next.state='failed';next.exportFailure=true;next.reason='掃描狀態檔下載未完成：'+String(error.message||error);
    await save(runs);
   }
   await api.tabs.sendMessage(next.tabId,{type:'gal-run-page-status',status:publicStatus(next)},
    {documentId:next.documentId}).catch(()=>{});
   return next;
  }
+ const missingExpected=run=>Array.isArray(run.expectedFiles)&&run.expectedFiles.some(kind=>!run.files?.[kind]?.id);
  async function reconcile(runs,run){
-  if(!run.exportPending||run.state!=='running')return;
+  if(!run.exportPending||run.state!=='running'||missingExpected(run))return;
   try{
    if(!(await pendingFiles(runs,run)))return;
    await finish(runs,run,run.finishState,run.reason);
-  }catch(error){await finish(runs,run,'failed',String(error.message||error))}
+  }catch(error){run.exportFailure=true;await finish(runs,run,'failed',String(error.message||error))}
  }
  const isOwner=(run,sender)=>Boolean(run&&run.tabId===sender.tab?.id&&
   run.documentId===sender.documentId&&run.source===safeUrl(sender.tab?.url||sender.url));
@@ -214,6 +274,7 @@ function installGalScanStatus(api){
    if(runs[message.scanRunId])throw Error('批次 ID 重複');
    const startedAt=now();
    const run={...identity,scanRunId:message.scanRunId,source:src,scope:'missing',scannerVersion:api.runtime.getManifest().version,startedAt,at:startedAt,deadlineMinutes:45,scanned:0,state:'running',files:{},batchFolder:batchPath(identity.cycleTitle,identity.cycleId,'missing',startedAt,message.scanRunId,identity.worldName)};
+   message=await hydrateWire(message,sender,['text']);
    const data=JSON.parse(message.text);
    if(kind==='unverified'&&(data.format!=='gal-ai-unverified-scan'||data.importable!==false))throw Error('手動保全不得為正式正史');
    const payload={...data,originalScanRunId:data.scanRunId||null,scanRunId:run.scanRunId,source:src,importable:false};
@@ -271,8 +332,18 @@ function installGalScanStatus(api){
    // Live progress stays in extension storage; only lifecycle and explicit evidence saves write the status file.
    return publicStatus(run);
   }
+  if(message.type==='gal-run-export-failed'){
+   if(run.state==='running'&&(!run.exportPending||missingExpected(run))){
+    run.scanned=Math.max(run.scanned,Number.isInteger(message.scanned)&&message.scanned<=20000?message.scanned:0);
+    run.exportFailure=true;
+    if(terminal.has(message.scanOutcome))run.finishState=message.scanOutcome;
+    await finish(runs,run,'failed','掃描輸出傳輸未確認：'+String(message.transportError||'未知').slice(0,500));
+   }
+   return publicStatus(runs[run.scanRunId]);
+  }
   if(message.type==='gal-run-manual-save'){
    if(run.exportPending)throw Error('正在整理終態下載，請等下載完成再操作');
+   message=await hydrateWire(message,sender,['unverified']);
    const data=JSON.parse(attachIdentity(run,message.unverified));
    if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||
       data.scanRunId!==run.scanRunId||data.target?.cycleId!==run.cycleId||
@@ -300,12 +371,20 @@ function installGalScanStatus(api){
    return publicStatus(run);
   }
   if(message.type!=='gal-run-finish')throw Error('未知掃描指令');
-  const late=run.state==='failed'&&run.reason==='掃描或下載逾時'&&message.state==='completed'&&
+  const late=run.state==='failed'&&(run.reason==='掃描或下載逾時'||run.exportFailure===true)&&message.state==='completed'&&
    !Object.values(runs).some(r=>r.scanRunId!==run.scanRunId&&r.state==='running'&&r.source===run.source);
-  if((terminal.has(run.state)&&!late)||run.exportPending)return publicStatus(run);
+  if(terminal.has(run.state)&&!late)return publicStatus(run);
+  // A worker may have stopped after writing only the first file. The original
+  // page may resubmit the complete verified envelope, but cannot change outcome
+  // or row count while that export is incomplete.
+  if(run.exportPending){
+   if(!missingExpected(run))return publicStatus(run);
+   if(run.finishState!==message.state||run.scanned!==message.scanned)throw Error('中斷的輸出只能以原驗收結果與筆數重新提交');
+  }
   if(!terminal.has(message.state)||!Number.isInteger(message.scanned)||
      message.scanned<0||message.scanned>20000||message.scanned<run.scanned)
     throw Error('終態掃描數不得小於已確認進度');
+  message=await hydrateWire(message,sender,['diagnostic','unverified','result']);
   const diagnostic=JSON.parse(attachIdentity(run,message.diagnostic));
   if(diagnostic.scanRunId!==run.scanRunId||diagnostic.cycleId!==run.cycleId)throw Error('診斷來源不一致');
   let completedResult=null;
@@ -332,10 +411,19 @@ function installGalScanStatus(api){
     }
    }
   }
-  const next=record(runs,run,{state:'running',lateCompletionRecovered:late,
-   finishState:message.state,scanned:message.scanned,
+  const resultKind=run.scope==='event-three'?'eventResult':
+     run.scope==='position-seven'?'positionResult':run.scope==='missing'?'missingResult':run.scope==='history-source'?'historyResult':'result';
+  const expectedFiles=['diagnostic',...(message.state==='completed'?[resultKind]:message.unverified?['unverified']:[])];
+  if(run.exportPending){
+   for(const [kind,file] of Object.entries(run.files||{}))if(expectedFiles.includes(kind)){
+    if(!file.path&&file.id)await api.downloads.cancel(file.id).catch(()=>{});
+    if(file.url)await api.runtime.sendMessage({type:'gal-run-blob-release',url:file.url}).catch(()=>{});
+   }
+  }
+  const next=record(runs,run,{state:'running',lateCompletionRecovered:late,expectedFiles,
+   finishState:message.state,exportFailure:false,scanned:message.scanned,
    reason:message.state==='completed'?null:String(message.reason||'掃描中斷').slice(0,500),
-   exportPending:true,files:{...(run.files||{})}});
+   exportPending:true,files:Object.fromEntries(Object.entries(run.files||{}).filter(([kind,file])=>file.path&&!expectedFiles.includes(kind)))});
   await save(runs);
   await api.alarms.create(ALARM+run.scanRunId,{delayInMinutes:EXPORT_DEADLINE});
   try{
@@ -343,9 +431,7 @@ function installGalScanStatus(api){
     next.summary={messages:completedResult.messages?.length||completedResult.rows?.length||0,
      pairs:completedResult.validation?.pairs||0,events:completedResult.events?.length||0,
      autoContinues:completedResult.validation?.autoContinues||0};
-    const kind=run.scope==='event-three'?'eventResult':
-     run.scope==='position-seven'?'positionResult':run.scope==='missing'?'missingResult':run.scope==='history-source'?'historyResult':'result';
-    next.files[kind]=await makeFile(run,kind,message.result);await save(runs);
+    next.files[resultKind]=await makeFile(run,resultKind,message.result);await save(runs);
    }else if(message.unverified){
     const data=JSON.parse(attachIdentity(run,message.unverified));
     if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||
@@ -356,11 +442,11 @@ function installGalScanStatus(api){
    }
    next.files.diagnostic=await makeFile(run,'diagnostic',message.diagnostic);await save(runs);
    await reconcile(runs,next);
-  }catch(error){await finish(runs,next,'failed','儲存掃描證據失敗：'+String(error.message||error));throw error}
+  }catch(error){next.exportFailure=true;await finish(runs,next,'failed','儲存掃描證據失敗：'+String(error.message||error));throw error}
   return publicStatus(runs[run.scanRunId]);
  }
  api.runtime.onMessage.addListener((message,sender,reply)=>{
-  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save','gal-run-progress','gal-run-download-extra'].includes(message?.type))return false;
+  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save','gal-run-progress','gal-run-download-extra','gal-run-export-failed'].includes(message?.type))return false;
   serial(()=>handle(message,sender)).then(s=>reply({ok:true,status:s}),
    error=>reply({ok:false,error:String(error.message||error)}));
   return true;
@@ -380,16 +466,21 @@ function installGalScanStatus(api){
    for(const run of Object.values(runs).filter(r=>r.state==='running'&&predicate(r))){
     // If a page remains available, ask it to download its last snapshot
     // before Chrome terminates the run.
-    const snapshot=await api.tabs.sendMessage(run.tabId,
+    let snapshot=await api.tabs.sendMessage(run.tabId,
      {type:'gal-scan-emergency-snapshot',reason},
      {documentId:run.documentId}).catch(()=>null);
+    if(snapshot?.scanRunId===run.scanRunId){
+     try{snapshot=await hydrateWire({...snapshot,cycleId:run.cycleId},
+      {tab:{id:run.tabId},documentId:run.documentId},['diagnostic','unverified'])}
+     catch(error){run.reason='緊急保全傳輸失敗：'+String(error.message||error);snapshot=null}
+    }
     if(snapshot?.scanRunId===run.scanRunId&&
        Number.isInteger(snapshot.scanned)&&snapshot.scanned>=0&&snapshot.scanned<=20000&&
        typeof snapshot.diagnostic==='string'){
      try{
       const diag=JSON.parse(snapshot.diagnostic);
       if(diag.scanRunId===run.scanRunId&&diag.cycleId===run.cycleId){
-       run.scanned=snapshot.scanned;run.files={};
+       run.scanned=Math.max(run.scanned,snapshot.scanned);run.files={...(run.files||{})};
        if(snapshot.unverified){
         const data=JSON.parse(snapshot.unverified);
         if(data.format==='gal-ai-unverified-scan'&&data.importable===false&&
@@ -404,7 +495,7 @@ function installGalScanStatus(api){
       }
      }catch(error){run.reason='緊急保全失敗：'+String(error.message||error)}
     }
-    await finish(runs,run,'failed',reason);
+    await finish(runs,run,'failed',run.reason?.startsWith('緊急保全')?reason+'；'+run.reason:reason);
    }
   });
  }
@@ -418,4 +509,4 @@ function installGalScanStatus(api){
  api.alarms.onAlarm.addListener(a=>interrupt(r=>a.name===ALARM+r.scanRunId,'掃描或下載逾時'));
  return {batchPath,cycleFolder,publicStatus,attachIdentity};
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={installGalScanStatus,galBatchIdentity,galCycleNumber};
+if(typeof module!=='undefined'&&module.exports)module.exports={installGalScanStatus,galBatchIdentity,galCycleNumber,galReadWire,galWireHash};
