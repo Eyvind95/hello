@@ -96,3 +96,20 @@ test('actual historyRun exits no-growth despite continued scroll movements',asyn
  a.equal(output.status,'failed');a.match(output.error,/60秒未取得新訊息/);a.equal(output.count,2);
  a.ok(b.scrollStats.noGrowthWindows>8);a.ok(positions.some((v,i)=>i>0&&positions[i-1]-v>=250));a.ok(now<75000);
 });
+
+test('downward auto-scroll jump is detected without mistaking height changes or small jitter',()=>{
+ a.equal(c.scrollReset(7037,22200.8,22875,22875,674),true);
+ a.equal(c.scrollReset(7037,7038,22875,22875,674),false);
+ a.equal(c.scrollReset(7037,22200.8,25000,22875,674),false);
+ a.equal(c.scrollReset(7037,5000,22875,22875,674),false);
+});
+test('scroll recovery returns to intended target, records the reset and does not claim new rows',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  async function historySettled('));
+ const trace=[],b={host:{scrollTop:22200.8,scrollHeight:22875,clientHeight:674},scrollStats:{scrollResets:0},rows:[r('1')]};
+ const ctx={pc:c,historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>h.scrollTop=to};
+ vm.runInNewContext(block+';globalThis.recover=historyRecoverScroll;',ctx);
+ a.equal(ctx.recover(b,7037,22875,'test'),true);a.equal(b.host.scrollTop,7037);a.equal(b.rows.length,1);a.equal(b.scrollStats.scrollResets,1);a.equal(trace[0].event,'scroll-reset');
+ a.equal(ctx.recover(b,7037,22875,'test'),false);
+});
