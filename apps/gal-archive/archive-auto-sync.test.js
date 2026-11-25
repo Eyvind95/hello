@@ -83,7 +83,7 @@ test('no automatic sync is performed without account authentication, and only se
  const js=fs.readFileSync(path.join(root,'archive-auto-sync.js'),'utf8');
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const handover=fs.readFileSync(path.join(root,'handover-cloud.js'),'utf8');
- assert.match(js,/if\(!uid\|\|!localReady\|\|!enabled\|\|!app\.isSignedIn\(uid\)\)return/);
+ assert.match(js,/if\(!uid\|\|!localReady\|\|\(!enabled&&!handoverOnly\)\|\|!app\.isSignedIn\(uid\)\)return/);
  assert.match(js,/checksAfterPlan\(plan\)/);
  assert.match(js,/plan\.snapshots/);
  assert.match(js,/gal-archive-world-pre-cloud:/);
