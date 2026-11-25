@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.10.0: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.1: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.10.0';
+const SCANNER_VERSION='0.10.1';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
