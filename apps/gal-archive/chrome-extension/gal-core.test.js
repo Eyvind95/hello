@@ -2130,3 +2130,15 @@ test('road observed HUD variants and accepted-event suffix projection preserve n
  assert.equal(c.compareNativeParagraphs(dom.replace('測試敘事','其他敘事'),n,opts).text,null);
  assert.equal(c.compareNativeParagraphs(dom,n,{...opts,codeBlocks:[]}).text,null);
 });
+
+test('road projection proves multi-line dialogue and prose between last closed box and literal open HUD',()=>{
+ const c=context.GalArchiveCore,w='🔞公路求生－我是求生者！🔞',f=String.fromCharCode(96).repeat(3);
+ const h=['⏰：來到公路第2日｜01.02．08:20．天氣：☁','🚗：測試車｜S級','🔋：電力｜10／20','🔧：100／100','📦：10／100','🧩：1／10','🛣：10公里／每日規定15公里','🥩：飢餓度：12｜💧：口渴度：12','⚡：100／100','❤：正常','🎒：無','⚔：無','💰：0','📜：無','💦：無','📐：無'].join('\n');
+ const label='<<'+w+'>>:',sys='【測試】',body='「第一行\n第二行」';
+ const native=label+' {{測試情境}}\n'+body+'\n'+f+'\n'+sys+'\n'+f+'\n後方敘事\n'+f+'\n'+h;
+ const dom=label+'\n第一行\n第二行\n'+sys+'\n後方敘事\n'+f+'\n'+h;
+ const opts={worldName:w,source:'whif-message-content',codeBlocks:[sys]};
+ assert.equal(c.compareNativeParagraphs(dom,native,opts).text,native);
+ assert.equal(c.compareNativeParagraphs(dom.replace('後方敘事','遺漏敘事'),native,opts).text,null);
+ assert.equal(c.compareNativeParagraphs(dom.replace('第二行',''),native,opts).text,null);
+});

@@ -405,7 +405,7 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  const eventWrapper=eventBound&&leadEvent&&leadEvent[2]===leadEvent[3]&&isRoadWorld(leadEvent[2])&&!visible.includes(leadEvent[1])?leadEvent:null;
  const afterClosed=blocks.length?blocks.at(-1).index+blocks.at(-1)[0].length:0;
  const openTail=(eventBound||options.source==='whif-message-content'&&!options.event&&!options.opening)&&fenceLines.length===2*blocks.length+1&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE)&&
-  /^\s*\x60{3}[ \t]*\n⏰/u.test(original.slice(afterClosed))&&!!parseRoadClock(original.slice(afterClosed));
+  /(?:^|\n)[ \t]*\x60{3}[ \t]*\n⏰/u.test(original.slice(afterClosed))&&!!parseRoadClock(original.slice(afterClosed));
  const fencesValid=(fenceLines.length===2*blocks.length||openTail)&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE);
  const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
  let pos=0,sourcePos=0,omitted=0,quotePairs=0,hiddenContext='',hiddenImage='',worldContext='';
@@ -417,7 +417,7 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
   if(!prose)return false;
   let cursor=pos,from=0,pairs=0;
   const eat=s=>{const k=compact(s);if(!actual.startsWith(k,cursor))return false;cursor+=k.length;return true};
-  for(const m of v.matchAll(/「([^「」\n]+)」/gu)){
+  for(const m of v.matchAll(/「([^「」]+)」/gu)){
    if(!eat(v.slice(from,m.index)))return false;
    if(!eat(m[0])){const q=compact(m[1]);if(!q||!starts.has(cursor)||!ends.has(cursor+q.length)||!eat(m[1]))return false;pairs++;}
    from=m.index+m[0].length;
@@ -434,8 +434,8 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  }
  // A visible world-name line is never removed. Only its adjacent hidden
  // context may be projected, and the entire remaining message must match.
- const label=original.slice(sourcePos).match(/^(<🔞?公路求生[－—–-]我是求生者[！!]🔞?>[:：])[ \t]+(\{\{[^{}\n]{1,200}\}\})[ \t]*(?=\n)/u);
- if(matched&&(bounded||eventWrapper)&&label&&adventureContextLine(label[2])&&!visible.includes(label[2])&&visible.split('\n')[0].trim()===label[1]&&take(label[1])){
+ const label=original.slice(sourcePos).match(/^(<{0,2}🔞?公路求生[－—–-]我是求生者[！!]🔞?>{0,2}[:：])[ \t]+(\{\{[^{}\n]{1,200}\}\})[ \t]*(?=\n)/u);
+ if(matched&&(bounded||eventWrapper)&&label&&(label[1].match(/^<*/u)[0].length===(label[1].match(/>*[:：]$/u)[0].length-1))&&adventureContextLine(label[2])&&!visible.includes(label[2])&&visible.split('\n')[0].trim()===label[1]&&take(label[1])){
   worldContext=label[2];sourcePos+=label[0].length;
  }
  // Project a single standalone leading context only for an independently

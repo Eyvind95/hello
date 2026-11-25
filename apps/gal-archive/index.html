@@ -132,7 +132,7 @@ input[type="datetime-local"]{display:block;max-width:320px;width:100%;color-sche
 <div class="modalback hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle"><div class="modal"><div class="sectionhead"><h2 id="importTitle">匯入輪迴檔案館備份</h2><button class="btn small" id="closeImport">關閉</button></div><p class="note">支援完整 .gab（正史、交接稿、評語、附件）與原本正史 JSON；相同正史輪迴 ID 會更新，請先另存現有備份。</p><label for="importFile">選擇完整 .gab 或正史 JSON 備份</label><input type="file" id="importFile" accept=".gab,.json,application/json,application/octet-stream"><div class="divider"></div><label for="importPaste">也可以直接貼上 JSON</label><textarea id="importPaste" placeholder="把 JSON 備份全文貼在這裡…" style="min-height:140px"></textarea><p id="importStatus" role="status" aria-live="polite" style="white-space:pre-wrap;color:#d9ddff;font-size:.89rem">尚未選擇備份。</p><div class="actions topsp"><button class="btn primary" id="importConfirm">開始匯入</button><button class="btn" id="importCheck">檢查備份內容</button></div></div></div>
 <div class="modalback hidden" id="archiveReplayModal" role="dialog" aria-modal="true" aria-labelledby="archiveReplayTitle"><div class="modal" style="max-width:840px">
 <div class="sectionhead"><h2 id="archiveReplayTitle">🧪 保全資料重新驗收</h2><button class="btn small" id="archiveReplayClose" type="button">關閉</button></div>
-<p class="note">使用網站內建最新版核心，重新驗收同一批次的完整保全。原掃描必須已到頁尾。完整性早期失敗批次可重新驗收；來源身份清單不足時僅輸出診斷。只有全部驗收通過才可轉正。所有檔案在瀏覽器內處理，不自動匯入或上傳。</p>
+<p class="note">使用網站內建最新版核心，重新驗收同一批次的完整保全。原掃描必須已到頁尾。完整性早期失敗批次可重新驗收；可使用同輪迴隱藏玩家局部證據補入原生來源。缺少原批次正式失敗終態或來源身份清單時僅輸出診斷。只有全部驗收通過才可轉正。所有檔案在瀏覽器內處理，不自動匯入或上傳。</p>
 <label for="archiveReplayRaw">1. 未驗證掃描資料.json</label><input id="archiveReplayRaw" type="file" accept=".json,application/json">
 <label for="archiveReplayDiag">2. 掃描診斷.json（正式重驗必須，同批次）</label><input id="archiveReplayDiag" type="file" accept=".json,application/json">
 <label for="archiveReplayState">3. 掃描狀態.json（正式重驗必須，同批次）</label><input id="archiveReplayState" type="file" accept=".json,application/json">
@@ -1456,7 +1456,7 @@ function renderEvents(r){
       +'<span class="archive-event-status">'+archiveEventStatusText(ev.status)+'</span>'
       +'<span class="note">事件 #'+(i+1)+'</span></div>'
       +archiveTimeDisplay(ev,null,true)+archiveImagesHtml(ev,i)
-      +'<div class="body">'+safe(ev.text||'')+'</div>'
+      +'<div class="body">'+safe(archiveGalVisibleText(ev.text,'ai'))+'</div>'
       +'<div class="msgtools">'+actions
       +'<button type="button" data-archive-attach="'+i+'">＋圖片</button>'
       +'<button type="button" data-eventedit="'+i+'">編輯</button>'
@@ -1518,6 +1518,11 @@ function archiveSkipCues(m){
   return [...new Set([...m.text.matchAll(archiveSkipCueRegex)].map(x=>x[0]))];
 }
 function archiveSkipMatches(m){return archiveSkipCues(m).length>0}
+// Role-aware presentation only: never mutate stored/native text.
+function archiveGalVisibleText(value,role){
+ const text=String(value??'');
+ return role==='me'?text:text.replace(/\{\{[^{}]*\}\}/gu,'');
+}
 function archiveAdventureBodyHtml(value){
   const text=String(value||''),matches=[...text.matchAll(/^[ \t]*\x60{3}[ \t]*\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm)];
   let html='',pos=0;
@@ -1749,7 +1754,7 @@ function archiveStoryBubble(row,i,record,galContext=null){
     +(story&&m.sourceEventId&&m.manager?' · 歸檔：'+safe(m.manager):'')
     +(!story&&m.storyPlacement?' · 手動位置':'')+'</div>'
     +archiveTimeDisplay(m,galContext,!story)+archiveImagesHtml(m,row.index)
-    +archiveSkipNoticeHtml(story?m:null)+'<div class="body">'+(record.world==='adventure'&&m.role==='ai'?archiveAdventureBodyHtml(m.text):story?archiveSkipBodyHtml(m):safe(m.text||''))+'</div>'
+    +archiveSkipNoticeHtml(story?m:null)+'<div class="body">'+(record.world==='adventure'&&m.role==='ai'?archiveAdventureBodyHtml(archiveGalVisibleText(m.text,'ai')):story?archiveSkipBodyHtml(m.role==='me'?m:{...m,text:archiveGalVisibleText(m.text,'ai')}):safe(archiveGalVisibleText(m.text,'ai')))+'</div>'
     +'<div class="msgtools">'+tools+archiveSpecialTools(record,row)+'</div></div></div>';
 }
 

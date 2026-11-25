@@ -464,3 +464,15 @@ test('overlapping failure contexts retain each original diagnostic row once and 
  const broken=JSON.parse(JSON.stringify(result));broken.errorContextEvidence.rows.splice(8,1);
  assert.throws(()=>expand(broken),/引用缺漏/);
 });
+
+test('exact transport replay sends original large forensic bytes through both hops without touching scan state',async()=>{
+ const h=harness(),from=h.sender(),raw=JSON.stringify({format:'gal-ai-unverified-scan',importable:false,forensicOnly:true,scanRunId:'original-run',target:{cycleId:CYCLE_A,worldName:'《全員精神穩定，感情除外》'},source:{url:A},rows:[],evidence:'測試'.repeat(400000)});
+ const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw))),b=>b.toString(16).padStart(2,'0')).join('');
+ const token=crypto.randomUUID();h.wireSources.set(token,raw);
+ const msg={type:'gal-run-transport-replay',cycleId:CYCLE_A,scanRunId:RUN1,sha256,text:{galWire:1,token,length:raw.length,count:Math.ceil(raw.length/(256*1024)),sha256}};
+ const result=await h.dispatch(msg,from);assert.equal(result.ok,true);assert.equal(result.status.sha256,sha256);assert.equal(result.status.originalRunId,'original-run');
+ assert.equal(h.items.length,1);assert.match(h.items[0].filename,/傳輸重播/);
+ assert.equal(await h.blobs.get(h.items[0].url).text(),raw);assert.equal(h.liveStatus(RUN1),undefined);
+ assert.equal((await h.dispatch({...msg,scanRunId:RUN2,sha256:'wrong'},from)).ok,false);
+ assert.equal((await h.dispatch({...msg,scanRunId:RUN2},h.sender(B))).ok,false);
+});

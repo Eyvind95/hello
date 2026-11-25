@@ -170,7 +170,9 @@ function mount(){
   busy=true;
   try{
    if(file.size>256*1024*1024)throw Error('重播檔超過安全上限');
-   const text=await file.text(),data=JSON.parse(text);
+   const bytes=await file.arrayBuffer(),text=new TextDecoder('utf-8',{fatal:true}).decode(bytes),data=JSON.parse(text);
+   const fileHash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+   if(await galWireHash(text)!==fileHash)throw Error('原檔不是可無損重播的UTF-8（可能有BOM）');
    if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||data.forensicOnly!==true||
       data.target?.cycleId!==target.cycleId||data.source?.url!==location.origin+location.pathname)
     throw Error('僅接受目前輪迴的原始未驗證保全');

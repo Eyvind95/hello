@@ -134,7 +134,7 @@ test('native player image references only permit bounded WHIF image links',()=>{
 test('hidden player proof inserts original content only at manifest-bound neighboring source IDs',()=>{
  const api=require('./archive-replay.js'),h=api.hash,core=globalThis.GalArchiveCore;
  const target={cycleId:'cycle',cycleTitle:'第1輪迴',worldName:'測試世界',worldKey:'test',cycleNumber:1,archiveKey:'test::cycle'},url='https://www.whif.io/chat/test';
- const row=(id,text,i)=>({role:'ai',scanIndex:i,sourceMessageId:id,nativeText:text,domText:text,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:id,text,scannedText:text}}});
+ const row=(id,text,i)=>{const e={messageId:id,kind:'ordinary-message',sender:'character'};return {role:'ai',scanIndex:i,sourceMessageId:id,sourceEvidence:e,nativeText:text,domText:text,formatSource:{nativeReply:{reason:'available',markerCount:1,messageId:id,text,scannedText:text,eventEvidence:e}}}};
  const cp={format:'gal-ai-unverified-scan',importable:false,forensicOnly:true,scanRunId:'old',source:{url},target,rows:[row('open','開場',0),row('a','前方',1),row('b','後方',2)],historySourceManifest:['open','a','p','b'].map(id=>({id,kind:'ordinary-message',sender:id==='p'?'user':'character',playerRows:[]}))};
  const raw='{{測試內容}}',native={reason:'player-anchor-evidence',text:raw,eventEvidence:{messageId:'p',kind:'ordinary-message',sender:'user'},nativeHash:h(raw),nativeNormHash:h(raw),nativeLength:raw.length};
  const dom=(attr)=>({outerHTML:'<div '+attr+'="p"></div>',textContent:'',innerText:'',geometry:{ownerId:'p'}});
@@ -143,4 +143,19 @@ test('hidden player proof inserts original content only at manifest-bound neighb
  const result=api.restoreHiddenPlayerRows(cp,[proof],core);
  assert.equal(result.rows[2].nativeText,raw);assert.equal(result.rows[3].sourceMessageId,'b');assert.deepEqual(result.manifest[2].playerRows,[2]);assert.equal(cp.rows.length,3);
  for(const bad of [{...proof,stable:false},{...proof,source:{url:'https://www.whif.io/chat/other'}},{...proof,second:{...snapshot,hasMedia:true}},{...proof,second:{...snapshot,order:['p','a','b']}},{...proof,second:{...snapshot,native:{...native,nativeHash:'wrong'}}}])assert.throws(()=>api.restoreHiddenPlayerRows(cp,[bad],core));
+});
+
+test('legacy diagnostic reference round-trip preserves all fields and refuses conflicts',()=>{
+ const api=require('./archive-replay.js'),a={scanIndex:1,sourceMessageId:null,domText:'完整測試'};
+ const original={errors:[{scanIndex:1,error:'test',message:a,context:[a]},{scanIndex:2,error:'test2',message:null,context:[a]}]};
+ const before=JSON.stringify(original),report=api.diagnosticRoundTrip(original);
+ assert.equal(report.ok,true);assert.equal(report.uniqueRows,1);assert.equal(report.issues,2);assert.equal(JSON.stringify(original),before);
+ assert.throws(()=>api.diagnosticRoundTrip({errors:[...original.errors,{message:{...a,domText:'錯誤'},context:[]}]}));
+});
+test('story display preserves all player templates and hides only AI templates without mutating source',()=>{
+ const html=fs.readFileSync(require.resolve('./index.html'),'utf8');
+ const show=new Function(html.slice(html.indexOf('function archiveGalVisibleText('),html.indexOf('function archiveAdventureBodyHtml('))+'\nreturn archiveGalVisibleText')();
+ const raw='前文{{測試模板}}後文';
+ assert.equal(show(raw,'me'),raw);assert.equal(show(raw,'ai'),'前文後文');
+ assert.equal(show('前文{{未閉合','ai'),'前文{{未閉合');
 });
