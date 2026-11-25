@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.18",
-  "version_name": "V0.10.18 前輩變高回跳恢復",
-  "description": "輪迴檔案館：前輩掃描頁面高度變動時的底端回跳恢復。",
+  "version": "0.10.19",
+  "version_name": "V0.10.19 前輩回跳強力突破",
+  "description": "輪迴檔案館：前輩掃描已驗收前沿恢復與五次回跳三次突破。",
   "permissions": [
     "storage",
     "activeTab",

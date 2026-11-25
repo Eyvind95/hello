@@ -1576,9 +1576,27 @@
     const recovery=pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight);
     if(recovery===null)return null;
     b.scrollStats.scrollResets++;
-    historyTrace(b,'scroll-reset',{target,actual,expectedHeight:height,currentHeight,recovery,stage});
-    historyScroll(b.host,recovery);
-    return {target:recovery,height:currentHeight};
+    const state=b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null});
+    state.resets++;
+    const frontier=pc.frontierPosition(state.frontier,currentHeight,b.host.clientHeight);
+    let destination=recovery;
+    if(frontier!==null&&frontier<destination-b.host.clientHeight){
+      destination=frontier;
+      b.scrollStats.frontierRestores=(b.scrollStats.frontierRestores||0)+1;
+      historyTrace(b,'frontier-restore',{anchor:state.frontier.id,estimated:frontier,recovery});
+    }
+    const boost=pc.breakthroughStep(state,b.host.clientHeight);
+    if(boost&&destination>2){
+      // Try moving beyond the obstruction. The outer loop still requires
+      // strict overlap and can return to the last confirmed position.
+      state.attempts++;
+      b.scrollStats.breakthroughAttempts=(b.scrollStats.breakthroughAttempts||0)+1;
+      const from=destination;destination=Math.max(0,destination-boost);
+      historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from,to:destination,step:boost,anchor:state.frontier?.id||null});
+    }
+    historyTrace(b,'scroll-reset',{target,actual,expectedHeight:height,currentHeight,recovery,destination,stage,resetsSinceGrowth:state.resets});
+    historyScroll(b.host,destination);
+    return {target:destination,height:currentHeight};
   }
   async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null}={}){
     const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;
@@ -1587,7 +1605,7 @@
       const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read'):null;
       if(recovered){
         target=recovered.target;targetHeight=recovered.height;
-        last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>4)throw Error('頁面反覆自動返回底端');await sleep(180);continue;
+        last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8)throw Error('頁面反覆自動返回底端；強力突破後仍無法穩定');await sleep(180);continue;
       }
       if(historyLoading(b.host)){
         last=null;reason='等待載入轉圈';b.scrollStats.loadingPolls++;
@@ -1610,7 +1628,7 @@
             lastRows=rows;
             if(last===fingerprint&&Date.now()-lastAt>=550){
               const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read'):null;
-              if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>4)throw Error('頁面反覆自動返回底端');await sleep(180);continue}
+              if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8)throw Error('頁面反覆自動返回底端；強力突破後仍無法穩定');await sleep(180);continue}
               return rows;
             }
             if(last!==fingerprint){
@@ -1659,7 +1677,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
@@ -1684,17 +1702,26 @@
         b.rows=rows;await sleep(650);
       }
       let topSince=0,topSignature=null,lastGrowth=Date.now(),lastCount=b.rows.length,edgeAttempt=0,unchanged=0;
+      b.breakthrough={resets:0,attempts:0,frontier:{id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight}};
       if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample))status='completed';
       while(status!=='completed'){
         historyGuard(b);
-        const pos=b.host.scrollTop,step=pc.scrollStep(b.host.clientHeight,unchanged);
+        const pos=b.host.scrollTop;
+        const state=b.breakthrough,frontier=pc.frontierPosition(state.frontier,b.host.scrollHeight,b.host.clientHeight);
+        const boost=pc.breakthroughStep(state,b.host.clientHeight);
+        const origin=boost&&frontier!==null?Math.min(pos,frontier):pos;
+        const step=boost||pc.scrollStep(b.host.clientHeight,unchanged);
+        if(boost&&origin>2){
+          state.attempts++;b.scrollStats.breakthroughAttempts=(b.scrollStats.breakthroughAttempts||0)+1;
+          historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from:origin,to:Math.max(0,origin-step),step,anchor:state.frontier?.id||null});
+        }
         if(pc.noNewRows(lastGrowth,Date.now())&&pos>2){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
         const deadline=pos<=2?(edgeAttempt||Date.now())+60000:lastGrowth+60000;
         let rows=null,lastError='';
         // Small upward steps, then return toward the last confirmed position
         // and retry with a smaller step if virtualized windows lose overlap.
         for(const ratio of [1,.5,.25,.125,0]){
-          historyGuard(b);const target=Math.max(0,pos-step*ratio),targetHeight=b.host.scrollHeight;historyScroll(b.host,target);
+          historyGuard(b);const target=Math.max(0,(ratio===0?pos:origin)-step*ratio),targetHeight=b.host.scrollHeight;historyScroll(b.host,target);
           await sleep(180);
           b.scrollStats.attempts++;
           try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight})}catch(e){historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});throw e}
@@ -1710,7 +1737,12 @@
           if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
           if(Date.now()-edgeAttempt>60000)throw Error('頁面已在頂端，但首則訊息或頂端穩定證據不符');
         }else{topSince=0;topSignature=null;edgeAttempt=0}
-        if(b.rows.length>lastCount){historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos,firstId:rows[0]?.id,lastId:rows.at(-1)?.id});lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0}
+        if(b.rows.length>lastCount){
+          if(state.attempts){b.scrollStats.breakthroughSuccesses=(b.scrollStats.breakthroughSuccesses||0)+1;historyTrace(b,'breakthrough-progress',{attempts:state.attempts,resets:state.resets,previousCount:lastCount});}
+          historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos,firstId:rows[0]?.id,lastId:rows.at(-1)?.id});
+          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;
+          state.frontier={id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight};
+        }
         else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
         if(!atTop&&pc.noNewRows(lastGrowth,Date.now()))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
         await sleep(150);
@@ -1731,7 +1763,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     state.bulk=b;
     try{
       // Disable only this chat's existing automatic upload so scrolling over

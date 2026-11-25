@@ -103,6 +103,15 @@ function scrollRecoveryTarget(target,actual,height,expectedHeight,viewport){
  return Math.abs(actual-max)<=6&&unexplained>threshold?adjusted:null;
 }
 const scrollReset=(...args)=>scrollRecoveryTarget(...args)!==null;
+// An accepted frontier is a coordinate hint, never a continuity proof.
+function frontierPosition(frontier,height,viewport){
+ if(!frontier||![frontier.top,frontier.height,height,viewport].every(Number.isFinite))return null;
+ return Math.max(0,Math.min(height-viewport,frontier.top+height-frontier.height));
+}
+function breakthroughStep(state,viewport){
+ if(!state||state.resets<5||state.attempts>=3)return 0;
+ return scrollStep(viewport,8)*(2+state.attempts);
+}
 const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;
 function sampleReady(rows,bottomReached,topReached,limit=SAMPLE_LIMIT){
  return !!sampleLimit(limit)&&bottomReached===true&&rows.length>0&&(rows.length>=limit||topReached===true);
@@ -127,5 +136,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep};
 });

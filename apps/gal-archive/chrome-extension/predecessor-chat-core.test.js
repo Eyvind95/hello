@@ -180,3 +180,30 @@ test('settle recovers across height change before accepting stable rows without 
  a.deepEqual(await ctx.settle(b,{upward:true,target:19586,targetHeight:40478}),rows);
  a.deepEqual(positions,[20325]);a.equal(b.scrollStats.scrollResets,1);a.equal(trace[0].expectedHeight,40478);a.equal(trace[0].currentHeight,41217);
 });
+
+test('breakthrough activates at five resets, tries three increasing steps, resets after growth',()=>{
+ const state={resets:4,attempts:0};
+ a.equal(c.breakthroughStep(state,674),0);
+ state.resets=5;a.equal(c.breakthroughStep(state,674),3370);
+ state.attempts=1;a.equal(c.breakthroughStep(state,674),5055);
+ state.attempts=2;a.equal(c.breakthroughStep(state,674),6740);
+ state.attempts=3;a.equal(c.breakthroughStep(state,674),0);
+ state.resets=0;state.attempts=0;a.equal(c.breakthroughStep(state,674),0);
+ a.equal(c.frontierPosition({top:10000,height:500000},501000,674),11000);
+ a.equal(c.frontierPosition(null,501000,674),null);
+ // No new window is accepted simply because its coordinate is plausible.
+ a.throws(()=>c.mergeUp([r('anchor')],[r('unknown')]));
+});
+test('five repeated resets recover from the accepted frontier and cap strong attempts',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  async function historySettled('));
+ const trace=[],b={host:{scrollTop:499326,scrollHeight:500000,clientHeight:674},scrollStats:{scrollResets:0},rows:[r('anchor')],breakthrough:{resets:4,attempts:0,frontier:{id:'anchor',top:10000,height:500000}}};
+ const ctx={pc:c,historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>h.scrollTop=to};
+ vm.runInNewContext(block+';globalThis.recover=historyRecoverScroll;',ctx);
+ for(const expected of [6630,4945,3260,10000]){
+  b.host.scrollTop=499326;a.equal(ctx.recover(b,450000,500000,'test').target,expected);
+ }
+ a.equal(b.scrollStats.breakthroughAttempts,3);a.equal(b.rows.length,1);
+ a.equal(trace.filter(x=>x.event==='breakthrough-attempt').length,3);
+});
