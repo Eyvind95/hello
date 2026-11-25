@@ -811,7 +811,8 @@ function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null)
    // A player can answer with one character. Controls and navigation
    // labels have already been removed from this bounded DOM range.
    {
-    const playerGapHasMedia=captureNative&&playerSources.length>0?(()=>{
+    const templateCandidate=playerSources.some(s=>/\{\{[^{}]*\}\}/u.test(s.nativeText||''));
+    const playerGapHasMedia=captureNative&&(playerSources.length>1||templateCandidate)?(()=>{
      const range=document.createRange();
      range.setStartAfter(pairs[i-1].end);range.setEndBefore(item.start);
      const base=range.commonAncestorContainer;
@@ -819,7 +820,7 @@ function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null)
       .some(node=>range.intersectsNode(node)&&
        !node.closest('#'+PANEL+',button,[role="button"],[role="toolbar"]'));
     })():false;
-    if(captureNative){
+    if(captureNative&&templateCandidate){
      const projected=core.restorePlayerTemplates(visibleGap,playerSources,playerGapHasMedia);
      if(!projected.ok)throw Error('玩家原生模板投影未通過：'+projected.reason+'；禁止遺失原文或猜測');
      if(projected.applied){
