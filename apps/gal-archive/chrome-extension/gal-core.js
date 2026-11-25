@@ -339,10 +339,10 @@ const clockProfile=w=>isRoadWorld(w)?'road':isAdventureWorld(w)?'adventure':'sen
 const roadHead=/^⏰\uFE0F?\s*[：:]\s*來到公路第\s*(\d{1,6})\s*日\s*[｜|]\s*(\d{1,2})[.．/](\d{1,2})\s*[.．]\s*(\d{1,2})[：:](\d{2})\s*[.．]\s*天氣[：:]\s*(\S.*)$/u;
 const roadClockEvidence=input=>clean(input).split('\n').some(line=>/^(?:\*\*)?⏰\uFE0F?\s*[：:]?\s*來到公路第/u.test(line.trim()));
 const roadFields=[
- /^🚗\uFE0F?[：:]\s*(?:未選擇\s*[｜|]\s*未解鎖|\S.*[｜|]\s*等級\s*\d+)\s*$/u,
+ /^🚗\uFE0F?[：:]\s*(?:未選擇\s*[｜|]\s*未解鎖|\S.*[｜|]\s*等級\s*\d+(?:（[^（）\n]{1,80}）)?)\s*$/u,
  /^🔋\uFE0F?[：:]\s*\S.*[｜|]/u,
  /^🔧\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
- /^(?:🚐|📦)\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
+ /^(?:🚐|📦|🛢)\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
  /^🧩\uFE0F?[：:]\s*\d+\s*[／/]\s*\d+/u,
  /^🛣\uFE0F?[：:]\s*\d+(?:\.\d+)?公里\s*[／/]\s*每日規定\s*\d+(?:\.\d+)?公里/u,
  /^(?:🍖|🥩)\uFE0F?[：:]\s*飢餓度[：:]\s*\d+\s*[｜|]\s*💧\uFE0F?\s*[：:]?\s*口渴度[：:]\s*\d+/u,
@@ -350,7 +350,7 @@ const roadFields=[
  /^❤\uFE0F?[：:]\s*\S/u,
  /^🎒\uFE0F?[：:]\s*\S/u,
  /^⚔\uFE0F?[：:]\s*\S/u,
- /^💰\uFE0F?[：:]\s*\S/u,
+ /^(?:💰|🪙)\uFE0F?[：:]\s*\S/u,
  /^📜\uFE0F?[：:]\s*\S/u,
  /^💦\uFE0F?[：:]\s*\S/u,
  /^📐\uFE0F?[：:]\s*\S/u
@@ -394,11 +394,11 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  const leadEvent=original.match(/^(\{\{Below context is an event which has just occurred\. ([^{}\n]{1,100}) should not skip this moment — chime in naturally as ([^{}\n]{1,100}) would react\. This event is to make the story dynamic and fresh\.\}\})[ \t]*\n(?:[ \t]*\n){0,2}/u);
  const eventWrapper=eventBound&&leadEvent&&leadEvent[2]===leadEvent[3]&&isRoadWorld(leadEvent[2])&&!visible.includes(leadEvent[1])?leadEvent:null;
  const afterClosed=blocks.length?blocks.at(-1).index+blocks.at(-1)[0].length:0;
- const openTail=eventBound&&fenceLines.length===2*blocks.length+1&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE)&&
+ const openTail=(eventBound||options.source==='whif-message-content'&&!options.event&&!options.opening)&&fenceLines.length===2*blocks.length+1&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE)&&
   /^\s*\x60{3}[ \t]*\n⏰/u.test(original.slice(afterClosed))&&!!parseRoadClock(original.slice(afterClosed));
  const fencesValid=(fenceLines.length===2*blocks.length||openTail)&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE);
  const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
- let pos=0,sourcePos=0,omitted=0,quotePairs=0,hiddenContext='',hiddenImage='';
+ let pos=0,sourcePos=0,omitted=0,quotePairs=0,hiddenContext='',hiddenImage='',worldContext='';
  const bounded=options.source==='whif-message-content'&&!options.event&&!options.opening;
  const starts=new Set(),ends=new Set();let linePos=0;
  for(const line of visible.split('\n')){const v=compact(line);if(v){starts.add(linePos);linePos+=v.length;ends.add(linePos);}}
@@ -417,10 +417,16 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  };
  let matched=fencesValid&&proof.length===blocks.length;
  if(matched&&eventWrapper)sourcePos=eventWrapper[0].length;
+ // A visible world-name line is never removed. Only its adjacent hidden
+ // context may be projected, and the entire remaining message must match.
+ const label=original.slice(sourcePos).match(/^(<🔞?公路求生[－—–-]我是求生者[！!]🔞?>[:：])[ \t]+(\{\{[^{}\n]{1,200}\}\})[ \t]*(?=\n)/u);
+ if(matched&&(bounded||eventWrapper)&&label&&adventureContextLine(label[2])&&!visible.includes(label[2])&&visible.split('\n')[0].trim()===label[1]&&take(label[1])){
+  worldContext=label[2];sourcePos+=label[0].length;
+ }
  // Project a single standalone leading context only for an independently
  // sourced ordinary reply, and only if ALL subsequent blocks/prose match.
  const leading=original.match(/^(\{\{[^{}\n]{1,200}\}\})[ \t]*\n(?:[ \t]*\n){0,2}/u);
- if(matched&&bounded&&leading&&adventureContextLine(leading[1])&&!visible.includes(leading[1])&&blocks.length&&leading[0].length<=blocks[0].index){
+ if(matched&&bounded&&!worldContext&&leading&&adventureContextLine(leading[1])&&!visible.includes(leading[1])&&blocks.length&&leading[0].length<=blocks[0].index){
   hiddenContext=leading[1];sourcePos=leading[0].length;
  }
  if(matched)for(let i=0;i<blocks.length;i++){
@@ -444,8 +450,9 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  matched=matched&&take(tail,!openTail)&&pos===actual.length;
  const literal=fencesValid&&actual===compact(original),contentEqual=Boolean(literal||matched);
  const markers=[];
+ if(contentEqual&&!literal&&worldContext)markers.push({kind:'road-world-label-companion',tokens:1,nonWhitespaceChars:compact(worldContext).length});
  if(contentEqual&&!literal&&eventWrapper)markers.push({kind:'road-exact-event-context',tokens:1,nonWhitespaceChars:compact(eventWrapper[1]).length});
- if(contentEqual&&openTail)markers.push({kind:'road-literal-unclosed-event-hud',tokens:0,nonWhitespaceChars:0});
+ if(contentEqual&&openTail)markers.push({kind:options.event?'road-literal-unclosed-event-hud':'road-literal-unclosed-reply-hud',tokens:0,nonWhitespaceChars:0});
  if(contentEqual&&!literal&&hiddenContext)markers.push({kind:'road-leading-context-template',tokens:1,nonWhitespaceChars:compact(hiddenContext).length});
  if(contentEqual&&!literal&&hiddenImage)markers.push({kind:'road-terminal-image-template',tokens:1,nonWhitespaceChars:compact(hiddenImage).length});
  if(contentEqual&&!literal&&omitted)markers.push({kind:'road-proven-ordered-code-fences',tokens:omitted,nonWhitespaceChars:omitted*3});
@@ -1971,5 +1978,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.2'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.3'};
 })();
