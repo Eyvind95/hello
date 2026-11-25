@@ -229,7 +229,7 @@ function bottomEscape(state,target,actual,height,viewport){
 // prove message coverage and are never used to append rows.
 function escapeStageCount(from,target,viewport){
  const gap=from-target;
- return gap>viewport*100?Math.min(6,Math.max(2,Math.ceil(gap/(viewport*250)))):1;
+ return gap>viewport*100?Math.min(24,Math.max(2,Math.ceil(gap/(viewport*100)))):1;
 }
 function escapeStageTarget(from,target,remaining){return Math.max(target,from-(from-target)/Math.max(1,remaining))}
 const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;

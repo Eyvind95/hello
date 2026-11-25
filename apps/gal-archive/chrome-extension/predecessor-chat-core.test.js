@@ -424,7 +424,9 @@ test('long alternate recovery can escape a far bottom even after two direct atte
  for(let i=0;i<2;i++)a.equal(c.bottomEscape(state,2841.3,842380,843054,674),null);
  a.equal(c.bottomEscape(state,2841.3,842380,843054,674),842043);
  for(let i=0;i<4;i++)a.equal(c.bottomEscape(state,2841.3,842380,843054,674),null);
- a.equal(c.escapeStageCount(842043,1998.8,674),5);
+ a.equal(c.escapeStageCount(842043,1998.8,674),13);
+ a.equal(c.escapeStageCount(1410338,0,674),21);
+ a.equal(c.escapeStageCount(5000000,0,674),24);
  a.equal(c.escapeStageCount(49989,500,674),1);
  a.equal(c.escapeStageTarget(100,0,2),50);
 });
@@ -436,8 +438,8 @@ test('actual settle stages the long bottom return; verifies stable rows after la
  const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>rows,historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push(event),historyScroll:(h,to)=>{moves.push(to);h.scrollTop=Math.abs(h.scrollTop-to)>180000?842380:to},sleep:async ms=>{now+=ms}};
  vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
  const result=await ctx.settle(b,{upward:true,target:1998.8,targetHeight:843054,allowBoost:false});
- a.deepEqual(result,rows);a.equal(moves.length,6);a.equal(moves[0],842043);a.ok(Math.abs(moves.at(-1)-1998.8)<.01);
- a.equal(b.scrollStats.stagedReturnLandings,5);a.equal(b.scrollStats.stagedReturnArrivals,1);a.equal(b.rows.length,1);
+ a.deepEqual(result,rows);a.equal(moves.length,14);a.equal(moves[0],842043);a.ok(Math.abs(moves.at(-1)-1998.8)<.01);
+ a.equal(b.scrollStats.stagedReturnLandings,13);a.equal(b.scrollStats.stagedReturnArrivals,1);a.equal(b.rows.length,1);
  a.ok(trace.includes('bottom-escape-arrived'));
 });
 test('actual long staged return fails closed when an intermediate waypoint snaps back',async()=>{
@@ -445,8 +447,22 @@ test('actual long staged return fails closed when an intermediate waypoint snaps
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
  let now=1000,reads=0;const trace=[],rows=[r('anchor')];
  const b={host:{scrollTop:842380,scrollHeight:843054,clientHeight:674},scrollStats:{scrollResets:0},rows,breakthrough:{resets:53,attempts:0,frontier:null,bottomEscapeHits:2,bottomEscapeAttempts:2,recoveryAvoidFrontier:true}};
- const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>{reads++;return rows},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event)=>trace.push(event),historyScroll:(h,to)=>{h.scrollTop=Math.abs(h.scrollTop-to)>100000?842380:to},sleep:async ms=>{now+=ms}};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>{reads++;return rows},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event)=>trace.push(event),historyScroll:(h,to)=>{h.scrollTop=Math.abs(h.scrollTop-to)>50000?842380:to},sleep:async ms=>{now+=ms}};
  vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
  await a.rejects(ctx.settle(b,{upward:true,target:1998.8,targetHeight:843054,allowBoost:false}),e=>e.code==='HISTORY_RECOVERY_RETRY');
  a.equal(reads,0);a.equal(b.scrollStats.stagedReturnArrivals,undefined);a.equal(b.rows.length,1);a.ok(trace.includes('bottom-escape-stage-failed'));
+});
+
+// Synthetic coordinates only. Height changes may occur below a commanded waypoint.
+for(const basis of ['direct','height-rebased','snap'])test('staged return with changing height: '+basis,async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
+ let now=1000,reads=0,moves=0;const trace=[],rows=[r('anchor')];
+ const b={host:{scrollTop:838528,scrollHeight:839202,clientHeight:674},scrollStats:{scrollResets:0},rows,breakthrough:{resets:53,attempts:0,frontier:null,bottomEscapeHits:2,bottomEscapeAttempts:2,recoveryAvoidFrontier:true}};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>{reads++;return rows},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>{h.scrollTop=to;if(++moves===2){if(basis==='snap'){h.scrollHeight+=947;h.scrollTop=h.scrollHeight-h.clientHeight}else{h.scrollHeight-=947;if(basis==='height-rebased')h.scrollTop-=947}}},sleep:async ms=>{now+=ms}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ const run=ctx.settle(b,{upward:true,target:3206.8,targetHeight:839202,allowBoost:false});
+ if(basis==='snap'){await a.rejects(run,e=>e.code==='HISTORY_RECOVERY_RETRY');a.equal(reads,0);a.equal(b.scrollStats.stagedReturnArrivals,undefined);a.equal(trace.find(x=>x.event==='bottom-escape-stage').held,false)}
+ else{a.deepEqual(await run,rows);a.equal(trace.find(x=>x.event==='bottom-escape-stage').landingBasis,basis);a.equal(b.scrollStats.stagedReturnLandings,13);a.equal(b.scrollStats.stagedReturnArrivals,1);a.ok(reads>0)}
+ a.equal(b.rows.length,1);a.ok(now<61000);
 });

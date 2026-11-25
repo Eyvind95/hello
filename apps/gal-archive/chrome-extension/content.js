@@ -1684,10 +1684,17 @@
         historyGuard(b);
         const actual=b.host.scrollTop,nowHeight=b.host.scrollHeight;
         const expected=pc.rejoinTarget({top:waypoint,height:targetHeight},nowHeight,viewport);
-        const held=Math.abs(actual-expected)<=Math.max(24,viewport*.5);
-        historyTrace(b,'bottom-escape-stage',{stage:i+1,stages,start,waypoint,actual,expected,held,target,nowHeight});
+        const tolerance=Math.max(24,viewport*.5),max=pc.scrollRange(nowHeight,viewport);
+        const direct=Math.max(0,Math.min(max,waypoint));
+        const heldDirect=Math.abs(actual-direct)<=tolerance,heldRebased=Math.abs(actual-expected)<=tolerance;
+        // Height can change from reflow below the waypoint, not only prepended history.
+        // Both are positional hints; a bottom snap is never a valid long-stage landing.
+        const held=actual<max-6&&(heldDirect||heldRebased);
+        const landingBasis=held?(heldDirect?'direct':'height-rebased'):null;
+        historyTrace(b,'bottom-escape-stage',{stage:i+1,stages,start,waypoint,actual,expected,direct,held,landingBasis,target,nowHeight});
         if(!held){historyTrace(b,'bottom-escape-stage-failed',{stage:i+1,reason:'waypoint-not-held'});throw retryError()}
         b.scrollStats.stagedReturnLandings=(b.scrollStats.stagedReturnLandings||0)+1;
+        if(i===stages-1){target=heldDirect?direct:expected;targetHeight=nowHeight}
       }
       b.scrollStats.stagedReturnArrivals=(b.scrollStats.stagedReturnArrivals||0)+1;
       // Return only the coordinates: historySettled still reads a stable
