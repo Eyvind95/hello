@@ -22,7 +22,7 @@ test('ZIP UTF-8 filenames, CRC32, central directory and exact content',async()=>
 });
 test('website entry, standalone HTML and PWA include reading exporter',()=>{
  const html=fs.readFileSync(p.join(__dirname,'index.html'),'utf8'),sw=fs.readFileSync(p.join(__dirname,'sw.js'),'utf8');
- a.match(html,/id="readingZipBtn"/);a.match(html,/ArchiveReadingExport\.plan\(cycles,WORLDS\)/);a.match(html,/downloadReadingZip\(records,/);a.match(html,/downloadReadingZip\(\[r\],b\)/);a.match(html,/ArchiveReadingExport\.cycleReadingName/);a.ok(html.includes("'archive-reading-export.js?v=1'"));a.ok(sw.includes('archive-reading-export.js?v=1'));a.ok(html.includes('V5.122'));a.ok(html.includes('0.10.31'));
+ a.match(html,/id="readingZipBtn"/);a.match(html,/ArchiveReadingExport\.plan\(cycles,WORLDS\)/);a.match(html,/downloadReadingZip\(records,/);a.match(html,/downloadReadingZip\(\[r\],b\)/);a.match(html,/ArchiveReadingExport\.cycleReadingName/);a.ok(html.includes("'archive-reading-export.js?v=1'"));a.ok(sw.includes('archive-reading-export.js?v=1'));const version=html.match(/<title>輪迴檔案館 (V\d+\.\d+)/)?.[1],manifest=JSON.parse(fs.readFileSync(p.join(__dirname,'chrome-extension/manifest.json'),'utf8'));a.ok(version);a.ok(html.includes('<h1>輪迴檔案館 '+version+'</h1>'));a.ok(html.includes('gal-archive-chrome-v'+manifest.version+'.zip'));
 });
 
 test('three known world names and identical cycle titles remain separated',()=>{
