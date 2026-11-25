@@ -1804,13 +1804,13 @@ test('V0.9.09 fast anchor navigation jumps relative to bottom, preloads at top, 
 // Anonymized structural fixture based on anomaly 010, DOM items 99752–99754.
 // Test the production header finder and boundary reader; mock the DOM range
 // serializer and bridge only. No private story content is committed.
-function nativeBoundaryFixture({playerLabels=['《測試世界》','《測試世界》','《測試世界》'],event=false,missing=false,foreign=false,unknown=false,unowned=false}={}){
+function nativeBoundaryFixture({playerLabels=['《測試世界》','《測試世界》','《測試世界》'],event=false,missing=false,foreign=false,unknown=false,unowned=false,playerNative=null,playerVisible=null}={}){
  const source=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
  const head=source.slice(source.indexOf('function boundaryOrder('),source.indexOf('function boundaryTitles('));
  const reader=source.slice(source.indexOf('function boundaryRead('),source.indexOf('function messageText('));
  const nodes=[],strips=[];
  const Node={TEXT_NODE:3,DOCUMENT_POSITION_FOLLOWING:4,DOCUMENT_POSITION_PRECEDING:2};
- const core={clean:s=>String(s||'').trim(),normalizedWorld:s=>String(s||'').replace(/[《》\s]/g,''),parseGameTime:()=>null,isEvent:()=>false};
+ const core={clean:s=>String(s||'').trim(),normalizedWorld:s=>String(s||'').replace(/[《》\s]/g,''),parseGameTime:()=>null,isEvent:()=>false,restorePlayerTemplates:context.GalArchiveCore.restorePlayerTemplates};
  function make(parent,attrs={},value='',candidate=false){
   const n={parent,attrs,innerText:value,textContent:value,childNodes:[{nodeType:3,nodeValue:value}],candidate,
    getAttribute:k=>attrs[k]??null,
@@ -1833,7 +1833,9 @@ function nativeBoundaryFixture({playerLabels=['《測試世界》','《測試世
  }
  msg('99752','character',[],!missing,event?'event':'reply');
  if(foreign){const w=make(root,{'data-message-id':'foreign'});strips.push(make(w));}
- msg('99753','user',playerLabels,false);
+ const player=msg('99753','user',playerLabels,false);
+ if(playerNative!==null)player.nativeText=playerNative;
+ if(playerVisible!==null)player.innerText=player.textContent=playerVisible;
  msg('99754','character',[],true);
  const readNativeNode=n=>({eventEvidence:unknown?undefined:n.proof});
  function between(start,end){return nodes.slice(nodes.indexOf(start)+1,nodes.indexOf(end));}
@@ -1842,11 +1844,12 @@ function nativeBoundaryFixture({playerLabels=['《測試世界》','《測試世
   if(metadata)metadata.nativeReply={messageId:list[0]?.proof.messageId,reason:'available'};
   return list.map(n=>n.innerText).join('\n');
  };
- const nativePlayerSourcesBetween=(start,end)=>between(start,end).filter(n=>n.proof?.sender==='user').map(n=>({id:n.proof.messageId,nativeText:n.innerText}));
+ const nativePlayerSourcesBetween=(start,end)=>between(start,end).filter(n=>n.proof?.sender==='user').map(n=>({id:n.proof.messageId,nativeText:n.nativeText??n.innerText,sender:'user',kind:'ordinary-message',nativeReason:'available',nativeSender:'user',nativeMessageId:n.proof.messageId,hasMedia:false,hasText:!!n.innerText}));
+ const document={createRange:()=>({setStartAfter(){},setEndBefore(){},commonAncestorContainer:{querySelectorAll:()=>[]}})};
  const target={worldName:'測試世界'},PANEL='panel',nativeMessageSelector='[data-selection-copy-message-id]';
  const getComputedStyle=()=>({display:'block',visibility:'visible'});
- const api=new Function('Node','core','target','PANEL','nativeMessageSelector','readNativeNode','getComputedStyle','boundaryToolbars','boundaryFragmentText','nativePlayerSourcesBetween','candidatePlayerGap',head+'\n'+reader+'\nreturn {boundaryHeaders,boundaryRead};')(
-  Node,core,target,PANEL,nativeMessageSelector,readNativeNode,getComputedStyle,()=>strips,boundaryFragmentText,nativePlayerSourcesBetween,()=>({}));
+ const api=new Function('Node','core','target','PANEL','nativeMessageSelector','readNativeNode','getComputedStyle','boundaryToolbars','boundaryFragmentText','nativePlayerSourcesBetween','candidatePlayerGap','document',head+'\n'+reader+'\nreturn {boundaryHeaders,boundaryRead};')(
+  Node,core,target,PANEL,nativeMessageSelector,readNativeNode,getComputedStyle,()=>strips,boundaryFragmentText,nativePlayerSourcesBetween,()=>({}),document);
  return {headers:api.boundaryHeaders(root),result:api.boundaryRead(root,false,true)};
 }
 test('anomaly 010: three native player world-name spans preserve AI/player/AI and unique native IDs',()=>{
@@ -2075,4 +2078,38 @@ test('road full history accepts observed HUD aliases, visible world label compan
  const event=wrapper+'\n'+open,eventOpts={...openOpts,event:true,source:'whif-event-content'};
  assert.equal(c.compareNativeParagraphs(openDom,event,eventOpts).text,event);
  assert.equal(c.compareNativeParagraphs(openDom,event,{...eventOpts,worldName:'其他世界'}).text,null);
+});
+
+test('player native templates are preserved for hidden and mixed text; AI rules remain separate',()=>{
+ require('./gal-core.js');
+ const c=globalThis.GalArchiveCore;
+ const src=(nativeText,opts={})=>({id:'p1',sender:'user',kind:'ordinary-message',nativeReason:'available',nativeSender:'user',nativeMessageId:'p1',hasMedia:false,nativeText,...opts});
+ const hidden='{{測試設定}}\n{{保留原始內容}}';
+ assert.equal(c.restorePlayerTemplates('',[src(hidden)]).text,hidden);
+ const mixed='你好\n{{測試設定}}\n再見';
+ assert.equal(c.restorePlayerTemplates('你好\n再見',[src(mixed)]).text,mixed);
+ assert.equal(c.restorePlayerTemplates('你好\n{{測試設定}}\n再見',[src(mixed)]).text,mixed);
+ assert.equal(c.restorePlayerTemplates('不同正文',[src(mixed)]).ok,false);
+ assert.equal(c.restorePlayerTemplates('',[src(hidden,{nativeSender:'character'})]).ok,false);
+ assert.equal(c.restorePlayerTemplates('',[src(hidden,{hasMedia:true})]).ok,false);
+ assert.equal(c.restorePlayerTemplates('',[src(hidden),src(hidden)]).ok,false);
+ assert.equal(c.restorePlayerTemplates('你好',[src('你好')]).applied,false);
+ assert.equal(c.restorePlayerTemplates('你好{{不在原文}}再見',[src(mixed)]).ok,false);
+});
+
+test('boundary scan preserves invisible user template as a distinct player row',()=>{
+ const raw='{{測試控制}}\n{{保留原文}}';
+ const {result}=nativeBoundaryFixture({playerLabels:[],playerNative:raw,playerVisible:''});
+ assert.deepEqual(result.rows.map(r=>r.role),['ai','me','ai']);
+ assert.equal(result.rows[1].text,raw);
+ assert.equal(result.rows[1].formatSource.playerSources[0].id,'99753');
+ assert.equal(result.rows[1].formatSource.playerTemplateProjection.visibleText,'');
+ assert.equal(result.rows[2].formatSource.playerGap,undefined);
+});
+test('boundary scan preserves mixed player template without altering AI',()=>{
+ const raw='第一句\n{{測試控制}}\n第二句';
+ const {result}=nativeBoundaryFixture({playerLabels:[],playerNative:raw,playerVisible:'第一句\n第二句'});
+ assert.equal(result.rows[1].text,raw);
+ assert.equal(result.rows[0].text,'完整原文 99752');
+ assert.equal(result.rows[2].text,'完整原文 99754');
 });

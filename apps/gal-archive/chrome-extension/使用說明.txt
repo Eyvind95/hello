@@ -531,3 +531,6 @@ V0.10.05 測試版：大型原生正史、失敗診斷及保全資料採用分�
 
 
 V0.10.06：重疊錯誤上下文改為 errorContextEvidence.rows 唯一來源表，錯誤 message/context 使用 scanIndex 與 sourceMessageId 引用，原始證據不刪除；archive-replay.js 的 expandErrorContexts 可還原舊式內容，原始保全 rows 與正史驗收規則不變。
+
+
+V0.10.07：玩家原生雙大括號模板（整則隱藏或混合正文）經唯一來源、可見正文、無媒體、雙次讀取核對後保留，Gal AI 原有模板顯示規則不變；不把隱藏玩家列判作自動繼續。

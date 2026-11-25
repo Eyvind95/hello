@@ -194,10 +194,16 @@
     const sources=fs?.playerSources;
     assert(!r.eventType&&!r.autoContinue&&!fs?.playerGapHasMedia&&Array.isArray(sources)&&sources.length>0&&eq(sources,r.playerSources),'玩家來源分界缺失：'+i);
     for(const s of sources){
-     assert(s.sender==='user'&&s.kind==='ordinary-message'&&s.nativeReason==='available'&&s.nativeSender==='user'&&s.nativeMessageId===s.id&&s.hasText===true&&!s.hasMedia&&typeof s.nativeText==='string'&&s.nativeText.trim(),'玩家原文未驗證：'+i);
+     assert(s.sender==='user'&&s.kind==='ordinary-message'&&s.nativeReason==='available'&&s.nativeSender==='user'&&s.nativeMessageId===s.id&&(s.hasText===true||fs?.playerTemplateProjection?.kind==='verified-player-native-template')&&!s.hasMedia&&typeof s.nativeText==='string'&&s.nativeText.trim(),'玩家原文未驗證：'+i);
      addId(s.id);playerIds.add(s.id);sourceKinds.set(s.id,{kind:s.kind,sender:s.sender,scanIndex:i});
     }
     assert(r.nativeText===sources.map(s=>s.nativeText).join('\n\n'),'玩家原文來源不一致：'+i);
+    if(fs.playerTemplateProjection){
+     const projection=fs.playerTemplateProjection;
+     assert(projection.kind==='verified-player-native-template'&&typeof projection.visibleText==='string','玩家模板投影格式不符：'+i);
+     const verified=core.restorePlayerTemplates(projection.visibleText,sources,fs.playerGapHasMedia);
+     assert(verified.ok&&verified.applied&&verified.text===r.domText,'玩家模板原生投影驗收失敗：'+i);
+    }
     if(norm(r.nativeText)!==norm(r.domText)){
      const label=early&&core.isAdventureWorld(cp.target.worldName)&&sources.length===1&&r.domText.match(/^\*\*([^*\n]{1,40})\*\*\n/u);
      if(label&&norm(r.domText.slice(label[0].length))===norm(r.nativeText))playerLabels.push({i,label:label[1]});

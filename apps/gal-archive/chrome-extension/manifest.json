@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.6",
-  "version_name": "V0.10.06 診斷證據去重",
-  "description": "輪迴檔案館 V0.10.06：重疊異常診斷索引引用，保留原文與大型資料安全傳輸。",
+  "version": "0.10.7",
+  "version_name": "V0.10.07 玩家原生模板保全",
+  "description": "輪迴檔案館 V0.10.07：保全經核實的玩家原生模板，AI 顯示規則不變。",
   "permissions": [
     "storage",
     "activeTab",
