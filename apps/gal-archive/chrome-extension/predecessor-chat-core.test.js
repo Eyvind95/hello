@@ -604,3 +604,14 @@ test('native retry budget resets only on verified progress, without absolute bat
  a.match(run,/if\(q.minIndex<b.resume.minIndex\)\{[\s\S]*?historyNativeProgress\(b,'resume-earlier-index'\)/);
  a.match(run,/if\(b.rows.length>lastCount\)\{[\s\S]*?historyNativeProgress\(b,'new-rows'\)/);
 });
+
+test('folded user trailing ellipsis requires exact source evidence and preserves both observations',()=>{
+ const old=r('u','user','完整句子。\n…'),live=r('u','user','完整句子。'),obs={messageId:'u',label:'顯示較多',collapsed:true,rawLength:old.text.length+5,removedSuffix:'\n顯示較多',fullTextVerified:false};
+ const ctx={source:[obs],current:new Map(),sourceSha256:'a'.repeat(64)},changes=[];
+ a.deepEqual(c.mergeUp([old,r('next','assistant')],[r('prior','assistant'),live],x=>changes.push(x),ctx),[r('prior','assistant'),old,r('next','assistant')]);
+ a.equal(changes[0].type,'folded-user-tail-variant');a.deepEqual(changes[0].previous,old);a.deepEqual(changes[0].current,live);a.equal(changes[0].fullTextVerified,false);
+ for(const bad of [undefined,{...ctx,source:[]},{...ctx,source:[{...obs,rawLength:999}]},{...ctx,source:[{...obs,collapsed:false}]},{...ctx,currentOverflow:1},{...ctx,current:new Map([['u',obs]])}])a.throws(()=>c.mergeUp([old],[live],null,bad));
+ for(const changed of [{...live,text:'完整句子'},{...live,structure:[{tag:'strong',text:'完整句子。'}]},{...live,role:'assistant'},{...live,attachments:[{kind:'image-reference',label:'使用者附件',url:null}]}])a.throws(()=>c.mergeUp([old],[changed],null,ctx));
+ a.throws(()=>c.mergeUp([live],[old],null,ctx));
+ a.throws(()=>c.mergeUp([old,r('next','assistant')],[live,r('different','assistant')],null,ctx));
+});

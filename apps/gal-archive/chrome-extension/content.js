@@ -1853,6 +1853,12 @@
   }
   function historyAttachmentChange(b,change){
     const key=JSON.stringify(change);
+    if(change.type==='folded-user-tail-variant'){
+      const list=b.foldTailVariants||(b.foldTailVariants=[]);
+      if(list.some(x=>JSON.stringify(x)===key))return;
+      if(list.length>=1000)throw Error('折疊尾端差異證據達容量上限，保全退出');
+      list.push(change);return;
+    }
     if(change.type==='code-render-label-variant'){
       const list=b.renderChanges||(b.renderChanges=[]),keys=b.renderChangeKeys||(b.renderChangeKeys=new Set());
       if(keys.has(key))return;
@@ -1872,12 +1878,13 @@
     if(b.attachmentChanges.some(x=>!x.type))warnings.push('臨時圖片 blob 網址曾變動；僅核對附件參照位置與標籤，未驗證圖片位元組。');
     if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
     if(b.renderChanges?.length)warnings.push('程式碼框介面標籤與文字節點拆分經逐字核對等價；原先收錄不改寫，兩份觀測保存在 codeRenderVariants，非伺服器原始格式。');
+    if(b.foldTailVariants?.length)warnings.push('玩家折疊尾端差異僅核對同ID及其他原文欄位；保留舊正文、兩份觀測及折疊證據，完整原文尚未驗證，請見 foldTailVariants。');
     if(b.resume)warnings.push('續掃沿用先前保全 '+b.resume.baseCount+' 則；本次僅驗證已重新經過的視窗、尾端與前沿，不代表舊正文全部重新收錄。來源 SHA-256 及驗證狀態見 evidence.resume。');
     for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+data.count:'')+'.json';
@@ -1907,7 +1914,7 @@
       b.breakthrough={resets:0,attempts:0,frontier:{id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight}};
       if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample))status='completed';
       if(b.resume){
-        const seed=pc.resumeSeed(b.resumeRows,b.rows,change=>historyAttachmentChange(b,change));
+        const seed=pc.resumeSeed(b.resumeRows,b.rows,change=>historyAttachmentChange(b,change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256});
         b.rows=seed.rows;b.resume.tailVerified=true;b.resume.tailVerifiedAt=new Date().toISOString();b.resume.frontierVerified=seed.frontier;if(seed.frontier)b.resume.frontierVerifiedAt=b.resume.tailVerifiedAt;b.resume.minIndex=seed.minIndex;b.resume.checkedWindows=1;
         lastCount=b.rows.length;lastGrowth=Date.now();
         b.breakthrough.frontier={id:b.resumeRows[seed.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
@@ -1966,7 +1973,7 @@
           }
           try{
             const changes=[];
-            const merged=pc.mergeUp(b.rows,rows,change=>changes.push(change));
+            const merged=pc.mergeUp(b.rows,rows,change=>changes.push(change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256});
             if(b.resume&&!b.resume.frontierVerified){
               const q=pc.resumeWindow(b.resumeRows,rows);
               if(merged.length>b.rows.length&&!q.frontier)throw Error('續掃前沿未核對，不能增加舊訊息');
@@ -2049,6 +2056,11 @@
         b.resumeRows=pc.validateCheckpoint(checkpoint.data,location.origin+b.chat);
         if(!/^[a-f0-9]{64}$/.test(checkpoint.hash))throw Error('斷點雜湊無效');
         b.resume={baseCount:b.resumeRows.length,sourceRunId:checkpoint.data.runId,sourceVersion:checkpoint.data.scannerVersion||null,sourceSha256:checkpoint.hash,sourceFirstId:b.resumeRows[0].id,sourceLastId:b.resumeRows.at(-1).id,tailVerified:false,frontierVerified:false,minIndex:b.resumeRows.length,checkedWindows:0};
+        const sourceEvidence=checkpoint.data.evidence;
+        b.resumeFoldObservations=[...(Array.isArray(sourceEvidence.inheritedFoldObservations)?sourceEvidence.inheritedFoldObservations:[]),...(Array.isArray(sourceEvidence.foldObservations)?sourceEvidence.foldObservations:[])];
+        // Keep prior variant snapshots in later checkpoints; original rows remain unchanged.
+        b.foldTailVariants=Array.isArray(sourceEvidence.foldTailVariants)?sourceEvidence.foldTailVariants.slice():[];
+        if(b.foldTailVariants.length>1000)throw Error('斷點折疊尾端差異證據過多');
         b.knownMinimum=Math.max(b.knownMinimum,b.resume.baseCount);
       }catch(e){return {ok:false,error:String(e.message||e)}}
     }
