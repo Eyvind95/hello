@@ -42,7 +42,7 @@ test('reading volume names carry world cycle hero kind and exact ordinal range',
  const r=plan(fixture()),expected=['哨嚮','冒險者','公路求生'];
  for(const [i,c] of r.meta.cycles.entries()){
   const prefix=expected[i]+'｜第01輪迴・測試｜';
-  const names=[...r.files.keys()].filter(k=>k.startsWith(c.path+'/')&&/\/\d+[^/]*\.txt$/.test(k));
+  const names=[...r.volumePaths].filter(k=>k.startsWith(c.path+'/'));
   assert.ok(names.some(k=>k.endsWith(prefix+'完整劇情｜001_00001-00001.txt')));
   assert.ok(names.some(k=>k.endsWith(prefix+'含事件閱讀版｜001_00001-00002.txt')));
   assert.ok(names.some(k=>k.includes(prefix+'副駕駛聊天｜')));
@@ -60,5 +60,19 @@ test('existing renamed volume reused byte-exact without changing names or creati
   sync(root,r,true);assert.ok(fs.existsSync(f));assert.ok(!fs.existsSync(p.join(root,rel)));
   const index=JSON.parse(fs.readFileSync(p.join(root,r.idx+'.json'),'utf8'));assert.ok(index.inventory.some(x=>x.path===legacy));assert.ok(!index.inventory.some(x=>x.path===rel));
   assert.equal(sync(root,r,true).newFiles,0);
+ }finally{fs.rmSync(tmp,{recursive:true,force:true})}
+});
+
+test('legacy index remains intact and duplicate matching old volumes fail closed',()=>{
+ const tmp=fs.mkdtempSync(p.join(os.tmpdir(),'gal-library-')),root=p.join(tmp,ROOT);
+ try{
+  fs.mkdirSync(root);for(const d of TOP)fs.mkdirSync(p.join(root,d));
+  const r=plan(fixture()),idx=p.join(root,r.idx.replace(/-命名v2$/,'')+'.md'),latest=p.join(root,TOP[0],'最新匯出索引.md');
+  fs.mkdirSync(p.dirname(idx),{recursive:true});fs.writeFileSync(idx,r.indexText);fs.writeFileSync(latest,r.indexText);
+  const rel=[...r.volumePaths][0],dir=p.dirname(p.join(root,rel));fs.mkdirSync(dir,{recursive:true});
+  fs.writeFileSync(p.join(dir,'old-a.txt'),r.files.get(rel));fs.writeFileSync(p.join(dir,'old-b.txt'),r.files.get(rel));
+  assert.throws(()=>sync(root,r,true),/多個既有檔案/);
+  assert.ok(!fs.existsSync(p.join(root,rel)));fs.unlinkSync(p.join(dir,'old-b.txt'));
+  sync(root,r,true);assert.ok(fs.readFileSync(idx).equals(r.indexText));assert.equal(sync(root,r,true).newFiles,0);
  }finally{fs.rmSync(tmp,{recursive:true,force:true})}
 });
