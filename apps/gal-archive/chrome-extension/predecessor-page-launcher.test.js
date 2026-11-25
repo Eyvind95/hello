@@ -39,3 +39,10 @@ test('full scan receives explicit known lower bound',async()=>{
  f.nodes.get('ga-predecessor-page-minimum').value='179';
  await f.nodes.get('ga-predecessor-page-start').onclick();assert.deepEqual(f.calls,[['測試前輩',179]]);
 });
+
+test('resume picker does not launch without a selected checkpoint',async()=>{
+ const f=fixture();f.launch();f.nodes.get('ga-predecessor-page-launcher').onclick();
+ assert.equal(f.nodes.get('ga-predecessor-page-checkpoint').type,'file');
+ await f.nodes.get('ga-predecessor-page-resume').onclick();assert.deepEqual(f.calls,[]);
+ assert.ok(f.nodes.get('ga-predecessor-page-config'));
+});

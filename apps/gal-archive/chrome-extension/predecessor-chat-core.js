@@ -21,15 +21,15 @@ function compareRow(previous,current){
  }
  return {equal:fields.length===0,fields,changes};
 }
-// Only a previously unobserved single generic user image may be enriched.
+// Only previously unobserved generic user image references may be enriched.
 // The two DOM observations are not proof of the original attachment bytes.
 function reconcileOverlap(previous,current){
  const comparison=compareRow(previous,current);
  if(comparison.equal)return {...comparison,row:previous};
  if(comparison.fields.length!==1||comparison.fields[0]!=='attachments'||previous.role!=='user'||!previous.text.trim())return comparison;
- const one=a=>a.length===1&&transientImage(a[0])&&a[0].label==='使用者附件';
- const appeared=previous.attachments.length===0&&one(current.attachments);
- const disappeared=current.attachments.length===0&&one(previous.attachments);
+ const images=a=>a.length>0&&a.every(x=>transientImage(x)&&x.label==='使用者附件')&&new Set(a.map(x=>x.url)).size===a.length;
+ const appeared=previous.attachments.length===0&&images(current.attachments);
+ const disappeared=current.attachments.length===0&&images(previous.attachments);
  if(!appeared&&!disappeared)return comparison;
  return {equal:true,fields:[],row:appeared?{...previous,attachments:current.attachments.slice()}:previous,changes:[{messageId:previous.id,type:appeared?'image-reference-appeared':'image-reference-not-observed',previousAttachments:previous.attachments,currentAttachments:current.attachments,bytesVerified:false,attachmentCountVerified:false}]};
 }
@@ -99,8 +99,38 @@ function validateRaw(data){
   if(version[0]===0&&version[1]===10&&version[2]>=20||version[0]>0||version[0]===0&&version[1]>10)
    check(fullCoverageGate(data.count,ev.knownMinimum,ev.hostProof?.maxRange,ev.hostProof?.observedMovement),'完成檔缺少可捲動容器、移動或已知最低數量證據');
  }
+ if(data.status==='completed'&&data.evidence.resume){
+  const q=data.evidence.resume;
+  check(q.tailVerified===true&&q.frontierVerified===true&&q.baseCount>=2&&data.count>=q.baseCount&&/^[a-f0-9]{64}$/.test(q.sourceSha256),'續掃完成檔缺少原斷點及前沿核對證據');
+ }
  return ids;
 }
+// Checkpoints are user-selected, previously preserved partial scans. Never
+// treat their rows as newly read or accept a different branch or tail.
+function validateCheckpoint(data,source){
+ validateRaw(data);
+ check(['failed','cancelled'].includes(data.status)&&data.count>=2,'請選擇至少兩則的未完成完整掃描保全檔');
+ check(data.chatId===sourceId(source)&&new URL(data.sourceUrl).pathname.replace(/\/$/,'')===new URL(source).pathname.replace(/\/$/,''),'續掃來源不是目前聊天');
+ const ev=data.evidence;
+ check(ev.bottomReached===true&&ev.bottomStableMs>=3000&&ev.firstId===data.rows[0].id&&ev.lastId===data.rows.at(-1).id&&ev.windows>0,'斷點缺少底端或訊息邊界證據');
+ check(ev.hostProof?ev.hostProof.maxRange>8&&ev.hostProof.observedMovement===true:Array.isArray(ev.scrollTrace)&&ev.scrollTrace.some(t=>scrollRange(t.scrollHeight,t.clientHeight)>8),'斷點缺少有效捲動證據');
+ check(!String(data.error||'').startsWith('輸出核對失敗'),'斷點輸出驗證失敗');
+ if(ev.resume)check(ev.resume.tailVerified&&ev.resume.frontierVerified,'前次續掃尚未核對前沿，請使用原始斷點');
+ return data.rows.map(({index,...r})=>r);
+}
+function resumeWindow(saved,live){
+ const pos=new Map(saved.map((r,i)=>[r.id,i])),indices=live.map(r=>pos.get(r.id)).filter(i=>i!==undefined);
+ check(indices.length,'視窗沒有重疊訊息');
+ return {minIndex:indices[0],matched:indices.length,frontier:indices[0]===0&&indices[1]===1};
+}
+function resumeSeed(saved,live,onChange){
+ const progress=resumeWindow(saved,live);
+ check(live.at(-1)?.id===saved.at(-1)?.id&&progress.matched>=2,'斷點尾端不同或少於兩則重疊，請改用新完整掃描');
+ const merged=mergeUp(saved,live,onChange);
+ check(merged.length===saved.length||progress.frontier,'續掃前沿未核對，不能增加舊訊息');
+ return {rows:merged,...progress};
+}
+function resumeStep(viewport,minIndex){return minIndex>12?Math.max(scrollStep(viewport,8),Math.floor(viewport*5)):0}
 // Larger steps still require exact overlap.
 const scrollStep=(height,unchanged=0)=>Math.max(24,Math.floor(height*(unchanged>=8?2.5:unchanged>=3?1.5:.85)));
 // A virtualized chat may change height while jumping to its bottom.
@@ -156,5 +186,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep};
 });

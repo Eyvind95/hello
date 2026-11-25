@@ -1711,15 +1711,16 @@
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
     if(b.foldObservations.size)warnings.push('前輩掃描不點擊展開／收合；已掛載正文照讀，折疊觀測及確定移除的尾端介面標籤另存證據，未獨立驗證折疊正文完整性，需後續核對。');
     if(b.attachmentChanges.some(x=>!x.type))warnings.push('臨時圖片 blob 網址曾變動；僅核對附件參照位置與標籤，未驗證圖片位元組。');
-    if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的單張圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
+    if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
+    if(b.resume)warnings.push('續掃沿用先前保全 '+b.resume.baseCount+' 則；本次僅驗證已重新經過的視窗、尾端與前沿，不代表舊正文全部重新收錄。來源 SHA-256 及驗證狀態見 evidence.resume。');
     for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,knownMinimum:b.knownMinimum,hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
   }
   function historyDownload(data){
-    const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+'.json';
+    const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+data.count:'')+'.json';
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=(data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
     return a.download;
@@ -1745,13 +1746,22 @@
       let topSince=0,topSignature=null,lastGrowth=Date.now(),lastCount=b.rows.length,edgeAttempt=0,unchanged=0;
       b.breakthrough={resets:0,attempts:0,frontier:{id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight}};
       if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample))status='completed';
+      if(b.resume){
+        const seed=pc.resumeSeed(b.resumeRows,b.rows,change=>historyAttachmentChange(b,change));
+        b.rows=seed.rows;b.resume.tailVerified=true;b.resume.frontierVerified=seed.frontier;b.resume.minIndex=seed.minIndex;b.resume.checkedWindows=1;
+        lastCount=b.rows.length;lastGrowth=Date.now();
+        b.breakthrough.frontier={id:b.resumeRows[seed.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
+        historyTrace(b,'resume-tail-verified',{baseCount:b.resume.baseCount,minIndex:seed.minIndex,matched:seed.matched});
+      }
+      let nextCheckpoint=Math.floor(b.rows.length/100)*100+100;
       while(status!=='completed'){
         historyGuard(b);
         const pos=b.host.scrollTop;
         const state=b.breakthrough,frontier=pc.frontierPosition(state.frontier,b.host.scrollHeight,b.host.clientHeight);
         const boost=pc.breakthroughStep(state,b.host.clientHeight);
         const origin=boost&&frontier!==null?Math.min(pos,frontier):pos;
-        const step=boost||pc.scrollStep(b.host.clientHeight,unchanged);
+        const rapid=b.resume&&!b.resume.frontierVerified?pc.resumeStep(b.host.clientHeight,b.resume.minIndex):0;
+        const step=boost||rapid||pc.scrollStep(b.host.clientHeight,unchanged);
         if(boost&&origin>2){
           state.attempts++;b.scrollStats.breakthroughAttempts=(b.scrollStats.breakthroughAttempts||0)+1;
           historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from:origin,to:Math.max(0,origin-step),step,anchor:state.frontier?.id||null});
@@ -1787,7 +1797,23 @@
           b.scrollStats.attempts++;
           try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight,allowBoost:!recovering})}catch(e){historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});throw e}
           try{
-            b.rows=pc.mergeUp(b.rows,rows,change=>historyAttachmentChange(b,change));b.windows++;
+            const changes=[];
+            const merged=pc.mergeUp(b.rows,rows,change=>changes.push(change));
+            if(b.resume&&!b.resume.frontierVerified){
+              const q=pc.resumeWindow(b.resumeRows,rows);
+              if(merged.length>b.rows.length&&!q.frontier)throw Error('續掃前沿未核對，不能增加舊訊息');
+              b.resume.checkedWindows++;
+              if(q.minIndex<b.resume.minIndex){
+                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;
+                state.frontier={id:b.resumeRows[q.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
+                historyTrace(b,'resume-progress',{minIndex:q.minIndex,matched:q.matched});
+              }
+              if(q.frontier){
+                b.resume.frontierVerified=true;lastGrowth=Date.now();unchanged=0;
+                historyTrace(b,'resume-frontier-verified',{id:b.resumeRows[0].id,matched:q.matched});
+              }
+            }
+            b.rows=merged;for(const change of changes)historyAttachmentChange(b,change);b.windows++;
             if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
             lastError='';break;
           }catch(e){
@@ -1799,13 +1825,14 @@
         }
         if(!rows)throw Error('無法核對前後視窗連續性：'+lastError);
         historyHostObservation(b);
-        historyStatus(b,b.sample?'最近'+b.sample+'則測試':'向上掃描');
+        historyStatus(b,b.sample?'最近'+b.sample+'則測試':b.resume&&!b.resume.frontierVerified?'急速返回・已核對舊索引 '+(b.resume.minIndex+1)+'／'+b.resume.baseCount:'向上掃描');
         if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample)){historyTrace(b,'sample-completed',{step,from:pos});status='completed';break}
         const atTop=b.host.scrollTop<=2,sig=JSON.stringify([rows[0]?.id,b.rows.length,b.host.scrollHeight]);
         if(atTop){
           if(!edgeAttempt)edgeAttempt=Date.now();
           if(sig!==topSignature){topSignature=sig;topSince=Date.now()}
           if(pc.edgeProof(rows,b.rows,{edge:'top',atEdge:true,stableMs:Date.now()-topSince,loading:historyLoading(b.host),...historyEdgeOrdinal(b,'top')})){
+            if(b.resume&&!b.resume.frontierVerified)throw Error('續掃尚未核對原斷點，禁止完成');
             if(!pc.fullCoverageGate(b.rows.length,b.sample?0:b.knownMinimum,b.hostProof.maxRange,b.hostProof.observedMovement)||pc.scrollRange(b.host.scrollHeight,b.host.clientHeight)<=8){historyTrace(b,'false-top-rejected',{knownMinimum:b.knownMinimum,hostProof:b.hostProof});throw Error('疑似假頂端：捲動證據不足或未達已知最低訊息數 '+b.knownMinimum)}
             b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
           if(Date.now()-edgeAttempt>60000)throw Error('頁面已在頂端，但首則訊息或頂端穩定證據不符');
@@ -1817,6 +1844,15 @@
           state.frontier={id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight};
         }
         else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
+        if(!b.sample&&b.rows.length>=nextCheckpoint&&(!b.resume||b.resume.frontierVerified)){
+          nextCheckpoint=Math.floor(b.rows.length/100)*100+100;
+          try{
+            const snapshot=historyPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔');
+            snapshot.evidence.checkpoint=true;pc.validateRaw(snapshot);
+            const file=historyDownload(snapshot);(b.checkpointExports||(b.checkpointExports=[])).push({count:b.rows.length,file,triggered:true});
+            historyTrace(b,'checkpoint-download',{count:b.rows.length,file});
+          }catch(e){historyTrace(b,'checkpoint-download-failed',{reason:String(e.message||e)})}
+        }
         if(!atTop&&pc.noNewRows(lastGrowth,Date.now()))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
         await sleep(150);
       }
@@ -1831,7 +1867,7 @@
     try{historyStatus(b,(data.status==='completed'?(b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。')}
     catch(e){historyStatus(b,'保全已留在本頁，下載觸發失敗：'+e.message)}
   }
-  async function historyBegin(requestedTitle,sample=false,minimum=0){
+  async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null){
     if(!pc||!valid())return {ok:false,error:'請開啟具體 ChatGPT 聊天並載入新版'};
     if(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating())return {ok:false,error:'此聊天正在監看擷取、掃描或生成，稍後再開始'};
     if(document.getElementById(HISTORY_PANEL))return {ok:false,error:'前一批保全仍在頁面，請確認下載並關閉面板後再開始'};
@@ -1839,6 +1875,15 @@
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
     const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    if(checkpoint){
+      if(b.sample)return {ok:false,error:'測試不能續掃'};
+      try{
+        b.resumeRows=pc.validateCheckpoint(checkpoint.data,location.origin+b.chat);
+        if(!/^[a-f0-9]{64}$/.test(checkpoint.hash))throw Error('斷點雜湊無效');
+        b.resume={baseCount:b.resumeRows.length,sourceRunId:checkpoint.data.runId,sourceVersion:checkpoint.data.scannerVersion||null,sourceSha256:checkpoint.hash,sourceFirstId:b.resumeRows[0].id,sourceLastId:b.resumeRows.at(-1).id,tailVerified:false,frontierVerified:false,minIndex:b.resumeRows.length,checkedWindows:0};
+        b.knownMinimum=Math.max(b.knownMinimum,b.resume.baseCount);
+      }catch(e){return {ok:false,error:String(e.message||e)}}
+    }
     state.bulk=b;
     try{
       // Disable only this chat's existing automatic upload so scrolling over
@@ -1894,6 +1939,9 @@
       input.style.cssText='display:block;width:100%;margin:6px 0 12px;padding:8px;background:#111827;color:white;border:1px solid #9ba9cb;border-radius:7px';
       const minLabel=document.createElement('label');minLabel.textContent='已知最低訊息數（完整掃描，未知填0）';minLabel.htmlFor='ga-predecessor-page-minimum';
       const minimum=document.createElement('input');minimum.id='ga-predecessor-page-minimum';minimum.type='number';minimum.min='0';minimum.step='1';minimum.value='0';minimum.style.cssText=input.style.cssText;
+      const checkpointLabel=document.createElement('label');checkpointLabel.textContent='選擇舊完整掃描保全 JSON（續掃專用）';
+      const checkpointFile=document.createElement('input');checkpointFile.id='ga-predecessor-page-checkpoint';checkpointFile.type='file';checkpointFile.accept='.json,application/json';checkpointFile.style.cssText=input.style.cssText;
+      const resumeButton=document.createElement('button');resumeButton.id='ga-predecessor-page-resume';resumeButton.type='button';resumeButton.textContent='⚡ 急速返回・斷點續掃';
       const note=document.createElement('p');note.textContent='建議先測試最近10則（玩家及GPT各算一則），再完整掃描至頂端。載入最多等待60秒；本聊天的原監看將停止。';
       const feedback=document.createElement('p');feedback.setAttribute('role','status');feedback.style.whiteSpace='pre-wrap';
       const start=document.createElement('button');start.type='button';start.id='ga-predecessor-page-start';start.textContent='↑ 從最底端向上完整掃描';
@@ -1903,19 +1951,28 @@
       const twenty=document.createElement('button');twenty.type='button';twenty.id='ga-predecessor-page-test-twenty';twenty.textContent='🧪 測試掃描 20 則';twenty.style.cssText=trial.style.cssText;
       const close=document.createElement('button');close.type='button';close.textContent='關閉';close.style.cssText='margin-top:8px;padding:7px 12px;background:#374151;color:white;border-radius:7px;cursor:pointer';
       close.onclick=()=>pane.remove();
-      const launch=async(sample)=>{
+      const launch=async(sample,resume=false)=>{
         if(pane.dataset.chat!==path()){pane.remove();return}
         if(!pc.chatTitle(input.value)){feedback.textContent='請填寫聊天實際名稱，不能使用新對話等預設名稱';return}
-        start.disabled=true;trial.disabled=true;twenty.disabled=true;close.disabled=true;feedback.textContent='正在開啟掃描…';
+        start.disabled=true;trial.disabled=true;twenty.disabled=true;resumeButton.disabled=true;close.disabled=true;feedback.textContent='正在開啟掃描…';
         try{
-          const result=await (sample?historyBegin(input.value.trim(),sample):historyBegin(input.value.trim(),false,pc.minimumCount(minimum.value)));
+          let checkpoint=null;
+          if(resume){
+            const file=checkpointFile.files?.[0];if(!file)throw Error('請先選擇舊完整掃描保全 JSON');
+            if(file.size>100*1024*1024)throw Error('斷點超過100MiB，請保留原檔並回報');
+            const bytes=await file.arrayBuffer(),data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+            const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
+            checkpoint={data,hash};
+          }
+          const result=await (sample?historyBegin(input.value.trim(),sample):historyBegin(input.value.trim(),false,pc.minimumCount(minimum.value),checkpoint));
           if(result?.ok){pane.remove();return}
           feedback.textContent='⛔ '+(result?.error||'無法啟動掃描');
         }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
-        finally{start.disabled=false;trial.disabled=false;twenty.disabled=false;close.disabled=false}
+        finally{start.disabled=false;trial.disabled=false;twenty.disabled=false;resumeButton.disabled=false;close.disabled=false}
       };
+      resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,label,input,minLabel,minimum,note,trial,twenty,start,close,feedback);document.body.append(pane);
+      pane.append(heading,version,label,input,minLabel,minimum,checkpointLabel,checkpointFile,resumeButton,note,trial,twenty,start,close,feedback);document.body.append(pane);
     };
     document.body.append(button);
   }

@@ -250,3 +250,58 @@ test('actual historyRun rejoins after height changes during an unsuccessful upwa
  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
  a.equal(output.status,'completed');a.equal(output.count,2);a.equal(targets[0].target,9915);a.equal(targets[1].target,29957.5);a.equal(targets[1].allowBoost,false);a.equal(b.scrollStats.rejoinSuccesses,1);
 });
+
+test('two distinct delayed generic images enrich an empty observation, not conflicting nonempty counts',()=>{
+ const old=r('multi'),img=i=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/'+i.repeat(8)+'-1111-4111-8111-111111111111'});
+ const fresh={...old,attachments:[img('1'),img('2')]},changes=[];
+ a.deepEqual(c.mergeUp([old],[fresh],x=>changes.push(x)),[fresh]);
+ a.equal(changes[0].currentAttachments.length,2);
+ a.deepEqual(c.mergeUp([fresh],[old]),[fresh]);
+ a.throws(()=>c.mergeUp([{...old,attachments:[img('1')]}],[fresh]));
+ a.throws(()=>c.mergeUp([old],[{...fresh,attachments:[img('1'),img('1')]}]));
+ a.throws(()=>c.mergeUp([old],[{...fresh,text:'changed'}]));
+});
+test('resume checkpoint rejects samples, false edges, other chats and unverified inherited checkpoints',()=>{
+ const cp={...raw,status:'failed',scannerVersion:'0.10.21',error:'stopped',evidence:{...raw.evidence,topReached:false,continuity:false,windows:3,hostProof:{maxRange:2000,observedMovement:true}}};
+ const rows=c.validateCheckpoint(cp,raw.sourceUrl);
+ a.deepEqual(rows,[r('1'),r('2','assistant')]);
+ a.throws(()=>c.validateCheckpoint(raw,raw.sourceUrl));
+ a.throws(()=>c.validateCheckpoint(cp,'https://chatgpt.com/c/other'));
+ a.throws(()=>c.validateCheckpoint({...cp,evidence:{...cp.evidence,hostProof:{maxRange:0,observedMovement:false}}},raw.sourceUrl));
+ a.throws(()=>c.validateCheckpoint({...cp,evidence:{...cp.evidence,resume:{tailVerified:true,frontierVerified:false}}},raw.sourceUrl));
+});
+test('resume validates tail, fast return interior, and two adjacent frontier rows without accepting gaps',()=>{
+ const saved=Array.from({length:30},(_,i)=>r(String(i)));
+ const seeded=c.resumeSeed(saved,saved.slice(-3));
+ a.equal(seeded.minIndex,27);a.equal(seeded.rows.length,30);a.equal(seeded.frontier,false);
+ a.equal(c.resumeStep(674,27),3370);a.equal(c.resumeStep(674,12),0);
+ a.throws(()=>c.resumeSeed(saved,saved.slice(5,10)));
+ a.throws(()=>c.resumeSeed(saved,[saved[27],saved[29]]));
+ a.throws(()=>c.resumeSeed(saved,[saved[28],{...saved[29],text:'different'}]));
+ a.equal(c.resumeWindow(saved,saved.slice(0,1)).frontier,false);
+ a.equal(c.resumeWindow(saved,saved.slice(0,2)).frontier,true);
+ a.deepEqual(c.mergeUp(saved,[r('earlier'),...saved.slice(0,2)]).map(x=>x.id),['earlier',...saved.map(x=>x.id)]);
+ a.throws(()=>c.validateRaw({...raw,evidence:{...raw.evidence,resume:{baseCount:2,tailVerified:true,frontierVerified:false,sourceSha256:'a'.repeat(64)}}}));
+});
+
+test('actual historyRun resumes from a validated tail, fast returns and then extends the checkpoint',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const saved=Array.from({length:30},(_,i)=>r(String(i))),older=r('older');
+ let now=1000,output,up=0;const trace=[],targets=[];
+ const host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
+ const b={host,rows:[],sample:0,knownMinimum:30,resumeRows:saved,resume:{baseCount:30,tailVerified:false,frontierVerified:false,minIndex:30,checkedWindows:0},hostProof:{maxRange:10000,observedMovement:true},bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{},chat:'/c/abc'};
+ const ctx={Date:{now:()=>now},pc:{...c,validateRaw:()=>{}},state:{bulk:b},chrome:{storage:{local:{set:async()=>{}}}},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{
+   now+=1000;if(!o.upward)return saved.slice(-3);
+   targets.push(o.target);up++;
+   if(up===1)return saved.slice(24,28);
+   if(up===2)return saved.slice(8,12);
+   if(up===3)return saved.slice(0,3);
+   host.scrollTop=0;return [older,...saved.slice(0,3)];
+ },historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push(event),sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length,rows:b.rows,evidence:{resume:b.resume}}),historyDownload:d=>{output=d;return 'resume.json'}};
+ vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+ a.equal(output.status,'completed');a.equal(output.count,31);a.equal(output.rows[0].id,'older');
+ a.equal(output.evidence.resume.tailVerified,true);a.equal(output.evidence.resume.frontierVerified,true);
+ a.equal(targets[0],9500);a.ok(trace.includes('resume-tail-verified'));a.ok(trace.includes('resume-frontier-verified'));
+});
