@@ -91,7 +91,7 @@ test('actual historyRun exits no-growth despite continued scroll movements',asyn
  const rows=[r('1'),r('2','assistant')];
  const host={scrollTop:100000,scrollHeight:100100,clientHeight:100};
  const b={host,rows:[],sample:20,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
- const ctx={Date:{now:()=>now},pc:{...c,validateSample:()=>{}},state:{bulk:b},historyGuard:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>{h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to));positions.push(h.scrollTop)},historySettled:async()=>{now+=700;return rows},historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:()=>{},sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length}),historyDownload:d=>{output=d;return 'sample.json'}};
+ const ctx={Date:{now:()=>now},pc:{...c,validateSample:()=>{}},state:{bulk:b},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>{h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to));positions.push(h.scrollTop)},historySettled:async()=>{now+=700;return rows},historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:()=>{},sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length}),historyDownload:d=>{output=d;return 'sample.json'}};
  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
  a.equal(output.status,'failed');a.match(output.error,/60秒未取得新訊息/);a.equal(output.count,2);
  a.ok(b.scrollStats.noGrowthWindows>8);a.ok(positions.some((v,i)=>i>0&&positions[i-1]-v>=250));a.ok(now<75000);
@@ -206,4 +206,16 @@ test('five repeated resets recover from the accepted frontier and cap strong att
  }
  a.equal(b.scrollStats.breakthroughAttempts,3);a.equal(b.rows.length,1);
  a.equal(trace.filter(x=>x.event==='breakthrough-attempt').length,3);
+});
+
+test('zero range and known minimum prevent false completed tail',()=>{
+ a.equal(c.scrollRange(674,674),0);
+ a.equal(c.fullCoverageGate(4,179,0,false),false);
+ a.equal(c.fullCoverageGate(4,179,20000,true),false);
+ a.equal(c.fullCoverageGate(179,179,20000,false),false);
+ a.equal(c.fullCoverageGate(179,179,20000,true),true);
+ const fake={...raw,scannerVersion:'0.10.19',evidence:{...raw.evidence,scrollTrace:[{scrollHeight:674,clientHeight:674}],breakthroughState:{frontier:{height:674}}}};
+ a.throws(()=>c.validateRaw(fake),/無有效捲動距離/);
+ a.throws(()=>c.validateRaw({...raw,scannerVersion:'0.10.20'}),/缺少可捲動容器/);
+ a.equal(c.validateRaw({...raw,scannerVersion:'0.10.20',evidence:{...raw.evidence,knownMinimum:2,hostProof:{maxRange:2000,observedMovement:true}}}).size,2);
 });
