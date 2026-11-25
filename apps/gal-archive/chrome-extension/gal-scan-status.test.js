@@ -345,3 +345,27 @@ test('road label aliases and current tab URL preserve exact cycle binding across
  assert.match(r.status.batchFolder,/公路求生－我是求生者！\/第01輪迴\/三則測試/);
  assert.equal((await h.dispatch({type:'gal-run-progress',scanRunId:RUN1,cycleId:CYCLE_B,scanned:1},sender)).ok,true);
 });
+
+test('large wire reconstruction is exact across Unicode, retries missing chunks and rejects corrupt bytes',async()=>{
+ const {galReadWire,galWireHash}=require('./gal-scan-status.js');
+ const size=256*1024;
+ for(const mib of [1,40,64,100,200]){
+  const value='中😀'.repeat(Math.floor(mib*1024*1024/7))+'尾';
+  const token=RUN1,descriptor={galWire:1,token,length:value.length,count:Math.ceil(value.length/size),sha256:await galWireHash(value)};
+  let attempts=0;
+  const pull=async(t,i)=>({ok:true,token:t,index:i,text:value.slice(i*size,(i+1)*size)});
+  assert.equal(await galReadWire(descriptor,async(t,i)=>{if(i===0&&attempts++===0)throw Error('transient');return pull(t,i)}),value);
+  if(mib===1){
+   await assert.rejects(()=>galReadWire(descriptor,async()=>null),/缺段/);
+   await assert.rejects(()=>galReadWire(descriptor,async(t,i)=>{const r=await pull(t,i);if(i===0)r.text='x'+r.text.slice(1);return r}),/SHA-256/);
+  }
+ }
+});
+test('large transport uses bounded page and offscreen messages without weakening canonical gates',()=>{
+ const page=fs.readFileSync(require.resolve('./gal-content.js'),'utf8');
+ const worker=fs.readFileSync(require.resolve('./gal-scan-status.js'),'utf8');
+ const offscreen=fs.readFileSync(require.resolve('./gal-scan-files.js'),'utf8');
+ assert.match(page,/gal-run-wire-pull/);assert.match(page,/galSendEvidence\(\{type:'gal-run-finish'/);
+ assert.match(worker,/gal-run-blob-chunk/);assert.match(worker,/nativeFormatComplete!==true/);
+ assert.match(offscreen,/分段未收齊/);assert.match(offscreen,/SHA-256不符/);
+});

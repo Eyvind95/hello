@@ -1,8 +1,39 @@
-/* Independent Gal AI page scanner. v0.10.4: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.5: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.10.4';
+const SCANNER_VERSION='0.10.5';
+ // Large JSON is retained in the isolated page and pulled by its owning
+ // background document in small, independently checked pieces. No story
+ // content is sent to the network or persisted outside the existing exports.
+ const GAL_WIRE_CHARS=256*1024, GAL_INLINE_CHARS=128*1024;
+ const galTransferTexts=new Map();
+ async function galWireHash(text){
+  const bytes=new TextEncoder().encode(text);
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+ }
+ async function galWireEnvelope(message,fields){
+  const out={...message},tokens=[];
+  try{
+   for(const field of fields){
+    const value=out[field];
+    if(typeof value!=='string'||value.length<=GAL_INLINE_CHARS)continue;
+    if(value.length>256*1024*1024)throw Error('單份掃描資料超過256Mi UTF-16 units，請先本機保全');
+    const token=crypto.randomUUID();
+    const descriptor={galWire:1,token,length:value.length,count:Math.ceil(value.length/GAL_WIRE_CHARS),sha256:await galWireHash(value)};
+    galTransferTexts.set(token,{value,field,scanRunId:message.scanRunId,cycleId:message.cycleId});
+    tokens.push(token);out[field]=descriptor;
+    setTimeout(()=>galTransferTexts.delete(token),15*60*1000);
+   }
+   return {out,tokens};
+  }catch(error){for(const token of tokens)galTransferTexts.delete(token);throw error}
+ }
+ async function galSendEvidence(message){
+  const {out,tokens}=await galWireEnvelope(message,['result','diagnostic','unverified','text']);
+  try{return await chrome.runtime.sendMessage(out)}
+  finally{for(const token of tokens)galTransferTexts.delete(token)}
+ }
+
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -257,9 +288,9 @@ async function saveProgressSnapshot(){
  if(run?.scanRunId&&run?.batchFolder){
   try{
    let timer;
-   const result=await Promise.race([chrome.runtime.sendMessage({type:'gal-run-manual-save',
+   const result=await Promise.race([galSendEvidence({type:'gal-run-manual-save',
     scanRunId:run.scanRunId,cycleId:run.cycleId,unverified:JSON.stringify(data)}),
-    new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('背景下載佇列等待超過 12 秒')),12000)})]).finally(()=>clearTimeout(timer));
+    new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('背景下載佇列等待超過 180 秒')),180000)})]).finally(()=>clearTimeout(timer));
    if(result?.ok&&result.status?.files?.unverified&&(result.status?.unverifiedCount??0)>=data.collectedCount){
     status('🧷 '+(target?.cycleTitle||'輪迴')+' 已保全 '+
      data.collectedCount+' 則。\\n'+
@@ -276,7 +307,7 @@ async function saveProgressSnapshot(){
  }
  // Fallback solely for an already-invalidated extension worker. It MUST
  // remain non-importable; do not sacrifice user evidence to folder aesthetics.
- downloadJson('Gal_AI_緊急未驗證保全_',data);
+ await downloadJson('Gal_AI_緊急未驗證保全_',data);
  status('🧷 已請 Chrome 緊急下載 '+data.collectedCount+' 則未驗證保全；請核對下載完成。原始批次仍保留。');
  return true;
 }
@@ -286,7 +317,7 @@ async function downloadJson(prefix,data){
  const kind=prefix.includes('保全')?'unverified':'diagnostic';
  try{
   await fetchCurrentBinding(target);
-  const result=await chrome.runtime.sendMessage({type:'gal-run-download-extra',kind,cycleId:meta.cycleId,scanRunId:crypto.randomUUID(),text:JSON.stringify(payload)});
+  const result=await galSendEvidence({type:'gal-run-download-extra',kind,cycleId:meta.cycleId,scanRunId:crypto.randomUUID(),text:JSON.stringify(payload)});
   if(result?.ok){status('已下載獨立證據批次：'+result.status.filePath);return true;}
   throw Error(result?.error||'背景下載無回應');
  }catch(error){
@@ -1385,7 +1416,7 @@ async function playerAnchorProbe(){
    if(!registered){status('玩家取證未啟動：'+reason);return}
    const result={format:'gal-ai-hidden-player-source-proof',version:1,forensicOnly:true,importable:false,validated:false,complete:!reason,scope:'visible-player-anchor',scanRunId:run.scanRunId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,source:{url:origin},target:{cycleId:run.cycleId,cycleTitle:run.cycleTitle,worldName:run.worldName,worldKey:run.worldKey,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey},capturedAt:new Date().toISOString(),input:{anchorId:id,neighbors},stable:!reason,reason,first,second,note:'僅保存玩家來源及鄰接證據，不判定自動繼續，不修改對話，不匯入正史。'};
    const audit={...run,format:'gal-ai-hidden-player-source-diagnostic',importable:false,anchorId:id,neighbors,stable:!reason,reason,nativeLength:second?.native.nativeLength??first?.native.nativeLength??null,hasMedia:second?.hasMedia??first?.hasMedia??null};
-   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason:reason||null});
+   const saved=await galSendEvidence({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason:reason||null});
    if(!saved?.ok)throw Error(saved?.error||'下載未確認');
    status((reason?'玩家取證未完成：'+reason:'玩家來源兩次取證一致，已保存 JSON')+'\n'+run.batchFolder+'\n只供鑑識，不代表自動繼續驗收通過。');
   }catch(e){status('玩家取證保存失敗：'+String(e?.message||e))}
@@ -1727,7 +1758,7 @@ async function historySourceProbe(){
    const autoContinueIds=entries.filter((r,i)=>i>1&&['character','assistant'].includes(r.sender)&&['character','assistant'].includes(entries[i-1].sender)).map(r=>r.id);
    const result={format:'gal-ai-history-source-proof',version:1,forensicOnly:true,importable:false,complete:!reason,scope:'independent-live-source-inventory',scanRunId:run.scanRunId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,source:{url},target:{cycleId:run.cycleId,cycleTitle:run.cycleTitle,worldName:run.worldName,worldKey:run.worldKey,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey},generatedAt:new Date().toISOString(),reason,firstProof,lastProof,entries,windows,eventCards:[...cards.values()],autoContinueIds,initial,restore,note:'僅讀 WHIF 當時掛載來源及原文雜湊，不重新解析正文；首尾為現場虛擬列表證據，非服務端分頁 API。'};
    const audit={...result,cycleId:run.cycleId};
-   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:entries.length,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason});
+   const saved=await galSendEvidence({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:entries.length,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason});
    if(!saved?.ok)throw Error(saved?.error||'保存未確認');
    status((reason?'⛔ 補證未完成：'+reason:'✅ 獨立來源補證完成：'+entries.length+' 個 ID')+'\n'+run.batchFolder+'\n僅供檔案館交叉驗收，未重建正史。');
   }catch(e){status('來源補證保存失敗：'+String(e?.message||e))}
@@ -1870,7 +1901,7 @@ async function anchorRecoveryProbe(){
    const audit={...run,format:'gal-ai-anchor-recovery-diagnostic',importable:false,initial,restore,reason,
     localization,reach,liveDetail:{complete:!!liveDetail,sourceId:anchorId,missing:liveDetail?[]:result.liveDetail.missing},historySampleCount:history.length,attemptCount:attempts.length,observedStates:result.observedStates,attempts:attempts.map(a=>({requested:a.requested,stable:a.stable,actual:a.after.scrollTop,height:a.after.scrollHeight,anchorMarkerCount:a.after.anchorMarkerCount,state:a.after.state,rawIds:a.after.rawIds,candidateIds:a.after.rows.flatMap(x=>x.sourceIds)}))};
    diagnostic=audit;
-   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason:reason||null});
+   const saved=await galSendEvidence({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason:reason||null});
    if(!saved?.ok)throw Error(saved?.error||'下載未確認');
    status('🧪 歷史定位 '+history.length+' 次；局部取證 '+attempts.length+' 次'+(reason?'；中斷：'+reason:'')+'\n'+reach.state+'\n'+result.observedStates.join(' / ')+'\n批次：'+run.batchFolder+'\n只供鑑識，不代表掃描通過。');
   }catch(error){status('錨點取證保存失敗：'+String(error?.message||error))}
@@ -2114,7 +2145,7 @@ async function positionSevenProbe(mode){
    scannedRows:output.length,sourceIds:output.map(x=>x.nativeSourceId),
    errorContexts:failureContexts(rows,{errors:['第 '+(index+1)+' 則指定位置來源核對']},null)
   };
-  const finished=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
+  const finished=await galSendEvidence({type:'gal-run-finish',...run,
    state:'completed',scanned:output.length,result:JSON.stringify(report),
    diagnostic:JSON.stringify(audit)});
   if(!finished?.ok)throw Error(finished?.error||'指定位置測試已讀取但下載尚未完成');
@@ -2137,7 +2168,7 @@ async function positionSevenProbe(mode){
     data.rows.forEach((row,i)=>{row.scanIndex=rows.indexOf(probeRows[i])});
     unverified=JSON.stringify(data);
    }
-   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
+   const saved=await galSendEvidence({type:'gal-run-finish',...run,
     state:'failed',scanned:probeRows.length,reason:message,
     unverified,diagnostic:JSON.stringify(report)}).catch(e=>({error:String(e)}));
    status('指定位置測試失敗：'+message+'\n批次：'+(run.batchFolder||'未知')+
@@ -2209,7 +2240,7 @@ async function eventThreeRowProbe(profile){
    eventThreeRowTest:{eventTestId,selection:result.selection,
     previousAi:previousFormat.check,event:eventFormat.check,
     localDifferences:{previousAi:previousFormat.localContext||null,event:eventFormat.localContext||null}}};
-  const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
+  const saved=await galSendEvidence({type:'gal-run-finish',...run,
    state:'completed',scanned:3,result:JSON.stringify(result),
    diagnostic:JSON.stringify(diagnostic)});
   if(!saved?.ok)throw Error(saved?.error||'事件測試下載尚未完成');
@@ -2228,7 +2259,7 @@ async function eventThreeRowProbe(profile){
    coreVersion:core.version,eventThreeRowError:message,
    errorContexts:failureContexts(localRows,null,message)};
   if(registered){
-   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:'failed',
+   const saved=await galSendEvidence({type:'gal-run-finish',...run,state:'failed',
     scanned:localRows.length,reason:message,
     unverified:localRows.length?JSON.stringify(unverifiedEvidence(localRows,run,message,diagnostic)):null,
     diagnostic:JSON.stringify(diagnostic)}).catch(error=>({error:String(error)}));
@@ -2591,7 +2622,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    '，待查已接取事件 '+lastResult.eventAudit.unresolvedAccepted+'。'+
    '\n請下載 JSON 後到檔案館核對並備份。');
   if(registered){
-   const response=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:'completed',
+   const response=await galSendEvidence({type:'gal-run-finish',...run,state:'completed',
     scanned:collected.length,result:JSON.stringify(lastResult,null,2),diagnostic:JSON.stringify(diagnostic,null,2)});
    if(!response?.ok)throw Error(response?.error||'背景程式未接收掃描結果');
    if(response.status?.state==='failed'||response.status?.state==='cancelled'){
@@ -2638,7 +2669,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
    status('⛔ '+failure+'\n正在排隊下載失敗診斷及未驗證保全。');await yieldUi();
    const unverified=collected.length?
     JSON.stringify(unverifiedEvidence(collected,run,failure,diagnostic)):null;
-   const response=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,
+   const response=await galSendEvidence({type:'gal-run-finish',...run,
     state:cancelled?'cancelled':paused?'paused':'failed',scanned:collected.length,
     reason:failure,
     unverified,
@@ -2650,9 +2681,14 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
      '\n批次：'+(run.batchFolder||'請查下載目錄')+
      '\n已完成下載：'+Object.keys(files).join('、')+
      '\n未驗證資料禁止匯入。');
-   }else status('⚠ '+failure+'\n背景保全未確認：'+
-    (response?.error||'正在等待 Chrome 下載')+
-    '\n可按「保全已讀進度（不可匯入）」立即本機保存。');
+   }else{
+    const transportError=String(response?.error||'背景下載未確認');
+    await chrome.runtime.sendMessage({type:'gal-run-export-failed',scanRunId:run.scanRunId,
+     cycleId:run.cycleId,scanned:collected.length,reason:failure.slice(0,500),
+     transportError:transportError.slice(0,500)}).catch(()=>{});
+    status('⚠ '+failure+'\n背景保全未確認：'+transportError+
+     '\n可按「保全已讀進度（不可匯入）」立即本機保存。');
+   }
   }
  }finally{
   busy=false;
@@ -2665,6 +2701,16 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  return {ok:!failure,error:failure||null,pairs:lastResult?.validation?.pairs||0};
 }
 chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
+ if(msg?.type==='gal-run-wire-pull'&&sender.id===chrome.runtime.id&&!sender.tab){
+  const entry=galTransferTexts.get(msg.token);
+  if(!entry||entry.field!==msg.field||entry.scanRunId!==msg.scanRunId||
+     entry.cycleId!==msg.cycleId||!Number.isInteger(msg.index)||msg.index<0||
+     msg.index>=Math.ceil(entry.value.length/GAL_WIRE_CHARS)){
+   respond({ok:false,error:'掃描資料分段來源或序號不符'});return false;
+  }
+  const text=entry.value.slice(msg.index*GAL_WIRE_CHARS,(msg.index+1)*GAL_WIRE_CHARS);
+  respond({ok:true,token:msg.token,index:msg.index,text});return false;
+ }
  if(msg?.type==='gal-scan-emergency-snapshot'&&sender.id===chrome.runtime.id){
   const run=activeRun,rows=activeScanRows||[];
   if(!run?.scanRunId){respond({ok:false,reason:'沒有進行中工作'});return false}
@@ -2673,11 +2719,12 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
    error:'Chrome 中斷／到期緊急保全：'+String(msg.reason||'未知'),
    trustedCount:rows.length};
   diag.errorContexts=failureContexts(rows,null,diag.error);
-  respond({ok:true,scanRunId:run.scanRunId,scanned:rows.length,
+  galWireEnvelope({ok:true,scanRunId:run.scanRunId,cycleId:run.cycleId,scanned:rows.length,
    diagnostic:JSON.stringify(diag),
    unverified:rows.length?
-    JSON.stringify(unverifiedEvidence(rows,run,diag.error,diag)):null});
-  return false;
+    JSON.stringify(unverifiedEvidence(rows,run,diag.error,diag)):null},['diagnostic','unverified'])
+   .then(({out})=>respond(out),error=>respond({ok:false,error:String(error.message||error)}));
+  return true;
  }
  if(msg?.type==='gal-run-page-status'&&sender.id===chrome.runtime.id&&
     msg.status?.scanRunId===activeRun?.scanRunId){
