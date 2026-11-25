@@ -1610,7 +1610,7 @@
     return position>0&&total>=position&&Number.isInteger(position)&&Number.isInteger(total)?{position,total}:{};
   }
   // Preserve intended scroll position across ChatGPT auto-scroll and expansion.
-  function historyRecoverScroll(b,target,height,stage,allowBoost=true){
+  function historyRecoverScroll(b,target,height,stage,allowBoost=true,policy=null){
     const actual=b.host.scrollTop,currentHeight=b.host.scrollHeight;
     const recovery=pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight);
     if(recovery===null)return null;
@@ -1625,7 +1625,7 @@
       historyTrace(b,'frontier-restore',{anchor:state.frontier.id,estimated:frontier,recovery});
     }
     const boost=pc.breakthroughStep(state,b.host.clientHeight);
-    if(allowBoost&&boost&&destination>2){
+    if(allowBoost&&boost&&destination>2&&policy?.locked==null){
       // Try moving beyond the obstruction. The outer loop still requires
       // strict overlap and can return to the last confirmed position.
       state.attempts++;
@@ -1633,18 +1633,24 @@
       const from=destination;destination=Math.max(0,destination-boost);
       historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from,to:destination,step:boost,anchor:state.frontier?.id||null});
     }
+    const originalDestination=destination;
+    const strategy=policy?pc.recoveryCycle(policy,destination,b.host.clientHeight):{destination,delay:180,detected:false,exhausted:false};
+    destination=Math.max(0,Math.min(pc.scrollRange(currentHeight,b.host.clientHeight),strategy.destination));
+    if(strategy.detected){b.scrollStats.recoveryCycles=(b.scrollStats.recoveryCycles||0)+1;historyTrace(b,'recovery-cycle',{recent:policy.recent.slice(),locked:policy.locked,delay:strategy.delay,stage})}
+    if(policy?.locked!=null){b.scrollStats.cycleHolds=(b.scrollStats.cycleHolds||0)+1;historyTrace(b,'recovery-hold',{originalDestination,destination,delay:strategy.delay,holds:policy.holds,exhausted:strategy.exhausted})}
     historyTrace(b,'scroll-reset',{target,actual,expectedHeight:height,currentHeight,recovery,destination,stage,resetsSinceGrowth:state.resets});
-    historyScroll(b.host,destination);
-    return {target:destination,height:currentHeight};
+    if(!strategy.exhausted)historyScroll(b.host,destination);
+    return {target:destination,height:currentHeight,delay:strategy.delay,exhausted:strategy.exhausted};
   }
   async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true}={}){
-    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;
+    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;const policy={recent:[],locked:null,holds:0};
+    const retryError=()=>Object.assign(Error('頁面反覆自動返回底端；本次定位策略無法穩定'),{code:'HISTORY_RECOVERY_RETRY'});
     while(Date.now()<until){
       historyGuard(b);
-      const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read',allowBoost):null;
+      const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read',allowBoost,policy):null;
       if(recovered){
         target=recovered.target;targetHeight=recovered.height;
-        last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8)throw Error('頁面反覆自動返回底端；強力突破後仍無法穩定');await sleep(180);continue;
+        last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);await sleep(Math.min(recovered.delay,Math.max(0,until-Date.now())));continue;
       }
       if(historyLoading(b.host)){
         last=null;reason='等待載入轉圈';b.scrollStats.loadingPolls++;
@@ -1666,15 +1672,15 @@
             }
             lastRows=rows;
             if(last===fingerprint&&Date.now()-lastAt>=550){
-              const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost):null;
-              if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8)throw Error('頁面反覆自動返回底端；強力突破後仍無法穩定');await sleep(180);continue}
+              const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost,policy):null;
+              if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);await sleep(Math.min(recovered.delay,Math.max(0,until-Date.now())));continue}
               return rows;
             }
             if(last!==fingerprint){
               last=fingerprint;lastAt=Date.now();
             }
             reason='等待原文與格式穩定';
-        }catch(e){last=null;reason=String(e.message||e);b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null}}
+        }catch(e){if(e.code==='HISTORY_RECOVERY_RETRY')throw e;last=null;reason=String(e.message||e);b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null}}
       }
       historyStatus(b,reason+'（最多等待60秒）');await sleep(350);
     }
@@ -1748,7 +1754,7 @@
       if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample))status='completed';
       if(b.resume){
         const seed=pc.resumeSeed(b.resumeRows,b.rows,change=>historyAttachmentChange(b,change));
-        b.rows=seed.rows;b.resume.tailVerified=true;b.resume.frontierVerified=seed.frontier;b.resume.minIndex=seed.minIndex;b.resume.checkedWindows=1;
+        b.rows=seed.rows;b.resume.tailVerified=true;b.resume.tailVerifiedAt=new Date().toISOString();b.resume.frontierVerified=seed.frontier;if(seed.frontier)b.resume.frontierVerifiedAt=b.resume.tailVerifiedAt;b.resume.minIndex=seed.minIndex;b.resume.checkedWindows=1;
         lastCount=b.rows.length;lastGrowth=Date.now();
         b.breakthrough.frontier={id:b.resumeRows[seed.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
         historyTrace(b,'resume-tail-verified',{baseCount:b.resume.baseCount,minIndex:seed.minIndex,matched:seed.matched});
@@ -1779,7 +1785,7 @@
         let recovering=false,attempted=new Set();
         for(const plan of plans){
           const {ratio,offset=0,rebase=true}=plan;
-          if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息')break;
+          if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息'&&!lastError.startsWith('頁面反覆自動返回底端'))break;
           historyGuard(b);
           if(Date.now()>=deadline)break;
           const targetHeight=b.host.scrollHeight;
@@ -1795,7 +1801,14 @@
           historyScroll(b.host,target);
           await sleep(180);
           b.scrollStats.attempts++;
-          try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight,allowBoost:!recovering})}catch(e){historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});throw e}
+          try{rows=await historySettled(b,{deadline,upward:true,target,targetHeight,allowBoost:!recovering})}catch(e){
+            historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
+            if(e.code!=='HISTORY_RECOVERY_RETRY')throw e;
+            lastError=String(e.message||e);recovering=true;rows=null;
+            b.scrollStats.recoveryPlanRetries=(b.scrollStats.recoveryPlanRetries||0)+1;
+            historyTrace(b,'recovery-next-plan',{ratio,offset,rebase,target});
+            continue;
+          }
           try{
             const changes=[];
             const merged=pc.mergeUp(b.rows,rows,change=>changes.push(change));
@@ -1809,7 +1822,7 @@
                 historyTrace(b,'resume-progress',{minIndex:q.minIndex,matched:q.matched});
               }
               if(q.frontier){
-                b.resume.frontierVerified=true;lastGrowth=Date.now();unchanged=0;
+                b.resume.frontierVerified=true;b.resume.frontierVerifiedAt=new Date().toISOString();lastGrowth=Date.now();unchanged=0;
                 historyTrace(b,'resume-frontier-verified',{id:b.resumeRows[0].id,matched:q.matched});
               }
             }
@@ -1874,7 +1887,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,recoveryCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     if(checkpoint){
       if(b.sample)return {ok:false,error:'測試不能續掃'};
       try{
