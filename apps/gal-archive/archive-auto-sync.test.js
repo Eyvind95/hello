@@ -83,7 +83,7 @@ test('no automatic sync is performed without account authentication, and only se
  const js=fs.readFileSync(path.join(root,'archive-auto-sync.js'),'utf8');
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const handover=fs.readFileSync(path.join(root,'handover-cloud.js'),'utf8');
- assert.match(js,/if\(!uid\|\|!localReady\|\|!enabled\|\|!app\.isSignedIn\(uid\)\)return/);
+ assert.match(js,/if\(!uid\|\|!localReady\|\|\(!enabled&&!handoverOnly\)\|\|!app\.isSignedIn\(uid\)\)return/);
  assert.match(js,/checksAfterPlan\(plan\)/);
  assert.match(js,/plan\.snapshots/);
  assert.match(js,/gal-archive-world-pre-cloud:/);
@@ -102,7 +102,7 @@ test('no automatic sync is performed without account authentication, and only se
  assert.match(html,/id="archiveAutoSyncNow"/);
  assert.match(html,/id="archiveAutoSyncStatus"/);
  assert.match(html,/archive-auto-sync-core\.js\?v=1/);
- assert.match(html,/archive-auto-sync\.js\?v=1/);
+ assert.match(html,/archive-auto-sync\.js\?v=2/);
  assert.match(html,/archive:cloud-auth/);
  assert.match(html,/archive:local-changed/);
  assert.match(html,/archive:local-ready/);
@@ -120,5 +120,42 @@ test('PWA and self contained HTML download both include automatic sync code',()=
  assert.ok(cache&&Number(cache[1])>=100,'auto sync cache generation must be v100 or newer');
  assert.match(sw,/archive-auto-sync-core\.js/);
  assert.match(sw,/archive-auto-sync\.js/);
- assert.match(html,/for\(const asset of \[.*'archive-auto-sync-core\.js\?v=1','archive-auto-sync\.js\?v=1'/);
+ assert.match(html,/for\(const asset of \[.*'archive-auto-sync-core\.js\?v=1','archive-auto-sync\.js\?v=2'/);
+});
+
+test('handover sync runs independently of canonical conflicts, even with no canonical changes',async()=>{
+ const vm=require('node:vm'),js=fs.readFileSync(path.join(root,'archive-auto-sync.js'),'utf8');
+ const calls=[],nodes=new Map(),handlers={};let failCanonical=true,auto=false;
+ const node=id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},addEventListener:(type,fn)=>handlers[id+':'+type]=fn});return nodes.get(id)};
+ const app={autoReady:async()=>{},user:()=>({uid:'u'}),isSignedIn:u=>u==='u',ensureRoot:async()=>{},isManualBusy:()=>false,isApplyingCloud:()=>false,setApplyingCloud:()=>{},currentWorldId:()=> 'adventure',localCycles:()=>[],localWorlds:()=>[],remoteMetadata:async()=>{calls.push('canon');if(failCanonical)throw Error('canonical conflict');return {cycles:[],worlds:[]}},firestore:()=>({})};
+ const ctx={ArchiveAutoSyncCore:planner,ArchiveAutoSyncBridge:app,ArchiveHandoverCloud:{pull:async()=>{calls.push('pull');return {threads:1,text:1,files:0}},push:async()=>{calls.push('push');return {threads:0,text:0,files:0,worldInventory:{adventure:{local:2,remote:2}}}}},navigator:{locks:{request:async(_k,_o,fn)=>fn({})},onLine:true},localStorage:{getItem:k=>k.includes(':enabled:')?String(auto):null,setItem(){}},document:{readyState:'complete',hidden:false,getElementById:node,addEventListener(){}},window:{addEventListener:(k,fn)=>handlers[k]=fn},console:{error(){},warn(){}},setTimeout:()=>1,clearTimeout(){},setInterval:fn=>{handlers.poll=fn},Date};
+ vm.createContext(ctx);vm.runInContext(js,ctx);await new Promise(setImmediate);
+ handlers['archiveHandoverSyncNow:click']();await new Promise(setImmediate);
+ assert.deepEqual(calls,['pull','push']);assert.match(node('archiveAutoSyncDetail').textContent,/本機 2、雲端 2/);
+ // Re-enable auto and run a full sync explicitly through the actual closure.
+ auto=true;handlers['archiveAutoSyncToggle:change']({target:{checked:true}});
+ const instrumented=js.replace('if(document.readyState===','globalThis.testRun=run; if(document.readyState===');
+ vm.runInContext(instrumented,ctx);await new Promise(setImmediate);
+ calls.length=0;await ctx.testRun('test');
+ assert.deepEqual(calls,['pull','push','canon']);assert.match(node('archiveAutoSyncDetail').textContent,/正史：canonical conflict/);
+ assert.match(node('archiveAutoSyncDetail').textContent,/本機 2、雲端 2/);
+ failCanonical=false;calls.length=0;await ctx.testRun('test');
+ assert.deepEqual(calls,['pull','push','canon']);assert.match(node('archiveAutoSyncDetail').textContent,/雲端核對完成/);
+});
+test('handover local writes always emit user-edit event; visible polling and independent UI entry are installed',()=>{
+ const js=fs.readFileSync(path.join(root,'archive-auto-sync.js'),'utf8'),h=fs.readFileSync(path.join(root,'handover.js'),'utf8'),html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+ assert.match(h,/if\(mode==='readwrite'\)\s*window\.dispatchEvent\(new CustomEvent\('archive:handover-changed'\)\)/);
+ assert.match(js,/setInterval\(\(\)=>\{if\(!document.hidden&&!inProgress/);
+ assert.match(html,/id="archiveHandoverSyncNow"/);
+ assert.match(js,/run\('manual-handover',true\)/);
+});
+
+test('manual and automatic cloud operations cannot overlap in the same tab',()=>{
+ const js=fs.readFileSync(path.join(root,'archive-auto-sync.js'),'utf8'),html=fs.readFileSync(path.join(root,'index.html'),'utf8'),h=fs.readFileSync(path.join(root,'handover-cloud.js'),'utf8');
+ assert.match(js,/window\.__archiveAutoSyncBusy=true/);
+ assert.match(js,/window\.__archiveAutoSyncBusy=false/);
+ assert.equal((html.match(/if\(archiveManualBusy\|\|window\.__archiveAutoApplyingCloud\|\|window\.__archiveAutoSyncBusy\)/g)||[]).length,2);
+ assert.match(h,/db\.transaction\(\[THREADS,ENTRIES,DELETES\],'readonly'\)/);
+ assert.match(h,/if\(!equal\(req\.result,expected\)\)/);
+ assert.match(h,/tx\.abort\(\)/);
 });
