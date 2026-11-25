@@ -3,6 +3,7 @@
 // Offline .gab -> private, append-only reading library. No network or Firebase.
 const fs=require('node:fs'), p=require('node:path'), crypto=require('node:crypto');
 const {TextDecoder}=require('node:util');
+const os=require('node:os');
 const ROOT='Gal AI・歷代前輩記憶館';
 const INDEX='00・全館索引與共用守則', HAND='04・歷代前輩交接稿', TEA='05・前輩們の茶話會', PEOPLE='06・前輩個人檔案', RAW='99・原始備份';
 const WORLDS={sentinel:['01・全員精神穩定，感情除外','《全員精神穩定，感情除外》'],adventure:['02・身為冒險者就可以這樣那樣','《身為冒險者就可以這樣那樣》'],road:['03・公路求生','🔞公路求生－我是求生者！🔞']};
@@ -17,6 +18,8 @@ const list=(x,label)=>{assert(x===undefined||Array.isArray(x),label+'不是陣�
 const id=x=>{assert(typeof x==='string'&&x.length>0&&x.length<=500,'來源 ID 無效');return x};
 const part=x=>{let s=String(x??'').replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').replace(/[. ]+$/u,'').trim().slice(0,32);if(!s||/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(s))s='資料_'+s;return s};
 const key=x=>sha(utf(id(x))).slice(0,20);
+const attachmentName=x=>{const e=p.extname(String(x??''));const ext=/^\.[a-zA-Z0-9]{1,12}$/.test(e)?e:'';return part(ext?String(x).slice(0,-ext.length):x)+ext};
+const revision=(raw,worldName)=>sha(Buffer.concat([utf('reading-v1\n'+worldName+'\n'),raw]));
 const decode=b=>new TextDecoder('utf-8',{fatal:true}).decode(b);
 const date=x=>{assert(typeof x==='string'&&Number.isFinite(Date.parse(x)),'備份時間無效');return new Date(x).toISOString()};
 function header(b,magic,max){
@@ -70,7 +73,7 @@ function block(m,i,kind){
 }
 function writeVolumes(add,dir,label,items,heading,limit=32000){
  let buffer='',first=1,volume=1;
- const flush=end=>{if(!buffer)return;add(dir+'/'+label+'/'+String(volume++).padStart(3,'0')+'_'+String(first).padStart(5,'0')+'-'+String(end).padStart(5,'0')+'.txt',utf(heading+'\n本卷原始陣列索引（1 起算）：'+first+'–'+end+'\n\n'+buffer));buffer=''};
+ const flush=end=>{if(!buffer)return;add(dir+'/'+label+'/'+String(volume++).padStart(3,'0')+'_'+String(first).padStart(5,'0')+'-'+String(end).padStart(5,'0')+'.txt',utf(heading+'\n本卷閱讀序號（1 起算；每則內另標原始陣列索引）：'+first+'–'+end+'\n\n'+buffer));buffer=''};
  items.forEach((s,i)=>{if(buffer&&buffer.length+s.length>limit){flush(i);first=i+1}buffer+=s});flush(items.length);
  if(!items.length)add(dir+'/'+label+'/000_尚無資料.txt',utf(heading+'\n來源未收錄此類資料。\n'));
 }
@@ -103,7 +106,7 @@ function plan(b){
   worlds.push({id:w,name,path:dir,sourcePresent:!!doc});
  }
  for(const c of archive.cycles){
-  const {name,folder}=info(c.world),raw=json(c),version=sha(raw),dir=folder+'/輪迴-'+key(c.id)+'/版本-'+version.slice(0,20);
+  const {name,folder}=info(c.world),raw=json(c),version=sha(raw),dir=folder+'/輪迴-'+key(c.id)+'/版本-'+revision(raw,name).slice(0,20);
   const title=text(c.title)||'未命名輪迴',managers=Array.isArray(c.managerNames)&&c.managerNames.length?c.managerNames:[c.manager].filter(Boolean);
   const msgs=list(c.messages,'完整對話'),events=list(c.events,'事件簿'),pilot=list(c.pilotMessages,'副駕駛聊天');
   for(const [a,k] of [[msgs,'正史訊息'],[events,'事件'],[pilot,'副駕駛']]){const seen=new Set();for(const x of a){assert(x&&typeof x==='object',k+'格式錯誤');if(x.id!=null){assert(!seen.has(id(x.id)),k+'ID 重複');seen.add(x.id)}}}
@@ -134,11 +137,11 @@ function plan(b){
    // Offsets are relative to the enclosing .ghb; exclude them from the revision
    // key so a different attachment order in another thread cannot create duplicates.
    const normalized=entries.map(({byteOffset,...e})=>e),raw=json({worldId:w,thread,entries:normalized,attachments});
-   const dir=base+'/交接-'+key(thread.id)+'/版本-'+sha(raw).slice(0,20);
+   const dir=base+'/交接-'+key(thread.id)+'/版本-'+revision(raw,name).slice(0,20);
    add(dir+'/交接稿原始資料.json',raw);
    const rows=entries.filter(e=>e.kind!=='file');
    writeVolumes(add,dir,'文字與評語',rows.map(e=>'【'+e.kind+'｜'+text(e.reviewer)+'｜'+text(e.subject)+'｜'+text(e.title)+'｜ID '+e.id+'】\n'+text(e.text)+'\n\n'),name+'｜'+text(thread.title)+'｜非正史');
-   for(const e of entries.filter(e=>e.kind==='file'))add(dir+'/附件/'+key(e.id)+'_'+part(e.name),h.files.get(e.id));
+   for(const e of entries.filter(e=>e.kind==='file'))add(dir+'/附件/'+key(e.id)+'_'+attachmentName(e.name),h.files.get(e.id));
    const ref={worldId:w,id:thread.id,title:text(thread.title),author:text(thread.author),path:dir,files:attachments.length,reviewsPath:rd};
    threads.push(ref);linkPerson(thread.author,ref,'交接稿明確撰寫者');
   }
@@ -164,7 +167,13 @@ function inside(root,rel){
 function checkRoot(root){assert(p.basename(root)===ROOT&&fs.existsSync(root)&&fs.statSync(root).isDirectory(),'請選擇已建立的私人記憶館目錄');assert(!fs.lstatSync(root).isSymbolicLink(),'禁止根目錄連結');for(const t of TOP){const f=inside(root,t);assert(fs.existsSync(f)&&fs.statSync(f).isDirectory(),'缺少已建立的資料夾：'+t)}}
 function put(file,bytes){fs.mkdirSync(p.dirname(file),{recursive:true});const tmp=file+'.tmp-'+crypto.randomUUID();try{fs.writeFileSync(tmp,bytes,{flag:'wx'});fs.renameSync(tmp,file)}finally{if(fs.existsSync(tmp))fs.unlinkSync(tmp)}}
 function sync(root,planned,apply=false){
- root=p.resolve(root);checkRoot(root);const latest=inside(root,INDEX+'/最新匯出索引.md');
+ root=p.resolve(root);checkRoot(root);
+ if(!apply)return syncLocked(root,planned,false);
+ const lock=p.join(os.tmpdir(),'gal-library-'+sha(utf(root.toLowerCase()))+'.lock');
+ let fd;try{fd=fs.openSync(lock,'wx')}catch(e){if(e.code==='EEXIST')throw Error('已有匯出執行或先前中斷留下鎖定；確認所有匯出程序已停止，再人工核對鎖定檔 '+lock);throw e}
+ try{return syncLocked(root,planned,true)}finally{fs.closeSync(fd);fs.unlinkSync(lock)}
+}
+function syncLocked(root,planned,apply){const latest=inside(root,INDEX+'/最新匯出索引.md');
  const existing=fs.existsSync(latest)?fs.readFileSync(latest):null;
  let newer=true;
  if(existing){
@@ -183,9 +192,9 @@ function sync(root,planned,apply=false){
  if(apply){
   // Commit immutable files before publishing the latest index. Partial writes
   // remain valid reusable objects; the previous latest index is never advanced.
-  for(const [f,bytes] of pending)put(f,bytes);
+  for(const [f,bytes] of pending){if(fs.existsSync(f)){assert(fs.statSync(f).isFile()&&sha(fs.readFileSync(f))===sha(bytes),'同步期間檔案已變更，禁止覆蓋：'+f)}else put(f,bytes);}
   for(const [rel,bytes] of planned.files)assert(sha(fs.readFileSync(inside(root,rel)))===sha(bytes),'寫入後核對失敗：'+rel);
-  if(newer&&(!existing||!existing.equals(planned.indexText)))put(latest,planned.indexText);
+  if(newer&&(!existing||!existing.equals(planned.indexText))){const current=fs.existsSync(latest)?fs.readFileSync(latest):null;assert(existing?current?.equals(existing):!current,'同步期間最新索引變更，禁止覆蓋');put(latest,planned.indexText);}
  }
  return {mode:apply?'apply':'dry-run',sourceSha256:planned.meta.sourceSha256,worlds:planned.meta.worlds.length,cycles:planned.meta.cycles.length,threads:planned.meta.threads.length,newFiles:pending.length,unchangedFiles:planned.files.size-pending.length,latest: newer?'current':'older-history-only'};
 }

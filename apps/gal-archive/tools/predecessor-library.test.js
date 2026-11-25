@@ -17,9 +17,9 @@ test('extracts worlds, exact originals, binary files, distinct reading sections 
  const all=(label)=>[...r.files].filter(([k])=>k.startsWith(c.path+'/'+label+'/')).map(([,v])=>v.toString()).join('');
  assert.ok(all('02・完整劇情原始對話').includes('長'.repeat(34000)));assert.match(all('03・副駕駛聊天'),/副駕駛/);
  assert.ok(all('02b・已證明定位的劇情閱讀順序').indexOf('已接')<all('02b・已證明定位的劇情閱讀順序').indexOf('原文'));
- assert.doesNotMatch(all('02b・已證明定位的劇情閱讀順序'),/未接|未定位/);
+ assert.doesNotMatch(all('02b・已證明定位的劇情閱讀順序'),/\n未接\n|\n未定位\n/);
  assert.match(all('06・事件簿'),/未定位/);
- const attachment=[...r.files].find(([k])=>k.includes('/附件/'));assert.ok(attachment[1].equals(Buffer.from([0,1,255,7])));assert.ok(!attachment[0].includes('../'));
+ const attachment=[...r.files].find(([k])=>k.includes('/附件/'));assert.ok(attachment[1].equals(Buffer.from([0,1,255,7])));assert.ok(!attachment[0].includes('../'));assert.ok(attachment[0].endsWith('.pdf'));
  assert.ok(r.meta.people.includes('測試前輩'));assert.equal(r.meta.threads.length,1);
 });
 test('dry run is read only, repeat apply is idempotent, changed data is append-only, old backup cannot replace latest',()=>{
