@@ -1661,10 +1661,39 @@
       const height=b.host.scrollHeight,from=b.host.scrollTop;
       const departed=from<pc.scrollRange(height,b.host.clientHeight)-6;
       if(departed)b.scrollStats.bottomEscapeDepartures=(b.scrollStats.bottomEscapeDepartures||0)+1;
-      const target=pc.rejoinTarget({top:recovered.target,height:recovered.height},height,b.host.clientHeight);
-      historyTrace(b,'bottom-escape-return',{from,target,departed,height});
-      historyScroll(b.host,target);await sleep(Math.min(350,Math.max(0,until-Date.now())));
-      return {...recovered,target,height};
+      const anchor={top:recovered.target,height:recovered.height},viewport=b.host.clientHeight;
+      let target=pc.rejoinTarget(anchor,height,viewport);
+      const stages=pc.escapeStageCount(from,target,viewport);
+      historyTrace(b,'bottom-escape-return',{from,target,departed,height,stages});
+      if(stages===1){
+        historyScroll(b.host,target);await sleep(Math.min(350,Math.max(0,until-Date.now())));
+        return {...recovered,target,height};
+      }
+      b.scrollStats.stagedReturns=(b.scrollStats.stagedReturns||0)+1;
+      if(!departed){historyTrace(b,'bottom-escape-stage-failed',{reason:'nudge-not-held'});throw retryError()}
+      let targetHeight=height;
+      for(let i=0;i<stages;i++){
+        historyGuard(b);
+        if(Date.now()>=until)throw Error('等待逾時：分段返回');
+        targetHeight=b.host.scrollHeight;target=pc.rejoinTarget(anchor,targetHeight,viewport);
+        const start=b.host.scrollTop,waypoint=pc.escapeStageTarget(start,target,stages-i);
+        if(start<target-viewport*.5){historyTrace(b,'bottom-escape-stage-failed',{reason:'unexpected-overshoot',start,target});throw retryError()}
+        historyScroll(b.host,waypoint);
+        await sleep(Math.min(600,Math.max(0,until-Date.now())));
+        if(Date.now()>=until)throw Error('等待逾時：分段返回');
+        historyGuard(b);
+        const actual=b.host.scrollTop,nowHeight=b.host.scrollHeight;
+        const expected=pc.rejoinTarget({top:waypoint,height:targetHeight},nowHeight,viewport);
+        const held=Math.abs(actual-expected)<=Math.max(24,viewport*.5);
+        historyTrace(b,'bottom-escape-stage',{stage:i+1,stages,start,waypoint,actual,expected,held,target,nowHeight});
+        if(!held){historyTrace(b,'bottom-escape-stage-failed',{stage:i+1,reason:'waypoint-not-held'});throw retryError()}
+        b.scrollStats.stagedReturnLandings=(b.scrollStats.stagedReturnLandings||0)+1;
+      }
+      b.scrollStats.stagedReturnArrivals=(b.scrollStats.stagedReturnArrivals||0)+1;
+      // Return only the coordinates: historySettled still reads a stable
+      // window, and historyRun still verifies exact overlap/frontier.
+      historyTrace(b,'bottom-escape-arrived',{stages,target,actual:b.host.scrollTop});
+      return {...recovered,target,height:targetHeight};
     };
     while(Date.now()<until){
       historyGuard(b);
@@ -1718,8 +1747,14 @@
   function historyScroll(host,at){host.scrollTo({top:Math.max(0,at),behavior:'instant'})}
   function historyTrace(b,event,details={}){
     const trace=b.scrollTrace;
-    trace.push({at:new Date().toISOString(),event,count:b.rows.length,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,clientHeight:b.host.clientHeight,...details});
+    const entry={at:new Date().toISOString(),event,count:b.rows.length,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,clientHeight:b.host.clientHeight,...details};
+    trace.push(entry);
     if(trace.length>40)trace.shift();
+    if(event.startsWith('bottom-escape-')){
+      const saved=b.bottomEscapeTrace||(b.bottomEscapeTrace=[]);
+      if(saved.length>=64){saved.shift();b.bottomEscapeTraceOverflow=(b.bottomEscapeTraceOverflow||0)+1}
+      saved.push(entry);
+    }
   }
   function historyFoldObservation(b,observation){
     const key=JSON.stringify(observation);
@@ -1751,7 +1786,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,knownMinimum:b.knownMinimum,resume:b.resume||null,checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+data.count:'')+'.json';
@@ -1917,7 +1952,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,bottomEscapeAttempts:0,bottomEscapeDepartures:0,recoveryCycles:0,crossWindowCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,bottomEscapeAttempts:0,bottomEscapeDepartures:0,stagedReturns:0,stagedReturnLandings:0,stagedReturnArrivals:0,recoveryCycles:0,crossWindowCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     if(checkpoint){
       if(b.sample)return {ok:false,error:'測試不能續掃'};
       try{

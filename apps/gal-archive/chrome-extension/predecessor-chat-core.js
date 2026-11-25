@@ -217,12 +217,21 @@ function alternateRecoveryPolicy(state){delete state.recoveryPolicy;state.recove
 // is bounded per accepted progress interval and never proves continuity.
 function bottomEscape(state,target,actual,height,viewport){
  const max=scrollRange(height,viewport);
- if(max<=viewport*4||Math.abs(actual-max)>6||target>viewport*2){state.bottomEscapeHits=0;return null}
+ const extended=state.recoveryAvoidFrontier===true&&max-target>viewport*100;
+ if(max<=viewport*4||Math.abs(actual-max)>6||(target>viewport*2&&!extended)){state.bottomEscapeHits=0;return null}
  state.bottomEscapeHits=(state.bottomEscapeHits||0)+1;
- if(state.bottomEscapeHits<3||state.resets<5||(state.bottomEscapeAttempts||0)>=2)return null;
+ if(state.bottomEscapeHits<3||state.resets<5||(state.bottomEscapeAttempts||0)>=(extended?4:2))return null;
  state.bottomEscapeHits=0;state.bottomEscapeAttempts=(state.bottomEscapeAttempts||0)+1;
  return Math.max(0,max-Math.max(24,Math.floor(viewport*.5)));
 }
+// Very long instant returns may snap back to the bottom. Divide only
+// the recovery journey into bounded positional stages; these do not
+// prove message coverage and are never used to append rows.
+function escapeStageCount(from,target,viewport){
+ const gap=from-target;
+ return gap>viewport*100?Math.min(6,Math.max(2,Math.ceil(gap/(viewport*250)))):1;
+}
+function escapeStageTarget(from,target,remaining){return Math.max(target,from-(from-target)/Math.max(1,remaining))}
 const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;
 function sampleReady(rows,bottomReached,topReached,limit=SAMPLE_LIMIT){
  return !!sampleLimit(limit)&&bottomReached===true&&rows.length>0&&(rows.length>=limit||topReached===true);
@@ -247,5 +256,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget};
 });
