@@ -1986,3 +1986,28 @@ test('invalid adventure calendar date requires unique matching original and rema
  const duplicate=structuredClone(rows);duplicate[1].formatSource={playerSources:[{id:source.messageId}]};assert.equal(core.validate(duplicate,world).ok,false);
  assert.equal(core.invalidAdventureDate(hud.replace('02月29日','03月01日')),null);
 });
+
+test('road world uses a unique terminal day HUD, not a fabricated calendar year',()=>{
+ const context=vm.createContext({});vm.runInContext(fs.readFileSync(require.resolve('./gal-core.js'),'utf8'),context);
+ const c=context.GalArchiveCore,world='🔞公路求生－我是求生者！🔞',fence=String.fromCharCode(96).repeat(3);
+ const hud=(n=7,md='01.07',time='06:45')=>['⏰：來到公路第'+n+'日｜'+md+'．'+time+'．天氣：☀（測試空間）','🚗：柴油皮卡｜等級3','🔋：柴油｜34.8／100公升','🔧：260／260','📦：162／350','🧩：35／40','🛣：15.0公里／每日規定15公里','🥩：飢餓度：35｜💧：口渴度：10','⚡：420／450','❤：健康','🎒：'+('測試物資×1、'.repeat(300)),'⚔️：無','💰：0','📜：無｜💋：否','💦：無｜無｜無','📐：無'].join('\n');
+ const box=s=>fence+'\n'+s+'\n'+fence;
+ const h=hud(),native='測試敘事\n'+box('【測試公告】')+'\n'+box(h),dom='測試敘事\n【測試公告】\n'+h;
+ assert.equal(c.isRoadWorld(world),true);assert.equal(c.isRoadWorld('《公路求生－我是求生者！》'),true);
+ assert.equal(c.parseGameTime(native).civil,'第7日｜01.07 06:45');assert.equal(c.parseGameTime(dom).profile,'road');
+ assert.equal(c.parseGameTime(hud(367,'01.01','00:00')).survivalDay,367);
+ assert.ok(Date.parse(c.parseGameTime(hud(367,'01.01','00:00')).iso)>Date.parse(c.parseGameTime(hud(366,'12.31','23:59')).iso));
+ for(const bad of [h.replace('06:45','24:00'),h.replace('01.07','02.30'),h.replace('第7日','第0日'),h+'\n敘事尾巴',h+'\n'+h,h.split('\n').slice(0,3).join('\n')])assert.equal(c.parseGameTime(bad),null);
+ const opts={source:'whif-message-content',worldName:world,codeBlocks:['【測試公告】',h]};
+ assert.equal(c.compareNativeParagraphs(dom,native,opts).text,native);
+ assert.equal(c.compareNativeParagraphs(dom.replace('測試物資','丟失物資'),native,opts).text,null);
+ assert.equal(c.compareNativeParagraphs(dom,native,{...opts,codeBlocks:[h,'【測試公告】']}).text,null);
+ assert.equal(c.compareNativeParagraphs(dom.replace('01.07','01.08'),native,opts).text,null);
+ const opening='公路求生\n'+box('【世界規則正在重構】\n【唯一公路】')+'\n'+box('【請選擇你的初始能源】');
+ const rows=[{role:'ai',text:opening},{role:'me',text:'測試'},{role:'ai',text:native}];
+ assert.equal(c.isAllowedOpeningRow(rows[0],world),true);assert.equal(c.validate(rows,world).ok,true);
+ assert.equal(c.validate(rows,'《身為冒險者就可以這樣那樣》').ok,false);
+ assert.equal(c.validate([rows[0],rows[1],{role:'ai',text:h.replace('06:45','24:00')}],world).ok,false);
+ assert.equal(c.worldInText('與'+world+'的事件'),world);
+ assert.equal(c.isEvent('與'+world+'的事件'),true);
+});

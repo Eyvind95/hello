@@ -332,3 +332,16 @@ test('unknown world and stale ordinal cannot create new batch',async()=>{
  const result=await h.dispatch({type:'gal-run-start',scanRunId:RUN1,cycleId:CYCLE_A,scope:'preview',cycleTitle:'第1輪迴',worldName:'《身為冒險者就可以這樣那樣》'});
  assert.equal(result.ok,false);assert.equal(h.items.length,0);
 });
+
+test('road label aliases and current tab URL preserve exact cycle binding across SPA navigation',async()=>{
+ const h=harness();
+ h.store.galProfilesByPage[B]={cycleId:CYCLE_B,cycleTitle:'第1輪迴',worldName:'🔞公路求生－我是求生者！🔞'};
+ const sender={...h.sender(A,29),tab:{id:29,url:B}};
+ const msg={type:'gal-run-start',scanRunId:RUN1,cycleId:CYCLE_B,scope:'preview',scannerVersion:'0.10.0',worldName:'《公路求生－我是求生者！》'};
+ assert.equal((await h.dispatch(msg,sender)).ok,false);
+ assert.equal((await h.dispatch({...msg,pageSource:A},sender)).ok,false);
+ const r=await h.dispatch({...msg,pageSource:B},sender);
+ assert.equal(r.ok,true);assert.equal(r.status.worldKey,'road');assert.equal(r.status.cycleNumber,1);
+ assert.match(r.status.batchFolder,/公路求生－我是求生者！\/第01輪迴\/三則測試/);
+ assert.equal((await h.dispatch({type:'gal-run-progress',scanRunId:RUN1,cycleId:CYCLE_B,scanned:1},sender)).ok,true);
+});

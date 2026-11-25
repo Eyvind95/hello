@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.9.14: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.0: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.9.14';
+const SCANNER_VERSION='0.10.0';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -1633,7 +1633,7 @@ async function historySourceProbe(){
  };
  try{
   await fetchCurrentBinding(profile);root=scroller();initial={top:root.scrollTop,height:root.scrollHeight,clientHeight:root.clientHeight};
-  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});if(!reg?.ok)throw Error(reg?.error||'補證工作登記失敗');
+  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',pageSource:location.origin+location.pathname.replace(/\/$/,''),...run});if(!reg?.ok)throw Error(reg?.error||'補證工作登記失敗');
   Object.assign(run,{worldName:reg.status.worldName,worldKey:reg.status.worldKey,cycleNumber:reg.status.cycleNumber,archiveKey:reg.status.archiveKey,batchFolder:reg.status.batchFolder,statusPath:reg.status.statusPath});registered=true;activeRun=run;
   const first=await edge('first');firstProof=first.proof;append(first.sample);
   let last=first.sample,stalls=0,step=Math.max(12,Math.floor(root.clientHeight*.75));
@@ -1698,7 +1698,7 @@ async function anchorRecoveryProbe(){
   guard();
   restoreHint={id:anchorHistorySample(root).rawIds[0]||null,bottomDistance:Math.max(0,initial.height-initial.clientHeight-initial.top)};
   restoreHint.relativeTop=restoreHint.id?recoveryMarkerTop(root,restoreHint.id):null;
-  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
+  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',pageSource:location.origin+location.pathname.replace(/\/$/,''),...run});
   if(!reg?.ok)throw Error(reg?.error||'無法建立錨點取證批次');
   Object.assign(run,{worldName:reg.status?.worldName||run.worldName,worldKey:reg.status?.worldKey||null,cycleNumber:reg.status?.cycleNumber??null,archiveKey:reg.status?.archiveKey||null,batchFolder:reg.status?.batchFolder});
   registered=true;
@@ -1854,7 +1854,7 @@ function canonical(rows,valid,preview){
  return {
   format:'gal-ai-authoritative-scan',version:1,scannerVersion:SCANNER_VERSION,coreVersion:core.version,generatedAt:new Date().toISOString(),
   scope:preview?'opening-first-pair-preview':'entire-opening-to-bottom',source:{url:location.origin+location.pathname,origin:location.origin,
-    path:location.pathname,gameClockOnly:true},target:{cycleId:target.cycleId,worldName:target.worldName,
+    path:location.pathname,gameClockOnly:true,...(core.isRoadWorld(target.worldName)?{gameClockProfile:'road',gameClockEncoding:core.ROAD_CLOCK_ENCODING}:{})},target:{cycleId:target.cycleId,worldName:target.worldName,
     cycleTitle:target.cycleTitle,uid:target.uid||'',manager:target.managerNames.join('、'),managerNames:target.managerNames},
   opening:valid.opening,messages,events,validation:{ok:valid.ok,pairs:valid.pairs,events:events.length,
     ...(valid.autoContinues?{autoContinues:valid.autoContinues}:{}),
@@ -1887,7 +1887,7 @@ function applyNativeFormat(entry,rows,sourceCounts,scanMode,nativeCopy='',event=
  let localContext=null;
  if(nativeText){
   const result=core.compareNativeParagraphs(entry.text,nativeText,{
-   source:nativeCopy?'native-copy':event?'whif-event-content':'whif-message-content',
+   source:nativeCopy?'native-copy':event?'whif-event-content':'whif-message-content',worldName:target?.worldName,
    statusText:metadata?.statusText,codeBlocks:metadata?.codeBlocks,
    chapterTitle:nativeCopy?undefined:source?.chapterTitle,event,opening,
    verifiedUntimedNative:entry.verifiedUntimedNative===true,eventTitle:event?entry.title:undefined,
@@ -2025,7 +2025,7 @@ async function positionSevenProbe(mode){
    scope:'position-seven',worldName:target.worldName,cycleTitle:target.cycleTitle,scannerVersion:SCANNER_VERSION};
   const managed=['whif.io','www.whif.io'].includes(location.hostname);
   if(!managed)throw Error('指定位置測試僅支援正式 WHIF 分頁');
-  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
+  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',pageSource:location.origin+location.pathname.replace(/\/$/,''),...run});
   if(!reg?.ok)throw Error(reg?.error||'無法建立獨立指定位置測試批次');
   Object.assign(run,{worldName:reg.status?.worldName||run.worldName,cycleNumber:reg.status?.cycleNumber??null,worldKey:reg.status?.worldKey||null,archiveKey:reg.status?.archiveKey||null});
   run.batchFolder=reg.status?.batchFolder;
@@ -2090,7 +2090,7 @@ async function eventThreeRowProbe(profile){
  $('gal-scan-difference').hidden=true;$('gal-scan-difference-label').hidden=true;
  try{
   await fetchCurrentBinding(profile);
-  const response=await chrome.runtime.sendMessage({type:'gal-run-start',...run});
+  const response=await chrome.runtime.sendMessage({type:'gal-run-start',pageSource:location.origin+location.pathname.replace(/\/$/,''),...run});
   if(!response?.ok)throw Error(response?.error||'無法建立事件測試批次');
   Object.assign(run,{worldName:response.status?.worldName||run.worldName,cycleNumber:response.status?.cycleNumber??null,worldKey:response.status?.worldKey||null,archiveKey:response.status?.archiveKey||null});
   run.batchFolder=response.status?.batchFolder;registered=true;activeRun=run;
@@ -2209,7 +2209,7 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
  try{
   if(managed){
    await fetchCurrentBinding(profile);
-   const response=await chrome.runtime.sendMessage({type:'gal-run-start',...run,
+   const response=await chrome.runtime.sendMessage({type:'gal-run-start',pageSource:location.origin+location.pathname.replace(/\/$/,''),...run,
     scannerVersion:SCANNER_VERSION});
    if(!response?.ok)throw Error(response?.error||'背景程式未登記掃描工作');
    Object.assign(run,{worldName:response.status?.worldName||run.worldName,cycleNumber:response.status?.cycleNumber??null,worldKey:response.status?.worldKey||null,archiveKey:response.status?.archiveKey||null});
