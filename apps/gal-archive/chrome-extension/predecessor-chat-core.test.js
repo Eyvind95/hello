@@ -55,3 +55,22 @@ test('ten-message sample stops at ten, allows proven short chats, and cannot be 
  a.equal(c.validateSample({...sample,count:2,rows:raw.rows,evidence:raw.evidence}).size,2);
  a.equal(c.validateSample({...sample,status:'failed',count:0,rows:[],error:'failed'}).size,0);
 });
+
+test('temporary image references can rotate while preserving raw URL and evidence; other changes remain fatal',()=>{
+ const old={...r('image'),attachments:[{kind:'image-reference',label:'附件',url:'blob:https://chatgpt.com/11111111-1111-4111-8111-111111111111'}]};
+ const fresh={...old,attachments:[{...old.attachments[0],url:'blob:https://chatgpt.com/22222222-2222-4222-8222-222222222222'}]};
+ const changes=[];a.deepEqual(c.mergeUp([old],[fresh],x=>changes.push(x)),[old]);a.equal(changes.length,1);a.equal(changes[0].bytesVerified,false);
+ a.equal(c.fingerprint([old]),c.fingerprint([fresh]));
+ for(const changed of [{...fresh,text:'正文改變'},{...fresh,structure:[{tag:'p',text:'改變'}]},{...fresh,attachments:[]},{...fresh,attachments:[{...fresh.attachments[0],label:'不同附件'}]},{...fresh,attachments:[{...fresh.attachments[0],url:'https://example.com/new.png'}]}]){
+  a.throws(()=>c.mergeUp([old],[changed]),err=>err.overlapEvidence.messageId==='image'&&err.overlapEvidence.fields.length>0);
+ }
+});
+test('twenty-message bounded proof and generic title rejection',()=>{
+ const rows=Array.from({length:20},(_,i)=>({...r(String(i)),index:i}));
+ a.equal(c.sampleReady(rows.slice(0,14),true,false,20),false);a.equal(c.sampleReady(rows,true,false,20),true);
+ const sample={...raw,format:c.SAMPLE,scope:'sample-20',sampleLimit:20,importable:false,count:20,rows,evidence:{...raw.evidence,firstId:'0',lastId:'19',topReached:false,topStableMs:0}};
+ a.equal(c.validateSample(sample).size,20);a.throws(()=>c.validateRaw(sample));
+ a.throws(()=>c.validateSample({...sample,scope:'sample-10'}));
+ for(const title of ['新對話','New chat','ChatGPT','新聊天 - ChatGPT'])a.equal(c.chatTitle(title),'');
+ a.equal(c.chatTitle('小貓前輩 - ChatGPT'),'小貓前輩');
+});
