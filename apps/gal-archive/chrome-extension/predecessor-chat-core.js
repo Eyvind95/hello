@@ -211,7 +211,7 @@ function recoveryPolicy(state){
  p.currentWindow++;
  return p;
 }
-function clearRecoveryPolicy(state){delete state.recoveryPolicy;delete state.recoveryAvoidFrontier;delete state.bottomEscapeHits;delete state.bottomEscapeAttempts}
+function clearRecoveryPolicy(state){delete state.recoveryPolicy;delete state.recoveryAvoidFrontier;delete state.bottomEscapeHits;delete state.bottomEscapeAttempts;delete state.stagedEscapeBackoff}
 function alternateRecoveryPolicy(state){delete state.recoveryPolicy;state.recoveryAvoidFrontier=true}
 // Only actual bottom landings after near-top targets count. The maneuver
 // is bounded per accepted progress interval and never proves continuity.
@@ -232,6 +232,21 @@ function escapeStageCount(from,target,viewport){
  return gap>viewport*100?Math.min(24,Math.max(2,Math.ceil(gap/(viewport*100)))):1;
 }
 function escapeStageTarget(from,target,remaining){return Math.max(target,from-(from-target)/Math.max(1,remaining))}
+// During an intermediate navigation leg, height may change on either side of the viewport.
+// Accept only bounded upward movement in both coordinate frames, not a bottom snap.
+// Final position still requires a direct or fully height-rebased landing.
+function escapeLanding({start,waypoint,actual,height,nowHeight,viewport,final=false}){
+ if(![start,waypoint,actual,height,nowHeight,viewport].every(Number.isFinite)||viewport<=0)return null;
+ const max=scrollRange(nowHeight,viewport),oldMax=scrollRange(height,viewport),tol=Math.max(24,viewport*.5);
+ if(actual<0||actual>=max-6)return null;
+ const direct=Math.max(0,Math.min(max,waypoint)),expected=rejoinTarget({top:waypoint,height},nowHeight,viewport);
+ if(Math.abs(actual-direct)<=tol)return 'direct';
+ if(Math.abs(actual-expected)<=tol)return 'height-rebased';
+ if(final)return null;
+ const step=start-waypoint,forward=Math.min(start-actual,(max-actual)-(oldMax-start));
+ if(step>viewport&&forward>=step*.5&&actual>=Math.min(direct,expected)-tol&&actual<=Math.max(direct,expected)+tol)return 'height-envelope';
+ return null;
+}
 const noNewRows=(lastGrowth,now,limit=60000)=>now-lastGrowth>=limit;
 function sampleReady(rows,bottomReached,topReached,limit=SAMPLE_LIMIT){
  return !!sampleLimit(limit)&&bottomReached===true&&rows.length>0&&(rows.length>=limit||topReached===true);
@@ -256,5 +271,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });

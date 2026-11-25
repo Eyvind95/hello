@@ -466,3 +466,34 @@ for(const basis of ['direct','height-rebased','snap'])test('staged return with c
  else{a.deepEqual(await run,rows);a.equal(trace.find(x=>x.event==='bottom-escape-stage').landingBasis,basis);a.equal(b.scrollStats.stagedReturnLandings,13);a.equal(b.scrollStats.stagedReturnArrivals,1);a.ok(reads>0)}
  a.equal(b.rows.length,1);a.ok(now<61000);
 });
+
+// Intermediate reflow is bounded by the two coordinate frames, not identity evidence.
+test('observed mixed-height intermediate landing is allowed but final landing and bottom snap are rejected',()=>{
+ const first={start:851288,waypoint:785940.9538386419,actual:785070.375,height:852299,nowHeight:850315,viewport:674};
+ const second={start:851276.8125,waypoint:786061.0884540265,actual:785191.1875,height:852288,nowHeight:850305,viewport:674};
+ for(const v of [first,second]){a.equal(c.escapeLanding(v),'height-envelope');a.equal(c.escapeLanding({...v,final:true}),null);a.equal(c.escapeLanding({...v,actual:v.nowHeight-v.viewport}),null);a.equal(c.escapeLanding({...v,actual:v.actual-10000}),null)}
+ a.equal(c.escapeLanding({...first,actual:first.start-5}),null);
+});
+test('actual staged return accepts mixed height intermediate landing and reaches strict final landing',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
+ let now=1000,moves=0,reads=0;const trace=[],rows=[r('anchor')];
+ const b={host:{scrollTop:851625,scrollHeight:852299,clientHeight:674},scrollStats:{scrollResets:0},rows,breakthrough:{resets:53,attempts:0,frontier:null,bottomEscapeHits:2,bottomEscapeAttempts:2,recoveryAvoidFrontier:true}};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>{reads++;return rows},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>{h.scrollTop=to;if(++moves===2){h.scrollHeight-=1984;h.scrollTop-=870.58}},sleep:async ms=>{now+=ms}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ a.deepEqual(await ctx.settle(b,{upward:true,target:1776.4,targetHeight:852299,allowBoost:false}),rows);
+ a.equal(b.scrollStats.stagedEnvelopeLandings,1);a.equal(b.scrollStats.stagedReturnArrivals,1);a.equal(b.rows.length,1);a.ok(reads>0);a.equal(trace.find(x=>x.event==='bottom-escape-stage').landingBasis,'height-envelope');
+});
+test('actual bottom snap makes next long return smaller without counting a landing',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
+ let now=1000,moves=0;const trace=[],rows=[r('anchor')];
+ const b={host:{scrollTop:842380,scrollHeight:843054,clientHeight:674},scrollStats:{scrollResets:0},rows,breakthrough:{resets:53,attempts:0,frontier:null,bottomEscapeHits:2,bottomEscapeAttempts:2,recoveryAvoidFrontier:true}};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>rows,historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>{h.scrollTop=to;if(++moves===2)h.scrollTop=h.scrollHeight-h.clientHeight},sleep:async ms=>{now+=ms}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ await a.rejects(ctx.settle(b,{upward:true,target:1998.8,targetHeight:843054,allowBoost:false}),e=>e.code==='HISTORY_RECOVERY_RETRY');
+ a.equal(b.breakthrough.stagedEscapeBackoff,2);a.equal(b.scrollStats.stagedReturnLandings,undefined);a.equal(b.scrollStats.stagedReturnBackoffs,1);
+ b.breakthrough.bottomEscapeHits=2;
+ a.deepEqual(await ctx.settle(b,{upward:true,target:1998.8,targetHeight:843054,allowBoost:false}),rows);
+ a.deepEqual(trace.filter(x=>x.event==='bottom-escape-return').map(x=>x.stages),[13,26]);a.equal(b.scrollStats.stagedReturnLandings,26);a.equal(b.rows.length,1);c.clearRecoveryPolicy(b.breakthrough);a.equal(b.breakthrough.stagedEscapeBackoff,undefined);
+});
