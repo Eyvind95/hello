@@ -46,9 +46,27 @@ function codeRenderEquivalent(a,b,fields){
 }
 // Only previously unobserved generic user image references may be enriched.
 // The two DOM observations are not proof of the original attachment bytes.
-function reconcileOverlap(previous,current){
+// A previously observed collapsed user row may include the rendered trailing
+// ellipsis. Preserve both observations; this proves a narrow overlap variant,
+// not original text completeness or a server-side edit history.
+function foldedTailEvidence(previous,current,fields,context){
+ if(!context||context.currentOverflow||!Array.isArray(context.source)||!context.current||
+    !/^[a-f0-9]{64}$/.test(context.sourceSha256||'')||
+    previous.role!=='user'||current.role!=='user'||previous.id!==current.id||
+    fields.length!==1||fields[0]!=='text'||!same(previous.attachments,current.attachments)||
+    !current.text.trim()||previous.text!==current.text+'\n…')return null;
+ if([...context.current.values()].some(x=>x.messageId===current.id))return null;
+ const observation=context.source.find(x=>x.messageId===previous.id&&x.collapsed===true&&x.fullTextVerified===false&&
+  /^(?:顯示較多|顯示更多|顯示全部|展開全文|Show more|Read more)$/i.test(x.label||'')&&
+  x.removedSuffix==='\n'+x.label&&x.rawLength===previous.text.length+x.removedSuffix.length);
+ if(!observation)return null;
+ return {type:'folded-user-tail-variant',messageId:previous.id,fields:['text'],previous,current,sourceFoldObservation:observation,sourceSha256:context.sourceSha256,fullTextVerified:false};
+}
+function reconcileOverlap(previous,current,foldContext){
  const comparison=compareRow(previous,current);
  if(comparison.equal)return {...comparison,row:previous};
+ const fold=foldedTailEvidence(previous,current,comparison.fields,foldContext);
+ if(fold)return {equal:true,fields:[],row:previous,changes:[fold]};
  if(codeRenderEquivalent(previous,current,comparison.fields))return {equal:true,fields:[],row:previous,changes:[{type:'code-render-label-variant',messageId:previous.id,fields:comparison.fields,previous,current}]};
  if(comparison.fields.length!==1||comparison.fields[0]!=='attachments'||previous.role!=='user'||!previous.text.trim())return comparison;
  const images=a=>a.length>0&&a.every(x=>transientImage(x)&&x.label==='使用者附件')&&new Set(a.map(x=>x.url)).size===a.length;
@@ -84,7 +102,7 @@ function validateRows(rows){
 }
 // Every newly loaded window must overlap the exact current sequence.
 // Only a contiguous prefix may be prepended in an upward scan.
-function mergeUp(previous,live,onChange){
+function mergeUp(previous,live,onChange,foldContext){
  validateRows(previous);validateRows(live);check(live.length,'目前沒有可讀訊息');
  if(!previous.length)return live.slice();
  const pos=new Map(previous.map((r,i)=>[r.id,i]));
@@ -93,7 +111,7 @@ function mergeUp(previous,live,onChange){
  const first=known[0],last=known.at(-1),merged=previous.slice(),changes=[];
  for(let j=0;j<known.length;j++){
   const x=known[j];check(x.i===first.i+j&&x.at===first.at+j,'重疊區域有缺口、重排或重複');
-  const comparison=reconcileOverlap(previous[x.at],x.r);
+  const comparison=reconcileOverlap(previous[x.at],x.r,foldContext);
   if(!comparison.equal){const error=Error('同一訊息 ID 的內容或格式改變：'+x.r.id+' ['+comparison.fields.join(', ')+']');error.overlapEvidence={messageId:x.r.id,fields:comparison.fields,previous:previous[x.at],current:x.r};throw error}
   merged[x.at]=comparison.row;changes.push(...comparison.changes);
  }
@@ -157,10 +175,10 @@ function resumeWindow(saved,live){
  check(indices.length,'視窗沒有重疊訊息');
  return {minIndex:indices[0],matched:indices.length,frontier:indices[0]===0&&indices[1]===1};
 }
-function resumeSeed(saved,live,onChange){
+function resumeSeed(saved,live,onChange,foldContext){
  const progress=resumeWindow(saved,live);
  check(live.at(-1)?.id===saved.at(-1)?.id&&progress.matched>=2,'斷點尾端不同或少於兩則重疊，請改用新完整掃描');
- const merged=mergeUp(saved,live,onChange);
+ const merged=mergeUp(saved,live,onChange,foldContext);
  check(merged.length===saved.length||progress.frontier,'續掃前沿未核對，不能增加舊訊息');
  return {rows:merged,...progress};
 }
