@@ -39,7 +39,7 @@ async function transaction(stores,mode,work){
    output=work(tx);
   }catch(err){if(tx)try{tx.abort()}catch(_){}reject(err);return}
   tx.oncomplete=()=>{
-   if(mode==='readwrite'&&!window.__archiveAutoApplyingCloud)
+   if(mode==='readwrite')
     window.dispatchEvent(new CustomEvent('archive:handover-changed'));
    resolve(output?.result);
   };
@@ -90,7 +90,7 @@ function renderList(w){
  ).join(''):'<p class="note">這個世界觀還沒有交接對話。</p>';
 }
 function viewFooter(){
- return '<p class="note handover-warning">交接稿、評語、自評及附件會在你手動執行「☁ 雲端同步」的上傳／下載時，一起透過私人 Firestore 合併。<strong>現在也包含在檔案館上方「📦 完整備份（.gab）」內</strong>；下方「備份此世界觀（.ghb）」仍可單獨備份。雲端操作可能因網路或配額失敗，請務必保存本機完整備份。</p>';
+ return '<p class="note handover-warning">交接稿、評語、自評及附件會透過私人 Firestore 自動同步，也可使用「交接稿立即同步」獨立核對。<strong>現在也包含在檔案館上方「📦 完整備份（.gab）」內</strong>；下方「備份此世界觀（.ghb）」仍可單獨備份。雲端操作可能因網路或配額失敗，請務必保存本機完整備份。</p>';
 }
 function contentHeader(thread){
  return '<div class="sectionhead"><div><div class="sub">交接稿・'+escapeHTML(worldName(thread.worldId))+'</div><h2>'+escapeHTML(thread.title)+'</h2>'+

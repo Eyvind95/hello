@@ -190,6 +190,7 @@ async function push({db,user,progress=()=>{}}){
   if(old&&(!newer(thread.updatedAt,old.updatedAt))){skipped++;continue}
   // The full metadata document is small and contains no PDF blobs.
   await root.collection(COLLECTION.threads).doc(thread.id).set({...safeObj(thread),schemaVersion:1});
+  tMap.set(thread.id,thread);
   updatedThreads++;progress('↑ 交接對話：'+updatedThreads+'／'+local.threads.length);
  }
  for(const entry of local.entries){
@@ -208,7 +209,15 @@ async function push({db,user,progress=()=>{}}){
    updatedText++;
   }
  }
- return {threads:updatedThreads,text:updatedText,files:updatedFiles,deletes:updatedDeletes,skipped};
+ const worldInventory=Object.create(null);
+ const count=(t,side)=>{
+  if(compareDeleted(t,marks.get('thread:'+t.id)))return;
+  const item=worldInventory[t.worldId]??={local:0,remote:0};
+  item[side]++;
+ };
+ for(const t of local.threads)count(t,'local');
+ for(const t of tMap.values())count(t,'remote');
+ return {threads:updatedThreads,text:updatedText,files:updatedFiles,deletes:updatedDeletes,skipped,worldInventory};
 }
 async function pull({db,user,progress=()=>{},safeAuto=false}){
  if(!db||!user?.uid)throw Error('請先登入 Firebase');

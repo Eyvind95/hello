@@ -8,7 +8,7 @@ const KEY='gal-archive-auto-sync-v1';
 const knownKey=uid=>KEY+':known:'+uid;
 const onKey=uid=>KEY+':enabled:'+uid;
 let uid=null,localReady=false,inProgress=false,queued=false,timer=null,
- lastAttempt=0,enabled=true,blocked=false,lastStatus='',runningUid=null;
+ lastAttempt=0,enabled=true,blocked=false,lastStatus='',runningUid=null,pendingHandover=false;
 const $=id=>document.getElementById(id);
 function status(message,kind='idle'){
  lastStatus=message;
@@ -74,13 +74,8 @@ async function underExclusiveLock(work){
  // Fail closed rather than racing huge canonical writes in two browser tabs.
  throw Error('此瀏覽器不支援跨分頁同步鎖；請改用支援 Web Locks 的 Chrome，或使用手動雲端同步。');
 }
-async function syncOnce(){
- const currentUid=uid;
- if(!currentUid||!enabled||!app.isSignedIn(currentUid))return;
- if(app.isManualBusy())return {manual:true};
- if(navigator.onLine===false){status('☁ 離線：保留本機，恢復網路後再同步','idle');return {offline:true}}
+async function syncCanonical(currentUid){
  status('☁ 正在核對電腦／手機與 Firebase 的正史版本…','working');
- await app.ensureRoot();
  // Server source required. Cache metadata cannot authorize overwrites.
  const remote=await app.remoteMetadata();
  if(!app.isSignedIn(currentUid))return;
@@ -124,35 +119,61 @@ async function syncOnce(){
    status('☁ 正在將本機較新的輪迴同步到私人 Firebase…','working');
    await app.pushCanonical();
   }
-  if(!globalThis.ArchiveHandoverCloud?.pull||!globalThis.ArchiveHandoverCloud?.push)
-   throw Error('交接稿雲端同步模組尚未載入，已暫停完整自動同步');
+  saveKnownIds();
+  return plan;
+ }finally{app.setApplyingCloud(false)}
+}
+async function syncHandover(currentUid){
+ if(!app.isSignedIn(currentUid))throw Error('同步期間切換 Google 帳號');
+ if(!globalThis.ArchiveHandoverCloud?.pull||!globalThis.ArchiveHandoverCloud?.push)
+  throw Error('交接稿雲端同步模組尚未載入');
   const user=app.user();
   // Server-side delete markers cannot automatically destroy local handover data.
   status('☁ 正在核對交接稿、評語與附件版本…','working');
   const handoverPull=await globalThis.ArchiveHandoverCloud.pull({
    db:app.firestore(),user,safeAuto:true,progress:s=>status('☁ '+s,'working')
   });
+  if(!app.isSignedIn(currentUid))throw Error('同步期間切換 Google 帳號');
   const handoverPush=await globalThis.ArchiveHandoverCloud.push({
    db:app.firestore(),user,progress:s=>status('☁ '+s,'working')
   });
-  saveKnownIds();
-  blocked=false;
-  status('✅ 雲端同步完成：正史 '+(plan.needsPush?'已更新':'已核對')+
-   '，合併 '+plan.count.pull+'、上傳 '+plan.count.push+
-   ' 項；交接稿／附件 '+(handoverPull.threads+handoverPull.text+handoverPull.files)+
-   ' 項下載、'+(handoverPush.threads+handoverPush.text+handoverPush.files)+' 項上傳。','success');
-  lastAttempt=Date.now();
-  return {ok:true};
- }finally{app.setApplyingCloud(false)}
+  const w=app.currentWorldId?.(),inv=handoverPush.worldInventory?.[w]||{local:0,remote:0};
+  return '交接稿／附件 '+(handoverPull.threads+handoverPull.text+handoverPull.files)+
+   ' 項下載、'+(handoverPush.threads+handoverPush.text+handoverPush.files)+
+   ' 項上傳；目前世界觀交接對話：本機 '+inv.local+'、雲端 '+inv.remote+' 份';
 }
-async function run(reason){
- if(inProgress){queued=true;return}
- if(!uid||!localReady||!enabled||!app.isSignedIn(uid))return;
+async function syncOnce(handoverOnly=false){
+ const currentUid=uid;
+ if(!currentUid||(!enabled&&!handoverOnly)||!app.isSignedIn(currentUid))return;
+ if(app.isManualBusy())return {manual:true};
+ if(navigator.onLine===false){status('☁ 離線：保留本機，恢復網路後再同步','idle');return {offline:true}}
+ await app.ensureRoot();
+ let canonical=handoverOnly?'正史未變動':'',handover='',errors=[];
+ // The stores are independent. Canonical conflicts must not starve handovers,
+ // and handover conflicts must not authorize canonical overwrites.
+ try{handover=await syncHandover(currentUid)}catch(e){errors.push('交接稿：'+String(e.message||e));console.error('[交接稿同步]',e)}
+ if(!handoverOnly){
+  try{
+   if(!app.isSignedIn(currentUid))throw Error('同步期間切換 Google 帳號');
+   const plan=await syncCanonical(currentUid);
+   if(!plan)throw Error('登入狀態已改變');
+   canonical='正史合併 '+plan.count.pull+'、上傳 '+plan.count.push+' 項';
+  }catch(e){errors.push('正史：'+String(e.message||e));console.error('[正史同步]',e)}
+ }
+ if(!app.isSignedIn(currentUid))return;
+ lastAttempt=Date.now();blocked=false;
+ status((errors.length?'⚠ 部分同步未完成：':'✅ 雲端核對完成：')+[canonical,handover,...errors].filter(Boolean).join('；')+'。',errors.length?'error':'success');
+ return {ok:!errors.length};
+}
+async function run(reason,handoverOnly=false){
+ if(inProgress){if(handoverOnly)pendingHandover=true;else queued=true;return}
+ if(!uid||!localReady||(!enabled&&!handoverOnly)||!app.isSignedIn(uid))return;
  inProgress=true;runningUid=uid;
  try{
-  const result=await underExclusiveLock(syncOnce);
-  if(result?.busyOtherTab){
-   status('☁ 其他檔案館分頁正在同步；本頁暫不重複寫入','idle');
+  const result=await underExclusiveLock(()=>syncOnce(handoverOnly));
+  if(result?.busyOtherTab||result?.manual){
+   status('☁ 其他同步正在進行；本頁稍後重新核對','idle');
+   if(handoverOnly)pendingHandover=true;else queued=true;
   }
  }catch(e){
   blocked=true;
@@ -160,17 +181,21 @@ async function run(reason){
   console.error('[檔案館自動同步]',reason,e);
  }finally{
   inProgress=false;runningUid=null;
-  if(queued&&!blocked){queued=false;request('queued',1800)}
+  if(pendingHandover){pendingHandover=false;const retryUid=uid;setTimeout(()=>{if(uid===retryUid)run('handover-queued',true)},3000)}
+  if(queued&&!blocked){queued=false;request('queued',3000)}
   else queued=false;
  }
 }
 function manualRetry(){
- blocked=false;request('manual-retry',100);
+ blocked=false;
+ if(enabled)request('manual-retry',100);
+ else status('☁ 自動同步已關閉；可使用「交接稿立即同步」或手動上傳／合併','idle');
 }
 function onAuth(event){
  const next=event.detail?.uid||null;
  if(uid===next&&next!==null)return;
  uid=next;
+ pendingHandover=false;queued=false;
  enabled=currentEnabled();
  blocked=false;
  clearTimeout(timer);timer=null;
@@ -183,6 +208,12 @@ function install(){
  const checkbox=$('archiveAutoSyncToggle');
  if(checkbox)checkbox.addEventListener('change',e=>setEnabled(e.target.checked));
  $('archiveAutoSyncNow')?.addEventListener('click',manualRetry);
+ $('archiveHandoverSyncNow')?.addEventListener('click',()=>{
+  if(!uid||!localReady||!app.isSignedIn(uid)){status('請先登入 Google 並等本機資料載入','error');return}
+  blocked=false;
+  if(inProgress)status('☁ 同步中，已排入交接稿再次核對','working');
+  run('manual-handover',true);
+ });
  window.addEventListener('archive:cloud-auth',onAuth);
  window.addEventListener('archive:local-ready',()=>{
   localReady=true;
@@ -192,15 +223,20 @@ function install(){
   if(!app.isApplyingCloud())request('local-change',3000);
  });
  window.addEventListener('archive:handover-changed',()=>{
-  if(!app.isApplyingCloud())request('handover-change',3500);
+  // Handover cloud writes use their own direct IDB transaction, not this
+  // user-edit event. Never drop local edits during a canonical cloud merge.
+  request('handover-change',1500);
  });
  window.addEventListener('online',()=>{blocked=false;request('network-online',600)});
  window.addEventListener('focus',()=>{
-  if(!blocked&&Date.now()-lastAttempt>3*60*1000)request('focus',900);
+  if(!blocked&&Date.now()-lastAttempt>15000)request('focus',900);
  });
  document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden&&!blocked&&Date.now()-lastAttempt>3*60*1000)request('visible',1000);
+  if(!document.hidden&&!blocked&&Date.now()-lastAttempt>15000)request('visible',1000);
  });
+ // An already open phone should receive desktop updates without requiring
+ // a tab switch or reload. Only poll while visible, signed in and enabled.
+ setInterval(()=>{if(!document.hidden&&!inProgress&&Date.now()-lastAttempt>=120000)request('visible-poll',100)},120000);
  app.autoReady().then(()=>{localReady=true;if(app.user())onAuth({detail:{uid:app.user().uid}});request('init',1100)})
   .catch(e=>status('⚠ 本機檔案館尚未準備好：'+String(e.message||e),'error'));
 }
