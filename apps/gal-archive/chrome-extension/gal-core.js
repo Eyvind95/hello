@@ -339,13 +339,13 @@ const clockProfile=w=>isRoadWorld(w)?'road':isAdventureWorld(w)?'adventure':'sen
 const roadHead=/^⏰\uFE0F?\s*[：:]\s*來到公路第\s*(\d{1,6})\s*日\s*[｜|]\s*(\d{1,2})[.．/](\d{1,2})\s*[.．]\s*(\d{1,2})[：:](\d{2})\s*[.．]\s*天氣[：:]\s*(\S.*)$/u;
 const roadClockEvidence=input=>clean(input).split('\n').some(line=>/^(?:\*\*)?⏰\uFE0F?\s*[：:]?\s*來到公路第/u.test(line.trim()));
 const roadFields=[
- /^🚗\uFE0F?[：:]\s*(?:未選擇\s*[｜|]\s*未解鎖|\S.*[｜|]\s*等級\s*\d+(?:（[^（）\n]{1,80}）)?)\s*$/u,
+ /^(?:🚗|🚙)\uFE0F?[：:]\s*(?:未選擇\s*[｜|]\s*未解鎖|\S.*[｜|]\s*(?:等級\s*\d+|[A-FS]級)(?:（[^\n]{1,2000}）)?)\s*$/u,
  /^🔋\uFE0F?[：:]\s*\S.*[｜|]/u,
  /^🔧\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
- /^(?:🚐|📦|🛢)\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
+ /^(?:🚐|📦|🛢|🚚|🛻|🛈)\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
  /^🧩\uFE0F?[：:]\s*\d+\s*[／/]\s*\d+/u,
- /^🛣\uFE0F?[：:]\s*\d+(?:\.\d+)?公里\s*[／/]\s*每日規定\s*\d+(?:\.\d+)?公里/u,
- /^(?:🍖|🥩)\uFE0F?[：:]\s*飢餓度[：:]\s*\d+\s*[｜|]\s*💧\uFE0F?\s*[：:]?\s*口渴度[：:]\s*\d+/u,
+ /^🛣\uFE0F?[：:]\s*(?:今日剩餘里程[：:]\s*)?\d+(?:\.\d+)?公里\s*[／/]\s*每日規定\s*\d+(?:\.\d+)?公里/u,
+ /^(?:(?:🍖|🥩)\uFE0F?[：:]\s*飢餓度[：:]\s*\d+\s*[｜|]\s*💧\uFE0F?\s*[：:]?\s*口渴度[：:]\s*\d+|♂\uFE0F?[：:]\s*(?:精液|痕跡)[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?)/u,
  /^⚡\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
  /^❤\uFE0F?[：:]\s*\S/u,
  /^🎒\uFE0F?[：:]\s*\S/u,
@@ -366,9 +366,11 @@ function parseRoadClock(input){
  // closing HUD fence. It must never hide arbitrary trailing narrative.
  if(/^\{\{(?:img|image)::[A-Za-z0-9_-]{1,100}\}\}$/iu.test(fields.at(-1)||'')&&fields.at(-2)===ADVENTURE_FENCE)fields.pop();
  if(fields.at(-1)===ADVENTURE_FENCE)fields.pop();
- // The observed event can end after the backpack; a normal full HUD has
- // five more fields. Accept only ordered prefixes, never random prose.
- if(fields.length<10||fields.length>roadFields.length||!fields.every((x,j)=>roadFields[j].test(x)))return null;
+ else if(lines[i-1]===ADVENTURE_FENCE&&/^\x60{3}[，。][^\n]{1,500}$/u.test(fields.at(-1)||''))fields.pop();
+ // Exact observed variant omits both inventory and weapon fields. No
+ // inferred or rewritten values. Every present field must stay in order.
+ const patterns=[roadFields,roadFields.filter((_,i)=>i!==9&&i!==10)];
+ if(!patterns.some((p,i)=>fields.length>=10&&fields.length<=p.length&&(!i||fields.length===p.length)&&fields.every((x,j)=>p[j].test(x))))return null;
  const [survivalDay,month,day,hour,minute]=m.slice(1,6).map(Number);
  const max=[31,29,31,30,31,30,31,31,30,31,30,31];
  if(survivalDay<1||survivalDay>100000||month<1||month>12||day<1||day>max[month-1]||hour>23||minute>59)return null;
@@ -382,8 +384,16 @@ function roadOpening(input){
  return !roadClockEvidence(t)&&!parseGameTime(t)&&['世界規則正在重構','唯一公路','請選擇你的初始能源'].every(x=>t.includes(x))&&t.includes('公路求生');
 }
 function compareRoadParagraphs(scanned,nativeCopy,options){
- const visible=clean(scanned),original=clean(nativeCopy),compact=v=>v.replace(/\s/gu,''),actual=compact(visible);
- const a=parseRoadClock(visible),b=parseRoadClock(original);
+ const visible=clean(scanned),nativeOriginal=clean(nativeCopy),compact=v=>v.replace(/\s/gu,''),actual=compact(visible);
+ // A same-line terminal fence suffix is not deleted from the native text.
+ // Permit this event-only render projection only with accepted-source proof,
+ // a proven complete box and full remaining-text equality below.
+ const ev=options.nativeEventProof;
+ const suffix=options.event===true&&options.source==='whif-event-content'&&isRoadWorld(options.worldName)&&ev?.kind==='event-message'&&ev.sender==='deg_event'&&ev.accepted===true&&typeof ev.messageId==='string'&&ev.messageId?
+  nativeOriginal.match(/^[ \t]*\x60{3}([，。][^\n`]{1,500})$/mu):null;
+ const tailSuffix=suffix&&suffix.index+suffix[0].length===nativeOriginal.length&&!visible.includes(suffix[1])?suffix:null;
+ const original=tailSuffix?nativeOriginal.slice(0,-tailSuffix[1].length):nativeOriginal;
+ const a=parseRoadClock(visible),b=parseRoadClock(nativeOriginal);
  const clockEqual=options.opening?roadOpening(visible)&&roadOpening(original):
   a&&b?a.civil===b.civil&&a.iso===b.iso:
   Boolean(!a&&!b&&!roadClockEvidence(visible)&&!roadClockEvidence(original)&&(options.event||options.verifiedUntimedNative));
@@ -395,7 +405,7 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  const eventWrapper=eventBound&&leadEvent&&leadEvent[2]===leadEvent[3]&&isRoadWorld(leadEvent[2])&&!visible.includes(leadEvent[1])?leadEvent:null;
  const afterClosed=blocks.length?blocks.at(-1).index+blocks.at(-1)[0].length:0;
  const openTail=(eventBound||options.source==='whif-message-content'&&!options.event&&!options.opening)&&fenceLines.length===2*blocks.length+1&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE)&&
-  /^\s*\x60{3}[ \t]*\n⏰/u.test(original.slice(afterClosed))&&!!parseRoadClock(original.slice(afterClosed));
+  /(?:^|\n)[ \t]*\x60{3}[ \t]*\n⏰/u.test(original.slice(afterClosed))&&!!parseRoadClock(original.slice(afterClosed));
  const fencesValid=(fenceLines.length===2*blocks.length||openTail)&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE);
  const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
  let pos=0,sourcePos=0,omitted=0,quotePairs=0,hiddenContext='',hiddenImage='',worldContext='';
@@ -407,7 +417,7 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
   if(!prose)return false;
   let cursor=pos,from=0,pairs=0;
   const eat=s=>{const k=compact(s);if(!actual.startsWith(k,cursor))return false;cursor+=k.length;return true};
-  for(const m of v.matchAll(/「([^「」\n]+)」/gu)){
+  for(const m of v.matchAll(/「([^「」]+)」/gu)){
    if(!eat(v.slice(from,m.index)))return false;
    if(!eat(m[0])){const q=compact(m[1]);if(!q||!starts.has(cursor)||!ends.has(cursor+q.length)||!eat(m[1]))return false;pairs++;}
    from=m.index+m[0].length;
@@ -417,10 +427,15 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
  };
  let matched=fencesValid&&proof.length===blocks.length;
  if(matched&&eventWrapper)sourcePos=eventWrapper[0].length;
+ let eventCompanion='';
+ const companion=original.slice(sourcePos).match(/^(\{\{[^{}\n]{1,200}\}\})[ \t]*\n(?:[ \t]*\n){0,2}/u);
+ if(matched&&eventWrapper&&companion&&adventureContextLine(companion[1])&&!visible.includes(companion[1])&&blocks.length&&sourcePos+companion[0].length<=blocks[0].index){
+  eventCompanion=companion[1];sourcePos+=companion[0].length;
+ }
  // A visible world-name line is never removed. Only its adjacent hidden
  // context may be projected, and the entire remaining message must match.
- const label=original.slice(sourcePos).match(/^(<🔞?公路求生[－—–-]我是求生者[！!]🔞?>[:：])[ \t]+(\{\{[^{}\n]{1,200}\}\})[ \t]*(?=\n)/u);
- if(matched&&(bounded||eventWrapper)&&label&&adventureContextLine(label[2])&&!visible.includes(label[2])&&visible.split('\n')[0].trim()===label[1]&&take(label[1])){
+ const label=original.slice(sourcePos).match(/^(<{0,2}🔞?公路求生[－—–-]我是求生者[！!]🔞?>{0,2}[:：])[ \t]+(\{\{[^{}\n]{1,200}\}\})[ \t]*(?=\n)/u);
+ if(matched&&(bounded||eventWrapper)&&label&&(label[1].match(/^<*/u)[0].length===(label[1].match(/>*[:：]$/u)[0].length-1))&&adventureContextLine(label[2])&&!visible.includes(label[2])&&visible.split('\n')[0].trim()===label[1]&&take(label[1])){
   worldContext=label[2];sourcePos+=label[0].length;
  }
  // Project a single standalone leading context only for an independently
@@ -447,18 +462,24 @@ function compareRoadParagraphs(scanned,nativeCopy,options){
   hiddenImage=image[1];tail='';
  }
  // An unclosed event HUD is literal source text, not a synthetic repaired box.
- matched=matched&&take(tail,!openTail)&&pos===actual.length;
- const literal=fencesValid&&actual===compact(original),contentEqual=Boolean(literal||matched);
+ if(openTail){
+  const open=tail.match(/^[ \t]*\x60{3}[ \t]*\n⏰/mu);
+  matched=matched&&!!open&&take(tail.slice(0,open.index),true)&&take(tail.slice(open.index),false)&&pos===actual.length;
+ }else matched=matched&&take(tail,true)&&pos===actual.length;
+ const literal=!tailSuffix&&fencesValid&&actual===compact(original);
+ const contentEqual=Boolean(literal||matched&&(!tailSuffix||eventWrapper&&blocks.length&&proof.length===blocks.length));
  const markers=[];
  if(contentEqual&&!literal&&worldContext)markers.push({kind:'road-world-label-companion',tokens:1,nonWhitespaceChars:compact(worldContext).length});
  if(contentEqual&&!literal&&eventWrapper)markers.push({kind:'road-exact-event-context',tokens:1,nonWhitespaceChars:compact(eventWrapper[1]).length});
+ if(contentEqual&&eventCompanion)markers.push({kind:'road-event-companion-context',tokens:1,nonWhitespaceChars:compact(eventCompanion).length});
+ if(contentEqual&&tailSuffix)markers.push({kind:'road-accepted-event-terminal-fence-tail',tokens:1,nonWhitespaceChars:compact(tailSuffix[1]).length});
  if(contentEqual&&openTail)markers.push({kind:options.event?'road-literal-unclosed-event-hud':'road-literal-unclosed-reply-hud',tokens:0,nonWhitespaceChars:0});
  if(contentEqual&&!literal&&hiddenContext)markers.push({kind:'road-leading-context-template',tokens:1,nonWhitespaceChars:compact(hiddenContext).length});
  if(contentEqual&&!literal&&hiddenImage)markers.push({kind:'road-terminal-image-template',tokens:1,nonWhitespaceChars:compact(hiddenImage).length});
  if(contentEqual&&!literal&&omitted)markers.push({kind:'road-proven-ordered-code-fences',tokens:omitted,nonWhitespaceChars:omitted*3});
  if(contentEqual&&!literal&&quotePairs)markers.push({kind:'road-proven-dialogue-quote-pairs',tokens:quotePairs*2,nonWhitespaceChars:quotePairs*2});
- const comparison={scannedLength:visible.length,nativeLength:original.length,scannedNonWhitespace:actual.length,nativeNonWhitespace:compact(original).length,comparableNativeNonWhitespace:contentEqual?actual.length:compact(original).length,whitespaceOnlyEqual:literal,contentEqual,clockEqual:Boolean(clockEqual),formatMarkers:markers,formatMarkerCount:markers.reduce((n,x)=>n+x.tokens,0),explainedNonWhitespace:markers.reduce((n,x)=>n+x.nonWhitespaceChars,0),remainingUnexplained:{scanned:contentEqual?0:Math.max(0,actual.length-pos),native:contentEqual?0:Math.max(0,compact(original).length-pos)},ignoredDifferences:markers.map(x=>x.kind),roadProjection:{nativeBlocks:blocks.length,domBlocks:proof.length,allOrdered:contentEqual}};
- return {text:contentEqual&&clockEqual?original:null,comparison};
+ const comparison={scannedLength:visible.length,nativeLength:nativeOriginal.length,scannedNonWhitespace:actual.length,nativeNonWhitespace:compact(nativeOriginal).length,comparableNativeNonWhitespace:contentEqual?actual.length:compact(original).length,whitespaceOnlyEqual:literal,contentEqual,clockEqual:Boolean(clockEqual),formatMarkers:markers,formatMarkerCount:markers.reduce((n,x)=>n+x.tokens,0),explainedNonWhitespace:markers.reduce((n,x)=>n+x.nonWhitespaceChars,0),remainingUnexplained:{scanned:contentEqual?0:Math.max(0,actual.length-pos),native:contentEqual?0:Math.max(0,compact(original).length-pos)},ignoredDifferences:markers.map(x=>x.kind),roadProjection:{nativeBlocks:blocks.length,domBlocks:proof.length,allOrdered:contentEqual}};
+ return {text:contentEqual&&clockEqual?nativeOriginal:null,comparison};
 }
 
 function parseGameTime(input){
@@ -2002,5 +2023,5 @@ function restorePlayerTemplates(rendered,sources,gapHasMedia=false){
  return {ok:true,applied:true,text:raw};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,restorePlayerTemplates,version:'0.10.7'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,restorePlayerTemplates,version:'0.10.8'};
 })();

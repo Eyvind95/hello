@@ -163,11 +163,11 @@ function installGalScanStatus(api){
   }
   return result;
  }
- async function makeFile(run,kind,text){
+ async function makeFile(run,kind,text,exactReplay=false){
   if(!filenames[kind]||kind==='status'||typeof text!=='string'||!text||
      text.length>GAL_WIRE_MAX)
    throw Error('輸出檔格式或大小不安全');
-  text=attachIdentity(run,text);
+  if(!exactReplay)text=attachIdentity(run,text);
   if(text.length>GAL_WIRE_MAX)throw Error('輸出檔超過256Mi UTF-16 units安全上限');
   if(!(await api.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT'],documentUrls:[offscreenUrl]})).length)
    await api.offscreen.createDocument({url:'gal-scan-files.html',reasons:['BLOBS'],justification:'Save raw Gal AI scan evidence'});
@@ -263,6 +263,22 @@ function installGalScanStatus(api){
   const src=safeUrl(sender.tab?.url||sender.url);
   const documentSource=safeUrl(sender.url);
   if(message.type==='gal-run-start'&&((message.pageSource!=null&&safeUrl(message.pageSource)!==src)||(documentSource!==src&&safeUrl(message.pageSource)!==src)))throw Error('WHIF 分頁網址與掃描面板目前網址不一致，請重新整理頁面');
+  if(message.type==='gal-run-transport-replay'){
+   if(!src||sender.frameId!==0||!sender.tab||!sender.documentId||!uuidOk(message.scanRunId)||runs[message.scanRunId])throw Error('重播來源無效');
+   const binding=((await api.storage.local.get('galProfilesByPage')).galProfilesByPage||{})[src];
+   if(!binding||binding.cycleId!==message.cycleId||Object.values(runs).some(r=>r.state==='running'&&r.source===src))throw Error('重播綁定不符或掃描進行中');
+   const identity=galBatchIdentity(binding);
+   if(!identity.worldKey||identity.cycleNumber===null)throw Error('重播世界觀或輪迴未核對');
+   const hydrated=await hydrateWire(message,sender,['text']),text=hydrated.text;
+   if(typeof text!=='string'||await galWireHash(text)!==message.sha256)throw Error('重播原檔SHA-256不符');
+   const data=JSON.parse(text);
+   if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||data.forensicOnly!==true||
+      data.target?.cycleId!==identity.cycleId||galWorldNorm(data.target?.worldName)!==galWorldNorm(identity.worldName)||data.source?.url!==src)throw Error('重播原始檔來源不符');
+   const at=now(),run={...identity,scanRunId:message.scanRunId,batchFolder:batchPath(identity.cycleTitle,identity.cycleId,'missing',at,message.scanRunId,identity.worldName)+'/傳輸重播'};
+   const file=await makeFile(run,'unverified',text,true);
+   try{return {filePath:await confirmedDownload(file.id,720),sha256:message.sha256,originalRunId:data.scanRunId,importable:false}}
+   finally{await api.runtime.sendMessage({type:'gal-run-blob-release',url:file.url}).catch(()=>{})}
+  }
   if(message.type==='gal-run-download-extra'){
    if(!src||sender.frameId!==0||!sender.tab||!uuidOk(message.scanRunId))throw Error('手動下載來源無效');
    const binding=((await api.storage.local.get('galProfilesByPage')).galProfilesByPage||{})[src];
@@ -446,7 +462,7 @@ function installGalScanStatus(api){
   return publicStatus(runs[run.scanRunId]);
  }
  api.runtime.onMessage.addListener((message,sender,reply)=>{
-  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save','gal-run-progress','gal-run-download-extra','gal-run-export-failed'].includes(message?.type))return false;
+  if(!['gal-run-query','gal-run-start','gal-run-finish','gal-run-open-folder','gal-run-manual-save','gal-run-progress','gal-run-download-extra','gal-run-export-failed','gal-run-transport-replay'].includes(message?.type))return false;
   serial(()=>handle(message,sender)).then(s=>reply({ok:true,status:s}),
    error=>reply({ok:false,error:String(error.message||error)}));
   return true;

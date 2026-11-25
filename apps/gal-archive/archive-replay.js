@@ -151,11 +151,101 @@
   return autoOk&&playerIssues.length===0&&imageProofs.length===mediaDetails.length;
  }
 
+ function checkpointIdentity(cp,core){
+  const t=cp.target||{},world=t.worldName;
+  const known=core.isRoadWorld(world)?'road':core.isAdventureWorld(world)?'adventure':core.normalizedWorld(world)===core.normalizedWorld('《全員精神穩定，感情除外》')?'sentinel':null;
+  const num=String(t.cycleTitle||'').normalize('NFKC').match(/^第\s*(\d{1,4})\s*(?:周目|週目|輪迴|輪目|周|週)/u);
+  const identity={cycleId:t.cycleId,cycleTitle:t.cycleTitle,worldName:world,worldKey:t.worldKey??cp.worldKey??known,cycleNumber:t.cycleNumber??cp.cycleNumber??(num?+num[1]:null)};
+  identity.archiveKey=identity.worldKey+'::'+identity.cycleId;
+  assert(identity.cycleId&&identity.cycleTitle&&world&&identity.worldKey&&Number.isInteger(identity.cycleNumber)&&identity.cycleNumber>0&&(!known||identity.worldKey===known)&&(!num||+num[1]===identity.cycleNumber)&&Object.keys(identity).every(k=>[t[k],cp[k]].every(v=>v==null||v===identity[k])),'原保全世界觀及輪迴歸屬不一致');
+  return identity;
+ }
+ function restoreHiddenPlayerRows(cp,probes,core){
+  assert(cp?.format==='gal-ai-unverified-scan'&&cp.importable===false&&cp.forensicOnly===true&&Array.isArray(cp.rows)&&Array.isArray(cp.historySourceManifest),'缺少未驗證原檔及獨立歷史清單');
+  const identity=checkpointIdentity(cp,core);
+  const manifest=cp.historySourceManifest,rows=cp.rows,hidden=probes.filter(x=>x?.format==='gal-ai-hidden-player-source-proof');
+  assert(hidden.length<=32&&new Set(hidden.map(p=>p.input?.anchorId)).size===hidden.length,'隱藏玩家證據重複');
+  const order=[],existing=new Set(),sourceMap=new Map(),append=(id,kind,sender,index)=>{assert(typeof id==='string'&&id&&!existing.has(id),'保全來源ID重複');existing.add(id);order.push(id);sourceMap.set(id,{kind,sender,index})};
+  rows.forEach((r,i)=>{
+   assert(r.scanIndex===i,'保全索引不連續');
+   if(r.role==='ai'){
+    const n=r.formatSource?.nativeReply;
+    assert(n?.reason==='available'&&n.markerCount===1&&n.messageId===r.sourceMessageId&&n.text===r.nativeText&&n.scannedText===r.domText&&n.eventEvidence?.messageId===n.messageId&&eq(n.eventEvidence,r.sourceEvidence),'AI來源未核對：'+i);append(n.messageId,n.eventEvidence.kind,n.eventEvidence.sender,i);
+   }else{
+    assert(r.role==='me'&&Array.isArray(r.playerSources)&&r.playerSources.length&&eq(r.playerSources,r.formatSource?.playerSources),'玩家來源未核對：'+i);
+    r.playerSources.forEach(s=>{assert(s.sender==='user'&&s.kind==='ordinary-message'&&s.nativeReason==='available'&&s.nativeMessageId===s.id&&s.nativeSender==='user','玩家來源身分錯誤');append(s.id,s.kind,s.sender,i)});
+   }
+  });
+  assert(new Set(manifest.map(x=>x.id)).size===manifest.length,'歷史來源重複');
+  assert(eq(manifest.filter(x=>existing.has(x.id)).map(x=>x.id),order),'原保全與歷史清單順序不符');
+  assert(manifest.filter(m=>existing.has(m.id)).every(m=>{const s=sourceMap.get(m.id);return s.kind===m.kind&&s.sender===m.sender&&eq(m.playerRows,m.sender==='user'?[s.index]:[])}),'保全來源身分或玩家索引與歷史清單不符');
+  const missing=manifest.filter(m=>!existing.has(m.id));
+  assert(missing.length===hidden.length&&missing.every(m=>m.sender==='user'&&m.kind==='ordinary-message'&&empty(m.playerRows)),'缺失來源不完全是已取得局部證據的玩家');
+  const insertions=new Map(),details=[];
+  for(const proof of hidden){
+   const id=proof.input?.anchorId,at=manifest.findIndex(x=>x.id===id),neighbors=proof.input?.neighbors;
+   assert(at>0&&at<manifest.length-1&&!existing.has(id)&&eq(neighbors,[manifest[at-1].id,manifest[at+1].id]),'隱藏玩家不在原始歷史鄰接位置');
+   assert(proof.version===1&&/^0\.(?:10|[1-9]\d+)\.\d+$/.test(proof.scannerVersion)&&proof.forensicOnly===true&&proof.importable===false&&proof.complete===true&&proof.stable===true&&!proof.reason&&proof.scope==='visible-player-anchor'&&proof.scanRunId&&proof.scanRunId!==cp.scanRunId&&proof.source?.url===cp.source?.url&&proof.scannerVersion===proof.coreVersion&&Object.keys(identity).every(k=>proof.target?.[k]===identity[k]),'隱藏玩家取證歸屬不符');
+   const next=rows.findIndex(r=>r.sourceMessageId===neighbors[1]),prev=rows[next-1];
+   assert(next>=2&&prev?.sourceMessageId===neighbors[0]&&prev.role==='ai'&&rows[next].role==='ai'&&!prev.eventType&&!rows[next].eventType&&!rows[next].autoContinue&&!insertions.has(next),'相鄰AI不唯一或已存在自動繼續');
+   const snapshots=[proof.first,proof.second];
+   assert(snapshots.every(s=>s?.sourceId===id&&s.hasMedia===false&&s.loading===false&&eq(s.order,[neighbors[0],id,neighbors[1]])&&s.native?.reason==='player-anchor-evidence'&&s.native.eventEvidence?.messageId===id&&s.native.eventEvidence.sender==='user'&&s.native.eventEvidence.kind==='ordinary-message'&&typeof s.native.text==='string'&&s.native.text.length<=25000&&s.native.nativeHash===hash(s.native.text)&&s.native.nativeNormHash===hash(norm(s.native.text))&&s.native.nativeLength===s.native.text.length&&[s.markerDom,s.wrapperDom].every(d=>d&&d.textContent===''&&d.innerText===''&&typeof d.outerHTML==='string'&&d.geometry?.ownerId===id)&&s.markerDom.outerHTML.includes('data-selection-copy-message-id="'+id+'"')&&s.wrapperDom.outerHTML.includes('data-message-id="'+id+'"')&&Array.isArray(s.adjacent)&&s.adjacent.length===2&&s.adjacent.every((a,i)=>{const r=i?rows[next]:prev;return a.id===neighbors[i]&&a.source?.messageId===a.id&&a.source.sender==='character'&&a.source.kind==='ordinary-message'&&a.nativeHash===hash(r.nativeText)&&a.nativeLength===r.nativeText.length})),'隱藏玩家原生、DOM或鄰接雜湊不符');
+   assert(eq(snapshots[0].native,snapshots[1].native)&&eq(snapshots[0].adjacent,snapshots[1].adjacent)&&snapshots[0].markerDom.outerHTML===snapshots[1].markerDom.outerHTML&&snapshots[0].wrapperDom.outerHTML===snapshots[1].wrapperDom.outerHTML,'雙次隱藏玩家證據不一致');
+   const raw=snapshots[0].native.text,source={id,sender:'user',kind:'ordinary-message',hasText:false,hasMedia:false,nativeReason:'available',nativeText:raw,nativeSender:'user',nativeMessageId:id};
+   const projected=core.restorePlayerTemplates('',[source],false);
+   assert(projected.ok&&projected.applied&&projected.text===raw,'玩家模板不能完整還原');
+   insertions.set(next,{role:'me',eventType:null,worldName:null,autoContinue:false,domText:raw,originalText:raw,nativeText:raw,sourceMessageId:null,playerSources:[source],formatSource:{playerSources:[source],playerGapHasMedia:false,playerTemplateProjection:{kind:'verified-player-native-template',visibleText:''}}});
+   details.push({sourceId:id,proofRunId:proof.scanRunId,originalNextIndex:next,nativeHash:hash(raw)});
+  }
+  const out=[],remap=new Map();
+  rows.forEach((r,i)=>{
+   if(insertions.has(i)){const v=insertions.get(i);out.push({...v,scanIndex:out.length});}
+   remap.set(i,out.length);
+   let copy={...r,scanIndex:out.length};
+   if(r.role==='me'&&!r.formatSource?.playerTemplateProjection){
+    const restored=core.restorePlayerTemplates(r.domText,r.playerSources,r.formatSource?.playerGapHasMedia);
+    assert(restored.ok,'玩家混合模板不能完整還原：'+i);
+    if(restored.applied&&restored.text!==r.domText)copy={...copy,domText:restored.text,originalText:restored.text,formatSource:{...r.formatSource,playerTemplateProjection:{kind:'verified-player-native-template',visibleText:r.domText}}};
+   }
+   out.push(copy);
+  });
+  const mapped=new Map();
+  for(const r of out)if(r.role==='me')for(const s of r.playerSources)mapped.set(s.id,r.scanIndex);
+  const newManifest=manifest.map(m=>({...m,playerRows:m.sender==='user'?[mapped.get(m.id)]:[]}));
+  assert(newManifest.every(m=>m.sender!=='user'||Number.isInteger(m.playerRows[0])),'玩家來源映射未完整');
+  return {rows:out,manifest:newManifest,remap,details};
+ }
+ function diagnosticRoundTrip(data){
+  const contexts=data?.errorContexts??data?.errors??[];
+  if(!Array.isArray(contexts))throw Error('診斷錯誤清單非陣列');
+  if(data?.errorContextEvidence){const expanded=expandErrorContexts(data);return {ok:true,format:'indexed',issues:expanded.length,uniqueRows:data.errorContextEvidence.rows.length};}
+  if(!contexts.length||contexts.some(x=>!Array.isArray(x.context)||!Object.hasOwn(x,'message')))return {ok:true,format:'no-inline-contexts',issues:contexts.length};
+  const rows=new Map();
+  const ref=row=>{
+   if(row===null)return null;
+   assert(Number.isInteger(row?.scanIndex)&&row.scanIndex>=0,'診斷來源索引無效');
+   if(rows.has(row.scanIndex))assert(eq(rows.get(row.scanIndex),row),'同一診斷索引內容衝突');
+   else rows.set(row.scanIndex,row);
+   return {scanIndex:row.scanIndex,sourceMessageId:row.sourceMessageId};
+  };
+  const errors=contexts.map(issue=>({...issue,message:ref(issue.message),context:issue.context.map(ref)}));
+  const indexed={errors,errorContextEvidence:{format:'gal-error-context-refs',version:1,rows:[...rows.values()]}};
+  assert(eq(expandErrorContexts(indexed),contexts),'診斷去重還原不一致');
+  return {ok:true,format:'legacy-inline-roundtrip',issues:errors.length,uniqueRows:rows.size,originalBytes:new TextEncoder().encode(JSON.stringify(contexts)).length,indexedBytes:new TextEncoder().encode(JSON.stringify(indexed)).length};
+ }
+ function inspectRecoveredCheckpoint(cp,core,evidence,probes=[]){
+  const restored=restoreHiddenPlayerRows(cp,probes,core);
+  const rows=restored.rows.map(r=>({role:r.role,text:r.domText,eventType:r.eventType,worldName:r.worldName,autoContinue:r.autoContinue,formatSource:r.formatSource}));
+  const v=core.validate(rows,cp.target.worldName),audit=evidence.inspectRaw(rows,core,v.ok);
+  return {format:'gal-archive-offline-revalidation',version:1,importable:false,canonicalAvailable:false,originalRun:cp.scanRunId,originalRows:cp.rows.length,rawRows:rows.length,coreVersion:core.version,integrityOk:v.ok,pairs:v.pairs,events:v.events.length,errors:v.errors,warnings:v.warnings,hiddenPlayerRecovery:restored.details,diagnosticRoundTrip:diagnosticRoundTrip(cp),nativeFormatAudit:{checked:audit.checkedNativeRows,verified:audit.verifiedNativeRows,failed:audit.failedNativeRows,complete:false},failedIndices:audit.failures.map(x=>x.scanIndex),sourceAuditBlockers:['僅原保全及局部取證的唯讀重驗；未重新證明原批次下載終態與完整事件稽核，禁止正式匯入']};
+ }
  function replay(cp,diag,state,core,evidence,probes=[],historyProof=null,mediaDetails=[]){
   assert(Array.isArray(mediaDetails)&&mediaDetails.length<=32&&new Set(mediaDetails.map(d=>d?.sourceId)).size===mediaDetails.length,'玩家圖片證據重複或超過限制');
   assert(core?.validate&&core?.compareNativeParagraphs&&evidence?.summarize&&core.version===evidence.version,'核心及格式模組未載入或版本不同，請強制更新');
   assert(cp?.format==='gal-ai-unverified-scan'&&cp.version===1&&cp.importable===false&&cp.validated===false&&cp.complete===false&&cp.forensicOnly===true&&cp.scope==='unverified-read-progress','只接受原始未驗證保全 JSON');
-  const n=cp.rows?.length,run=cp.scanRunId,id=cp.target?.cycleId,version=cp.scannerVersion;
+  let n=cp.rows?.length;
+  const originalN=n,run=cp.scanRunId,id=cp.target?.cycleId,version=cp.scannerVersion;
+  let hiddenRecovery=null;
   assert(Number.isInteger(n)&&n>=3&&n<=20000&&cp.collectedCount===n&&cp.rawRows===n,'保全筆數不符');
   assert(typeof run==='string'&&run&&typeof id==='string'&&id&&cp.target.worldName&&cp.target.cycleTitle,'缺少批次或輪迴歸屬');
   const versionParts=x=>String(x||'').split('.').map(Number);
@@ -173,10 +263,22 @@
   assert(cp.phase==='failure'&&diag.phase==='failure'&&cp.failedPhase===diag.failedPhase&&(early||later),'原批次未完成可重驗的掃描階段');
   assert(cp.phaseHistory?.some(x=>x.phase==='bottom-confirmed')&&eq(cp.phaseHistory,diag.phaseHistory)&&(early?cp.phaseHistory.some(x=>x.phase==='integrity'):cp.phaseHistory.some(x=>x.phase==='source-audit')&&cp.phaseHistory.some(x=>x.phase==='native-format')),'缺少一致的現場驗收階段紀錄');
   if(early)for(const k of ['worldName','worldKey','cycleNumber','archiveKey'])assert(cp.target[k]!==undefined&&cp.target[k]===diag[k]&&cp.target[k]===state[k],'世界觀或輪迴歸屬不一致：'+k);
-  const ac=diag.autoContinueAudit,ps=ac?.playerSourceAudit,ev=diag.eventAudit;
+  const ac=diag.autoContinueAudit,ps=ac?.playerSourceAudit,originalEventAudit=diag.eventAudit;
+  let ev=originalEventAudit;
   if(!early)assert(ac?.ok===true&&ac.notApplicable!==true&&ac.scannedRows===n&&empty(ac.problems)&&empty(ac.unknownMarkers)&&empty(ac.unaccountedAIOrEvents)&&eq(ps,diag.playerSourceAudit),'原批次缺少已通過的現場來源稽核');
   assert(ev&&eq(cp.eventAudit,ev)&&ev.unresolvedAccepted===0&&ev.unresolvedHeaders===0&&ev.unreadableHistoryMarkers===0&&empty(ev.unverifiedCards),'事件及歷史標記稽核未通過');
   assert(Array.isArray(probes)&&probes.length<=32&&new Set(probes.map(p=>p?.input?.anchorId)).size===probes.length,'局部證據重複或數量不符');
+  const hidden=probes.filter(p=>p?.format==='gal-ai-hidden-player-source-proof');
+  if(hidden.length){
+   assert(early&&eq(cp.historySourceManifest,diag.historySourceManifest)&&Array.isArray(diag.autoContinueCandidates),'隱藏玩家正式補證須原始完整失敗批次、同批次診斷及獨立歷史清單');
+   hiddenRecovery=restoreHiddenPlayerRows(cp,hidden,core);
+   const remap=index=>hiddenRecovery.remap.get(index);
+   const remapRecord=x=>Number.isInteger(x.scanIndex)?{...x,scanIndex:remap(x.scanIndex)}:{...x};
+   ev={...ev,headers:ev.headers.map(remapRecord),nativeCandidates:ev.nativeCandidates.map(remapRecord)};
+   diag={...diag,eventAudit:ev,historySourceManifest:hiddenRecovery.manifest,autoContinueCandidates:diag.autoContinueCandidates.map(remap)};
+   cp={...cp,rows:hiddenRecovery.rows,historySourceManifest:hiddenRecovery.manifest,eventAudit:ev};
+   n=cp.rows.length;
+  }
   const ids=new Set(),playerIds=new Set(),eventIndices=[],autoIndices=[],merged=[],playerQuoteRestored=[],playerLabels=[],sourceKinds=new Map();
   const addId=s=>{assert(typeof s==='string'&&s&&!ids.has(s),'原生來源 ID 重複或缺失');ids.add(s)};
   const rows=cp.rows.map((r,i)=>{
@@ -242,7 +344,7 @@
   const checks=[],restored=[],opening={role:'ai',scanIndex:0,text:v.opening,gameTime:core.parseGameTime(v.opening)?.iso||null};
   for(const entry of [opening,...v.messages.filter(x=>x.role==='ai'),...v.events]){
    const r=rows[entry.scanIndex],fs=r.formatSource,source=fs.nativeReply,event=r.eventType==='event';
-   const opts={worldName:cp.target.worldName,source:event?'whif-event-content':'whif-message-content',event,opening:entry.scanIndex===0,eventTitle:event?entry.title:undefined,chapterTitle:source.chapterTitle,statusText:fs.statusText,codeBlocks:fs.codeBlocks,verifiedUntimedNative:entry.verifiedUntimedNative===true,allowInvalidNativeDate:!!entry.nativeInvalidDateEvidence};
+   const opts={worldName:cp.target.worldName,source:event?'whif-event-content':'whif-message-content',event,nativeEventProof:event?source.eventEvidence:null,opening:entry.scanIndex===0,eventTitle:event?entry.title:undefined,chapterTitle:source.chapterTitle,statusText:fs.statusText,codeBlocks:fs.codeBlocks,verifiedUntimedNative:entry.verifiedUntimedNative===true,allowInvalidNativeDate:!!entry.nativeInvalidDateEvidence};
    let result=core.compareNativeParagraphs(entry.text,source.text,opts);
    if(result.text===null&&event){
     const probe=probes.find(p=>p?.input?.anchorId===source.messageId);
@@ -256,6 +358,7 @@
   const audit=evidence.summarize(rows,checks,core,v.ok);
   const report={format:'gal-archive-offline-revalidation',version:1,scanRunId:run,cycleId:id,originalScannerVersion:version,coreVersion:core.version,rawRows:n,integrityOk:v.ok,bottomProof:bottom,sourceAuditOk,sourceAuditMethod:early?(supplementOk?'independent-live-source-supplement':manifestOk?'independent-saved-history-id-inventory':'saved-row-local-proof-only'):'original-live-audit',pairs:v.pairs,events:v.events.length,autoContinues:v.autoContinues,playerRows,uniqueNativeIds:ids.size,playerLabelIndices:playerLabels.map(x=>x.i),restoredRenderTails:restored,sourceAuditBlockers:sourceAuditOk?[]:['原批次未保存完整獨立歷史ID／玩家對應清單，或缺少玩家標題投影證據；禁止正式重建'],nativeFormatAudit:{checked:audit.checkedNativeRows,verified:audit.verifiedNativeRows,failed:audit.failedNativeRows,complete:audit.nativeFormatComplete},failedIndices:audit.failures.map(x=>x.scanIndex),warnings:v.warnings,importable:false,method:early?'saved-complete-early-failure-revalidation':'saved-complete-source-audited-batch'};
   report.historySupplementDetails=supplementDetails;
+  if(hiddenRecovery){report.originalRows=originalN;report.hiddenPlayerRecovery=hiddenRecovery.details;report.sourceAuditMethod=manifestOk?'saved-history-manifest-with-stable-hidden-player-proof':report.sourceAuditMethod;}
   if(!sourceAuditOk&&supplementDetails.orderedSourceProofOk&&supplementDetails.playerIssues.length)report.sourceAuditBlockers=supplementDetails.playerIssues.map(x=>'原生索引 '+x.scanIndex+'：'+(x.reason==='live-player-media-present'?'即時玩家節點含媒體，須局部核對':'玩家來源或外部標籤證據不符'));
   if(!audit.nativeFormatComplete||!sourceAuditOk)return {report,canonical:null};
   for(const {i,sources} of merged){
@@ -292,7 +395,8 @@
    validation:{ok:true,integrityOk:true,nativeFormatComplete:true,pairs:v.pairs,events:events.length,autoContinues:v.autoContinues,openingChars:opening.text.length,gameTimeCount:messages.filter(m=>!!m.gameTime).length,unknownGameTimeCount:v.unknownGameTimeCount||0,verifiedUntimedCount:v.verifiedUntimedCount||0,invalidDateReplyCount:v.invalidDateReplyCount||0,invalidDateRowCount:v.invalidDateRowCount||0,warnings:v.warnings,errors:[]},
    nativeFormatAudit:report.nativeFormatAudit,eventAudit:{...ev,...(early&&sourceAuditOk?{ordinaryAiTotal:aiRows,ordinaryAiVerified:aiRows,historyMarkersObserved:ids.size}:{}),complete:true,zeroEventAssessment:events.length?'not-zero':'no-accepted-event-in-observed-history'},offlineRecovery:{method:report.method,originalScannerVersion:version,originalFailure:cp.failedPhase,coreVersion:core.version,originalRun:run,liveRescan:false,sourceAuditReused:!early,sourceAuditMethod:report.sourceAuditMethod,restoredRenderTails:restored,bottomProof:bottom},note:'由完整保全及同批次現場來源稽核離線重驗產出；並非重新實機掃描。匯入前仍須核對目標輪迴、預覽與備份。'};
   if(supplementOk)canonical.offlineRecovery.historySupplementRunId=historyProof.scanRunId;
-  if(early)canonical.offlineRecovery.originalEventAuditCounts={ordinaryAiTotal:ev.ordinaryAiTotal,ordinaryAiVerified:ev.ordinaryAiVerified};
+  if(early)canonical.offlineRecovery.originalEventAuditCounts={ordinaryAiTotal:originalEventAudit.ordinaryAiTotal,ordinaryAiVerified:originalEventAudit.ordinaryAiVerified};
+  if(hiddenRecovery){canonical.offlineRecovery.originalRows=originalN;canonical.offlineRecovery.hiddenPlayerRecovery=hiddenRecovery.details;}
   report.canonicalAvailable=true;
   return {report,canonical};
  }
@@ -318,18 +422,22 @@
     const probeFiles=[...($('archiveReplayProbes')?.files||[])];
     const historyFile=$('archiveReplayHistory')?.files?.[0];if(historyFile)assert(historyFile.size<=20*1024*1024,'歷史來源補證超過限制');
     assert(probeFiles.length<=32&&probeFiles.every(f=>f.size<=20*1024*1024),'局部證據超過限制');
-    assert(files.every(Boolean),'請選齊三份 JSON');
-    assert(files.every((f,i)=>f.size<=(i===0?100:20)*1024*1024),'檔案超過安全大小限制');
-    const [cp,diag,state]=await Promise.all(files.map(async f=>JSON.parse(await f.text())));
+    assert(files[0],'請選擇原始保全 JSON');
+    assert(files.every(f=>!f||f.size<=256*1024*1024),'檔案超過安全大小限制');
+    const [cp,diag,state]=await Promise.all(files.map(async f=>f?JSON.parse(await f.text()):null));
     if(t!==ticket)return;
     const localDetails=await Promise.all(probeFiles.map(async f=>JSON.parse(await f.text())));
     const mediaDetails=localDetails.filter(p=>p&&typeof p.sourceId==='string'&&Array.isArray(p.media)&&typeof p.outerHTML==='string');
     const probes=localDetails.filter(p=>!mediaDetails.includes(p));
     const historyProof=historyFile?JSON.parse(await historyFile.text()):null;
-    inputHashes=await Promise.all([...files,...probeFiles,...(historyFile?[historyFile]:[])].map(async f=>({name:f.name,bytes:f.size,sha256:[...new Uint8Array(await crypto.subtle.digest('SHA-256',await f.arrayBuffer()))].map(v=>v.toString(16).padStart(2,'0')).join('')})));
+    inputHashes=await Promise.all([...files.filter(Boolean),...probeFiles,...(historyFile?[historyFile]:[])].map(async f=>({name:f.name,bytes:f.size,sha256:[...new Uint8Array(await crypto.subtle.digest('SHA-256',await f.arrayBuffer()))].map(v=>v.toString(16).padStart(2,'0')).join('')})));
     if(t!==ticket)return;
     replayRunId=crypto.randomUUID();
-    result=replay(cp,diag,state,host.GalArchiveCore,host.GalArchiveFormatEvidence,probes,historyProof,mediaDetails);Object.assign(result.report,{replayRunId,inputHashes});
+    const hidden=probes.filter(p=>p?.format==='gal-ai-hidden-player-source-proof');
+    if(!diag||!state||hidden.length&&state.state!=='failed'){
+     result={report:inspectRecoveredCheckpoint(cp,host.GalArchiveCore,host.GalArchiveFormatEvidence,hidden),canonical:null};
+    }else result=replay(cp,diag,state,host.GalArchiveCore,host.GalArchiveFormatEvidence,probes,historyProof,mediaDetails);
+    Object.assign(result.report,{replayRunId,inputHashes,diagnosticRoundTrip:diagnosticRoundTrip(cp)});
     if(result.canonical)Object.assign(result.canonical.offlineRecovery,{replayRunId,inputHashes});
     const r=result.report;
     // Run the ordinary site's own import gate before enabling download.
@@ -371,5 +479,5 @@
   };
   return contexts.map(issue=>({...issue,message:resolve(issue.message),context:issue.context.map(resolve)}));
  }
- return {replay,mount,hash,capturedEventProjection,verifyHistorySupplement,capturedPlayerImage,validNativeImageUrl,expandErrorContexts};
+ return {replay,mount,hash,capturedEventProjection,verifyHistorySupplement,capturedPlayerImage,validNativeImageUrl,expandErrorContexts,restoreHiddenPlayerRows,inspectRecoveredCheckpoint,diagnosticRoundTrip};
 });

@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.10.7: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.8: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.10.7';
+const SCANNER_VERSION='0.10.8';
  // Large JSON is retained in the isolated page and pulled by its owning
  // background document in small, independently checked pieces. No story
  // content is sent to the network or persisted outside the existing exports.
@@ -122,6 +122,7 @@ function mount(){
  '<button id="gal-anchor-probe">執行錨點復原取證（不匯入）</button>'+
  '<button id="gal-player-anchor-probe">👤 取證目前畫面的玩家來源（含隱藏訊息）</button></details>'+
  '<button id="gal-history-source">📋 僅補取歷史來源清單（不解析正文）</button>'+
+ '<div><button id="gal-transport-replay">🧪 保全檔傳輸重播（不掃描、不匯入）</button><input id="gal-transport-file" type="file" accept=".json,application/json" hidden></div>'+
  '<div style="margin:6px 0"><button id="gal-scan-open-folder">📁 顯示最近下載資料夾</button>'+
  '<button id="gal-scan-copy-folder">📋 複製批次路徑</button></div>'+
  '<button id="gal-scan-pick">🎯 點選開場校準</button><button id="gal-scan-refresh-binding">🔄 重新讀取目前綁定</button><button id="gal-scan-retry">▶ 開始／重新掃描</button>'+
@@ -162,6 +163,28 @@ function mount(){
  $('gal-anchor-probe').onclick=()=>anchorRecoveryProbe();
  $('gal-player-anchor-probe').onclick=()=>playerAnchorProbe();
  $('gal-history-source').onclick=()=>historySourceProbe();
+ $('gal-transport-replay').onclick=()=>{if(!busy&&target)$('gal-transport-file').click();else status('請先確認綁定，且不得中斷掃描')};
+ $('gal-transport-file').onchange=async()=>{
+  const file=$('gal-transport-file').files?.[0];$('gal-transport-file').value='';
+  if(!file||busy||!target)return;
+  busy=true;
+  try{
+   if(file.size>256*1024*1024)throw Error('重播檔超過安全上限');
+   const bytes=await file.arrayBuffer(),text=new TextDecoder('utf-8',{fatal:true}).decode(bytes),data=JSON.parse(text);
+   const fileHash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+   if(await galWireHash(text)!==fileHash)throw Error('原檔不是可無損重播的UTF-8（可能有BOM）');
+   if(data.format!=='gal-ai-unverified-scan'||data.importable!==false||data.forensicOnly!==true||
+      data.target?.cycleId!==target.cycleId||data.source?.url!==location.origin+location.pathname)
+    throw Error('僅接受目前輪迴的原始未驗證保全');
+   await fetchCurrentBinding(target);
+   status('正在使用原始檔重播兩段傳輸，未操作對話畫面…');
+   const expected=await galWireHash(text);
+   const r=await galSendEvidence({type:'gal-run-transport-replay',cycleId:target.cycleId,scanRunId:crypto.randomUUID(),text,sha256:expected});
+   if(!r?.ok||r.status?.sha256!==expected)throw Error(r?.error||'傳輸重播未通過');
+   status('✅ 保全檔重播下載完成，請核對原檔與下載檔 SHA-256\n'+r.status.filePath+'\n'+expected);
+  }catch(error){status('⛔ '+String(error.message||error))}
+  finally{busy=false}
+ };
  $('gal-scan-pick').onclick=()=>chooseOpening();
  $('gal-scan-refresh-binding').onclick=()=>refreshBoundTarget();
  $('gal-scan-retry').onclick=()=>{if(!busy&&target)scan(target);else status('請先從擴充功能設定輪迴，或等目前掃描結束')};
@@ -2036,6 +2059,7 @@ function applyNativeFormat(entry,rows,sourceCounts,scanMode,nativeCopy='',event=
    source:nativeCopy?'native-copy':event?'whif-event-content':'whif-message-content',worldName:target?.worldName,
    statusText:metadata?.statusText,codeBlocks:metadata?.codeBlocks,
    chapterTitle:nativeCopy?undefined:source?.chapterTitle,event,opening,
+   nativeEventProof:!nativeCopy&&event&&matchedRow&&uniqueSource&&source?.markerCount===1?source.eventEvidence:null,
    verifiedUntimedNative:entry.verifiedUntimedNative===true,eventTitle:event?entry.title:undefined,
    allowInvalidNativeDate:!nativeCopy&&!event&&!opening&&!!entry.nativeInvalidDateEvidence&&source?.markerCount===1&&uniqueSource&&matchedRow&&
     entry.nativeInvalidDateEvidence.sourceMessageId===source?.messageId&&source?.eventEvidence?.sender==='character'&&source?.eventEvidence?.kind==='ordinary-message'
@@ -2815,12 +2839,12 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
      new Set(managerNames.map(name=>name.trim())).size!==managerNames.length){
    respond({ok:false,error:'綁定中的副駕駛資料無效，請回擴充功能重新儲存'});return false;
   }
+  if(busy){respond({ok:false,error:'掃描或取證進行中'});return false}
+  const mounted=$(PANEL);
+  if(mounted&&(mounted.dataset.galExtensionId!==chrome.runtime.id||mounted.dataset.galScannerVersion!==SCANNER_VERSION)){
+   respond({ok:false,error:'此頁已有其他版本掃描面板'});return false;
+  }
   if(msg.anchorInputs){
-   if(busy){respond({ok:false,error:'掃描或取證進行中'});return false}
-   const mounted=$(PANEL);
-   if(mounted&&(mounted.dataset.galExtensionId!==chrome.runtime.id||mounted.dataset.galScannerVersion!==SCANNER_VERSION)){
-    respond({ok:false,error:'此頁已有其他版本掃描面板'});return false;
-   }
    const a=msg.anchorInputs;
    if(sender.id!==chrome.runtime.id||Object.keys(a).some(k=>!['id','y','height','clock','neighbors'].includes(k))||
     ['id','y','height','clock','neighbors'].some(k=>typeof a[k]!=='string')||

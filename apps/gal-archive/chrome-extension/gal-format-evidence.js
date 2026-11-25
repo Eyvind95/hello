@@ -84,6 +84,7 @@
     compared=core.compareNativeParagraphs(row.text,source.text,{
      source:row.eventType==='event'?'whif-event-content':'whif-message-content',
      event:row.eventType==='event',opening:index===0,worldName:row.worldName,
+     nativeEventProof:row.eventType==='event'?source.eventEvidence:null,
      allowInvalidNativeDate:index>0&&!!core.verifiedInvalidAdventureReply?.(row,rows),
      eventTitle:row.eventType==='event'?String(row.text).split('\n')[0]:undefined,
      chapterTitle:source.chapterTitle,
@@ -108,5 +109,5 @@
   result.nativeFormatComplete=false;
   return result;
  }
- return {version:'0.10.7',markerPositions,evidence,summarize,inspectRaw};
+ return {version:'0.10.8',markerPositions,evidence,summarize,inspectRaw};
 });

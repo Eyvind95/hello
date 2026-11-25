@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.7",
-  "version_name": "V0.10.07 玩家原生模板保全",
-  "description": "輪迴檔案館 V0.10.07：保全經核實的玩家原生模板，AI 顯示規則不變。",
+  "version": "0.10.8",
+  "version_name": "V0.10.08 公路HUD與離線補證",
+  "description": "輪迴檔案館：公路HUD變體、隱藏玩家離線補證及原檔傳輸重播。",
   "permissions": [
     "storage",
     "activeTab",
