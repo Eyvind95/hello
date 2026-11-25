@@ -1758,8 +1758,28 @@
     if(list.length>=64){list.shift();b.trustedWheelOverflow=(b.trustedWheelOverflow||0)+1}
     list.push(entry);
   }
+  // Keep the native history loader at the top of the chat unobstructed.
+  function historyPanelControls(pane,b){
+    const bar=document.createElement('div');bar.style.cssText='display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0';
+    const compact=document.createElement('button'),move=document.createElement('button');
+    compact.type=move.type='button';
+    let small=window.innerWidth<=640,side='left';
+    const render=()=>{
+      pane.style.left=side==='left'?'12px':'auto';pane.style.right=side==='right'?'12px':'auto';
+      pane.style.width=small?'max-content':'min(320px,calc(100vw - 24px))';
+      b.info.hidden=small;compact.textContent=small?'展開詳情':'縮小面板';
+      compact.setAttribute('aria-expanded',String(!small));
+      move.textContent=side==='left'?'移到右下':'移到左下';
+    };
+    compact.onclick=()=>{small=!small;render()};
+    move.onclick=()=>{side=side==='left'?'right':'left';render()};
+    b.showPanelDetails=()=>{small=false;render()};
+    bar.append(compact,move);render();return bar;
+  }
   function historyStatus(b,msg){
-    b.info.textContent=msg+'\n已保全 '+(b.sample?Math.min(b.sample,b.rows.length)+' / '+b.sample:b.rows.length)+' 則；不會上傳 Firebase。';
+    const count=b.sample?Math.min(b.sample,b.rows.length)+' / '+b.sample:b.rows.length;
+    b.info.textContent=msg+'\n已保全 '+count+' 則；不會上傳 Firebase。';
+    if(b.summary)b.summary.textContent='已保全 '+count+' 則｜'+(b.download.hidden?(b.cancelled?'停止中':'掃描中'):'已結束，詳情可展開');
   }
   function historyAtBottom(host){return host.scrollHeight-host.clientHeight-host.scrollTop<=6}
   function historyScroll(host,at){host.scrollTo({top:Math.max(0,at),behavior:'instant'})}
@@ -1993,12 +2013,15 @@
       historyGuard(b);
       document.getElementById(HISTORY_PANEL)?.remove();
       const pane=document.createElement('section');pane.id=HISTORY_PANEL;
-      pane.style.cssText='position:fixed;z-index:2147483646;right:12px;top:12px;width:min(360px,90vw);background:#202840;color:#fff;border:1px solid #9ba9cb;padding:14px;border-radius:12px;font:14px system-ui;box-shadow:0 3px 20px #0006';
+      pane.style.cssText='position:fixed;z-index:2147483646;left:12px;bottom:156px;top:auto;box-sizing:border-box;max-width:calc(100vw - 24px);max-height:min(35vh,calc(100vh - 180px));overflow:auto;background:#202840;color:#fff;border:1px solid #9ba9cb;padding:10px;border-radius:12px;font:13px system-ui;box-shadow:0 3px 20px #0006';
       const h=document.createElement('strong');h.textContent=b.sample?'前輩最近'+b.sample+'則・測試掃描':'前輩完整聊天・向上掃描';
       b.info=document.createElement('pre');b.info.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0';
       b.stop=document.createElement('button');b.stop.textContent='停止並保全';b.stop.onclick=()=>{b.cancelled=true};
       b.download=document.createElement('button');b.download.textContent='重新下載 JSON';b.download.hidden=true;
-      pane.append(h,b.info,b.stop,b.download);document.body.append(pane);b.pane=pane;
+      b.summary=document.createElement('div');b.summary.setAttribute('role','status');b.summary.textContent='準備掃描';
+      const controls=historyPanelControls(pane,b);
+      pane.append(h,b.summary,controls,b.stop,b.download,b.info);document.body.append(pane);b.pane=pane;
+      pane.gaShowHistoryDetails=b.showPanelDetails;
       const wheel=event=>historyObserveWheel(b,event);
       document.addEventListener('wheel',wheel,{capture:true,passive:true});
       historyRun(b).finally(()=>document.removeEventListener('wheel',wheel,true));return {ok:true,title};
@@ -2025,7 +2048,7 @@
     button.style.cssText='position:fixed!important;right:18px!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
     button.onclick=()=>{
       const active=document.getElementById(HISTORY_PANEL);
-      if(active){active.scrollIntoView({block:'nearest'});return}
+      if(active){active.gaShowHistoryDetails?.();return}
       if(document.getElementById(HISTORY_CONFIG)){document.getElementById(HISTORY_CONFIG).remove();return}
       const pane=document.createElement('section');pane.id=HISTORY_CONFIG;pane.dataset.chat=path();
       pane.setAttribute('role','dialog');pane.setAttribute('aria-label','前輩完整聊天掃描設定');
