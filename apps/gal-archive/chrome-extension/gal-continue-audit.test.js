@@ -242,3 +242,33 @@ test('test helper validates the exact continuation audit implementation, not a c
  assert.match(source,/playerSourceAudit/);
  assert.doesNotMatch(source,/eventAudit\.history\.size!==collected\.length/);
 });
+
+test('player-anchor bridge preserves a genuinely empty user source and does not widen ordinary reader',()=>{
+ const vm=require('node:vm');
+ const code=fs.readFileSync(require.resolve('./gal-native-source.js'),'utf8');
+ let listener,response;
+ class Element{constructor(id,message){this.id=id;this.__reactFiber$test={memoizedProps:{message}}}getAttribute(k){return k==='data-message-id'?this.id:null}dispatchEvent(e){response=JSON.parse(e.detail)}}
+ class CustomEvent{constructor(type,opts){this.type=type;this.detail=opts.detail}}
+ const ctx=vm.createContext({document:{addEventListener:(n,f)=>{listener=f}},Element,CustomEvent});
+ vm.runInContext(code,ctx);
+ const run=(node,detail)=>{response=null;listener({target:node,detail});return response};
+ const node=new Element('u1',{id:'u1',sender_type:'user',content:'',metadata:{testFlag:true,unrelated:{hidden:'nested'}}});
+ const result=run(node,'player-anchor-evidence');
+ assert.equal(result.reason,'player-anchor-evidence');assert.equal(result.text,'');assert.equal(result.eventEvidence.sender,'user');
+ assert.equal(result.metadataScalars.testFlag,true);assert.equal(result.metadataScalars.unrelated,undefined);
+ assert.equal(run(node,'history-source-evidence').nativeLength,0);
+ assert.equal(run(node,null),null);
+ for(const message of [{id:'other',sender_type:'user',content:''},{id:'u1',sender_type:'character',content:''}]){
+  assert.equal(run(new Element('u1',message),'player-anchor-evidence').reason,'message-content-unavailable');
+ }
+ const text=run(new Element('u1',{id:'u1',sender_type:'user',content:'real player text'}),'player-anchor-evidence');
+ assert.equal(text.text,'real player text');
+});
+test('new player probe never changes existing strict continuation acceptance',()=>{
+ assert.match(source,/function playerAnchorSample\(root,id,neighbors\)/);
+ assert.match(source,/neighbor-order-not-proven/);
+ assert.match(source,/foreign-or-duplicate-player-marker/);
+ assert.match(source,/stableKey\(first\)!==stableKey\(second\)/);
+ const x=fixture();x.rows[10].formatSource.playerGap.markers=[{sourceRef:'empty-user',sender:'user',hasText:false,hasMedia:false}];
+ assert.equal(audit(x).ok,false);
+});

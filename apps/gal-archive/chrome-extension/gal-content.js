@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.10.3: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.4: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.10.3';
+const SCANNER_VERSION='0.10.4';
 const core=globalThis.GalArchiveCore;
 function formatEvidenceReady(){const a=globalThis.GalArchiveFormatEvidence;return a?.version===SCANNER_VERSION&&typeof a.summarize==='function'&&typeof a.inspectRaw==='function'}
 function requireFormatEvidence(){if(!formatEvidenceReady())throw Error('原生格式驗收模組未載入或版本不符；請重新整理 WHIF 並開啟最新版掃描助手');return globalThis.GalArchiveFormatEvidence}
@@ -72,7 +72,8 @@ function mount(){
  '<label>上次頁面高度（選填） <input id="gal-anchor-height" type="number" min="1" step="any" style="width:110px"></label>'+
  '<label>目標劇情時間（選填，YYYY/MM/DD HH:mm） <input id="gal-anchor-clock" maxlength="24" style="width:95%"></label>'+
  '<label>已知相鄰來源 ID（選填，一行一個） <textarea id="gal-anchor-neighbors" rows="3" maxlength="2000" style="width:95%"></textarea></label>'+
- '<button id="gal-anchor-probe">執行錨點復原取證（不匯入）</button></details>'+
+ '<button id="gal-anchor-probe">執行錨點復原取證（不匯入）</button>'+
+ '<button id="gal-player-anchor-probe">👤 取證目前畫面的玩家來源（含隱藏訊息）</button></details>'+
  '<button id="gal-history-source">📋 僅補取歷史來源清單（不解析正文）</button>'+
  '<div style="margin:6px 0"><button id="gal-scan-open-folder">📁 顯示最近下載資料夾</button>'+
  '<button id="gal-scan-copy-folder">📋 複製批次路徑</button></div>'+
@@ -112,6 +113,7 @@ function mount(){
  $('gal-scan-position-visible').onclick=()=>positionSevenProbe('visible');
  $('gal-scan-position-last-error').onclick=()=>positionSevenProbe('last-error');
  $('gal-anchor-probe').onclick=()=>anchorRecoveryProbe();
+ $('gal-player-anchor-probe').onclick=()=>playerAnchorProbe();
  $('gal-history-source').onclick=()=>historySourceProbe();
  $('gal-scan-pick').onclick=()=>chooseOpening();
  $('gal-scan-refresh-binding').onclick=()=>refreshBoundTarget();
@@ -593,21 +595,22 @@ function boundaryToolbars(root){
 }
 
 const nativeMessageSelector='[data-selection-copy-message-id]';
-function readNativeNode(node,evidenceOnly=false,historyOnly=false){
+function readNativeNode(node,evidenceOnly=false,historyOnly=false,playerDetail=false){
  const response='gal-archive-native-reply-response-v1';
  let source={reason:'native-reader-unavailable'};
  const receive=event=>{
   if(event.target!==node||typeof event.detail!=='string')return;
   try{
    const data=JSON.parse(event.detail);
-   if(evidenceOnly&&data?.reason==='evidence'&&data.eventEvidence)source=data;
+   if(playerDetail&&data?.reason==='player-anchor-evidence'&&typeof data.text==='string'&&data.text.length<=30000&&data.eventEvidence?.sender==='user')source=data;
+   else if(evidenceOnly&&data?.reason==='evidence'&&data.eventEvidence)source=data;
    else if(!evidenceOnly&&data?.reason==='available'&&typeof data.text==='string'&&data.text.length<=30000)source=data;
    else if(data?.reason==='message-content-unavailable')source={reason:data.reason};
   }catch{ /* An unreadable bridge response leaves the source unavailable. */ }
  };
  node.addEventListener(response,receive);
  try{node.dispatchEvent(new CustomEvent('gal-archive-native-reply-request-v1',{
-  bubbles:true,detail:historyOnly?'history-source-evidence':evidenceOnly?'event-evidence':null
+  bubbles:true,detail:playerDetail?'player-anchor-evidence':historyOnly?'history-source-evidence':evidenceOnly?'event-evidence':null
  }))}
  finally{node.removeEventListener(response,receive)}
  return source;
@@ -1326,6 +1329,68 @@ function anchorProbeOffsets(y,height,max){
  return values.map(x=>Math.max(0,Math.min(limit,x))).filter(x=>{
   const key=Math.round(x);if(seen.has(key))return false;seen.add(key);return true;
  });
+}
+// This probe does not decide whether an invisible user message is a
+// continuation. It preserves the missing evidence without scrolling or
+// changing the chat. A wrapper without a selection marker is valid evidence.
+function playerAnchorSample(root,id,neighbors){
+ const wraps=[...root.querySelectorAll('[data-message-id]')];
+ const matches=wraps.filter(n=>n.getAttribute('data-message-id')===id);
+ if(matches.length!==1)throw Error('player-wrapper-not-unique-or-mounted');
+ const wrapper=matches[0],index=wraps.indexOf(wrapper);
+ const prev=wraps[index-1],next=wraps[index+1];
+ if(!prev||!next||prev.getAttribute('data-message-id')!==neighbors[0]||next.getAttribute('data-message-id')!==neighbors[1])throw Error('neighbor-order-not-proven');
+ const owned=[...wrapper.querySelectorAll(nativeMessageSelector)];
+ if(owned.length>1||owned.some(n=>n.getAttribute('data-selection-copy-message-id')!==id))throw Error('foreign-or-duplicate-player-marker');
+ const native=readNativeNode(owned[0]||wrapper,true,false,true);
+ const proof=native.eventEvidence;
+ if(native.reason!=='player-anchor-evidence'||proof?.messageId!==id||proof.sender!=='user'||proof.kind!=='ordinary-message')throw Error('native-player-source-unavailable');
+ const adjacent=[prev,next].map(n=>{
+  const sourceId=n.getAttribute('data-message-id');
+  const markers=[...n.querySelectorAll(nativeMessageSelector)].filter(m=>m.getAttribute('data-selection-copy-message-id')===sourceId);
+  const r=readNativeNode(markers.length===1?markers[0]:n,true,true);
+  if(r.reason!=='evidence'||r.eventEvidence?.messageId!==sourceId||r.eventEvidence.kind!=='ordinary-message'||!['character','assistant'].includes(r.eventEvidence.sender))throw Error('adjacent-ai-source-not-proven');
+  return {id:sourceId,source:r.eventEvidence,nativeHash:r.nativeHash,nativeLength:r.nativeLength};
+ });
+ const capture=n=>({outerHTML:n.outerHTML,textContent:n.textContent,innerText:typeof n.innerText==='string'?n.innerText:null,geometry:anchorProbeElement(n)});
+ const wrapperDom=capture(wrapper),markerDom=owned.length?capture(owned[0]):null;
+ if(wrapperDom.outerHTML.length>200000||markerDom?.outerHTML.length>200000)throw Error('player-dom-exceeds-bound');
+ const hasMedia=!!wrapper.querySelector('img,video,audio,[data-attachment-id]');
+ const loading=!!wrapper.querySelector('[aria-busy="true"],[role="progressbar"],[data-loading="true"]')||wrapper.matches('[aria-busy="true"],[data-loading="true"]');
+ return {sourceId:id,native:{...native,nativeHash:hash(native.text),nativeNormHash:hash(native.text.replace(/\s/gu,'')),nativeLength:native.text.length},adjacent,wrapperDom,markerDom,hasMedia,loading,scrollTop:root.scrollTop,scrollHeight:root.scrollHeight,order:[neighbors[0],id,neighbors[1]]};
+}
+async function playerAnchorProbe(){
+ if(busy)return status('掃描進行中，禁止同時取證');
+ if(!target?.cycleId||core?.version!==SCANNER_VERSION||!formatEvidenceReady())return status('請確認輪迴綁定與新版模組');
+ const id=$('gal-anchor-id').value.trim(),neighbors=$('gal-anchor-neighbors').value.trim().split(/\s+/u).filter(Boolean);
+ if(neighbors.length!==2||new Set([id,...neighbors]).size!==3||[id,...neighbors].some(v=>!/^[A-Za-z0-9_-]{5,100}$/.test(v)))return status('填入玩家原生 ID，及前後 AI ID（依順序，一行一個）');
+ const origin=location.origin+location.pathname,profile={...target};
+ const run={scanRunId:crypto.randomUUID(),cycleId:profile.cycleId,scope:'missing',worldName:profile.worldName,cycleTitle:profile.cycleTitle,scannerVersion:SCANNER_VERSION};
+ busy=true;cancelled=false;paused=false;let registered=false,reason=null,first=null,second=null;
+ try{
+  await fetchCurrentBinding(profile);
+  const root=scroller();
+  const reg=await chrome.runtime.sendMessage({type:'gal-run-start',pageSource:origin.replace(/\/$/,''),...run});
+  if(!reg?.ok)throw Error(reg?.error||'取證批次未登記');
+  Object.assign(run,{worldName:reg.status?.worldName||run.worldName,worldKey:reg.status?.worldKey||null,cycleNumber:reg.status?.cycleNumber??null,archiveKey:reg.status?.archiveKey||null,batchFolder:reg.status?.batchFolder});registered=true;
+  first=playerAnchorSample(root,id,neighbors);
+  await sleep(STABLE_MS);
+  if(cancelled||paused||!root.isConnected||location.origin+location.pathname!==origin)throw Error('取證畫面變更');
+  second=playerAnchorSample(root,id,neighbors);
+  const stableKey=s=>JSON.stringify([s.sourceId,s.native,s.adjacent,s.wrapperDom.outerHTML,s.markerDom?.outerHTML,s.hasMedia,s.loading,s.scrollTop,s.scrollHeight,s.order]);
+  if(stableKey(first)!==stableKey(second)||first.loading||second.loading)throw Error('來源或畫面未穩定');
+ }catch(e){reason=String(e?.message||e)}
+ finally{
+  try{
+   if(!registered){status('玩家取證未啟動：'+reason);return}
+   const result={format:'gal-ai-hidden-player-source-proof',version:1,forensicOnly:true,importable:false,validated:false,complete:!reason,scope:'visible-player-anchor',scanRunId:run.scanRunId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,source:{url:origin},target:{cycleId:run.cycleId,cycleTitle:run.cycleTitle,worldName:run.worldName,worldKey:run.worldKey,cycleNumber:run.cycleNumber,archiveKey:run.archiveKey},capturedAt:new Date().toISOString(),input:{anchorId:id,neighbors},stable:!reason,reason,first,second,note:'僅保存玩家來源及鄰接證據，不判定自動繼續，不修改對話，不匯入正史。'};
+   const audit={...run,format:'gal-ai-hidden-player-source-diagnostic',importable:false,anchorId:id,neighbors,stable:!reason,reason,nativeLength:second?.native.nativeLength??first?.native.nativeLength??null,hasMedia:second?.hasMedia??first?.hasMedia??null};
+   const saved=await chrome.runtime.sendMessage({type:'gal-run-finish',...run,state:reason?'failed':'completed',scanned:0,result:JSON.stringify(result),diagnostic:JSON.stringify(audit),reason:reason||null});
+   if(!saved?.ok)throw Error(saved?.error||'下載未確認');
+   status((reason?'玩家取證未完成：'+reason:'玩家來源兩次取證一致，已保存 JSON')+'\n'+run.batchFolder+'\n只供鑑識，不代表自動繼續驗收通過。');
+  }catch(e){status('玩家取證保存失敗：'+String(e?.message||e))}
+  finally{busy=false}
+ }
 }
 function anchorProbeState(rawCount,rows,anchorId){
  const hits=rows.filter(r=>r.sourceIds.includes(anchorId)).length;
