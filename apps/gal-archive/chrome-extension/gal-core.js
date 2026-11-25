@@ -1978,5 +1978,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.5'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.6'};
 })();

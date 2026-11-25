@@ -345,5 +345,25 @@
   $('archiveReplayDownload').onclick=()=>{if(result?.canonical)download(result.canonical,'Gal_AI_離線重驗正史_'+result.canonical.target.cycleTitle+'.json')};
   $('archiveReplayReport').onclick=()=>{if(result?.report)download(result.report,'保全資料重驗診斷_'+(result.report.replayRunId||'failed')+'.json')};
  }
- return {replay,mount,hash,capturedEventProjection,verifyHistorySupplement,capturedPlayerImage,validNativeImageUrl};
+ // Read-only compatibility for old inline contexts and new indexed contexts.
+ function expandErrorContexts(data){
+  const contexts=data?.errorContexts??data?.errors??[];
+  if(!Array.isArray(contexts))throw Error('錯誤診斷不是陣列');
+  const table=data?.errorContextEvidence;
+  if(!table)return contexts;
+  if(table.format!=='gal-error-context-refs'||table.version!==1||!Array.isArray(table.rows))throw Error('錯誤診斷引用格式無效');
+  const rows=new Map();
+  for(const row of table.rows){
+   if(!Number.isInteger(row?.scanIndex)||row.scanIndex<0||rows.has(row.scanIndex))throw Error('錯誤診斷來源索引無效或重複');
+   rows.set(row.scanIndex,row);
+  }
+  const resolve=ref=>{
+   if(ref===null)return null;
+   const row=rows.get(ref?.scanIndex);
+   if(!row||row.sourceMessageId!==ref.sourceMessageId)throw Error('錯誤診斷來源引用缺漏或不一致');
+   return row;
+  };
+  return contexts.map(issue=>({...issue,message:resolve(issue.message),context:issue.context.map(resolve)}));
+ }
+ return {replay,mount,hash,capturedEventProjection,verifyHistorySupplement,capturedPlayerImage,validNativeImageUrl,expandErrorContexts};
 });

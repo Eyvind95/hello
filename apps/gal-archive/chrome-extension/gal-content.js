@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.10.5: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.6: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.10.5';
+const SCANNER_VERSION='0.10.6';
  // Large JSON is retained in the isolated page and pulled by its owning
  // background document in small, independently checked pieces. No story
  // content is sent to the network or persisted outside the existing exports.
@@ -236,7 +236,7 @@ function unverifiedEvidence(rows,run,why,fullDiagnostic){
   source:{url:location.origin+location.pathname},scope:'unverified-read-progress',
   collectedCount:data.length,rawRows:data.length,
   failure:why||null,phase:fullDiagnostic?.phase||null,phaseHistory:fullDiagnostic?.phaseHistory||[],failedPhase:fullDiagnostic?.failedPhase||null,bottomProof:fullDiagnostic?.bottomProof||null,eventAudit:fullDiagnostic?.eventAudit||null,historySourceManifest:fullDiagnostic?.historySourceManifest||null,
-  errors:fullDiagnostic?.errorContexts||[],rows:data,
+  errors:fullDiagnostic?.errorContexts||[],errorContextEvidence:fullDiagnostic?.errorContextEvidence||null,rows:data,
   note:'不具正式正史效力，禁止直接匯入檔案館或 Firebase；不捏造時間、來源文字或未讀歷史。'};
 }
 function failureContexts(rows,validation,reason){
@@ -250,8 +250,10 @@ function failureContexts(rows,validation,reason){
   else issues.push({scanIndex:null,error,unavailableReason:'錯誤沒有全輪掃描索引'});
  }
  const primary=[...indices][0]??null;
+ const evidence=new Map();
  const serialize=(row,index)=>{
   if(!row)return null;
+  if(evidence.has(index))return evidence.get(index);
   const native=sourceFor(row),users=row.formatSource?.playerSources||[];
   const nativeText=native?.reason==='available'?native.text:
    row.role==='me'&&users.length&&users.every(x=>x.nativeReason==='available')?
@@ -272,7 +274,7 @@ function failureContexts(rows,validation,reason){
      reason:examined.text===null?'native-text-or-clock-not-proven':'native-content-matched'};
    }catch(error){compare={error:String(error.message||error)}}
   }
-  return {scanIndex:index,role:row.role,eventType:row.eventType||null,
+  const result={scanIndex:index,role:row.role,eventType:row.eventType||null,
    domText:row.text,nativeText,
    nativeUnavailableReason:nativeText!==null?null:native?.reason||(
     row.role==='me'?'player-native-source-unavailable':'not-captured'),
@@ -285,18 +287,24 @@ function failureContexts(rows,validation,reason){
    parsedTime:core.parseGameTime(row.text)||null,
    nativeParsedTime:nativeText?core.parseGameTime(nativeText):null,
    explicitUnknown:core.isExplicitUnknownGameTime(row.text),compare};
+  evidence.set(index,result);return result;
  };
- return issues.map(({scanIndex,error,unavailableReason})=>({
+ const ref=(row,index)=>{
+  const entry=serialize(row,index);
+  return entry?{scanIndex:index,sourceMessageId:entry.sourceMessageId}:null;
+ };
+ const errorContexts=issues.map(({scanIndex,error,unavailableReason})=>({
   scanIndex,error,
   cascadePossible:primary!==null&&scanIndex!==null&&scanIndex>primary,
   cascadeExplanation:primary!==null&&scanIndex>primary?
    '前方第 '+(primary+1)+' 則已經失敗；本訊息配對可能是連鎖異常':null,
   unavailableReason:unavailableReason||null,
-  message:scanIndex!==null&&rows[scanIndex]?serialize(rows[scanIndex],scanIndex):null,
+  message:scanIndex!==null&&rows[scanIndex]?ref(rows[scanIndex],scanIndex):null,
   context:scanIndex===null?[]:
    rows.slice(Math.max(0,scanIndex-3),Math.min(rows.length,scanIndex+4))
-    .map((row,j)=>serialize(row,Math.max(0,scanIndex-3)+j))
+    .map((row,j)=>ref(row,Math.max(0,scanIndex-3)+j))
  }));
+ return {errorContexts,errorContextEvidence:{format:'gal-error-context-refs',version:1,rows:[...evidence.values()].sort((a,b)=>a.scanIndex-b.scanIndex)}};
 }
 
 async function saveProgressSnapshot(){
@@ -2165,7 +2173,7 @@ async function positionSevenProbe(mode){
    scanRunId:run.scanRunId,cycleId:target.cycleId,scannerVersion:SCANNER_VERSION,
    sourceRunId:previous?.scanRunId||null,selectionMode:mode,selectionIndex:index,
    scannedRows:output.length,sourceIds:output.map(x=>x.nativeSourceId),
-   errorContexts:failureContexts(rows,{errors:['第 '+(index+1)+' 則指定位置來源核對']},null)
+   ...failureContexts(rows,{errors:['第 '+(index+1)+' 則指定位置來源核對']},null)
   };
   const finished=await galSendEvidence({type:'gal-run-finish',...run,
    state:'completed',scanned:output.length,result:JSON.stringify(report),
@@ -2182,7 +2190,7 @@ async function positionSevenProbe(mode){
     scannerVersion:SCANNER_VERSION,
     sourceScanRunId:previous?.scanRunId||null,
     index,selectionMode:mode,error:message,
-    errorContexts:failureContexts(probeRows,null,message)};
+    ...failureContexts(probeRows,null,message)};
    let unverified=null;
    if(probeRows.length){
     const data=unverifiedEvidence(probeRows,run,message,report);
@@ -2279,7 +2287,7 @@ async function eventThreeRowProbe(profile){
   const message=String(error?.message||error);
   diagnostic={...(diagnostic||inspect()),...run,scannerVersion:SCANNER_VERSION,
    coreVersion:core.version,eventThreeRowError:message,
-   errorContexts:failureContexts(localRows,null,message)};
+   ...failureContexts(localRows,null,message)};
   if(registered){
    const saved=await galSendEvidence({type:'gal-run-finish',...run,state:'failed',
     scanned:localRows.length,reason:message,
@@ -2678,8 +2686,8 @@ async function scan(profile,preview=false,requireNative=false,scanRunId=crypto.r
   diagnostic.historySourceManifest=[...eventAudit.history].map(([id,kind])=>({id,kind,sender:eventAudit.senders.get(id)||null,playerRows:[...(eventAudit.playerSourceRows.get(id)||[])].sort((a,b)=>a-b)}));
   diagnostic.failedPhase=failedPhase;
   diagnostic.phaseHistory=phaseHistory;
-  try{diagnostic.errorContexts=failureContexts(collected,failedValidation,failure)}
-  catch(error){diagnostic.errorContexts=[{scanIndex:null,error:failure}];diagnostic.contextError=String(error)}
+  try{Object.assign(diagnostic,failureContexts(collected,failedValidation,failure))}
+  catch(error){diagnostic.errorContexts=[{scanIndex:null,error:failure}];diagnostic.errorContextEvidence=null;diagnostic.contextError=String(error)}
   if(!diagnostic.nativeFormatAudit&&collected.length){
    try{diagnostic.nativeFormatAudit=requireFormatEvidence().inspectRaw(
     collected,core,failedValidation?.ok===true);}
@@ -2744,7 +2752,7 @@ chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
    cycleId:run.cycleId,scannerVersion:SCANNER_VERSION,coreVersion:core.version,
    error:'Chrome 中斷／到期緊急保全：'+String(msg.reason||'未知'),
    trustedCount:rows.length};
-  diag.errorContexts=failureContexts(rows,null,diag.error);
+  Object.assign(diag,failureContexts(rows,null,diag.error));
   galWireEnvelope({ok:true,scanRunId:run.scanRunId,cycleId:run.cycleId,scanned:rows.length,
    diagnostic:JSON.stringify(diag),
    unverified:rows.length?
