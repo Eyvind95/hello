@@ -1,7 +1,7 @@
 /* Independent ChatGPT reading archive. No Gal AI canonical import or network. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.GalPredecessorChat=api})(globalThis,()=>{
 'use strict';
-const FORMAT='gal-predecessor-chat',CLASS='gal-predecessor-classification',VERSION=1;
+const SAMPLE='gal-predecessor-chat-sample',SAMPLE_LIMIT=10,FORMAT='gal-predecessor-chat',CLASS='gal-predecessor-classification',VERSION=1;
 const categories=['交接稿','茶話會','評語與自評','稱號與事故','規則與設定','輪迴補充','其他','Gal AI正史引用（不另收錄正文）','待確認'];
 const check=(v,m)=>{if(!v)throw Error(m)};
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -46,13 +46,24 @@ function sourceId(url){
  return u.pathname.replace(/\/$/,'').split('/').at(-1);
 }
 function validateRaw(data){
- check(data?.format===FORMAT&&data.version===VERSION&&data.canonical===false&&data.fidelity==='rendered-dom'&&['completed','failed','cancelled'].includes(data.status),'不是前輩聊天獨立保全 JSON');
+ check(data?.format===FORMAT&&data.scope!=='sample-10'&&data.importable!==false&&data.version===VERSION&&data.canonical===false&&data.fidelity==='rendered-dom'&&['completed','failed','cancelled'].includes(data.status),'不是前輩聊天獨立保全 JSON');
  check(validId(data.runId)&&validId(data.title)&&data.chatId===sourceId(data.sourceUrl),'聊天標題或來源 ID 不符');
  const start=Date.parse(data.startedAt),end=Date.parse(data.finishedAt);
  check(Number.isFinite(start)&&Number.isFinite(end)&&end>=start,'掃描時間無效');
  const ids=validateRows(data.rows);check(data.rows.every((r,i)=>r.index===i)&&data.count===data.rows.length,'訊息索引／總數不符');
  check(data.evidence&&Array.isArray(data.warnings)&&data.warnings.every(x=>typeof x==='string'),'缺少掃描證據');
  if(data.status==='completed')check(data.rows.length&&data.evidence.bottomStableMs>=3000&&data.evidence.topStableMs>=8000&&data.evidence.topReached===true&&data.evidence.bottomReached===true&&data.evidence.continuity===true&&data.evidence.firstId===data.rows[0].id&&data.evidence.lastId===data.rows.at(-1).id&&!data.error,'完成檔缺少首尾或連續性證據');
+ return ids;
+}
+function sampleReady(rows,bottomReached,topReached){
+ return bottomReached===true&&rows.length>0&&(rows.length>=SAMPLE_LIMIT||topReached===true);
+}
+function sampleRows(rows){return rows.slice(-SAMPLE_LIMIT)}
+function validateSample(data){
+ check(data?.format===SAMPLE&&data.scope==='sample-10'&&data.sampleLimit===SAMPLE_LIMIT&&data.importable===false&&['completed','failed','cancelled'].includes(data.status),'不是獨立十則測試檔');
+ const ids=validateRaw({...data,format:FORMAT,status:'failed',scope:undefined,importable:undefined});
+ check(data.rows.length<=SAMPLE_LIMIT,'測試超過十則');
+ if(data.status==='completed')check(sampleReady(data.rows,data.evidence.bottomReached,data.evidence.topReached)&&data.evidence.bottomStableMs>=3000&&data.evidence.continuity===true&&data.evidence.firstId===data.rows[0].id&&data.evidence.lastId===data.rows.at(-1).id&&!data.error&&(data.rows.length===SAMPLE_LIMIT||data.evidence.topStableMs>=8000),'測試缺少尾端或數量證據');
  return ids;
 }
 function validateClassification(raw,data,hash){
@@ -67,5 +78,5 @@ function validateClassification(raw,data,hash){
  }
  return {items:data.items.length,covered:new Set(data.items.flatMap(i=>i.messageIds)).size,total:raw.rows.length};
 }
-return {FORMAT,CLASS,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification};
+return {FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows};
 });

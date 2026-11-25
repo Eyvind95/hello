@@ -4,7 +4,7 @@ const source=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=source
 function fixture(){
  const nodes=new Map(),calls=[];let route='/c/first',result={ok:true};
  const element=tag=>({tag,id:'',dataset:{},style:{},children:[],append(...children){this.children.push(...children);for(const n of children)if(n.id)nodes.set(n.id,n)},remove(){nodes.delete(this.id);for(const n of this.children)if(n.id)nodes.delete(n.id)},setAttribute(){},scrollIntoView(){calls.push('existing')}});
- const body=element('body'),ctx={document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},chrome:{runtime:{getManifest:()=>({version:'0.10.10'})}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async title=>{calls.push(title);return result}};
+ const body=element('body'),ctx={document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},chrome:{runtime:{getManifest:()=>({version:'0.10.10'})}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample)=>{calls.push(sample?[title,sample]:title);return result}};
  vm.createContext(ctx);vm.runInContext(block+';globalThis.launch=historyLauncher;',ctx);
  return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x}};
 }
@@ -18,4 +18,10 @@ test('failed start preserves config; switching chats invalidates old form; non-c
  await f.nodes.get('ga-predecessor-page-start').onclick();assert.ok(f.nodes.has('ga-predecessor-page-config'));assert.equal(f.nodes.get('ga-predecessor-page-start').disabled,false);
  f.route('/c/second');f.launch();assert.equal(f.nodes.has('ga-predecessor-page-config'),false);
  f.route('/');f.launch();assert.equal(f.nodes.has('ga-predecessor-page-launcher'),false);
+});
+
+test('ten-message sample button invokes independent limited scan',async()=>{
+ const f=fixture();f.launch();f.nodes.get('ga-predecessor-page-launcher').onclick();
+ await f.nodes.get('ga-predecessor-page-test-ten').onclick();assert.deepEqual(f.calls,[['測試前輩',true]]);
+ assert.equal(f.nodes.has('ga-predecessor-page-config'),false);
 });
