@@ -4,7 +4,7 @@
 if(globalThis.GalArchiveCore)return;
 const txt=x=>String(x==null?'':x);
 const clean=x=>txt(x).replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').trim();
-const normalizedWorld=x=>clean(x).replace(/[《》〈〉「」『』\s　，,。．·・！!]/g,'').toLowerCase();
+const normalizedWorld=x=>clean(x).normalize('NFKC').replace(/[《》〈〉「」『』\s，,。．·・！!－—–-]|🔞/gu,'').toLowerCase();
 
 // Adventure-world profile: a single clock/location line and three named HUD sections.
 // Do not parse an arbitrary date in narrative prose, or cap a large inventory line.
@@ -269,7 +269,7 @@ function compareAdventureParagraphs(scanned,nativeCopy,options){
 // A clock-shaped HUD anywhere is evidence against an untimed classification,
 // even when the bounded primary parser cannot resolve its location or value.
 function hasHudClockEvidence(input){
- if(adventureClockEvidence(input))return true;
+ if(roadClockEvidence(input)||adventureClockEvidence(input))return true;
  const lines=clean(input).split('\n').map(line=>line.trim());
  return lines.some((line,i)=>{
   if(!/^[｜|│]\s*\d{4}\s*(?:年|[-/])/u.test(line))return false;
@@ -330,7 +330,105 @@ function structuredNewsPrefix(prefix){
  }
  return n>=2;
 }
+// Road survival has no calendar year. The ISO is only a reversible
+// day-index sorting coordinate, NOT a claimed Gregorian story date.
+const ROAD_WORLD='公路求生－我是求生者！';
+const ROAD_CLOCK_ENCODING='synthetic-2000-01-01-local-day-1';
+const isRoadWorld=w=>normalizedWorld(w)===normalizedWorld(ROAD_WORLD);
+const clockProfile=w=>isRoadWorld(w)?'road':isAdventureWorld(w)?'adventure':'sentinel';
+const roadHead=/^⏰\uFE0F?\s*[：:]\s*來到公路第\s*(\d{1,6})\s*日\s*[｜|]\s*(\d{1,2})[.．/](\d{1,2})\s*[.．]\s*(\d{1,2})[：:](\d{2})\s*[.．]\s*天氣[：:]\s*(\S.*)$/u;
+const roadClockEvidence=input=>clean(input).split('\n').some(line=>/^(?:\*\*)?⏰\uFE0F?\s*[：:]?\s*來到公路第/u.test(line.trim()));
+const roadFields=[
+ /^🚗\uFE0F?[：:]\s*\S.*[｜|]\s*等級\s*\d+/u,
+ /^🔋\uFE0F?[：:]\s*\S.*[｜|]/u,
+ /^🔧\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
+ /^(?:🚐|📦)\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
+ /^🧩\uFE0F?[：:]\s*\d+\s*[／/]\s*\d+/u,
+ /^🛣\uFE0F?[：:]\s*\d+(?:\.\d+)?公里\s*[／/]\s*每日規定\s*\d+(?:\.\d+)?公里/u,
+ /^(?:🍖|🥩)\uFE0F?[：:]\s*飢餓度[：:]\s*\d+\s*[｜|]\s*💧\uFE0F?\s*[：:]?\s*口渴度[：:]\s*\d+/u,
+ /^⚡\uFE0F?[：:]\s*\d+(?:\.\d+)?\s*[／/]\s*\d+(?:\.\d+)?/u,
+ /^❤\uFE0F?[：:]\s*\S/u,
+ /^🎒\uFE0F?[：:]\s*\S/u,
+ /^⚔\uFE0F?[：:]\s*\S/u,
+ /^💰\uFE0F?[：:]\s*\S/u,
+ /^📜\uFE0F?[：:]\s*\S/u,
+ /^💦\uFE0F?[：:]\s*\S/u,
+ /^📐\uFE0F?[：:]\s*\S/u
+];
+function parseRoadClock(input){
+ const lines=clean(input).split('\n').map(x=>x.trim()).filter(Boolean);
+ const at=lines.flatMap((x,i)=>/^(?:\*\*)?⏰\uFE0F?\s*[：:]?\s*來到公路第/u.test(x)?[i]:[]);
+ if(at.length!==1)return null;
+ const i=at[0],head=lines[i],m=(head.startsWith('**')&&head.endsWith('**')?head.slice(2,-2):head).match(roadHead);
+ if(!m)return null;
+ const fields=lines.slice(i+1);
+ if(fields.at(-1)===ADVENTURE_FENCE)fields.pop();
+ // The observed event can end after the backpack; a normal full HUD has
+ // five more fields. Accept only ordered prefixes, never random prose.
+ if(fields.length<10||fields.length>roadFields.length||!fields.every((x,j)=>roadFields[j].test(x)))return null;
+ const [survivalDay,month,day,hour,minute]=m.slice(1,6).map(Number);
+ const max=[31,29,31,30,31,30,31,31,30,31,30,31];
+ if(survivalDay<1||survivalDay>100000||month<1||month>12||day<1||day>max[month-1]||hour>23||minute>59)return null;
+ const pad=n=>String(n).padStart(2,'0');
+ const civil='第'+survivalDay+'日｜'+pad(month)+'.'+pad(day)+' '+pad(hour)+':'+pad(minute);
+ const iso=new Date(Date.UTC(2000,0,1,hour-8,minute)+(survivalDay-1)*86400000).toISOString();
+ return {iso,civil,survivalDay,month,day,hour,minute,second:0,weather:m[6],profile:'road',encoding:ROAD_CLOCK_ENCODING};
+}
+function roadOpening(input){
+ const t=clean(input);
+ return !roadClockEvidence(t)&&!parseGameTime(t)&&['世界規則正在重構','唯一公路','請選擇你的初始能源'].every(x=>t.includes(x))&&t.includes('公路求生');
+}
+function compareRoadParagraphs(scanned,nativeCopy,options){
+ const visible=clean(scanned),original=clean(nativeCopy),compact=v=>v.replace(/\s/gu,''),actual=compact(visible);
+ const a=parseRoadClock(visible),b=parseRoadClock(original);
+ const clockEqual=options.opening?roadOpening(visible)&&roadOpening(original):
+  a&&b?a.civil===b.civil&&a.iso===b.iso:
+  Boolean(!a&&!b&&!roadClockEvidence(visible)&&!roadClockEvidence(original)&&(options.event||options.verifiedUntimedNative));
+ const blocks=[...original.matchAll(/^[ \t]*\x60{3}[ \t]*\n([\s\S]*?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/gm)];
+ const fenceLines=original.split('\n').filter(l=>l.trim().startsWith(ADVENTURE_FENCE));
+ const fencesValid=fenceLines.length===2*blocks.length&&fenceLines.every(l=>l.trim()===ADVENTURE_FENCE);
+ const proof=Array.isArray(options.codeBlocks)?options.codeBlocks:[];
+ let pos=0,sourcePos=0,omitted=0,quotePairs=0;
+ const starts=new Set(),ends=new Set();let linePos=0;
+ for(const line of visible.split('\n')){const v=compact(line);if(v){starts.add(linePos);linePos+=v.length;ends.add(linePos);}}
+ const take=(v,prose=false)=>{
+  const key=compact(v);if(actual.startsWith(key,pos)){pos+=key.length;return true}
+  if(!prose)return false;
+  let cursor=pos,from=0,pairs=0;
+  const eat=s=>{const k=compact(s);if(!actual.startsWith(k,cursor))return false;cursor+=k.length;return true};
+  for(const m of v.matchAll(/「([^「」\n]+)」/gu)){
+   if(!eat(v.slice(from,m.index)))return false;
+   if(!eat(m[0])){const q=compact(m[1]);if(!q||!starts.has(cursor)||!ends.has(cursor+q.length)||!eat(m[1]))return false;pairs++;}
+   from=m.index+m[0].length;
+  }
+  if(!pairs||!eat(v.slice(from)))return false;
+  pos=cursor;quotePairs+=pairs;return true;
+ };
+ let matched=fencesValid&&proof.length===blocks.length;
+ if(matched)for(let i=0;i<blocks.length;i++){
+  const block=blocks[i],raw=block[1],dom=String(proof[i]??''),k=compact(dom);
+  if(!take(original.slice(sourcePos,block.index),true)||!(compact(raw)===k||systemBoxProof(raw,k))){matched=false;break}
+  const variants=[...new Set([raw,dom])];
+  let ok=false;
+  for(const v of variants){
+   if(take(ADVENTURE_FENCE+'\n'+v+'\n'+ADVENTURE_FENCE)){ok=true;break}
+   if(take(v)){omitted+=2;ok=true;break}
+  }
+  if(!ok){matched=false;break}
+  sourcePos=block.index+block[0].length;
+ }
+ matched=matched&&take(original.slice(sourcePos),true)&&pos===actual.length;
+ const literal=fencesValid&&actual===compact(original),contentEqual=Boolean(literal||matched);
+ const markers=[];
+ if(contentEqual&&!literal&&omitted)markers.push({kind:'road-proven-ordered-code-fences',tokens:omitted,nonWhitespaceChars:omitted*3});
+ if(contentEqual&&!literal&&quotePairs)markers.push({kind:'road-proven-dialogue-quote-pairs',tokens:quotePairs*2,nonWhitespaceChars:quotePairs*2});
+ const comparison={scannedLength:visible.length,nativeLength:original.length,scannedNonWhitespace:actual.length,nativeNonWhitespace:compact(original).length,comparableNativeNonWhitespace:contentEqual?actual.length:compact(original).length,whitespaceOnlyEqual:literal,contentEqual,clockEqual:Boolean(clockEqual),formatMarkers:markers,formatMarkerCount:markers.reduce((n,x)=>n+x.tokens,0),explainedNonWhitespace:markers.reduce((n,x)=>n+x.nonWhitespaceChars,0),remainingUnexplained:{scanned:contentEqual?0:Math.max(0,actual.length-pos),native:contentEqual?0:Math.max(0,compact(original).length-pos)},ignoredDifferences:markers.map(x=>x.kind),roadProjection:{nativeBlocks:blocks.length,domBlocks:proof.length,allOrdered:contentEqual}};
+ return {text:contentEqual&&clockEqual?original:null,comparison};
+}
+
 function parseGameTime(input){
+ const road=parseRoadClock(input);
+ if(road||roadClockEvidence(input))return road;
  const adventure=parseAdventureClock(input);
  if(adventure||adventureClockEvidence(input))return adventure;
   let lines=clean(input).split('\n');
@@ -380,12 +478,14 @@ function parseGameTime(input){
 function worldInText(content){
  const t=clean(content);
  const m=t.match(/與\s*《([^》]{2,120})》\s*的\s*(?:世界|事件)/u);
- return m?clean(m[1]):null;
+ if(m)return clean(m[1]);
+ const road=t.match(/^與\s*(🔞?公路求生[－—–-]我是求生者[！!]🔞?)\s*的\s*(?:世界|事件)/u);
+ return road?clean(road[1]):null;
 }
 function isEvent(content){
  const t=clean(content);
  // An event must be presented as a notification, not merely mentioned in prose.
- return /^(?:[⚠❗❕!！\uFE0F\s　]*)?(?:事件(?:到達|通知|發生|觸發)|與\s*《[^》]{2,120}》\s*的\s*事件)/u.test(t)
+ return Boolean(worldInText(t)&&isRoadWorld(worldInText(t)))||/^(?:[⚠❗❕!！\uFE0F\s　]*)?(?:事件(?:到達|通知|發生|觸發)|與\s*《[^》]{2,120}》\s*的\s*事件)/u.test(t)
    || /^[!！⚠\uFE0F\s　]+與\s*《[^》]{2,120}》\s*的\s*世界/u.test(t)
    || /^.{0,45}(?:世界事件|緊急事件)\s*(?:到達|通知|觸發)/u.test(t);
 }
@@ -406,6 +506,8 @@ const LEGACY_OPENING_ISO='2026-08-22T10:42:00.000Z';
 function isAllowedOpeningRow(row,expectedWorld){
  if(row?.role!=='ai'||isEvent(row.text)||isExplicitUnknownGameTime(row.text))return false;
  const clock=parseGameTime(row.text);
+ if(isRoadWorld(expectedWorld))return roadOpening(row.text);
+ if(clock?.profile==='road')return false;
  if(isAdventureWorld(expectedWorld))return adventureOpening(row.text);
  if(clock?.profile==='adventure')return !expectedWorld&&adventureOpening(row.text);
  return (!clock&&!hasHudClockEvidence(row.text))||clock?.iso===LEGACY_OPENING_ISO;
@@ -474,7 +576,7 @@ function validate(rows,expectedWorld){
     errors.push('第 '+(i+1)+' 則事件／世界名稱「'+domain+'」與綁定世界觀「'+expectedWorld+'」不符；不能覆蓋其他世界觀');
   if(role==='ai'&&(row.eventType==='event'||isEvent(t))){
    const eventTime=parseGameTime(t);
-   if(eventTime&&expectedWorld&&isAdventureWorld(expectedWorld)!==(eventTime.profile==='adventure'))errors.push('第 '+(i+1)+' 則事件的時間格式與綁定世界觀不一致');
+   if(eventTime&&expectedWorld&&clockProfile(expectedWorld)!==(eventTime.profile||'sentinel'))errors.push('第 '+(i+1)+' 則事件的時間格式與綁定世界觀不一致');
    if(!eventTime&&hasHudClockEvidence(t))errors.push('第 '+(i+1)+' 則事件含有日期及時鐘欄位，但無法解析；禁止當成無時間事件');
    if(!eventTime)warnings.push('第 '+(i+1)+' 則 Gal AI 事件沒有可確認的劇情時間，保留原文但不推測時間');
    events.push({role:'ai',text:t,title:(t.split('\n').find(Boolean)||'事件').slice(0,70),
@@ -494,7 +596,7 @@ function validate(rows,expectedWorld){
    errors.push('第 '+(i+1)+' 則同時存在未知時間與明確時鐘欄位，無法安全判定');continue;
   }
   const clock=explicitlyUnknown?null:parseGameTime(t);
-  if(clock&&expectedWorld&&isAdventureWorld(expectedWorld)!==(clock.profile==='adventure')){errors.push('第 '+(i+1)+' 則時間格式與綁定世界觀不一致');continue;}
+  if(clock&&expectedWorld&&clockProfile(expectedWorld)!==(clock.profile||'sentinel')){errors.push('第 '+(i+1)+' 則時間格式與綁定世界觀不一致');continue;}
   const invalidDate=!clock&&!explicitlyUnknown&&isAdventureWorld(expectedWorld)?verifiedInvalidAdventureReply(row,rows):null;
   const nativeUntimed=!clock&&!explicitlyUnknown&&!invalidDate?verifiedUnclockedReply(row,rows):null;
   if(!clock&&!explicitlyUnknown&&!invalidDate&&!nativeUntimed?.ok){
@@ -648,9 +750,9 @@ function markdownFromDom(node,options={}){
   const nextItalic=inItalic||italicNow||italicStyle(n)==='italic';
   const boldNow=(tag==='strong'||tag==='b'||isBoldWeight(fontWeight(n)))&&
     (n===node||!isBoldWeight(fontWeight(n.parentElement)));
-  if(options.metadata&&isAdventureWorld(options.worldName)&&tag==='pre'&&!n.querySelector?.(status)){
+  if(options.metadata&&(isAdventureWorld(options.worldName)||isRoadWorld(options.worldName))&&tag==='pre'&&!n.querySelector?.(status)){
    (options.metadata.codeBlocks??=[]).push(n.textContent);
-   if(parseAdventureClock(n.textContent))options.metadata.statusText||=n.textContent;
+   if(parseAdventureClock(n.textContent)||parseRoadClock(n.textContent))options.metadata.statusText||=n.textContent;
   }
   if(options.metadata&&n.matches(status)&&/^(?:pre|pre-wrap)$/.test(whiteSpace(n))){
    (options.metadata.codeBlocks??=[]).push(n.textContent);
@@ -733,6 +835,7 @@ function markdownFromDom(node,options={}){
  return clean(walk(node)).replace(/\n{4,}/g,'\n\n');
 }
 function compareNativeParagraphs(scanned,nativeCopy,options={}){
+ if(isRoadWorld(options.worldName)||roadClockEvidence(scanned)||roadClockEvidence(nativeCopy)||options.opening&&(roadOpening(scanned)||roadOpening(nativeCopy)))return compareRoadParagraphs(scanned,nativeCopy,options);
  if(adventureClockEvidence(scanned)||adventureClockEvidence(nativeCopy))return compareAdventureParagraphs(scanned,nativeCopy,options);
  const statusFence=/^[ \t]*\x60{3}[ \t]*(?:[a-z][\w+-]*)?[ \t]*\n([\s\S]+?)\n[ \t]*\x60{3}[ \t]*(?=\n|$)/i;
  const imageMarker=/(?:[ \t]*\n)?\{\{(?:img|image):+[^{}\n]+\}\}[ \t]*$/i;
@@ -1840,5 +1943,5 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  return {text:restored,comparison};
 }
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.9.14'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.0'};
 })();

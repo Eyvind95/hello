@@ -5,9 +5,9 @@
 const GAL_BATCH_WORLDS=[
  {worldKey:'sentinel',worldName:'《全員精神穩定，感情除外》',worldFolder:'全員精神穩定，感情除外'},
  {worldKey:'adventure',worldName:'《身為冒險者就可以這樣那樣》',worldFolder:'身為冒險者就可以這樣那樣'},
- {worldKey:'road',worldName:'《公路求生－我是求生者！》',worldFolder:'公路求生－我是求生者！'}
+ {worldKey:'road',worldName:'🔞公路求生－我是求生者！🔞',worldFolder:'公路求生－我是求生者！'}
 ];
-const galWorldNorm=x=>String(x||'').normalize('NFKC').replace(/[《》〈〉「」『』\s，,。．·・！!－—–-]/gu,'');
+const galWorldNorm=x=>String(x||'').normalize('NFKC').replace(/[《》〈〉「」『』\s，,。．·・！!－—–-]|🔞/gu,'');
 function galCycleNumber(title){
  const value=String(title||'').normalize('NFKC').trim();
  const m=value.match(/^第\s*(\d{1,4}|[零〇一二兩三四五六七八九十百千]+)\s*(?:周目|週目|輪迴|輪目|周|週)/u);
@@ -181,7 +181,7 @@ function installGalScanStatus(api){
   }catch(error){await finish(runs,run,'failed',String(error.message||error))}
  }
  const isOwner=(run,sender)=>Boolean(run&&run.tabId===sender.tab?.id&&
-  run.documentId===sender.documentId&&run.source===safeUrl(sender.url));
+  run.documentId===sender.documentId&&run.source===safeUrl(sender.tab?.url||sender.url));
  async function handle(message,sender){
   if(sender.id!==api.runtime.id)throw Error('未核對的擴充功能來源');
   const runs=await read();
@@ -198,7 +198,11 @@ function installGalScanStatus(api){
    }
    return match?publicStatus(runs[match.scanRunId]):{state:'idle',scanRunId:null,cycleId:message.cycleId,scanned:0};
   }
-  const src=safeUrl(sender.url);
+  // Chrome sender.url can lag behind a same-document WHIF route change.
+  // A start must also independently declare the actual page source.
+  const src=safeUrl(sender.tab?.url||sender.url);
+  const documentSource=safeUrl(sender.url);
+  if(message.type==='gal-run-start'&&((message.pageSource!=null&&safeUrl(message.pageSource)!==src)||(documentSource!==src&&safeUrl(message.pageSource)!==src)))throw Error('WHIF 分頁網址與掃描面板目前網址不一致，請重新整理頁面');
   if(message.type==='gal-run-download-extra'){
    if(!src||sender.frameId!==0||!sender.tab||!uuidOk(message.scanRunId))throw Error('手動下載來源無效');
    const binding=((await api.storage.local.get('galProfilesByPage')).galProfilesByPage||{})[src];
@@ -230,7 +234,8 @@ function installGalScanStatus(api){
     throw Error('同一來源已有掃描工作執行');
    if(!Object.hasOwn(DEADLINE,message.scope))throw Error('掃描類型不支援');
    const binding=((await api.storage.local.get('galProfilesByPage')).galProfilesByPage||{})[src];
-   if(!binding||binding.cycleId!==message.cycleId)throw Error('WHIF 來源綁定不一致');
+   if(!binding)throw Error('WHIF 目前網址沒有已儲存輪迴綁定：'+src);
+   if(binding.cycleId!==message.cycleId)throw Error('WHIF 來源輪迴 ID 不一致：已儲存 '+binding.cycleId+'／掃描面板 '+message.cycleId);
    const identity=galBatchIdentity(binding);
    if(identity.cycleNumber===null)throw Error('輪迴名稱沒有可確認的編號，請核對檔案館後再掃描');
    if(!identity.worldKey)throw Error('世界觀無法辨識：請確認綁定名稱，不得預設歸入其他世界觀');
