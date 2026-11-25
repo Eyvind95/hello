@@ -127,3 +127,33 @@ test('late single generic user image observation enriches row, preserves evidenc
  a.throws(()=>c.mergeUp([fresh],[{...fresh,attachments:[...fresh.attachments,...fresh.attachments]}]));
  const rejected=[];a.throws(()=>c.mergeUp([old,r('next')],[fresh,r('next','user','changed')],x=>rejected.push(x)));a.deepEqual(rejected,[]);
 });
+
+test('predecessor settle reads without clicking even when a long message has a fold control',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  async function historySettled('),src.indexOf('  function historyGuard('));
+ let now=1000,reads=0,clicks=0;const rows=[r('1')];
+ const control={click:()=>clicks++};
+ const b={host:{scrollTop:100,scrollHeight:1000,clientHeight:100},scrollStats:{expansionClicks:0,expansionRestores:0,fingerprintChanges:0},stabilityIssues:[]};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyLoading:()=>false,historyRoot:()=>({querySelectorAll:()=>[control]}),expandButtons:()=>[control],historyVisible:()=>true,historyRead:(host,onFold)=>{reads++;onFold({messageId:'1',label:'顯示較多'});return rows},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyStatus:()=>{},sleep:async ms=>{now+=ms}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ a.deepEqual(await ctx.settle(b),rows);a.equal(clicks,0);a.equal(reads,3);a.equal(b.scrollStats.expansionClicks,0);
+ a.match(src,/await expandCollapsed\(4\)/);
+});
+test('passive text keeps complete DOM content and strips only a proven trailing UI control',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyReadText('),src.indexOf('  function historyRead(host'));
+ let label='顯示較多',after='',contained=true;const observed=[];
+ const control={get innerText(){return label},getAttribute:()=>null};
+ const body={get innerText(){return '正文\n顯示較少\n'+label},contains:()=>contained,childNodes:[control]};
+ const nestedControl={get innerText(){return label},getAttribute:()=>null};
+ const owner={querySelectorAll:()=>[control,nestedControl]};
+ const ctx={expandButtons:()=>[control],historyVisible:()=>true,EXPAND_LABEL:/^顯示較多$/,document:{createRange:()=>({setStartAfter:()=>{},setEnd:()=>{},toString:()=>after})}};
+ vm.runInNewContext(block+';globalThis.read=historyReadText;',ctx);
+ a.equal(ctx.read(body,owner,'1',x=>observed.push(x)),'正文\n顯示較少');
+ label='顯示較少';a.equal(ctx.read(body,owner,'1',()=>{}),'正文\n顯示較少');
+ after='真正的後續正文';a.equal(ctx.read(body,owner,'1',()=>{}),body.innerText);
+ after='';contained=false;a.equal(ctx.read(body,owner,'1',()=>{}),body.innerText);
+ a.equal(observed[0].fullTextVerified,false);
+});
