@@ -83,7 +83,7 @@
    try{
     compared=core.compareNativeParagraphs(row.text,source.text,{
      source:row.eventType==='event'?'whif-event-content':'whif-message-content',
-     event:row.eventType==='event',opening:index===0,
+     event:row.eventType==='event',opening:index===0,worldName:row.worldName,
      allowInvalidNativeDate:index>0&&!!core.verifiedInvalidAdventureReply?.(row,rows),
      eventTitle:row.eventType==='event'?String(row.text).split('\n')[0]:undefined,
      chapterTitle:source.chapterTitle,
@@ -108,5 +108,5 @@
   result.nativeFormatComplete=false;
   return result;
  }
- return {version:'0.10.2',markerPositions,evidence,summarize,inspectRaw};
+ return {version:'0.10.3',markerPositions,evidence,summarize,inspectRaw};
 });

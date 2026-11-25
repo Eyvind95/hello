@@ -2052,3 +2052,27 @@ test('road event exact hidden wrapper and literal unclosed HUD preserve every or
  const closed=native+'\n'+fence;
  assert.equal(c.compareNativeParagraphs(body+'\n'+sys+'\n'+hud,closed,{...opts,codeBlocks:[sys,hud]}).text,closed);
 });
+
+test('road full history accepts observed HUD aliases, visible world label companions and literal open reply HUD only',()=>{
+ const context=vm.createContext({});vm.runInContext(fs.readFileSync(require.resolve('./gal-core.js'),'utf8'),context);
+ const c=context.GalArchiveCore,w='🔞公路求生－我是求生者！🔞',f=String.fromCharCode(96).repeat(3);
+ const hud=['⏰：來到公路第1日｜01.01．08:35．天氣：☁','🚗：柴油車｜等級1（停在入口）','🔋：柴油｜28.7／50公升','🔧：100／100','🛢：5／100','🧩：1／10','🛣：10.1公里／每日規定15公里','🥩：飢餓度：12｜💧：口渴度：12','⚡：100／100','❤：正常','🎒：測試物品','⚔️：無','🪙：20','📜：無｜💋：否','💦：無｜無｜無','📐：無'].join('\n');
+ const label='<'+w+'>:',ctx='{{測試情境}}',sys='【測試公告】',body='測試敘事';
+ const closed=label+' '+ctx+'\n'+body+'\n'+f+'\n'+sys+'\n'+f+'\n'+f+'\n'+hud+'\n'+f;
+ const rendered=label+'\n'+body+'\n'+sys+'\n'+hud;
+ const opts={worldName:w,source:'whif-message-content',codeBlocks:[sys,hud]};
+ assert.equal(c.parseGameTime(hud).civil,'第1日｜01.01 08:35');
+ assert.equal(c.compareNativeParagraphs(rendered,closed,opts).text,closed);
+ assert.equal(c.compareNativeParagraphs(rendered,closed+'\n{{img::TEST01}}',opts).text,closed+'\n{{img::TEST01}}');
+ for(const bad of [closed.replace(label,'<其他世界>:'),closed.replace(ctx,'{{user}}'),closed.replace('測試物品','其他物品'),closed.replace('08:35','08:36')])assert.equal(c.compareNativeParagraphs(rendered,bad,opts).text,null);
+ for(const bad of [hud.replace('🛢','❓'),hud.replace('🪙','❓'),hud.replace('（停在入口）','其他尾巴')])assert.equal(c.parseGameTime(bad),null);
+ const open=closed.slice(0,-4),openDom=label+'\n'+body+'\n'+sys+'\n'+f+'\n'+hud;
+ const openOpts={...opts,codeBlocks:[sys]};
+ assert.equal(c.compareNativeParagraphs(openDom,open,openOpts).text,open);
+ assert.equal(c.compareNativeParagraphs(rendered,open,openOpts).text,null);
+ assert.equal(c.compareNativeParagraphs(openDom,open+'\n其他尾巴',openOpts).text,null);
+ const wrapper='{{Below context is an event which has just occurred. '+w+' should not skip this moment — chime in naturally as '+w+' would react. This event is to make the story dynamic and fresh.}}';
+ const event=wrapper+'\n'+open,eventOpts={...openOpts,event:true,source:'whif-event-content'};
+ assert.equal(c.compareNativeParagraphs(openDom,event,eventOpts).text,event);
+ assert.equal(c.compareNativeParagraphs(openDom,event,{...eventOpts,worldName:'其他世界'}).text,null);
+});
