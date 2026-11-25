@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.10.6: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.7: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.10.6';
+const SCANNER_VERSION='0.10.7';
  // Large JSON is retained in the isolated page and pulled by its owning
  // background document in small, independently checked pieces. No story
  // content is sent to the network or persisted outside the existing exports.
@@ -710,7 +710,7 @@ function boundaryFragmentText(start,end,role='ai',trace,metadata,event=false){
 
 // Identify individual native WHIF user markers in a rendered player gap.
 // Native source IDs remain internal; diagnostics publish hashes only.
-function nativePlayerSourcesBetween(start,end){
+function nativePlayerSourcesBetween(start,end,forceFresh=false){
  if(!boundaryFollows(start,end))return [];
  const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
  const ancestor=range.commonAncestorContainer;
@@ -732,7 +732,7 @@ function nativePlayerSourcesBetween(start,end){
  // Save each native user message in page memory once. This also preserves
  // exact per-source player text for ordinary one-source player turns.
  for(const item of out.values()){
-  let proof=nativePlayerTextCache.get(item.id);
+  let proof=forceFresh?null:nativePlayerTextCache.get(item.id);
   if(!proof){
    const original=readNativeNode(item.sourceNode);
    proof={nativeReason:original?.reason||'unavailable',
@@ -803,14 +803,15 @@ function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null)
  for(let i=0;i<pairs.length;i++){
   const item=pairs[i];
   if(i){
-   const gap=boundaryFragmentText(pairs[i-1].end,item.start,'me');
+   const visibleGap=boundaryFragmentText(pairs[i-1].end,item.start,'me');
+   const playerSources=captureNative?nativePlayerSourcesBetween(pairs[i-1].end,item.start):[];
+   let gap=visibleGap;
+   let playerTemplateProjection=null;
    // A complete AI event is not itself a user turn.
    // A player can answer with one character. Controls and navigation
    // labels have already been removed from this bounded DOM range.
-   if(gap){
-    const playerSources=captureNative?
-      nativePlayerSourcesBetween(pairs[i-1].end,item.start):[];
-    const playerGapHasMedia=captureNative&&playerSources.length>1?(()=>{
+   {
+    const playerGapHasMedia=captureNative&&playerSources.length>0?(()=>{
      const range=document.createRange();
      range.setStartAfter(pairs[i-1].end);range.setEndBefore(item.start);
      const base=range.commonAncestorContainer;
@@ -818,10 +819,26 @@ function boundaryRead(root,traceFirst=false,captureNative=false,probeTrace=null)
       .some(node=>range.intersectsNode(node)&&
        !node.closest('#'+PANEL+',button,[role="button"],[role="toolbar"]'));
     })():false;
-    rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1,
-     formatSource:captureNative?{playerSources,playerGapHasMedia}:undefined});
-    debug.playerGaps++;
-   }else if(item.metadata&&item.kind==='reply'&&pairs[i-1].kind==='reply'){
+    if(captureNative){
+     const projected=core.restorePlayerTemplates(visibleGap,playerSources,playerGapHasMedia);
+     if(!projected.ok)throw Error('玩家原生模板投影未通過：'+projected.reason+'；禁止遺失原文或猜測');
+     if(projected.applied){
+      // Re-read source without cache before accepting invisible native text.
+      const second=nativePlayerSourcesBetween(pairs[i-1].end,item.start,true);
+      const verified=core.restorePlayerTemplates(visibleGap,second,playerGapHasMedia);
+      if(!verified.ok||!verified.applied||verified.text!==projected.text||
+         JSON.stringify(playerSources)!==JSON.stringify(second))throw Error('玩家模板原生來源兩次核對不一致');
+      gap=projected.text;
+      playerTemplateProjection={kind:'verified-player-native-template',visibleText:visibleGap};
+     }
+    }
+    if(gap){
+     rows.push({role:'me',text:gap,id:'',top:item.start.getBoundingClientRect().top-1,
+      formatSource:captureNative?{playerSources,playerGapHasMedia,...(playerTemplateProjection?{playerTemplateProjection}:{})}:undefined});
+     debug.playerGaps++;
+    }
+   }
+   if(!gap&&item.metadata&&item.kind==='reply'&&pairs[i-1].kind==='reply'){
     item.metadata.playerGap={
      previousId:pairs[i-1].metadata?.nativeReply?.messageId||null,
      currentId:item.metadata.nativeReply?.messageId||null,
@@ -893,6 +910,8 @@ function sameRow(a,b){
  if(a.role!==b.role||(a.eventType||null)!==(b.eventType||null))return false;
  const aNative=a.formatSource?.nativeReply?.messageId,bNative=b.formatSource?.nativeReply?.messageId;
  if(aNative&&bNative&&aNative!==bNative)return false;
+ const ap=a.formatSource?.playerSources?.map(s=>s.id),bp=b.formatSource?.playerSources?.map(s=>s.id);
+ if(a.role==='me'&&ap?.length&&bp?.length&&JSON.stringify(ap)!==JSON.stringify(bp))return false;
  return a.id&&b.id&&a.id===b.id||a.text===b.text;
 }
 function appendSample(sample,all){

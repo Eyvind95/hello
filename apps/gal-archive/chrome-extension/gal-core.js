@@ -1977,6 +1977,30 @@ function compareNativeParagraphs(scanned,nativeCopy,options={}){
  }
  return {text:restored,comparison};
 }
+// Only player-origin template text is restored. Never apply this to AI output.
+function restorePlayerTemplates(rendered,sources,gapHasMedia=false){
+ const visible=String(rendered??'');
+ const list=Array.isArray(sources)?sources:[];
+ const strip=s=>String(s).replace(/\{\{[^{}]*\}\}/gu,'');
+ const norm=s=>String(s).replace(/\s/gu,'');
+ const hasTemplate=s=>/\{\{[^{}]*\}\}/u.test(String(s??''));
+ if(!list.some(s=>hasTemplate(s.nativeText)))return {ok:true,applied:false,text:visible};
+ const ids=list.map(s=>s.id);
+ if(gapHasMedia||!list.length||new Set(ids).size!==ids.length||list.some(s=>!s.id||s.sender!=='user'||s.kind!=='ordinary-message'||s.nativeReason!=='available'||s.nativeSender!=='user'||s.nativeMessageId!==s.id||s.hasMedia!==false||typeof s.nativeText!=='string'||!s.nativeText.trim()||/\{\{\s*(?:img|image)\s*:/iu.test(s.nativeText)||/!\[[^\]]*\]\([^)]+\)/u.test(s.nativeText)))
+  return {ok:false,reason:'player-template-source-not-proven'};
+ const raw=list.map(s=>s.nativeText).join('\n\n');
+ if(norm(raw)===norm(visible))return {ok:true,applied:true,text:raw};
+ if(norm(strip(raw))!==norm(strip(visible)))return {ok:false,reason:'player-template-visible-projection-mismatch'};
+ // Any already-visible template must occur in native order, not be invented.
+ const nativeTemplates=[...raw.matchAll(/\{\{[^{}]*\}\}/gu)].map(m=>norm(m[0]));
+ let cursor=0;
+ for(const m of visible.matchAll(/\{\{[^{}]*\}\}/gu)){
+  const at=nativeTemplates.indexOf(norm(m[0]),cursor);
+  if(at<0)return {ok:false,reason:'player-visible-template-not-in-native-source'};
+  cursor=at+1;
+ }
+ return {ok:true,applied:true,text:raw};
+}
 function restoreNativeParagraphs(scanned,nativeCopy){return compareNativeParagraphs(scanned,nativeCopy).text}
-globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,version:'0.10.6'};
+globalThis.GalArchiveCore={clean,normalizedWorld,parseGameTime,parseRoadClock,roadClockEvidence,isRoadWorld,clockProfile,ROAD_CLOCK_ENCODING,parseAdventureClock,adventureClockEvidence,invalidAdventureDate,verifiedInvalidAdventureReply,isAdventureWorld,worldInText,isEvent,meaningful,isExplicitUnknownGameTime,isAllowedOpeningRow,validate,copyRangeWithLiveStyles,markdownFromDom,compareNativeParagraphs,restoreNativeParagraphs,restorePlayerTemplates,version:'0.10.7'};
 })();

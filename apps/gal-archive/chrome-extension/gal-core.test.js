@@ -2076,3 +2076,20 @@ test('road full history accepts observed HUD aliases, visible world label compan
  assert.equal(c.compareNativeParagraphs(openDom,event,eventOpts).text,event);
  assert.equal(c.compareNativeParagraphs(openDom,event,{...eventOpts,worldName:'其他世界'}).text,null);
 });
+
+test('player native templates are preserved for hidden and mixed text; AI rules remain separate',()=>{
+ require('./gal-core.js');
+ const c=globalThis.GalArchiveCore;
+ const src=(nativeText,opts={})=>({id:'p1',sender:'user',kind:'ordinary-message',nativeReason:'available',nativeSender:'user',nativeMessageId:'p1',hasMedia:false,nativeText,...opts});
+ const hidden='{{測試設定}}\n{{保留原始內容}}';
+ assert.equal(c.restorePlayerTemplates('',[src(hidden)]).text,hidden);
+ const mixed='你好\n{{測試設定}}\n再見';
+ assert.equal(c.restorePlayerTemplates('你好\n再見',[src(mixed)]).text,mixed);
+ assert.equal(c.restorePlayerTemplates('你好\n{{測試設定}}\n再見',[src(mixed)]).text,mixed);
+ assert.equal(c.restorePlayerTemplates('不同正文',[src(mixed)]).ok,false);
+ assert.equal(c.restorePlayerTemplates('',[src(hidden,{nativeSender:'character'})]).ok,false);
+ assert.equal(c.restorePlayerTemplates('',[src(hidden,{hasMedia:true})]).ok,false);
+ assert.equal(c.restorePlayerTemplates('',[src(hidden),src(hidden)]).ok,false);
+ assert.equal(c.restorePlayerTemplates('你好',[src('你好')]).applied,false);
+ assert.equal(c.restorePlayerTemplates('你好{{不在原文}}再見',[src(mixed)]).ok,false);
+});
