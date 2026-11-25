@@ -38,3 +38,20 @@ test('attachment-only rows accepted, repeated source IDs and positional evidence
  a.throws(()=>c.validateRows([{...media,identityBasis:'position'}]));
  a.throws(()=>c.validateRows([media,media]));
 });
+
+test('ten-message sample stops at ten, allows proven short chats, and cannot be imported as full history',()=>{
+ const rows=Array.from({length:13},(_,i)=>({...r(String(i),i%2?'assistant':'user'),index:i}));
+ a.equal(c.sampleReady(rows,false,false),false);
+ a.equal(c.sampleReady(rows.slice(0,9),true,false),false);
+ a.equal(c.sampleReady(rows.slice(0,9),true,true),true);
+ a.equal(c.sampleReady(rows,true,false),true);
+ a.deepEqual(c.sampleRows(rows).map(x=>x.id),rows.slice(3).map(x=>x.id));
+ const tail=c.sampleRows(rows).map((x,index)=>({...x,index}));
+ const sample={...raw,format:c.SAMPLE,scope:'sample-10',sampleLimit:10,importable:false,count:10,rows:tail,evidence:{...raw.evidence,topReached:false,topStableMs:0,firstId:'3',lastId:'12'}};
+ a.equal(c.validateSample(sample).size,10);
+ a.throws(()=>c.validateRaw(sample));a.throws(()=>c.validateRaw({...sample,format:c.FORMAT}));
+ a.throws(()=>c.validateClassification(sample,{},'a'.repeat(64)));
+ a.throws(()=>c.validateSample({...sample,count:9,rows:tail.slice(1)}));
+ a.equal(c.validateSample({...sample,count:2,rows:raw.rows,evidence:raw.evidence}).size,2);
+ a.equal(c.validateSample({...sample,status:'failed',count:0,rows:[],error:'failed'}).size,0);
+});
