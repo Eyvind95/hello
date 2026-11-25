@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.35",
-  "version_name": "V0.10.35 前輩圖片參照跨視窗補接",
+  "version": "0.10.36",
+  "version_name": "V0.10.36 前輩原生重試分段觀察",
   "description": "輪迴檔案館：前輩圖片參照有序子序列補全及被動滾輪取證。",
   "permissions": [
     "storage",

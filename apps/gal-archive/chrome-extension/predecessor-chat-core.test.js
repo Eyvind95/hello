@@ -633,3 +633,23 @@ test('same-run accepted image observation bridges later exact ordered subset wit
  c.rememberAttachmentObservations(map,accepted,[old,tail]);a.equal(map.size,0);
  a.throws(()=>c.mergeUp(accepted,[current,tail],null,{attachmentBridges:map}));
 });
+
+
+test('native retries use increasing observation windows, reject flicker, and record offscreen geometry',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('));
+ for(const mode of ['persistent','delayed','flicker','deadline']){
+  let now=1000,clicks=[];
+  const rect=(top,bottom)=>()=>({top,bottom,left:0,right:100});
+  const row={closest:()=>null,children:[]},status={textContent:'無法載入較早的訊息',closest:()=>null,parentElement:row,getBoundingClientRect:rect(-700,-680)},button={tagName:'BUTTON',textContent:'重試',getAttribute:()=>null,getBoundingClientRect:rect(-700,-680),click(){clicks.push(now)}};
+  row.children=[status,button];
+  const present=()=>mode==='delayed'?now<6500:mode==='flicker'?!(now>=2500&&now<2750):true;
+  const host={querySelectorAll:()=>present()?[status]:[],contains:n=>n===row,scrollTop:99900,scrollHeight:100000,getBoundingClientRect:rect(0,100)};
+  const b={host,rows:[r('anchor')]};class Clock extends Date{constructor(){super(now)}static now(){return now}}
+  const ctx={Date:Clock,historyVisible:()=>true,historyGuard:()=>{},historyStatus:()=>{},sleep:async ms=>{now+=ms}};
+  vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;',ctx);
+  if(mode==='delayed'){a.equal(await ctx.retry(b,61000),true);a.deepEqual(clicks,[1000,3000]);a.equal(now,7000);a.equal(b.nativeHistoryRetry.cleared,1)}
+  else{await a.rejects(ctx.retry(b,mode==='deadline'?4500:61000),/原生歷史載入失敗/);a.deepEqual(clicks,mode==='deadline'?[1000,3000]:[1000,3000,8000]);a.equal(now,mode==='deadline'?4500:18000);a.equal(b.nativeHistoryRetry.cleared,0)}
+  a.equal(b.nativeHistoryRetry.trace[0].buttonInHostViewport,false);a.equal(b.nativeHistoryRetry.trace[0].observationMs,2000);a.equal(b.rows.length,1);a.equal(host.scrollTop,99900);
+ }
+});

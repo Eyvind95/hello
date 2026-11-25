@@ -1666,7 +1666,13 @@
     if(buttons.length!==1)return {reason:'ambiguous-button'};
     const button=buttons[0];
     if(button.disabled||button.getAttribute('aria-disabled')==='true')return {reason:'disabled-button'};
-    return {button};
+    return {button,status};
+  }
+  function historyNativeGeometry(host,detected){
+    const rect=n=>{const r=n?.getBoundingClientRect?.();return r?{top:r.top,bottom:r.bottom,left:r.left,right:r.right}:null};
+    const h=rect(host),button=rect(detected?.button),status=rect(detected?.status);
+    const visible=(r)=>h&&r?Math.min(h.bottom,r.bottom)>Math.max(h.top,r.top)&&Math.min(h.right,r.right)>Math.max(h.left,r.left):null;
+    return {hostRect:h,statusRect:status,buttonRect:button,buttonInHostViewport:visible(button)};
   }
   // Only strictly verified earlier rows replenish the local retry budget.
   function historyNativeProgress(b,kind){
@@ -1687,16 +1693,32 @@
       if(stats.sinceProgress>=3){record('exhausted');throw Error('原生歷史載入失敗：未取得核對進展，已達3次重試上限')}
       const attempt=++stats.attempts,localAttempt=++stats.sinceProgress;
       historyStatus(b,'原生歷史載入失敗，重試 '+localAttempt+'/3（累計 '+attempt+'次）');
-      record('click',{attempt,localAttempt});
+      // Give native loading more time on repeated failure; preserve the
+      // original three-click local cap and the absolute progress deadline.
+      const observationMs=[2000,5000,10000][localAttempt-1],clickedAt=Date.now();
+      record('click',{attempt,localAttempt,observationMs,...historyNativeGeometry(b.host,detected)});
       detected.button.click();
-      // No scroll during this observation. An absent error is not proof
-      // of history growth; the usual stable read and strict overlap follow.
-      const waitEnd=Math.min(until,Date.now()+2000);
-      while(Date.now()<waitEnd){await sleep(Math.min(250,waitEnd-Date.now()));historyGuard(b)}
+      // No scroll during observation. Absence must hold for 500ms; a
+      // cleared banner still does not certify any historical rows.
+      const waitEnd=Math.min(until,clickedAt+observationMs);
+      let absentSince=null;
+      while(Date.now()<waitEnd){
+        await sleep(Math.min(250,waitEnd-Date.now()));historyGuard(b);
+        detected=historyNativeFailure(b.host);
+        if(!detected){if(absentSince===null)absentSince=Date.now()}
+        else absentSince=null;
+        if(Date.now()-clickedAt>=2000&&absentSince!==null&&Date.now()-absentSince>=500)break;
+      }
       if(Date.now()>=until){record('deadline',{attempt});throw Error('原生歷史載入失敗：重試等待逾時')}
-      detected=historyNativeFailure(b.host);
-      if(!detected){stats.cleared++;record('error-cleared',{attempt});return true}
-      record('still-present',{attempt});
+      // If the banner disappears just before the observation ends, give
+      // it only the remainder of the 500ms stability interval.
+      while(!detected&&absentSince!==null&&Date.now()-absentSince<500){
+        await sleep(Math.min(250,500-(Date.now()-absentSince),until-Date.now()));historyGuard(b);
+        if(Date.now()>=until){record('deadline',{attempt});throw Error('原生歷史載入失敗：重試等待逾時')}
+        detected=historyNativeFailure(b.host);
+      }
+      if(!detected){stats.cleared++;record('error-cleared',{attempt,observedMs:Date.now()-clickedAt});return true}
+      record('still-present',{attempt,observedMs:Date.now()-clickedAt,...historyNativeGeometry(b.host,detected)});
     }
     return true;
   }
