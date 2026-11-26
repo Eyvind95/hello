@@ -331,3 +331,25 @@ test('repeated mounted marker with invalid overlap expands relative search beyon
  host.scrollTop=1500;now=0;ctx.historySettled=async()=>[rows[0]];
  assert.equal(await recover({host,rows,resume:{frontierVerified:false},scrollStats:{}},6000),null);
 });
+
+test('observed duplicated ID sequence in one complete markdown body is evidence only',()=>{
+ const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyRead(host,'));
+ const attrs=v=>({getAttribute:k=>v[k]??null});
+ const markers={'data-content-search-unit-key':'fallback-turn-5:2:assistant','data-chatgpt-search-unit-key':'fallback-turn-5:2:assistant','data-chatgpt-search-message-ids':'a a b'};
+ const role=attrs({'data-conversation-role':'assistant'});let extra=[],complete=[{}],md=[{}],bodies=[];
+ const unit={...attrs(markers),querySelectorAll:q=>q==='[data-response-body]'?bodies:q==='[data-conversation-role]'?[role]:extra};
+ const body={...attrs({'data-response-body':'a'}),parentElement:unit,closest:q=>q==='[data-chatgpt-search-unit-key]'?unit:null,querySelectorAll:q=>q==='[data-markdown-text-style="assistant-message"]'?md:[],contains:n=>n===body};
+ bodies=[body];
+ const owner={...attrs({'data-turn-key':'turn'}),contains:n=>n===unit,querySelectorAll:q=>q==='[data-talvt-turn-state="complete"]'?complete:[],outerHTML:'<div>diagnostic</div>'};
+ const read=vm.runInNewContext(source+';historyResponseIdentity',{pc:require('./predecessor-chat-core.js'),historyIssue:(m,o,details)=>Object.assign(Error(m),{details}),historyVisible:()=>true,isUserDescendant:()=>false});
+ assert.throws(()=>read(body,owner));
+ const result=read(body,owner,true);
+ assert.equal(JSON.stringify(result.compositeNative),JSON.stringify({turnId:'turn',ids:['a','b'],declaredIds:['a','a','b'],bodyId:'a',boundaryVerified:false}));
+ assert.equal(result.compositeHtml,owner.outerHTML);
+ for(const bad of ['a b','a a b c','b b a']){markers['data-chatgpt-search-message-ids']=bad;assert.throws(()=>read(body,owner,true))}
+ markers['data-chatgpt-search-message-ids']='a a b';
+ extra=[{}];assert.throws(()=>read(body,owner,true));extra=[];
+ complete=[];assert.throws(()=>read(body,owner,true));complete=[{}];
+ md=[{},{}];assert.throws(()=>read(body,owner,true));md=[{}];
+ owner.outerHTML='x'.repeat(120001);assert.throws(()=>read(body,owner,true));
+});
