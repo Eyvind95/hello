@@ -1548,8 +1548,35 @@
     const unitKey=unit?.getAttribute('data-chatgpt-search-unit-key')||'';
     const unitIds=[...new Set(String(unit?.getAttribute('data-chatgpt-search-message-ids')||'').trim().split(/\s+/).filter(Boolean))];
     const selection=[...new Set([...body.querySelectorAll('[data-chatgpt-selection-message-id]')].map(n=>n.getAttribute('data-chatgpt-selection-message-id')).filter(Boolean))];
-    if(!id||! /^[a-zA-Z0-9_-]+$/.test(id)||!unit||!owner.contains(unit)||!unitKey.endsWith(':assistant')||unitIds.length!==1||unitIds[0]!==id||selection.some(x=>x!==id)||isUserDescendant(body))
-      throw historyIssue('明確 GPT 正文的角色或原生訊息 ID 無法唯一核對',owner,{responseBodyId:id,unitKey,unitIds,selection});
+    const validId=x=>typeof x==='string'&&/^[a-zA-Z0-9_-]+$/.test(x);
+    const diagnostic=()=>{
+      const markers=owner.querySelectorAll?[...owner.querySelectorAll('[data-response-body],[data-chatgpt-search-unit-key],[data-chatgpt-selection-message-id],[data-message-id],[data-message-author-role]')]:[];
+      const max=120000;
+      const html=String(owner.outerHTML||'');
+      return {responseBodyId:id,unitKey,unitIds,selection,identityMarkers:markers.slice(0,100).map(n=>({
+        tag:n.tagName,bodyId:n.getAttribute('data-response-body'),unitKey:n.getAttribute('data-chatgpt-search-unit-key'),
+        unitIds:n.getAttribute('data-chatgpt-search-message-ids'),selectionId:n.getAttribute('data-chatgpt-selection-message-id'),
+        messageId:n.getAttribute('data-message-id'),role:n.getAttribute('data-message-author-role'),
+        visible:historyVisible(n),textLength:String(n.innerText||'').length
+      })),identityMarkerOverflow:Math.max(0,markers.length-100),ownerHtml:html.slice(0,max),ownerHtmlTruncated:html.length>max};
+    };
+    const fail=()=>{throw historyIssue('明確 GPT 正文的角色或原生訊息 ID 無法唯一核對',owner,diagnostic())};
+    if(!validId(id)||!unit||!owner.contains(unit)||!unitKey.endsWith(':assistant')||!unitIds.includes(id)||unitIds.some(x=>!validId(x))||selection.some(x=>x!==id)||isUserDescendant(body))fail();
+    if(unitIds.length===1)return id;
+    // Multiple IDs are valid only if every ID has exactly one separate,
+    // visible, non-nested response body in this same assistant unit.
+    // Never treat a list of IDs as proof of separate content or branches.
+    const bodies=unit.querySelectorAll?[...unit.querySelectorAll('[data-response-body]')]:[];
+    const ids=bodies.map(n=>n.getAttribute('data-response-body'));
+    if(bodies.length!==unitIds.length||new Set(ids).size!==ids.length||!bodies.includes(body)||unitIds.some(x=>!ids.includes(x)))fail();
+    for(const n of bodies){
+      const nid=n.getAttribute('data-response-body');
+      if(!historyVisible(n)||isUserDescendant(n)||n.closest('[data-chatgpt-search-unit-key]')!==unit||
+         bodies.some(other=>other!==n&&(other.contains(n)||n.contains(other)))||
+         [...n.querySelectorAll('[data-chatgpt-selection-message-id]')].some(marker=>marker.getAttribute('data-chatgpt-selection-message-id')!==nid))fail();
+      const role=n.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
+      if(role&&role!=='assistant')fail();
+    }
     return id;
   }
   // A rendered assistant body can temporarily omit a code block even when
