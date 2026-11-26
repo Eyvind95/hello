@@ -13,7 +13,7 @@ test('reject cross-world, cross-cycle, title, source digest and wrong chat',()=>
 test('reject fabricated, duplicated, out-of-order, embedded story, missing evidence and empty overwrite',()=>{for(const mutate of [p=>p.pilotMessages[0].text='劇情',p=>p.pilotMessages[0].text='虛構',p=>p.pilotMessages.push(p.pilotMessages[0]),p=>p.pilotMessages.reverse(),p=>p.easterEggs[0].sourceIds=['unknown'] ,p=>p.pilotMessages=[]]){const {r,source,pack}=fixture();mutate(pack);assert.throws(()=>api.plan(r,source,pack,sha))}});
 test('idempotent message IDs, preserved source references but not invented image bytes',()=>{const {r,source,pack}=fixture();source.rows[0].attachments=[{kind:'image-reference',url:'blob:example'}];const a=api.plan(r,source,pack,sha),b=api.plan(a.updated,source,pack,sha);assert.deepEqual(a.updated,b.updated);assert.deepEqual(a.updated.pilotMessages[1].images,[]);assert.equal(a.attachments,1);assert.equal(a.updated.pilotMessages[1].predecessorSource.attachments.length,1)});
 
-test('website wires scoped import and PWA cache, inline code parses',()=>{const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8'),sw=fs.readFileSync(path.join(__dirname,'sw.js'),'utf8');assert.match(html,/id="pilotArchiveImport"/);assert.match(html,/openPilotArchiveImport\(r\)/);assert.match(html,/archive-pilot-import\.js\?v=3/);assert.match(sw,/archive-pilot-import\.js\?v=3/);for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);});
+test('website wires scoped import and PWA cache, inline code parses',()=>{const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8'),sw=fs.readFileSync(path.join(__dirname,'sw.js'),'utf8');assert.match(html,/id="pilotArchiveImport"/);assert.match(html,/openPilotArchiveImport\(r\)/);assert.match(html,/archive-pilot-import\.js\?v=4/);assert.match(sw,/archive-pilot-import\.js\?v=4/);for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);});
 
 test('co-managed cycles retain all legacy rows, images and existing eggs, empty quiz is no-op',()=>{const {r,source,pack}=fixture();r.pilotMessages=[{id:'iron',role:'ai',manager:'鐵墓前輩',text:'原紀錄',images:[{id:'img'}]},{id:'player',role:'me',text:'不明歸屬'}];r.quizLogs=[{id:'dark',role:'ai',manager:'暗夢前輩',text:'原考核'}];pack.quizLogs=[];const p=api.plan(r,source,pack,sha);assert.deepEqual(p.updated.pilotMessages.slice(0,2),r.pilotMessages);assert.deepEqual(p.updated.quizLogs,r.quizLogs);assert.equal(p.merge.quizMissing,true);assert.ok(p.updated.easterEggs.startsWith(r.easterEggs));assert.deepEqual(api.plan(p.updated,source,pack,sha).updated,p.updated)});
 test('same stable ID but edited text or foreign provenance never overwrites',()=>{const {r,source,pack}=fixture();const p=api.plan(r,source,pack,sha);p.updated.pilotMessages[1].text='手動改過';assert.throws(()=>api.plan(p.updated,source,pack,sha),/文字不同/);p.updated.pilotMessages[1].text=pack.pilotMessages[0].text;p.updated.pilotMessages[1].predecessorSource.chatId='other';assert.throws(()=>api.plan(p.updated,source,pack,sha),/來源不符/)});
@@ -60,4 +60,29 @@ test('joined evidence rejects a digest for the base or a rewritten candidate',()
  const {r,source,pack}=joinedFixture();
  assert.throws(()=>api.plan(r,source,pack,source.base.sha256),/SHA/);
  pack.sourceSha256='c'.repeat(64);assert.throws(()=>api.plan(r,source,pack,sha),/SHA/);
+});
+
+test('same stable source and text with earlier digest is preserved byte for byte, not migrated',()=>{
+ const {r,source,pack}=joinedFixture();
+ const first=api.plan(r,source,pack,sha).updated;
+ const prior=first.pilotMessages.find(x=>x.predecessorSource?.id==='u1');
+ prior.predecessorSource.sha256='b'.repeat(64);prior.predecessorSource.index=99;prior.images=[{id:'old-image'}];prior.extra='keep';
+ const before=structuredClone(prior),p=api.plan(first,source,pack,sha);
+ assert.deepEqual(p.updated.pilotMessages.find(x=>x.id===prior.id),before);
+ assert.equal(p.merge.pilot.retainedEarlierDigest,1);
+ assert.deepEqual(api.plan(p.updated,source,pack,sha).updated,p.updated);
+});
+test('earlier digest never authorizes changed text, absent digest or foreign provenance',()=>{
+ for(const [mutate,expected] of [
+  [x=>{x.text='不同'},/正文不同/],
+  [x=>{delete x.predecessorSource.sha256},/缺少有效舊雜湊/],
+  [x=>{x.predecessorSource.chatId='other'},/聊天 ID/],
+  [x=>{x.predecessorSource.id='other'},/原始訊息 ID/],
+  [x=>{x.role='ai'},/角色/],
+  [x=>{x.manager='其他前輩'},/副駕駛/]
+ ]){
+  const {r,source,pack}=joinedFixture(),first=api.plan(r,source,pack,sha).updated;
+  const prior=first.pilotMessages.find(x=>x.predecessorSource?.id==='u1');prior.predecessorSource.sha256='b'.repeat(64);mutate(prior);
+  const raw=JSON.stringify(first);assert.throws(()=>api.plan(first,source,pack,sha),expected);assert.equal(JSON.stringify(first),raw);
+ }
 });
