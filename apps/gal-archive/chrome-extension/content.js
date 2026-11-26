@@ -2303,7 +2303,7 @@
                 const size=JSON.stringify(rows).length;
                 if(windows.length<6&&(b.unjoinedUnits||0)+size<=1000000){
                   b.unjoinedUnits=(b.unjoinedUnits||0)+size;
-                  windows.push({importable:false,at:new Date().toISOString(),scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,fingerprint,rows:rows.slice()});
+                  windows.push({importable:false,observedAtMs:Date.now(),scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,fingerprint,rows:rows.slice()});
                 }else b.unjoinedOverflow=(b.unjoinedOverflow||0)+1;
               }
             }
