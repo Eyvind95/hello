@@ -238,11 +238,15 @@ test('identity recovery survives more than 12 total and six consecutive bottom s
  const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
  assert.equal((await recover({host,rows,scrollStats:{}},120000))[0],rows[0]);assert.equal(snaps,15);assert.equal(observed,15);assert.ok(moves>15);
 });
-test('full navigation retains geometric first and fallback after identity failure',()=>{
- const run=s.slice(s.indexOf('  async function historyRun(b){'));
- assert.ok(run.includes('const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{identity:true,ratio:0}'));
- assert.ok(run.includes("historyTrace(b,'identity-rejoin-geometric-fallback'"));
- assert.ok(!run.includes('禁止重複長距離跳轉'));
+test('formal scan uses the entire V0.10.41 geometric sequence without identity detours',()=>{
+ const run=s.slice(s.indexOf('  async function historyRun(b){'),s.indexOf('  async function historyBegin('));
+ assert.ok(run.includes('const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0}'));
+ assert.ok(run.includes('...[1,-1,2,-2,4,-4].map'));
+ assert.ok(!/historyRejoinByIdentity|identityGraceUntil|identityRejoinAttempted/.test(run));
+ assert.ok(run.includes('pc.mergeUp(b.rows,rows'));
+ assert.ok(run.includes('pc.resumeWindow(b.resumeRows,rows)'));
+ assert.ok(run.includes('pc.fullCoverageGate'));
+ assert.ok(s.includes('pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight);'));
 });
 
 test('repeated failure to depart from bottom uses time budget instead of three-stall abort',async()=>{
