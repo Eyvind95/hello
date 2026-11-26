@@ -47,6 +47,23 @@ test('current response body identity is corroborated, duplicate identical search
  unit.getAttribute=k=>k==='data-chatgpt-search-unit-key'?'fallback-turn-3:2:assistant':id+' another';
  assert.throws(()=>read(body,owner),/無法唯一核對/);
 });
+test('multi-ID unit accepts only distinct visible complete marked bodies and rejects unbound identities',()=>{
+ const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyRead(host,'));
+ const attrs=v=>({getAttribute:k=>v[k]??null});
+ let declared='one two',bodies=[];
+ const unit={...attrs({'data-chatgpt-search-unit-key':'fallback-turn-5:2:assistant'}),getAttribute:k=>k==='data-chatgpt-search-message-ids'?declared:'fallback-turn-5:2:assistant',querySelectorAll:()=>bodies};
+ const make=id=>({...attrs({'data-response-body':id}),closest:q=>q==='[data-chatgpt-search-unit-key]'?unit:null,querySelectorAll:()=>[],contains(n){return n===this}});
+ const one=make('one'),two=make('two'),owner={contains:n=>n===unit,querySelectorAll:()=>bodies,outerHTML:'private diagnostic fixture'};
+ bodies=[one,two];
+ const read=vm.runInNewContext(source+';historyResponseIdentity',{historyIssue:(m,o,details)=>Object.assign(Error(m),{details}),historyVisible:n=>!n.hidden,isUserDescendant:n=>!!n.user});
+ assert.equal(read(one,owner),'one');assert.equal(read(two,owner),'two');
+ for(const bad of [[one],[one,make('one')],[one,two,make('extra')],[one,make('wrong')]]){bodies=bad;assert.throws(()=>read(one,owner),e=>/無法唯一核對/.test(e.message)&&e.details.ownerHtml==='private diagnostic fixture');}
+ bodies=[one,two];two.hidden=true;assert.throws(()=>read(one,owner));two.hidden=false;
+ two.user=true;assert.throws(()=>read(one,owner));two.user=false;
+ two.querySelectorAll=()=>[{getAttribute:()=> 'one'}];assert.throws(()=>read(one,owner));two.querySelectorAll=()=>[];
+ one.contains=n=>n===one||n===two;assert.throws(()=>read(one,owner));one.contains=n=>n===one;
+ declared='one two three';assert.throws(()=>read(one,owner));
+});
 test('marked response with nested PDF citation is read once in full before legacy fallback, native identity differs from turn',()=>{
  const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyEdgeOrdinal('));
  const attrs=(values)=>({getAttribute:k=>values[k]??null,hasAttribute:k=>k in values});
@@ -60,6 +77,20 @@ test('marked response with nested PDF citation is read once in full before legac
  const read=vm.runInNewContext(source+';historyRead',{historyRoot:()=>root,historyVisible:()=>true,historyOwner:()=>turn,isUserDescendant:n=>n===user,outerUsers:()=>[user],assistantElements:()=>[citation],assistantFallbackTexts:new Map(),historyReadText:(n,scope)=>{if(n===body){assert.equal(scope,body);return text}return '原題'},historyIssue:m=>Error(m),getVisibleSourceTime:()=>null,HISTORY_STRUCT:'p',HISTORY_ATTACHMENT:'img',historyAttachment:()=>{throw Error('unexpected attachment')},USER_BUBBLE_SELECTOR:'bubble',Node:{DOCUMENT_POSITION_FOLLOWING:4},pc:{validateRows:()=>{},withoutImages:require('./predecessor-chat-core.js').withoutImages}});
  const rows=read(root);
  assert.equal(rows.length,2);assert.equal(rows[0].id,'user|turn:question-id');assert.equal(rows[1].id,'assistant|message:answer-id');assert.equal(rows[1].text,text);
+});
+
+test('full DOM read preserves both independently marked assistant bodies in DOM order',()=>{
+ const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyEdgeOrdinal('));
+ const attrs=values=>({getAttribute:k=>values[k]??null,hasAttribute:k=>k in values});
+ const unit={...attrs({'data-chatgpt-search-unit-key':'fallback-turn-5:2:assistant','data-chatgpt-search-message-ids':'a b'}),querySelectorAll:()=>[first,second]};
+ const make=(id,order,text)=>({...attrs({'data-response-body':id}),order,text,parentElement:{closest:()=>null},contains(n){return n===this},closest:q=>q==='[data-chatgpt-search-unit-key]'?unit:null,querySelectorAll:()=>[],compareDocumentPosition:n=>order<n.order?4:2});
+ const first=make('a',1,'第一段'),second=make('b',2,'第二段');
+ const user={...attrs({}),order:0,closest:()=>null,querySelector:()=>null,querySelectorAll:()=>[],compareDocumentPosition:()=>4};
+ const turn={...attrs({'data-turn-key':'q'}),parentElement:null,contains:n=>[user,first,second,unit,turn].includes(n)};
+ const root={contains:n=>turn.contains(n),querySelectorAll:q=>q==='[data-response-body]'?[first,second]:q==='[data-message-author-role]'?[]:[turn]};
+ const read=vm.runInNewContext(source+';historyRead',{historyRoot:()=>root,historyVisible:()=>true,historyOwner:()=>turn,isUserDescendant:n=>n===user,outerUsers:()=>[user],assistantElements:()=>[],assistantFallbackTexts:new Map(),historyReadText:n=>n.text||'問題',historyIssue:m=>Error(m),getVisibleSourceTime:()=>null,HISTORY_STRUCT:'p',HISTORY_ATTACHMENT:'img',historyAttachment:()=>{throw Error('unexpected attachment')},USER_BUBBLE_SELECTOR:'bubble',Node:{DOCUMENT_POSITION_FOLLOWING:4},pc:require('./predecessor-chat-core.js')});
+ const rows=read(root);
+ assert.equal(JSON.stringify(rows.map(r=>[r.id,r.text])),JSON.stringify([['user|turn:q','問題'],['assistant|message:a','第一段'],['assistant|message:b','第二段']]));
 });
 
 function codeFixture({value='原樣程式碼\n  第二行',label='純文字',ambiguous=false,extra='',hiddenCode=false,labelTag='div',copyLabel='複製'}={}){

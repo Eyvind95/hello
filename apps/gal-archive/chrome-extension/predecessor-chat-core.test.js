@@ -657,6 +657,19 @@ test('folded user trailing ellipsis requires exact source evidence and preserves
  a.throws(()=>c.mergeUp([old,r('next','assistant')],[live,r('different','assistant')],null,ctx));
 });
 
+test('same-run and checkpoint expanded fold controls allow only exact tail transition with both observations',()=>{
+ const old=r('u','user','原文。\n…'),live=r('u','user','原文。'),tail=r('a','assistant');
+ const obs=(row,label,collapsed)=>({messageId:row.id,label,collapsed,rawLength:row.text.length+label.length+1,removedSuffix:'\n'+label,fullTextVerified:false});
+ const collapsed=obs(old,'顯示較多',true),expanded=obs(live,'顯示較少',false);
+ const map=new Map([['c',collapsed],['e',expanded]]);
+ for(const ctx of [{current:map},{source:[collapsed],sourceSha256:'a'.repeat(64),current:new Map([['e',expanded]])}]){
+   const changes=[];a.deepEqual(c.mergeUp([old,tail],[r('earlier','assistant'),live,tail],x=>changes.push(x),ctx),[r('earlier','assistant'),old,tail]);
+   a.equal(changes[0].fullTextVerified,false);a.deepEqual(changes[0].currentFoldObservation,expanded);a.deepEqual(changes[0].previous,old);a.deepEqual(changes[0].current,live);
+ }
+ for(const ctx of [{current:new Map([['e',expanded]])},{current:new Map([['c',collapsed]])},{current:new Map([['c',collapsed],['e',{...expanded,rawLength:999}]])},{current:map,currentOverflow:1},{current:new Map([['c',collapsed],['e',{...expanded,messageId:'other'}]])}])a.throws(()=>c.mergeUp([old,tail],[live,tail],null,ctx));
+ for(const row of [{...live,text:'改文。'},{...live,structure:[{tag:'em',text:'原文。'}]},{...live,role:'assistant'}])a.throws(()=>c.mergeUp([old,tail],[row,tail],null,{current:map}));
+ a.throws(()=>c.mergeUp([old,tail],[live,r('wrong','assistant')],null,{current:map}));
+});
 test('same-run accepted image observation bridges later exact ordered subset without claiming bytes',()=>{
  const img=n=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/00000000-0000-4000-8000-'+String(n).padStart(12,'0')});
  const old={...r('u'),attachments:[img(1)]},bridge={...old,attachments:[img(2)]},current={...old,attachments:[img(3),img(2)]},tail=r('a','assistant'),map=new Map(),changes=[];
