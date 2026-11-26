@@ -1,7 +1,7 @@
 /* Independent ChatGPT reading archive. No Gal AI canonical import or network. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.GalPredecessorChat=api})(globalThis,()=>{
 'use strict';
-const SAMPLE='gal-predecessor-chat-sample',SAMPLE_LIMIT=10,FORMAT='gal-predecessor-chat',CLASS='gal-predecessor-classification',VERSION=1;
+const SAMPLE='gal-predecessor-chat-sample',SAMPLE_LIMIT=10,FORMAT='gal-predecessor-chat',CLASS='gal-predecessor-classification',COMPOSITE='gal-predecessor-composite-evidence',VERSION=1;
 const categories=['交接稿','茶話會','評語與自評','稱號與事故','規則與設定','輪迴補充','其他','Gal AI正史引用（不另收錄正文）','待確認'];
 const check=(v,m)=>{if(!v)throw Error(m)};
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -9,7 +9,15 @@ const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 // Only image reference URLs on this exact origin may vary; compare all other
 // fields strictly. Never infer equal bytes from equal labels or positions.
 const transientImage=a=>a?.kind==='image-reference'&&typeof a.url==='string'&&/^blob:https:\/\/chatgpt\.com\/[0-9a-f-]{36}$/i.test(a.url);
-function comparisonRow(r){return {...r,attachments:r.attachments.map(a=>transientImage(a)?{...a,url:'blob:chatgpt-image-reference'}:a)}}
+const isComposite=r=>r?.identityBasis==='unresolved-native-composite';
+function compositeId(turn,ids){return 'assistant|composite:'+turn+':'+ids.join('+')}
+function comparisonRow(r){
+ const out={...r,attachments:r.attachments.map(a=>transientImage(a)?{...a,url:'blob:chatgpt-image-reference'}:a)};
+ // HTML is a first observed forensic snapshot, not an invariant.
+ // Text, structure, and the complete ID list still compare exactly.
+ if(isComposite(r))delete out.compositeHtml;
+ return out;
+}
 // Current predecessor scans project out image references. Legacy raw files
 // remain unchanged and can still be validated with their original rules.
 function withoutImages(row){
@@ -127,13 +135,22 @@ function chatTitle(value){const title=String(value||'').replace(/\s*[-–|]\s*Ch
 const validId=x=>typeof x==='string'&&x.length>0&&x.length<=512;
 function validateRows(rows){
  check(Array.isArray(rows),'訊息不是陣列');
- const ids=new Set();
+ const ids=new Set(),nativeClaims=new Set();
  for(const r of rows){
   check(r&&validId(r.id)&&!ids.has(r.id)&&['user','assistant'].includes(r.role)&&typeof r.text==='string'&&Array.isArray(r.structure)&&Array.isArray(r.attachments)&&typeof r.identityBasis==='string'&&r.identityBasis&&r.identityBasis!=='position','訊息 ID、角色或內容格式不符');
   check(r.text.trim()||r.attachments.length||(r.nonTextOmitted===true&&/^(user|assistant)\|(turn|message):[a-zA-Z0-9_-]+$/.test(r.id)&&r.id.startsWith(r.role+'|')&&['turn-key','native-dom-id'].includes(r.identityBasis)),'空白訊息缺少可核對附件或非文字回合證據');
   check(r.structure.every(x=>x&&typeof x.tag==='string'&&typeof x.text==='string'),'格式記錄不符');
   check(r.attachments.every(x=>x&&typeof x.kind==='string'&&typeof x.label==='string'&&(x.url===null||typeof x.url==='string')),'附件參照格式不符');
   ids.add(r.id);
+  const claim=id=>{check(!nativeClaims.has(id),'複合原生 ID 與另一列衝突');nativeClaims.add(id)};
+  if(isComposite(r)){
+   const p=r.compositeNative,token=x=>typeof x==='string'&&/^[a-zA-Z0-9_-]+$/.test(x);
+   check(r.role==='assistant'&&r.text.trim()&&p&&token(p.turnId)&&Array.isArray(p.ids)&&p.ids.length===2&&p.ids.every(token)&&new Set(p.ids).size===2&&p.bodyId===p.ids[0]&&same(p.declaredIds,[p.ids[0],p.ids[0],p.ids[1]])&&p.boundaryVerified===false&&r.id===compositeId(p.turnId,p.ids)&&typeof r.compositeHtml==='string'&&r.compositeHtml.length>0&&r.compositeHtml.length<=120000,'複合原生單元證據不符');
+   p.ids.forEach(claim);
+  }else{
+   check(!r.id.startsWith('assistant|composite:')&&r.compositeNative===undefined&&r.compositeHtml===undefined,'複合單元不得偽裝原生訊息');
+   const m=/^(?:user|assistant)\|message:(.+)$/.exec(r.id);if(m)claim(m[1]);
+  }
  }
  return ids;
 }
@@ -154,8 +171,10 @@ function mergeUp(previous,live,onChange,foldContext){
  }
  check(last.i===live.length-1,'向上掃描發現原尾端之外的新訊息或分支');
  check(first.i===0||first.at===0,'新增訊息沒有接在已保全的最前端');
+ const result=[...live.slice(0,first.i),...merged];
+ if(result.some(isComposite))validateRows(result);
  if(typeof onChange==='function')for(const change of changes)onChange(change);
- return [...live.slice(0,first.i),...merged];
+ return result;
 }
 // Evidence-only alternative, never an accepted merge. Require a contiguous
 // old prefix, a new earlier prefix, and at least two unaffected adjacent rows.
@@ -190,12 +209,14 @@ function sourceId(url){
  const u=new URL(url);check(u.origin==='https://chatgpt.com'&&/^\/(?:c\/[A-Za-z0-9-]+|g\/[^/]+\/c\/[A-Za-z0-9-]+)\/?$/.test(u.pathname)&&!u.search&&!u.hash,'聊天來源網址不符');
  return u.pathname.replace(/\/$/,'').split('/').at(-1);
 }
-function validateRaw(data){
- check(data?.format===FORMAT&&!['sample-10','sample-20'].includes(data.scope)&&data.importable!==false&&data.version===VERSION&&data.canonical===false&&data.fidelity==='rendered-dom'&&['completed','failed','cancelled'].includes(data.status),'不是前輩聊天獨立保全 JSON');
+function validateRawInternal(data,composite=false){
+ check(data?.format===(composite?COMPOSITE:FORMAT)&&!['sample-10','sample-20'].includes(data.scope)&&(composite?data.importable===false&&data.status!=='completed':data.importable!==false)&&data.version===VERSION&&data.canonical===false&&data.fidelity==='rendered-dom'&&['completed','failed','cancelled'].includes(data.status),'不是前輩聊天獨立保全 JSON');
  check(validId(data.runId)&&validId(data.title)&&data.chatId===sourceId(data.sourceUrl),'聊天標題或來源 ID 不符');
  const start=Date.parse(data.startedAt),end=Date.parse(data.finishedAt);
  check(Number.isFinite(start)&&Number.isFinite(end)&&end>=start,'掃描時間無效');
  const ids=validateRows(data.rows);check(data.rows.every((r,i)=>r.index===i)&&data.count===data.rows.length,'訊息索引／總數不符');
+ const groups=data.rows.filter(isComposite),isolatedGroups=(data.evidence?.isolatedSegment?.rows||[]).filter(isComposite);
+ check(composite?groups.length+isolatedGroups.length>0&&data.evidence?.continuity===false&&data.evidence?.unresolvedCompositeCount===groups.length+isolatedGroups.length:!groups.length&&!isolatedGroups.length,'複合原生單元僅供隔離取證，不得正式匯入');
  check(data.evidence&&Array.isArray(data.warnings)&&data.warnings.every(x=>typeof x==='string'),'缺少掃描證據');
  if(data.status==='completed')check(data.rows.length&&data.evidence.bottomStableMs>=3000&&data.evidence.topStableMs>=8000&&data.evidence.topReached===true&&data.evidence.bottomReached===true&&data.evidence.continuity===true&&data.evidence.firstId===data.rows[0].id&&data.evidence.lastId===data.rows.at(-1).id&&!data.error,'完成檔缺少首尾或連續性證據');
  if(data.status==='completed'){
@@ -219,10 +240,12 @@ function validateRaw(data){
  }
  return ids;
 }
+function validateRaw(data){return validateRawInternal(data,false)}
+function validateCompositeEvidence(data){return validateRawInternal(data,true)}
 // Checkpoints are user-selected, previously preserved partial scans. Never
 // treat their rows as newly read or accept a different branch or tail.
 function validateCheckpoint(data,source,omitImages=false){
- validateRaw(data);
+ (data?.format===COMPOSITE?validateCompositeEvidence:validateRaw)(data);
  check(['failed','cancelled'].includes(data.status)&&data.count>=2,'請選擇至少兩則的未完成完整掃描保全檔');
  check(data.chatId===sourceId(source)&&new URL(data.sourceUrl).pathname.replace(/\/$/,'')===new URL(source).pathname.replace(/\/$/,''),'續掃來源不是目前聊天');
  const ev=data.evidence;
@@ -444,5 +467,5 @@ function anchorLiveRecoveryHint(target,indices,geo,previous={},alternate=false){
  return {...normal,best,improved,restore:false,bounds:normal};
 }
 
-return {anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });
