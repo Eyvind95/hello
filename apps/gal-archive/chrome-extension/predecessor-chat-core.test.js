@@ -890,3 +890,11 @@ test('predecessor text projection ignores image count, duplicate references and 
  const file={kind:'attachment-reference',label:'notes.pdf',url:null};
  a.deepEqual(c.withoutImages({...p,attachments:[image,file]}).attachments,[file]);
 });
+
+test('wide navigation envelope tolerates local displacement but still detects genuine bottom return',()=>{
+ a.equal(c.scrollRecoveryTarget(5000,6200,30000,30000,600),5000);
+ a.equal(c.scrollRecoveryTarget(5000,6200,30000,30000,600,3),null);
+ a.equal(c.scrollRecoveryTarget(5000,29400,30000,30000,600,3),5000);
+ a.equal(c.scrollRecoveryTarget(28000,29400,30000,30000,600,3),28000);
+ a.equal(c.scrollRecoveryTarget(5000,30400,31000,30000,600,3),6000);
+});

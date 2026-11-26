@@ -255,3 +255,19 @@ test('repeated failure to depart from bottom uses time budget instead of three-s
  const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
  assert.equal((await recover({host,rows,scrollStats:{}},120000))[0],rows[0]);assert.equal(holds,15);assert.equal(observed,15);
 });
+
+test('repeated mounted marker with invalid overlap expands relative search beyond oscillating rectangle',async()=>{
+ const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
+ const host={scrollTop:1500,scrollHeight:12000,clientHeight:600,getBoundingClientRect:()=>({top:0,bottom:600})};
+ const rows=[{id:'assistant|message:frontier'},{id:'user|turn:next'}];let now=0,sweeps=0;
+ const marker={getAttribute:()=> 'frontier',getBoundingClientRect:()=>host.scrollTop>=1800?({top:-200,bottom:-1}):({top:0,bottom:200})};
+ const root={querySelectorAll:q=>q==='[data-response-body]'?[marker]:[]};
+ const positions=[];
+ host.scrollBy=({top})=>{host.scrollTop=Math.max(0,Math.min(11400,host.scrollTop+top));positions.push(host.scrollTop)};
+ const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:(b,e)=>{if(e==='identity-rejoin-local-sweep-start')sweeps++},historyStatus:()=>{},historyScroll:()=>{throw Error('unexpected jump')},historyLoading:()=>false,historyNativeRetry:async()=>false,historyAtBottom:h=>h.scrollTop===11400,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>host.scrollTop>=3600?rows:[rows[0]]};
+ const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
+ const result=await recover({host,rows,resume:{frontierVerified:false},scrollStats:{}},60000);
+ assert.equal(result[1].id,rows[1].id);assert.ok(sweeps>0);assert.ok(positions.some(p=>p>=3600));
+ host.scrollTop=1500;now=0;ctx.historySettled=async()=>[rows[0]];
+ assert.equal(await recover({host,rows,resume:{frontierVerified:false},scrollStats:{}},6000),null);
+});

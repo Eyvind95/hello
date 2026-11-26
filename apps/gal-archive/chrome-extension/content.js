@@ -1732,7 +1732,7 @@
   // Preserve intended scroll position across ChatGPT auto-scroll and expansion.
   function historyRecoverScroll(b,target,height,stage,allowBoost=true,policy=null){
     const actual=b.host.scrollTop,currentHeight=b.host.scrollHeight;
-    const recovery=pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight);
+    const recovery=pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight,b.mode==='predecessor-history'&&!b.sample&&!b.isolated?3:.75);
     if(recovery===null)return null;
     b.scrollStats.scrollResets++;
     const state=b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null});
@@ -2106,30 +2106,40 @@
     // Do not reset to the bottom: a disjoint window can already be older
     // than the saved frontier. Relative navigation is not an archive merge.
     record('start',{startIndex});historyStatus(b,'依原生前沿ID重新接合');
-    const maxSteps=4096,requirePair=!!(b.resume&&!b.resume.frontierVerified);
+    const maxSteps=16384,requirePair=!!(b.resume&&!b.resume.frontierVerified);
     let steps=0,stalled=0,snaps=0,consecutiveSnaps=0,steady=0,edges=0,direction=historyAtBottom(host)?-1:1,best=Infinity;
-    let lastProgress=Date.now(),lastProbe='',lastProbeAt=0;
-    while(steps<=maxSteps&&Date.now()<deadline&&Date.now()-lastProgress<120000){
+    let lastProgress=Date.now(),lastProbe='',lastProbeAt=0,failedProbes=0,sweep=null;
+    const recent=[];
+    const beginSweep=(why)=>{if(!sweep){sweep={direction,remaining:4,span:4,pass:0};record('local-sweep-start',{steps,why,direction})}};
+    while(steps<=maxSteps&&Date.now()<deadline&&Date.now()-lastProgress<300000){
       historyGuard(b);
       const hints=historyMountedRanks(host,saved),ranks=[...hints.keys()].sort((a,c)=>a-c);
-      if(ranks.length&&ranks[0]<best){best=ranks[0];lastProgress=Date.now();record('rank-progress',{steps,best})}
+      if(ranks.length&&ranks[0]<best){best=ranks[0];lastProgress=Date.now();failedProbes=0;sweep=null;recent.length=0;record('rank-progress',{steps,best})}
       if(hints.has(0)){
         const key=JSON.stringify([Math.round(host.scrollTop),host.scrollHeight,ranks]);
         if(key!==lastProbe||Date.now()-lastProbeAt>=1500){
           lastProbe=key;lastProbeAt=Date.now();record('mounted',{steps,snaps,ranks:ranks.slice(0,8)});
           let live=null;
-          try{live=await historySettled(b,{deadline:Math.min(deadline,Date.now()+2500),upward:true,target:null,allowBoost:false})}
+          try{live=await historySettled(b,{deadline:Math.min(deadline,Date.now()+8000),upward:true,target:null,allowBoost:false})}
           catch(e){record('probe-failed',{steps,reason:String(e.message||e)});historyGuard(b)}
           if(live&&historyIdentityWindow(saved,live,requirePair)){
             record('stable-hit',{steps,firstId:live[0]?.id,lastId:live.at(-1)?.id});return live;
           }
-          record('marker-only',{steps,liveIds:live?.map(r=>r.id)||[]});
+          record('marker-only',{steps,liveIds:live?.map(r=>r.id)||[]});failedProbes++;
         }
         const rect=hints.get(0)?.getBoundingClientRect?.(),hr=host.getBoundingClientRect?.();
         if(rect&&hr&&rect.bottom<=hr.top)direction=-1;
         else if(rect&&hr&&rect.top>=hr.bottom)direction=1;
         else direction=1; // expose the next adjacent row, not an assumed gap
       }else if(ranks.length)direction=-1;
+      // A marker can stay mounted far outside the viewport. Alternating
+      // its rectangle-based direction can trap the walker in one spot.
+      // Expand a bounded relative sweep, not the acceptance criteria.
+      const cell=JSON.stringify([Math.round(host.scrollTop/Math.max(1,host.clientHeight*.25)),Math.round(host.scrollHeight/Math.max(1,host.clientHeight)),ranks.slice(0,4)]);
+      recent.push(cell);if(recent.length>12)recent.shift();
+      if(failedProbes>=2)beginSweep('marker-without-stable-overlap');
+      else if(recent.filter(x=>x===cell).length>=4)beginSweep('repeated-local-position');
+      if(sweep)direction=sweep.direction;
       if(steps===maxSteps)break;
       // Loading indicators may persist while relative scroll remains possible.
       // Never accept a loading window; historySettled still gates that read.
@@ -2138,13 +2148,15 @@
       const before=host.scrollTop,viewport=host.clientHeight;
       if(viewport<=0)break;
       if((direction<0&&before<=2)||(direction>0&&historyAtBottom(host))){
-        if(++edges>2)break;direction=-direction;record('edge-turn',{steps,direction,edges});
+        if(++edges>12)break;direction=-direction;if(sweep){sweep.direction=direction;sweep.remaining=Math.max(4,sweep.remaining)}record('edge-turn',{steps,direction,edges});
       }
       const cautious=consecutiveSnaps>0||loading;
-      const delta=direction*Math.max(1,Math.floor(viewport*(hints.has(0)||cautious?.5:1)));
+      const ratio=sweep?Math.min(2,1+sweep.pass*.5):(hints.has(0)||cautious?.5:1);
+      const delta=direction*Math.max(1,Math.floor(viewport*ratio));
       if(typeof host.scrollBy==='function')host.scrollBy({top:delta,behavior:'instant'});
       else historyScroll(host,before+delta);
-      await sleep(cautious?150:50);steps++;
+      await sleep(sweep?250:cautious?150:50);steps++;
+      if(sweep&&--sweep.remaining<=0){sweep.pass++;sweep.span=Math.min(32,sweep.span*2);sweep.remaining=sweep.span;sweep.direction=-sweep.direction;record('local-sweep-turn',{steps,pass:sweep.pass,span:sweep.span,direction:sweep.direction})}
       stats.identityRejoinSteps=(stats.identityRejoinSteps||0)+1;
       const actual=host.scrollTop;
       const bottomReturn=delta<0&&historyAtBottom(host)&&actual>=before-1;
@@ -2155,12 +2167,12 @@
         const jumped=actual>before+viewport;if(jumped)snaps++;
         consecutiveSnaps++;steady=0;stalled=0;
         record(jumped?'bottom-snap':'bottom-hold',{steps,snaps,consecutiveSnaps,before,actual,loading});
-        direction=-1;await sleep(500);
+        direction=-1;if(sweep){sweep.direction=-1;sweep.remaining=Math.max(4,sweep.remaining)}await sleep(500);
       }else if(Math.abs(actual-before)>=1){if(++steady>=32){consecutiveSnaps=0;steady=0}}
       if(steps%16===0)record('relative-progress',{steps,best:Number.isFinite(best)?best:null,before,actual,loading,delta,rankCount:ranks.length});
-      if(Math.abs(actual-before)<1){if(!bottomReturn&&++stalled>=3)break;await sleep(150)}else stalled=0;
+      if(Math.abs(actual-before)<1){if(!bottomReturn&&++stalled>=12)break;await sleep(150)}else stalled=0;
     }
-    record('not-located',{steps,snaps,stalled,best:Number.isFinite(best)?best:null});return null;
+    record('not-located',{steps,snaps,stalled,failedProbes,sweep,best:Number.isFinite(best)?best:null});return null;
   }
   async function historyRun(b){
     let status='failed',error=null;
@@ -2205,8 +2217,9 @@
           state.attempts++;b.scrollStats.breakthroughAttempts=(b.scrollStats.breakthroughAttempts||0)+1;
           historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from:origin,to:Math.max(0,origin-step),step,anchor:state.frontier?.id||null});
         }
-        if(pc.noNewRows(lastGrowth,Date.now())&&Date.now()>=(state.identityGraceUntil||0)){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
-        const deadline=lastGrowth+60000;
+        const growthLimit=b.sample||b.isolated?60000:180000;
+        if(pc.noNewRows(lastGrowth,Date.now(),growthLimit)&&Date.now()>=(state.identityGraceUntil||0)){historyTrace(b,'no-new-rows-timeout');throw Error((growthLimit/1000)+'秒未取得新訊息；已保全，禁止無限重複掃描')}
+        const deadline=lastGrowth+growthLimit;
         let attemptDeadline=Math.max(deadline,state.identityGraceUntil||0);
         let rows=null,lastError='';
         // Keep the last verified viewport in its original coordinate frame.
@@ -2222,7 +2235,7 @@
         // V0.10.41 reached the observed top with geometric/staged recovery.
         // Keep that path first; identity is an alternative, not a terminal gate.
         const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{identity:true,ratio:0},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
-          ...[1,-1,2,-2,4,-4].map(offset=>({ratio:0,offset})),
+          ...(b.sample||b.isolated?[1,-1,2,-2,4,-4]:[1,-1,2,-2,4,-4,8,-8,16,-16,32,-32]).map(offset=>({ratio:0,offset})),
           {ratio:0,rebase:false}];
         let recovering=false,attempted=new Set();
         for(const plan of plans){
@@ -2249,8 +2262,8 @@
             if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
           }
           try{
-            rows=identity?await historyRejoinByIdentity(b,Date.now()+600000):await historySettled(b,{deadline:attemptDeadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering});
-            if(!rows){if(identity){lastError='頁面反覆自動返回底端；原生ID定位未完成，返回幾何備援';attemptDeadline=Math.max(attemptDeadline,Date.now()+60000);historyTrace(b,'identity-rejoin-geometric-fallback',{target,anchorId:state.frontier?.id||null})}continue}
+            rows=identity?await historyRejoinByIdentity(b,Date.now()+1200000):await historySettled(b,{deadline:attemptDeadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering});
+            if(!rows){if(identity){lastError='頁面反覆自動返回底端；原生ID定位未完成，返回幾何備援';attemptDeadline=Math.max(attemptDeadline,Date.now()+growthLimit);historyTrace(b,'identity-rejoin-geometric-fallback',{target,anchorId:state.frontier?.id||null})}continue}
           }catch(e){
             historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
             if(e.code!=='HISTORY_RECOVERY_RETRY'&&(b.sample||b.isolated||!String(e.message||e).includes('等待逾時：恢復向上捲動位置')))throw e;
@@ -2339,7 +2352,7 @@
             historyTrace(b,'checkpoint-download',{count:b.rows.length,file});
           }catch(e){historyTrace(b,'checkpoint-download-failed',{reason:String(e.message||e)})}
         }
-        if(pc.noNewRows(lastGrowth,Date.now())&&Date.now()>=(state.identityGraceUntil||0))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
+        if(pc.noNewRows(lastGrowth,Date.now(),growthLimit)&&Date.now()>=(state.identityGraceUntil||0))throw Error((growthLimit/1000)+'秒未取得新訊息；已保全，禁止無限重複掃描');
         await sleep(150);
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
