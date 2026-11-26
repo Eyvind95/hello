@@ -1533,11 +1533,24 @@
     }
     return text;
   }
+  // Current ChatGPT fallback-turn renderer exposes a complete assistant
+  // response body; nested copy-contents spans may merely be file citations.
+  // Require corroborating role and ID evidence instead of choosing a citation.
+  function historyResponseIdentity(body,owner){
+    const id=body.getAttribute('data-response-body');
+    const unit=body.closest('[data-chatgpt-search-unit-key]');
+    const unitKey=unit?.getAttribute('data-chatgpt-search-unit-key')||'';
+    const unitIds=[...new Set(String(unit?.getAttribute('data-chatgpt-search-message-ids')||'').trim().split(/\s+/).filter(Boolean))];
+    const selection=[...new Set([...body.querySelectorAll('[data-chatgpt-selection-message-id]')].map(n=>n.getAttribute('data-chatgpt-selection-message-id')).filter(Boolean))];
+    if(!id||! /^[a-zA-Z0-9_-]+$/.test(id)||!unit||!owner.contains(unit)||!unitKey.endsWith(':assistant')||unitIds.length!==1||unitIds[0]!==id||selection.some(x=>x!==id)||isUserDescendant(body))
+      throw historyIssue('明確 GPT 正文的角色或原生訊息 ID 無法唯一核對',owner,{responseBodyId:id,unitKey,unitIds,selection});
+    return id;
+  }
   function historyRead(host,onFold=()=>{}){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
     const add=(role,el,body,identityHint,fallback=false)=>{
       if(!el||!body||!root.contains(el)||!historyVisible(el))return;
-      const owner=historyOwner(el),native=el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
+      const owner=historyOwner(el),native=identityHint||el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
       const turn=owner.getAttribute('data-turn-key'); // data-testid ordinal alone is not a source ID
       if(fallback){
         if(role!=='assistant'||el!==owner)throw historyIssue('備援 GPT 容器與回合不符',owner);
@@ -1553,7 +1566,7 @@
       const roleMarker=el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
       if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
       const stable=role+'|'+(native?'message:'+native:'turn:'+turn);
-      const text=historyReadText(body,owner,stable,onFold);
+      const text=historyReadText(body,identityHint?body:owner,stable,onFold);
       const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
@@ -1562,11 +1575,23 @@
       if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
       sameOwner.push({row,el,owner});owners.set(owner,sameOwner);entries.push({row,el,owner});
     };
+    // Read the entire marked response before the legacy selector can pick
+    // a nested PDF citation. Keep native message identity, not the user turn ID.
+    for(const body of root.querySelectorAll('[data-response-body]')){
+      if(body.parentElement?.closest('[data-response-body]'))continue;
+      const owner=historyOwner(body);
+      if(!historyVisible(owner))continue;
+      const native=historyResponseIdentity(body,owner);
+      if(!historyVisible(body))throw historyIssue('明確 GPT 正文尚未穩定掛載',owner,{responseBodyId:native});
+      add('assistant',body,body,native);
+      explicit.push({el:body,role:'assistant',owner});
+    }
     // Explicit author-role roots take precedence, including attachment-only messages.
     for(const el of root.querySelectorAll('[data-message-author-role]')){
       if(el.parentElement?.closest('[data-message-author-role]')||!historyVisible(el))continue;
       const role=el.getAttribute('data-message-author-role');
       if(!['user','assistant'].includes(role))throw Error('遇到未支援的明確訊息角色：'+role);
+      if(role==='assistant'&&explicit.some(x=>x.role===role&&(el.contains(x.el)||x.el.contains(el))))continue;
       const candidates=role==='user'?[...el.querySelectorAll(USER_BUBBLE_SELECTOR+', .whitespace-pre-wrap')]:[...el.querySelectorAll('[data-markdown-copy="contents"],.markdown,[data-dil-message-id]')];
       const roots=candidates.filter(n=>!candidates.some(other=>other!==n&&other.contains(n)));
       // A role root with multiple separate content bodies must be preserved
@@ -2206,7 +2231,7 @@
       const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
       const images=[...el.querySelectorAll('img')].filter(historyVisible).map(n=>({src:n.getAttribute('src'),currentSrc:n.currentSrc||null,alt:n.getAttribute('alt'),naturalWidth:n.naturalWidth,naturalHeight:n.naturalHeight,complete:n.complete,rect:rect(n),parent:{tag:n.parentElement?.tagName||null,testId:n.parentElement?.getAttribute('data-testid')||null,role:n.parentElement?.getAttribute('role')||null,rect:n.parentElement?rect(n.parentElement):null}}));
       const controls=expandButtons(owner).filter(historyVisible).map(n=>({label:String(n.innerText||n.textContent||n.getAttribute('aria-label')||'').trim(),rect:rect(n)}));
-      return {row:rows[index],neighborIds:rows.slice(Math.max(0,index-2),index+3).map(r=>r.id),folds:folds.filter(x=>x.messageId===actualId),images,controls,rect:rect(el),ownerTurnKey:owner.getAttribute('data-turn-key'),element:el};
+      return {row:rows[index],neighborIds:rows.slice(Math.max(0,index-2),index+3).map(r=>r.id),neighborRows:rows.slice(Math.max(0,index-2),index+3),folds:folds.filter(x=>x.messageId===actualId),images,controls,rect:rect(el),ownerTurnKey:owner.getAttribute('data-turn-key'),element:el};
     };
     try{
       const checkpoint=await GalCheckpointMemory.read(chrome.storage.local,source,pc);guard();

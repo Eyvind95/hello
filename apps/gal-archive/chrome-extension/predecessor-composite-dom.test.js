@@ -34,3 +34,30 @@ test('composite ordering is tied to the unique paired user even if the DOM ancho
  const owner={compareDocumentPosition:()=>4},user={compareDocumentPosition:()=>2};const entries=[{owner,el:owner,row:{role:'assistant',contentBasis:'composite-after-user-dom'}},{owner,el:user,row:{role:'user'}}];
  vm.runInNewContext(compare,{entries,Node:{DOCUMENT_POSITION_FOLLOWING:4}});assert.deepEqual(entries.map(x=>x.row.role),['user','assistant']);
 });
+
+
+test('current response body identity is corroborated, duplicate identical search IDs are not two messages',()=>{
+ const helper=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyRead(host,'));
+ const id='answer-native-id',unit={getAttribute:k=>k==='data-chatgpt-search-unit-key'?'fallback-turn-3:2:assistant':id+' '+id};
+ const owner={contains:x=>x===unit},body={getAttribute:()=>id,closest:()=>unit,querySelectorAll:()=>[{getAttribute:()=>id}]};
+ const read=vm.runInNewContext(helper+';historyResponseIdentity',{historyIssue:m=>Error(m),isUserDescendant:()=>false});
+ assert.equal(read(body,owner),id);
+ unit.getAttribute=k=>k==='data-chatgpt-search-unit-key'?'fallback-turn-3:0:user':id;
+ assert.throws(()=>read(body,owner),/無法唯一核對/);
+ unit.getAttribute=k=>k==='data-chatgpt-search-unit-key'?'fallback-turn-3:2:assistant':id+' another';
+ assert.throws(()=>read(body,owner),/無法唯一核對/);
+});
+test('marked response with nested PDF citation is read once in full before legacy fallback, native identity differs from turn',()=>{
+ const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyEdgeOrdinal('));
+ const attrs=(values)=>({getAttribute:k=>values[k]??null,hasAttribute:k=>k in values});
+ const turn={...attrs({'data-turn-key':'question-id'}),parentElement:null,contains:n=>[user,body,citation,unit,turn].includes(n)};
+ const unit={...attrs({'data-chatgpt-search-unit-key':'fallback-turn-3:2:assistant','data-chatgpt-search-message-ids':'answer-id answer-id'})};
+ const user={...attrs({}),closest:()=>null,querySelector:()=>null,querySelectorAll:()=>[],compareDocumentPosition:()=>4};
+ const citation={...attrs({}),closest:()=>null,querySelectorAll:()=>[],compareDocumentPosition:()=>2};
+ const text='完整回答第一段\nPDF引用\n最後一段';
+ const body={...attrs({'data-response-body':'answer-id'}),parentElement:{closest:()=>null},contains:n=>n===citation||n===body,closest:q=>q==='[data-chatgpt-search-unit-key]'?unit:null,querySelectorAll:q=>q==='[data-chatgpt-selection-message-id]'?[{getAttribute:()=> 'answer-id'}]:[],compareDocumentPosition:()=>2};
+ const root={contains:n=>turn.contains(n),querySelectorAll:q=>q==='[data-response-body]'?[body]:q==='[data-message-author-role]'?[]:[turn]};
+ const read=vm.runInNewContext(source+';historyRead',{historyRoot:()=>root,historyVisible:()=>true,historyOwner:()=>turn,isUserDescendant:n=>n===user,outerUsers:()=>[user],assistantElements:()=>[citation],assistantFallbackTexts:new Map(),historyReadText:(n,scope)=>{if(n===body){assert.equal(scope,body);return text}return '原題'},historyIssue:m=>Error(m),getVisibleSourceTime:()=>null,HISTORY_STRUCT:'p',HISTORY_ATTACHMENT:'img',historyAttachment:()=>{throw Error('unexpected attachment')},USER_BUBBLE_SELECTOR:'bubble',Node:{DOCUMENT_POSITION_FOLLOWING:4},pc:{validateRows:()=>{}}});
+ const rows=read(root);
+ assert.equal(rows.length,2);assert.equal(rows[0].id,'user|turn:question-id');assert.equal(rows[1].id,'assistant|message:answer-id');assert.equal(rows[1].text,text);
+});
