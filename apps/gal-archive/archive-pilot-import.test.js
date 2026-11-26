@@ -86,3 +86,6 @@ test('earlier digest never authorizes changed text, absent digest or foreign pro
   const raw=JSON.stringify(first);assert.throws(()=>api.plan(first,source,pack,sha),expected);assert.equal(JSON.stringify(first),raw);
  }
 });
+
+// Keep the new V2 regression in the existing website CI entry point.
+test('V2 single bundle, three additional sections, safe rejection evidence and reading export',()=>{require('./predecessor-import-v2.test.js')});
