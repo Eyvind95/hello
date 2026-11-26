@@ -38,3 +38,5 @@ jobs:
           node --check apps/gal-archive/chrome-extension/gal-core.js
           node --check apps/gal-archive/chrome-extension/gal-content.js
           node --check apps/gal-archive/sw.js
+          node --test apps/gal-archive/archive-pilot-import.test.js
+          node --check apps/gal-archive/archive-pilot-import.js
