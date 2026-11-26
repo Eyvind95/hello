@@ -136,7 +136,7 @@ test('literal paragraph label and wrapper without a copy control are not treated
 // CAT-0012-R3 structural replay, synthetic text only (no private chat data).
 function dividerFixture({value='修'.repeat(55),hiddenCode=true,separator='hr',separatorText='',ambiguous=false,extra='',terminal=false,ancestorAfter=false,rawAfter=false,sourceMarker=true,duplicateBefore=false,inlineAfter=false}={}){
  const make=(tag,txt='',attrs={})=>({nodeType:1,tagName:tag.toUpperCase(),innerText:txt,textContent:txt,childNodes:txt?[{nodeType:3,nodeValue:txt}]:[],parentElement:null,previousElementSibling:null,nextElementSibling:null,getAttribute:k=>attrs[k]??null,matches(q){return q.split(',').includes(tag)},closest(){return null},querySelectorAll(){return []}});
- const link=(parent,...children)=>{parent.childNodes=children;children.forEach((n,i)=>{n.parentElement=parent;n.previousElementSibling=children[i-1]||null;n.nextElementSibling=children[i+1]||null});parent.querySelectorAll=q=>q==='code'?children.flatMap(n=>n.tagName==='CODE'?[n]:n.querySelectorAll(q)):[];return parent};
+ const link=(parent,...children)=>{parent.childNodes=children;children.forEach((n,i)=>{n.parentElement=parent;n.previousElementSibling=children[i-1]||null;n.nextElementSibling=children[i+1]||null});parent.querySelectorAll=q=>q==='code'?children.flatMap(n=>n.tagName==='CODE'?[n]:n.querySelectorAll?.(q)||[]):[];return parent};
  const code=make('code',value);if(hiddenCode)code.innerText='';
  const source=link(make('div','',{'data-code-block-source':sourceMarker?'true':'false'}),code);
  const toolbar=link(make('div','',{'data-markdown-copy':'exclude'}),make('div','純文字'),make('button','',{'aria-label':'複製代碼'}),make('span',extra));
