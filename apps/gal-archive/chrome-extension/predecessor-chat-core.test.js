@@ -820,14 +820,31 @@ test('sequential navigation uses live rank only for direction, moves less than o
  a.equal(c.anchorBudget(false).hardMs,3600000);
  a.equal(c.anchorBudget(true).hardMs,8000);
 });
-test('anchor loop matches text before movement, has no historical position recovery and no canonical writes',()=>{
+
+test('live recovery reaches candidates but original match ends navigation without repositioning',()=>{
+ const initial={top:5668.8,height:6343,client:674};
+ const a1=c.anchorLiveRecoveryHint(304,[657,658,659,660],initial);
+ a.equal(a1.top,0);
+ const after={top:3508.8,height:9851,client:674};
+ const a2=c.anchorLiveRecoveryHint(304,[653,654,655,656],after,a1);
+ a.equal(a2.improved,true);a.equal(a2.top,0);
+ const hit=c.anchorLiveRecoveryHint(304,[304,305,306,307],{top:6218.4,height:881919,client:674},a2);
+ a.equal(hit.found,true);
+ a.equal(c.anchorTextMatch({id:'u304',text:'original'},[{id:'u304',role:'user',text:'folded'}],true).kind,'id-text-difference');
+});
+test('anchor loop preserves first match, never scrolls or restarts after hit, no canonical writes',()=>{
  const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'content.js'),'utf8');
  const body=source.slice(source.indexOf('async function historyAnchorCapture'),source.indexOf('const HISTORY_LAUNCHER'));
  a.ok(body.includes('pc.anchorTextMatch(expected,rows,uniqueText)'));
- a.ok(body.indexOf('if(hit)')<body.indexOf('host.scrollBy('));
- a.ok(body.includes("evidence.status='matched-unconfirmed'"));
- a.ok(body.includes('Date.now()-lastProgress<budget.idleMs'));
- a.ok(body.includes('if(captureOnly)throw Error'));
- a.ok(!/\b(?:historySettled|historyRecoverScroll|historyScroll|historyRun|historyRemember|historyPayload|mergeUp|scrollIntoView|anchorRecoveryHint|anchorNavigation|rejoinTarget)\s*\(/.test(body));
- a.ok(!body.slice(body.indexOf('const budget=pc.anchorBudget')).includes('scrollHeight'));
+ const matched=body.slice(body.indexOf('if(hit){'),body.indexOf("if(captureOnly)throw Error"));
+ a.ok(matched.includes('evidence.matchedRow=hit.row'));
+ a.ok(matched.includes('evidence.observations=[first]'));
+ a.ok(matched.includes('historyDownload(evidence)'));
+ a.ok(!/\b(?:historyScroll|scrollIntoView|scrollBy|historySettled|historyNativeRetry)\s*\(/.test(matched));
+ a.ok(!/\bcontinue\b/.test(matched));
+ a.ok(body.includes('await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs)'));
+ a.ok(body.includes('pc.anchorLiveRecoveryHint(targetIndex'));
+ a.ok(body.includes("positionBasis:'current-session-only; no saved scan coordinates'"));
+ a.ok(!/\b(?:historyRun|historyRemember|historyPayload|mergeUp)\s*\(/.test(body));
+ a.ok(!body.includes('scrollIntoView'));
 });
