@@ -353,48 +353,29 @@ function validateClassification(raw,data,hash){
 }
 // Navigation hints only; never a coverage or continuity proof. Bounds
 // belong to one scrollHeight and are invalidated on virtualization growth.
-function anchorBudget(captureOnly=false){return {durationMs:captureOnly?8000:600000,traceLimit:1200,pollMs:500,stepMs:800}}
-function anchorNavigation(target,indices,geometry,previous={}){
- const {top,height,client}=geometry;
- if(!Number.isInteger(target)||target<0||!Number.isFinite(top)||!Number.isFinite(height)||!Number.isFinite(client)||client<=0||height<client)throw Error('錨點定位參數不符');
- const max=Math.max(0,height-client),known=[...new Set(indices)].filter(Number.isInteger).sort((a,b)=>a-b);
- if(known.includes(target))return {found:true,top,height};
- let low=previous.height===height?previous.low:null,high=previous.height===height?previous.high:null;
- const min=known[0],maxIndex=known.at(-1);
- if(known.length&&min>target)high=Math.min(high??max,top);
- else if(known.length&&maxIndex<target)low=Math.max(low??0,top);
- else if(known.length)return {stop:true,reason:'可見序列跨過目標但沒有指定ID',height};
- // A rankless window is not an identity or a proven bound. Retreat toward
- // the last known bound rather than guessing that it belongs to the prefix.
- let destination;
- if(!known.length){
-  if(low!==null&&high!==null)destination=(low+high)/2;
-  else if(high!==null)destination=(top+high)/2;
-  else if(low!==null)destination=(top+low)/2;
-  else destination=max;
- }else if(low!==null&&high!==null&&high>low)destination=(low+high)/2;
- else{
-  const earlier=min>target,delta=earlier?min-target:target-maxIndex;
-  const step=Math.min(64*client,Math.max(client*.6,delta*client*.65));
-  destination=top+(earlier?-step:step);
- }
- destination=Math.max(0,Math.min(max,destination));
- return {top:destination,height,low,high,knownMin:min??null,knownMax:maxIndex??null};
+// Original text is the search key. ID is the independent identity proof.
+function anchorBudget(captureOnly=false){return {idleMs:captureOnly?8000:600000,hardMs:captureOnly?8000:3600000,traceLimit:5000,pollMs:500,stepMs:350}}
+function anchorTextMatch(expected,rows,uniqueText){
+ const users=rows.filter(r=>r.role==='user');
+ const exact=expected.text.length?users.filter(r=>r.text===expected.text):[];
+ const id=users.find(r=>r.id===expected.id);
+ if(id)return {row:id,kind:id.text===expected.text?'text-and-id':'id-text-difference',identityVerified:true,textExact:id.text===expected.text};
+ // An identical unique nonempty original is an observation, not proof
+ // that a changed native ID refers to the same message.
+ if(uniqueText&&exact.length===1)return {row:exact[0],kind:'text-only',identityVerified:false,textExact:true};
+ return null;
 }
-// Best observed rank is a navigation hint, not coverage. Preserve it
-// across inter-window bottom returns; coordinates are always estimates.
-function anchorRecoveryHint(target,indices,geo,previous={},alternate=false){
- const normal=anchorNavigation(target,indices,geo,previous.bounds||{});
- const valid=indices.filter(Number.isInteger),distance=valid.length?Math.min(...valid.map(i=>Math.abs(i-target))):Infinity;
- const closest=valid.find(i=>Math.abs(i-target)===distance);
- const prior=previous.best||null;
- const improved=Number.isFinite(distance)&&(!prior||distance<prior.distance);
- const best=improved?{top:geo.top,height:geo.height,index:closest,distance}:prior;
- const saved=best&&distance>best.distance?verifiedViewportAnchor(best,geo.top,geo.height,geo.client):null;
- if(!normal.found&&!normal.stop&&saved){
-  return {...normal,top:rejoinTarget(saved,geo.height,geo.client,0,!alternate),best,improved,restore:true,bounds:{}};
- }
- return {...normal,best,improved,restore:false,bounds:normal};
+// Direction uses only live message identity/order, never historical geometry.
+// All moves are bounded relative scrolls; crossing a target is not a match.
+function anchorTextDirection(targetIndex,indices,prior=-1){
+ const known=indices.filter(Number.isInteger);
+ if(known.length&&Math.max(...known)<targetIndex)return 1;
+ if(known.length&&Math.min(...known)>targetIndex)return -1;
+ return prior===1?1:-1;
 }
-return {anchorRecoveryHint,anchorBudget,anchorNavigation,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+function anchorRelativeDelta(client,direction){
+ if(!Number.isFinite(client)||client<=0||![-1,1].includes(direction))throw Error('局部捲動參數不符');
+ return direction*Math.max(1,Math.floor(client*.8));
+}
+return {anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });

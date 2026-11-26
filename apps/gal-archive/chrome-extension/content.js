@@ -2179,13 +2179,14 @@
     let attempted=false;
     const recoveryEvidence=()=>{evidence.recovery={stats:b.scrollStats,trace:b.scrollTrace,traceOverflow:b.recoveryTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,nativeRetry:b.nativeHistoryRetry||null,lastReadIssue:b.lastReadIssue?{at:b.lastReadIssue.at,reason:b.lastReadIssue.reason,scrollTop:b.lastReadIssue.scrollTop,scrollHeight:b.lastReadIssue.scrollHeight}:null}};
     const guard=()=>{if(cancel()||state.bulk!==b||path()!==chat||!valid()||isGenerating())throw Error('定位已停止或聊天狀態變更')};
-    const capture=(host,rows,folds)=>{
-      const index=rows.findIndex(r=>r.id===target);if(index<0)return null;
+    const capture=(host,rows,folds,actualId)=>{
+      const index=rows.findIndex(r=>r.id===actualId);if(index<0)return null;
       const roots=[...new Set([...historyRoot(host).querySelectorAll('[data-message-author-role="user"]'),...outerUsers()])].filter(el=>historyRoot(host).contains(el)&&historyVisible(el));
       const matching=roots.filter(el=>{
-        const owner=historyOwner(el),native=el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
+        const owner=historyOwner(el),candidates=[...el.querySelectorAll(USER_BUBBLE_SELECTOR+', .whitespace-pre-wrap')],bodies=candidates.filter(n=>!candidates.some(other=>other!==n&&other.contains(n))),body=bodies.length===1?bodies[0]:el;
+        const native=el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
         const turn=owner.getAttribute('data-turn-key');
-        return target==='user|'+(native?'message:'+native:'turn:'+turn);
+        return actualId==='user|'+(native?'message:'+native:'turn:'+turn);
       });
       const outer=matching.filter(el=>!matching.some(other=>other!==el&&other.contains(el)));
       if(outer.length!==1)throw Error('指定ID可見但無法確認唯一玩家容器');
@@ -2193,7 +2194,7 @@
       const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
       const images=[...el.querySelectorAll('img')].filter(historyVisible).map(n=>({src:n.getAttribute('src'),currentSrc:n.currentSrc||null,alt:n.getAttribute('alt'),naturalWidth:n.naturalWidth,naturalHeight:n.naturalHeight,complete:n.complete,rect:rect(n),parent:{tag:n.parentElement?.tagName||null,testId:n.parentElement?.getAttribute('data-testid')||null,role:n.parentElement?.getAttribute('role')||null,rect:n.parentElement?rect(n.parentElement):null}}));
       const controls=expandButtons(owner).filter(historyVisible).map(n=>({label:String(n.innerText||n.textContent||n.getAttribute('aria-label')||'').trim(),rect:rect(n)}));
-      return {row:rows[index],neighborIds:rows.slice(Math.max(0,index-2),index+3).map(r=>r.id),folds:folds.filter(x=>x.messageId===target),images,controls,rect:rect(el),ownerTurnKey:owner.getAttribute('data-turn-key'),element:el};
+      return {row:rows[index],neighborIds:rows.slice(Math.max(0,index-2),index+3).map(r=>r.id),folds:folds.filter(x=>x.messageId===actualId),images,controls,rect:rect(el),ownerTurnKey:owner.getAttribute('data-turn-key'),element:el};
     };
     try{
       const checkpoint=await GalCheckpointMemory.read(chrome.storage.local,source,pc);guard();
@@ -2205,76 +2206,84 @@
       if(watch[chat]===true){delete watch[chat];await chrome.storage.local.set({watch})}
       state.enabled=false;state.watchedPath=null;candidates.clear();guard();
       attempted=true;
-      const budget=pc.anchorBudget(captureOnly),began=Date.now(),deadline=began+budget.durationMs;let policy={},stalls=0,last=null,pending=null,settleFailures=0;
-      evidence.navigation={durationMs:budget.durationMs,traceLimit:budget.traceLimit,hostWaitPolls:0,loadingPolls:0,readIssuePolls:0,observedWindows:0,traceOverflow:0,stallPolls:0,interWindowBottomReturns:0,settleFailures:0,bestIndex:null,bestDistance:null};
+      const expected=checkpoint.data.rows[targetIndex],uniqueText=!!expected.text&&checkpoint.data.rows.filter(r=>r.role==='user'&&r.text===expected.text).length===1;
+      evidence.search={method:'original-text-sequential',expectedText:expected.text,uniqueText,identityRequired:true};
+      const budget=pc.anchorBudget(captureOnly),began=Date.now(),deadline=began+budget.hardMs;
+      let lastProgress=began,direction=-1,previousDirection=-1,previousHost=null,lastWindow=null,stalls=0,edgeSince=null,previousBottom=false;
+      const seen=new Set();
+      evidence.navigation={idleMs:budget.idleMs,hardMs:budget.hardMs,traceLimit:budget.traceLimit,hostWaitPolls:0,loadingPolls:0,readIssuePolls:0,observedWindows:0,traceOverflow:0,stallPolls:0,interWindowBottomReturns:0,uniqueObserved:0,relativeSteps:0,bestIndex:null,bestDistance:null,directionChanges:0};
       const elapsed=()=>Math.floor((Date.now()-began)/1000);
-      const progress=message=>report(message+'｜'+elapsed()+'/'+Math.round(budget.durationMs/1000)+' 秒');
+      const progress=message=>report(message+'｜'+elapsed()+' 秒｜無新ID '+Math.floor((Date.now()-lastProgress)/1000)+'/'+Math.round(budget.idleMs/1000)+'秒');
       b.anchorProgress=progress;
-      while(Date.now()<deadline){
+      const appendTrace=entry=>{if(evidence.trace.length>=budget.traceLimit){evidence.trace.shift();evidence.navigation.traceOverflow++}evidence.trace.push(entry)};
+      while(Date.now()<deadline&&Date.now()-lastProgress<budget.idleMs){
         guard();const host=historyHost();if(!host){evidence.navigation.hostWaitPolls++;progress('等待聊天捲動容器');await sleep(budget.pollMs);continue}
-        if(b.host&&b.host!==host){pending=null;policy={};settleFailures=0;b.breakthrough={resets:0,attempts:0,frontier:null}}
-        b.host=host;
+        if(previousHost&&previousHost!==host){lastWindow=null;edgeSince=null;previousBottom=false}
+        previousHost=host;b.host=host;
+        if(!captureOnly&&historyNativeFailure(host)){await historyNativeRetry(b,Math.min(deadline,lastProgress+budget.idleMs));continue}
+        if(historyLoading(host)){evidence.navigation.loadingPolls++;progress('等待原生歷史載入，不捲動');await sleep(budget.pollMs);continue}
         let rows,folds=[];
-        if(!captureOnly){
-          try{
-            // Same recovery/stability machinery as the full scanner, but
-            // never call historyRun, mergeUp, historyRemember or historyPayload.
-            const stable=await historySettled(b,{deadline,upward:true,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true});
-            guard();rows=historyRead(host,x=>folds.push(x));
-            if(pc.fingerprint(stable)!==pc.fingerprint(rows)){evidence.navigation.readIssuePolls++;await sleep(350);continue}
-            pending=null;
-          }catch(e){
-            guard();
-            const reason=String(e.message||e);
-            if(e.code!=='HISTORY_RECOVERY_RETRY'&&!reason.startsWith('等待逾時：'))throw e;
-            evidence.navigation.settleFailures++;settleFailures++;
-            historyTrace(b,'anchor-settle-failed',{reason,attempt:settleFailures});
-            pc.alternateRecoveryPolicy(b.breakthrough);
-            pending=null;await sleep(Math.min(1000,Math.max(0,deadline-Date.now())));continue;
-          }
-        }else{
-          // Current-anchor capture is strictly no-scroll/no-retry-click.
-          if(historyLoading(host)){evidence.navigation.loadingPolls++;progress('等待目前畫面載入，暫不捲動');await sleep(budget.pollMs);continue}
-          try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300);evidence.navigation.readIssuePolls++;progress('等待可辨識的聊天視窗');await sleep(budget.pollMs);continue}
-        }
-        const geo={top:host.scrollTop,height:host.scrollHeight,client:host.clientHeight};
-        const indices=rows.map(r=>rank.get(r.id)).filter(Number.isInteger);
-        const hint=pc.anchorRecoveryHint(targetIndex,indices,geo,policy,settleFailures%2===1);
-        if(hint.improved){
-          evidence.navigation.bestIndex=hint.best.index;evidence.navigation.bestDistance=hint.best.distance;
-          b.breakthrough.resets=0;b.breakthrough.attempts=0;pc.clearRecoveryPolicy(b.breakthrough);settleFailures=0;
-          b.breakthrough.frontier={top:hint.best.top,height:hint.best.height,id:checkpoint.data.rows[hint.best.index].id};
-          historyTrace(b,'anchor-rank-progress',{index:hint.best.index,distance:hint.best.distance});
-          historyNativeProgress(b,'anchor-closer-rank');
-        }
-        if(hint.restore){evidence.navigation.interWindowBottomReturns++;historyTrace(b,'anchor-inter-window-bottom-return',{bestIndex:hint.best.index,bestTop:hint.best.top,bestHeight:hint.best.height,target:hint.top,alternate:settleFailures%2===1})}
+        try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300);evidence.navigation.readIssuePolls++;progress('等待可辨識的聊天視窗');await sleep(budget.pollMs);continue}
+        const indices=rows.map(r=>rank.get(r.id)).filter(Number.isInteger),newIds=rows.filter(r=>!seen.has(r.id));
+        for(const r of newIds)seen.add(r.id);
+        if(newIds.length){lastProgress=Date.now();historyNativeProgress(b,'anchor-new-live-id')}
+        evidence.navigation.uniqueObserved=seen.size;
+        for(const i of indices){const d=Math.abs(i-targetIndex);if(evidence.navigation.bestDistance===null||d<evidence.navigation.bestDistance){evidence.navigation.bestDistance=d;evidence.navigation.bestIndex=i}}
+        const atBottom=historyAtBottom(host);
+        if(lastWindow!==null&&!previousBottom&&atBottom&&previousDirection===-1)evidence.navigation.interWindowBottomReturns++;
+        previousBottom=atBottom;
+        const hit=pc.anchorTextMatch(expected,rows,uniqueText);
         evidence.navigation.observedWindows++;
-        if(evidence.trace.length>=budget.traceLimit){evidence.trace.shift();evidence.navigation.traceOverflow++}
-        evidence.trace.push({at:new Date().toISOString(),elapsedMs:Date.now()-began,...geo,knownMin:indices.length?Math.min(...indices):null,knownMax:indices.length?Math.max(...indices):null,firstId:rows[0]?.id,lastId:rows.at(-1)?.id,destination:hint.top??null,bestIndex:hint.best?.index??null,restoring:hint.restore});
-        progress('錨點定位 '+evidence.navigation.observedWindows+' 次｜目前基準索引 '+(indices.length?Math.min(...indices)+'–'+Math.max(...indices):'未命中')+' / '+targetIndex+'｜最接近 '+(evidence.navigation.bestIndex??'未命中'));
-        const found=capture(host,rows,folds);
-        if(found){
-          if(!captureOnly){found.element.scrollIntoView({block:'center',behavior:'instant'});await sleep(650);guard()}
-          const currentHost=historyHost();if(!currentHost)throw Error('定位後捲動容器消失');
-          let currentFolds=[];const currentRows=historyRead(currentHost,x=>currentFolds.push(x)),second=capture(currentHost,currentRows,currentFolds);
-          if(!second){policy={};pending=null;await sleep(350);continue}
-          const {element:ignored,...first}=found,{element:ignored2,...latest}=second;
-          evidence.observations=[first,latest];evidence.status='located';evidence.finishedAt=new Date().toISOString();recoveryEvidence();
-          historyDownload(evidence);
-          return {ok:true,message:'已定位並保存局部證據。請核對畫面；若手動展開，再按「擷取目前錨點」。'};
+        const record={at:new Date().toISOString(),elapsedMs:Date.now()-began,knownMin:indices.length?Math.min(...indices):null,knownMax:indices.length?Math.max(...indices):null,firstId:rows[0]?.id,lastId:rows.at(-1)?.id,newIds:newIds.length,atBottom,match:hit?.kind??null};
+        appendTrace(record);
+        progress('原文搜尋｜已讀 '+seen.size+' 個不同ID｜最接近 '+(evidence.navigation.bestIndex??'未命中'));
+        if(hit){
+          // Stop moving on the first match. Preserve even a single
+          // observation if virtualization removes it before the second read.
+          evidence.match={kind:hit.kind,actualId:hit.row.id,identityVerified:hit.identityVerified,textExact:hit.textExact};
+          evidence.status='matched-unconfirmed';evidence.matchedRow=hit.row;
+          const found=capture(host,rows,folds,hit.row.id);
+          if(!found)throw Error('原文命中但無法擷取唯一玩家容器');
+          const {element:ignored,...first}=found;evidence.observations=[first];
+          progress('已命中原文或指定ID，停止捲動並再次核對');
+          await sleep(650);guard();
+          try{
+            const currentHost=historyHost(),currentFolds=[];
+            if(currentHost&&!historyLoading(currentHost)){
+              const currentRows=historyRead(currentHost,x=>currentFolds.push(x));
+              const second=capture(currentHost,currentRows,currentFolds,hit.row.id);
+              if(second){const {element:ignored2,...latest}=second;evidence.observations.push(latest)}
+            }
+          }catch(e){evidence.secondReadIssue=String(e.message||e).slice(0,300)}
+          const confirmed=evidence.observations.length===2&&hit.identityVerified;
+          evidence.status=confirmed?'located':'matched-unconfirmed';
+          evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);
+          return {ok:true,message:confirmed?'已停止捲動並保存指定ID雙次證據（原文差異另記錄）。':'已停止捲動並保存候選證據，ID或第二次觀測待核對。'};
         }
-        if(captureOnly)throw Error('目前掛載範圍沒有指定ID；未捲動');
-        if(hint.stop)throw Error(hint.reason);
-        const signature=JSON.stringify([geo.top,geo.height,rows[0]?.id,rows.at(-1)?.id,hint.top]);
-        stalls=signature===last?stalls+1:0;last=signature;policy=hint;
-        // An unchanged viewport can be native hydration, not a proven failure.
-        // Preserve the stall evidence and back off without consuming a separate
-        // window/stall exit budget. Hard safety/identity failures still stop.
-        if(stalls>=8&&!hint.restore){evidence.navigation.stallPolls++;progress('定位暫時停滯，等待載入後再確認');await sleep(2000);continue}
-        if(Math.abs(hint.top-geo.top)>2){pending={top:hint.top,height:geo.height};historyScroll(host,hint.top);await sleep(180)}
-        else await sleep(budget.stepMs);
+        if(captureOnly)throw Error('目前掛載範圍未命中原文或指定ID；未捲動');
+        const nextDirection=pc.anchorTextDirection(targetIndex,indices,direction);
+        if(nextDirection!==direction){evidence.navigation.directionChanges++;edgeSince=null;direction=nextDirection}
+        const signature=JSON.stringify(rows.map(r=>r.id));
+        stalls=signature===lastWindow?stalls+1:0;lastWindow=signature;
+        // Current edge is merely a loading cue, not the location of any
+        // saved message. No old top/height or absolute destination is used.
+        const atEdge=direction===-1?host.scrollTop<=2:atBottom;
+        if(atEdge){
+          if(edgeSince===null)edgeSince=Date.now();
+          evidence.navigation.stallPolls++;progress('等待目前邊界載入，不判定目標不存在');
+          // When no baseline identity is mounted at the earlier edge,
+          // inspect forward rather than remain stuck there indefinitely.
+          if(!indices.length&&direction===-1&&Date.now()-edgeSince>=8000){direction=1;edgeSince=null;evidence.navigation.directionChanges++}
+          else{await sleep(budget.pollMs);continue}
+        }else edgeSince=null;
+        const delta=pc.anchorRelativeDelta(host.clientHeight,direction);
+        record.delta=delta;previousDirection=direction;
+        host.scrollBy({top:delta,behavior:'instant'});evidence.navigation.relativeSteps++;
+        // Even when a long message spans several viewports, keep reading
+        // sequentially; equal IDs do not justify skipping a large distance.
+        await sleep(stalls>=8?600:budget.stepMs);
       }
-      throw Error(captureOnly?'目前錨點擷取時間到達，未證明目標不存在':'局部定位10分鐘時限到達，未證明目標不存在');
+      throw Error(captureOnly?'目前錨點擷取逾時，未證明目標不存在':Date.now()>=deadline?'原文搜尋達60分鐘安全上限，未證明目標不存在':'原文搜尋10分鐘未觀測新ID，未證明目標不存在');
     }catch(e){
       evidence.error=String(e.message||e);evidence.finishedAt=new Date().toISOString();recoveryEvidence();
       if(attempted)historyDownload(evidence);
@@ -2346,8 +2355,8 @@
         finally{localImport.disabled=false;manualImport.disabled=false;anchorLocate.disabled=false;anchorCapture.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;start.disabled=false;trial.disabled=false;twenty.disabled=false;close.disabled=false}
       };
       localImport.onclick=()=>importCheckpoint(false);manualImport.onclick=()=>importCheckpoint(true);
-      const anchorInput=document.createElement('input');anchorInput.id='ga-predecessor-page-anchor-id';anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='局部取證：完整玩家訊息 ID';anchorInput.style.cssText=input.style.cssText;
-      const anchorLocate=document.createElement('button');anchorLocate.id='ga-predecessor-page-anchor-locate';anchorLocate.type='button';anchorLocate.textContent='定位指定錨點（最多10分鐘）';
+      const anchorInput=document.createElement('input');anchorInput.id='ga-predecessor-page-anchor-id';anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='原文搜尋：完整玩家訊息 ID';anchorInput.style.cssText=input.style.cssText;
+      const anchorLocate=document.createElement('button');anchorLocate.id='ga-predecessor-page-anchor-locate';anchorLocate.type='button';anchorLocate.textContent='依原文搜尋（10分鐘無進展停止）';
       const anchorCapture=document.createElement('button');anchorCapture.id='ga-predecessor-page-anchor-capture';anchorCapture.type='button';anchorCapture.textContent='擷取目前錨點（不捲動）';
       const anchorStop=document.createElement('button');anchorStop.id='ga-predecessor-page-anchor-stop';anchorStop.type='button';anchorStop.textContent='停止定位';anchorStop.hidden=true;
       let anchorCancelled=false;
