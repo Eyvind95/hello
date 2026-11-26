@@ -4,7 +4,7 @@ const source=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=source
 function fixture(){
  const nodes=new Map(),calls=[];let route='/c/first',result={ok:true},saved=null,records={},readHook=null;
  const element=tag=>({tag,id:'',dataset:{},style:{},children:[],append(...children){this.children.push(...children);for(const n of children)if(n.id)nodes.set(n.id,n)},remove(){nodes.delete(this.id);for(const n of this.children)if(n.id)nodes.delete(n.id)},setAttribute(){},click(){return this.onclick?.()},scrollIntoView(){calls.push('existing')}});
- const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async(...args)=>{if(readHook)await readHook(...args);return saved}},chrome:{storage:{local:{get:async()=>records}},runtime:{id:'testextension',getManifest:()=>({version:'0.10.48'}),sendMessage:async m=>{calls.push([m.type,m.expectedHash]);return {ok:true,readback:true,hash:m.expectedHash,count:2,runId:'run'}}}},historyAnchorCapture:async (id,title,report,capture)=>{calls.push(['anchor',id,title,capture]);return {ok:true,message:'local evidence'}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
+ const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async(...args)=>{if(readHook)await readHook(...args);return saved}},chrome:{storage:{local:{get:async()=>records}},runtime:{id:'testextension',getManifest:()=>({version:'0.10.48'}),sendMessage:async m=>{calls.push([m.type,m.expectedHash]);return {ok:true,readback:true,hash:m.expectedHash,count:2,runId:'run'}}}},historyRushTop:async (id,files,report)=>{calls.push(['rush',id,files]);report('navigation');return {ok:true,message:'navigation only'}},historyAnchorCapture:async (id,title,report,capture)=>{calls.push(['anchor',id,title,capture]);return {ok:true,message:'local evidence'}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
  Object.assign(ctx,{state:{},isGenerating:()=>false});vm.createContext(ctx);vm.runInContext(block+';globalThis.launch=historyLauncher;globalThis.popup=historyPopupCommand;',ctx);
  return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x},saved:x=>{saved=x},records:x=>{records=x},readHook:x=>{readHook=x},popup:ctx.popup,state:ctx.state};
 }
@@ -121,4 +121,41 @@ test('shared active panel from other version prevents opening settings or starti
  await assert.rejects(f.popup({type:'predecessor-popup-config',chat:'/c/first'}),/請勿中斷/);
  assert.equal((await f.popup({type:'predecessor-popup-status',chat:'/c/first'})).busy,true);
  assert.deepEqual(f.calls,[]);
+});
+
+test('rush-to-top is a separate navigation-only entry with optional anchors and no scan dispatch',async()=>{
+ const f=fixture();f.launch();f.nodes.get('ga-predecessor-page-launcher--testextension').onclick();
+ f.nodes.get('ga-predecessor-page-top-id--testextension').value='user|turn:abc';
+ f.nodes.get('ga-predecessor-page-top-files--testextension').value='a.pdf,b.pdf,c.pdf';
+ await f.nodes.get('ga-predecessor-page-rush-top--testextension').onclick();
+ assert.deepEqual(f.calls,[['rush','user|turn:abc','a.pdf,b.pdf,c.pdf']]);
+ assert.ok(f.nodes.has('ga-predecessor-page-config--testextension'));
+ assert.match(f.nodes.get('ga-predecessor-page-mode--testextension').textContent,/不掃描/);
+});
+test('navigation loop refuses a false top with wrong anchor, can cancel, and never calls archive readers',async()=>{
+ const block=source.slice(source.indexOf('  function historyTopNavigationSnapshot'),source.indexOf('  async function historyBegin'));
+ let now=0,scrolls=0,snap={firstId:'user|turn:wrong',isUser:true,match:false,found:0,owner:{}},removed=0,loading=false,stop=false;
+ const host={scrollTop:100,scrollHeight:2000},state={};
+ const ctx={state,document:{getElementById:()=>null,createElement:()=>({dataset:{},isConnected:true,remove(){removed++}}),body:{append(){}}},chrome:{runtime:{id:'test'}},valid:()=>true,path:()=>'/c/test',isGenerating:()=>false,HISTORY_PANEL:'scan',historyHost:()=>host,historyLoading:()=>loading,historyScroll(h,to){assert.equal(to,0);scrolls++;h.scrollTop=to},sleep:async ms=>{now+=ms},Date:{now:()=>now}};
+ vm.createContext(ctx);vm.runInContext(block+';historyTopNavigationSnapshot=()=>globalThis.snapshot();globalThis.rush=historyRushTop',ctx);ctx.snapshot=()=>snap;
+ await assert.rejects(ctx.rush('user|turn:abc','a.pdf',()=>{},()=>stop),/未找到指定開頭/);
+ assert.ok(scrolls>1);assert.equal(removed,1);assert.equal(state.bulk,null);
+ now=0;scrolls=0;host.scrollTop=100;
+ ctx.sleep=async ms=>{now+=ms;if(now>=12000)snap={firstId:'user|turn:abc',isUser:true,match:true,found:1,owner:{}}};
+ const result=await ctx.rush('user|turn:abc','a.pdf',()=>{});
+ assert.equal(result.verified,true);assert.ok(now>=20000);assert.equal(state.bulk,null);
+ now=0;host.scrollTop=0;ctx.sleep=async ms=>{now+=ms};const unknown=await ctx.rush('','',()=>{});
+ assert.equal(unknown.verified,false);assert.match(unknown.message,/尚未確認/);
+ now=0;stop=true;await assert.rejects(ctx.rush('','',()=>{},()=>stop),/導航已停止/);
+ assert.equal(state.bulk,null);
+ assert.doesNotMatch(block,/\b(?:historyRead|historyDownload|historyRemember|historyPayload)\s*\(/);
+});
+test('attachment anchor must match the first user owner, not later turns or arbitrary prose',()=>{
+ const block=source.slice(source.indexOf('  function historyTopNavigationSnapshot'),source.indexOf('  async function historyRushTop'));
+ const chip=name=>({getAttribute:k=>k==='title'?name:null,innerText:name+'\\nPDF'});
+ const first={getAttribute:k=>k==='data-turn-key'?'abc':null,contains:n=>n===first,querySelectorAll:()=>[chip('a.pdf'),chip('b.pdf'),chip('c.pdf')]},later={...first,getAttribute:k=>k==='data-turn-key'?'later':null};
+ const ctx={historyRoot:()=>({querySelectorAll:()=>[first,later]}),historyVisible:()=>true,historyOwner:x=>x,outerUsers:()=>[first,later]};vm.createContext(ctx);vm.runInContext(block+';globalThis.snap=historyTopNavigationSnapshot',ctx);
+ assert.equal(ctx.snap({},'user|turn:abc',['a.pdf','b.pdf','c.pdf']).match,true);
+ assert.equal(ctx.snap({},'user|turn:later',['a.pdf']).match,false);
+ assert.equal(ctx.snap({},'user|turn:abc',['a.pdf','missing.pdf']).match,false);
 });
