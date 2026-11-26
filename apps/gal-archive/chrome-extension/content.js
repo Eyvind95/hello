@@ -1558,6 +1558,14 @@
     const unique=(s,v)=>v&&s.indexOf(v)>=0&&s.indexOf(v)===s.lastIndexOf(v);
     const padded=(s,v)=>{const at=s.indexOf(v);return at>=0&&!s.slice(0,at).trim()&&!s.slice(at+v.length).trim()};
     const block=n=>!!n&&n.matches('p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table,pre');
+    // HR has no rendered text. The native Markdown root can place it
+    // directly after a code wrapper. Cross only verified empty separators,
+    // never an arbitrary DIV, hidden node, or nonempty sibling.
+    const boundary=(group,direction)=>{
+      let n=group[direction];
+      while(n?.tagName==='HR'&&historyVisible(n)&&!String(n.textContent||'').trim())n=n[direction];
+      return n;
+    };
     const evidence=[];
     for(const code of codes){
       const value=code.innerText||code.textContent||'';
@@ -1565,7 +1573,7 @@
       let repaired=false,conflicting=false;
       for(let group=code.parentElement;group&&group!==body;group=group.parentElement){
         if(group.querySelectorAll('code').length!==1)break;
-        const before=group.previousElementSibling,after=group.nextElementSibling;
+        const before=boundary(group,'previousElementSibling'),after=boundary(group,'nextElementSibling');
         if(!block(before)||!block(after)||!historyVisible(before)||!historyVisible(after))continue;
         if(group.closest('p,h1,h2,h3,h4,h5,h6'))continue;
         const a=before.innerText||'',b=after.innerText||'';
@@ -1609,7 +1617,7 @@
     if(evidence.length)throw historyIssue('GPT 正文與程式碼框不一致，無法安全確認完整正文',owner,{messageId:id,codeEvidence:evidence.slice(0,20),codeEvidenceOverflow:Math.max(0,evidence.length-20)});
     return text;
   }
-  function historyRead(host,onFold=()=>{}){
+  function historyRead(host,onFold=()=>{},onEntries=()=>{}){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
     const add=(role,el,body,identityHint,fallback=false)=>{
       if(!el||!body||!root.contains(el)||!historyVisible(el))return;
@@ -1688,6 +1696,7 @@
     for(const group of owners.values())if(group.some(x=>x.row.contentBasis==='composite-after-user-dom')&&(group.filter(x=>x.row.role==='user').length!==1||group.filter(x=>x.row.role==='assistant').length!==1))throw historyIssue('備援 GPT 與玩家來源無法形成唯一回合',group[0].owner);
     const rows=entries.map(x=>x.row);pc.validateRows(rows);
     if(!rows.length)throw Error('尚未讀到對話訊息');
+    onEntries(entries);
     return rows;
   }
   function historyEdgeOrdinal(b,edge){
@@ -2270,7 +2279,8 @@
   async function historyAnchorCapture(target,requestedTitle,report,captureOnly=false,cancel=()=>false){
     if(!pc||!valid()||state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating()||document.getElementById(HISTORY_PANEL))return {ok:false,error:'請先結束本聊天其他工作及掃描面板'};
     const chat=path(),source=location.origin+chat,title=pc.chatTitle(requestedTitle||document.title);
-    if(!title||!/^user\|(turn|message):[a-zA-Z0-9_-]+$/.test(target))return {ok:false,error:'請填入完整玩家訊息ID及聊天名稱'};
+    if(!title||!/^(?:user\|(?:turn|message)|assistant\|message):[a-zA-Z0-9_-]+$/.test(target))return {ok:false,error:'請填入完整玩家或 GPT 原生訊息ID及聊天名稱'};
+    const assistantTarget=target.startsWith('assistant|');
     const b={mode:'predecessor-anchor',chat,anchorId:target,get cancelled(){return cancel()},
       rows:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,
       attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,
@@ -2282,6 +2292,13 @@
     const guard=()=>{if(cancel()||state.bulk!==b||path()!==chat||!valid()||isGenerating())throw Error('定位已停止或聊天狀態變更')};
     const capture=(host,rows,folds,actualId)=>{
       const index=rows.findIndex(r=>r.id===actualId);if(index<0)return null;
+      if(actualId.startsWith('assistant|')){
+        let matched=[];
+        const reread=historyRead(host,()=>{},entries=>{matched=entries.filter(x=>x.row.id===actualId&&x.row.role==='assistant')});
+        if(matched.length!==1||!reread.some(r=>r.id===actualId&&r.text===rows[index].text))throw Error('指定 GPT 容器或正文無法再次唯一核對');
+        const {el,owner}=matched[0],r=el.getBoundingClientRect();
+        return {row:rows[index],neighborIds:rows.slice(Math.max(0,index-2),index+3).map(r=>r.id),neighborRows:rows.slice(Math.max(0,index-2),index+3),folds:folds.filter(x=>x.messageId===actualId),images:[],controls:[],rect:{x:r.x,y:r.y,width:r.width,height:r.height},ownerTurnKey:owner.getAttribute('data-turn-key'),element:el};
+      }
       const roots=[...new Set([...historyRoot(host).querySelectorAll('[data-message-author-role="user"]'),...outerUsers()])].filter(el=>historyRoot(host).contains(el)&&historyVisible(el));
       const matching=roots.filter(el=>{
         const owner=historyOwner(el),candidates=[...el.querySelectorAll(USER_BUBBLE_SELECTOR+', .whitespace-pre-wrap')],bodies=candidates.filter(n=>!candidates.some(other=>other!==n&&other.contains(n))),body=bodies.length===1?bodies[0]:el;
@@ -2299,16 +2316,18 @@
     };
     try{
       const checkpoint=await GalCheckpointMemory.read(chrome.storage.local,source,pc);guard();
-      if(!checkpoint)throw Error('請先記住本聊天已驗證的原始保全');
-      const rank=new Map(checkpoint.data.rows.map((r,i)=>[r.id,i])),targetIndex=rank.get(target);
-      if(targetIndex===undefined)throw Error('指定ID不在已記住的正式基準內');
-      evidence.baseline={runId:checkpoint.data.runId,sha256:checkpoint.hash,count:checkpoint.data.count,index:targetIndex};
+      if(!checkpoint&&!assistantTarget)throw Error('請先記住本聊天已驗證的原始保全');
+      const baselineRows=checkpoint?.data.rows||[],rank=new Map(baselineRows.map((r,i)=>[r.id,i])),targetIndex=rank.get(target);
+      if(targetIndex===undefined&&!assistantTarget)throw Error('指定ID不在已記住的正式基準內');
+      const idOnly=targetIndex===undefined;
+      evidence.baseline=checkpoint?{runId:checkpoint.data.runId,sha256:checkpoint.hash,count:checkpoint.data.count,index:targetIndex??null}:null;
       const {watch={}}=await chrome.storage.local.get('watch');guard();
       if(watch[chat]===true){delete watch[chat];await chrome.storage.local.set({watch})}
       state.enabled=false;state.watchedPath=null;candidates.clear();guard();
       attempted=true;
-      const expected=checkpoint.data.rows[targetIndex],uniqueText=!!expected.text&&checkpoint.data.rows.filter(r=>r.role==='user'&&r.text===expected.text).length===1;
-      evidence.search={method:'original-text-live-recovery',expectedText:expected.text,uniqueText,identityRequired:true,positionBasis:'current-session-only; no saved scan coordinates'};
+      const expected=idOnly?{id:target,role:'assistant',text:null}:baselineRows[targetIndex],uniqueText=!assistantTarget&&!!expected.text&&baselineRows.filter(r=>r.role==='user'&&r.text===expected.text).length===1;
+      evidence.search={method:idOnly?'native-id-sequential':'original-text-live-recovery',expectedText:expected.text,uniqueText,identityRequired:true,positionBasis:'current-session-only; no saved scan coordinates'};
+      let idOnlyStarted=false;
       const budget=pc.anchorBudget(captureOnly),began=Date.now(),deadline=began+budget.hardMs;
       let lastProgress=began,previousHost=null,lastWindow=null,stalls=0,previousBottom=false,pending=null,policy={},settleFailures=0;
       const seen=new Set();
@@ -2370,7 +2389,7 @@
           evidence.status='matched-unconfirmed';evidence.matchedRow=hit.row;evidence.navigation.firstMatchAt=Date.now()-began;pending=null;
           let found=null;
           try{found=capture(host,rows,folds,hit.row.id)}catch(e){evidence.firstCaptureIssue=String(e.message||e).slice(0,300)}
-          if(!found){evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);return {ok:true,message:'已命中並停止；原文列已保存，玩家容器細節待核對。'}}
+          if(!found){evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);return {ok:true,message:'已命中並停止；原文列已保存，訊息容器細節待核對。'}}
           const {element:ignored,...first}=found;evidence.observations=[first];
           progress('已命中原文或指定ID，停止捲動並再次核對（不重新置中）');
           await sleep(650);guard();
@@ -2391,7 +2410,11 @@
         // Reuse V0.10.44's live rank-guided recovery only to reach a
         // candidate viewport. Its state belongs to this run/current host.
         const geo={top:host.scrollTop,height:host.scrollHeight,client:host.clientHeight};
-        const hint=pc.anchorLiveRecoveryHint(targetIndex,indices,geo,policy,settleFailures%2===1);
+        // An assistant ID missing from the old baseline is still searchable.
+        // Inspect the current window first, then start at the live bottom
+        // and walk upward by overlapping viewports. Geometry is never proof.
+        const hint=idOnly?{top:idOnlyStarted?Math.max(0,geo.top-Math.max(1,Math.floor(geo.client*.6))):Math.max(0,geo.height-geo.client),bounds:{}}:pc.anchorLiveRecoveryHint(targetIndex,indices,geo,policy,settleFailures%2===1);
+        if(idOnly)idOnlyStarted=true;
         if(hint.improved){
           b.breakthrough.resets=0;b.breakthrough.attempts=0;pc.clearRecoveryPolicy(b.breakthrough);settleFailures=0;
           b.breakthrough.frontier={top:hint.best.top,height:hint.best.height,id:checkpoint.data.rows[hint.best.index].id};
@@ -2482,7 +2505,7 @@
       };
       localImport.onclick=()=>importCheckpoint(false);manualImport.onclick=()=>importCheckpoint(true);
       const anchorLabel=document.createElement('strong');anchorLabel.textContent='① 局部取證・原文搜尋（只找指定訊息）';
-      const anchorInput=document.createElement('input');anchorInput.id='ga-predecessor-page-anchor-id';anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='原文搜尋：完整玩家訊息 ID';anchorInput.style.cssText=input.style.cssText;
+      const anchorInput=document.createElement('input');anchorInput.id='ga-predecessor-page-anchor-id';anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='原文搜尋：玩家或 GPT 原生訊息 ID';anchorInput.style.cssText=input.style.cssText;
       const anchorLocate=document.createElement('button');anchorLocate.id='ga-predecessor-page-anchor-locate';anchorLocate.type='button';anchorLocate.textContent='依原文搜尋（10分鐘無進展停止）';
       const anchorCapture=document.createElement('button');anchorCapture.id='ga-predecessor-page-anchor-capture';anchorCapture.type='button';anchorCapture.textContent='擷取目前錨點（不捲動）';
       const anchorStop=document.createElement('button');anchorStop.id='ga-predecessor-page-anchor-stop';anchorStop.type='button';anchorStop.textContent='停止定位';anchorStop.hidden=true;

@@ -101,3 +101,32 @@ test('literal paragraph label and wrapper without a copy control are not treated
   assert.throws(()=>f.read(f.body,f.body,'a',f.raw),/無法安全確認完整正文/);
  }
 });
+
+// CAT-0012-R3 structural replay, synthetic text only (no private chat data).
+function dividerFixture({value='修'.repeat(55),hiddenCode=true,separator='hr',separatorText='',ambiguous=false,extra=''}={}){
+ const make=(tag,txt='',attrs={})=>({nodeType:1,tagName:tag.toUpperCase(),innerText:txt,textContent:txt,childNodes:txt?[{nodeType:3,nodeValue:txt}]:[],parentElement:null,previousElementSibling:null,nextElementSibling:null,getAttribute:k=>attrs[k]??null,matches(q){return q.split(',').includes(tag)},closest(){return null},querySelectorAll(){return []}});
+ const link=(parent,...children)=>{parent.childNodes=children;children.forEach((n,i)=>{n.parentElement=parent;n.previousElementSibling=children[i-1]||null;n.nextElementSibling=children[i+1]||null});parent.querySelectorAll=q=>q==='code'?children.flatMap(n=>n.tagName==='CODE'?[n]:n.querySelectorAll(q)):[];return parent};
+ const code=make('code',value);if(hiddenCode)code.innerText='';
+ const source=link(make('div','',{'data-code-block-source':'true'}),code);
+ const toolbar=link(make('div','',{'data-markdown-copy':'exclude'}),make('div','純文字'),make('button','',{'aria-label':'複製代碼'}),make('span',extra));
+ const wrapper=link(make('div','',{'data-code-block':'true','data-markdown-copy':'code-block'}),toolbar,source);
+ const group=link(make('div'),wrapper),before=make('p','唯一前文'),after=make('p',ambiguous?'唯一前文':'唯一後文');
+ const markdown=link(make('div'),before,group,make(separator,separatorText),after),selection=link(make('div'),markdown),body=link(make('div'),selection);
+ const helper=s.slice(s.indexOf('  function historyAssistantCodeText('),s.indexOf('  function historyRead(host,'));
+ const read=vm.runInNewContext(helper+';historyAssistantCodeText',{historyVisible:()=>true,historyIssue:(m,o,d)=>Object.assign(Error(m),{details:d})});
+ return {body,read,value,raw:'唯一前文\n\n唯一後文'};
+}
+test('CAT-0012 seven-level code wrapper followed by HR: both render states normalize identically',()=>{
+ for(const value of ['修'.repeat(55),'正'.repeat(120)]){
+  const off=dividerFixture({value}),on=dividerFixture({value,hiddenCode:false});
+  const expected='唯一前文\n\n'+value+'\n\n唯一後文';
+  assert.equal(off.read(off.body,off.body,'a',off.raw),expected);
+  for(const gap of ['\n\n純文字\n'+value+'\n','\n\n純文字\n'+value+'\n\n'])assert.equal(on.read(on.body,on.body,'a','唯一前文'+gap+'唯一後文'),expected);
+ }
+});
+test('divider recovery does not cross unknown nodes, nonempty separators, duplicate anchors or extra prose',()=>{
+ for(const opts of [{separator:'div'},{separatorText:'正文'},{ambiguous:true},{extra:'額外正文'}]){
+  const f=dividerFixture(opts);assert.throws(()=>f.read(f.body,f.body,'a',f.raw),/無法安全確認完整正文/);
+ }
+ const f=dividerFixture();assert.throws(()=>f.read(f.body,f.body,'a','唯一前文\n\n額外正文\n\n唯一後文'),/無法安全確認完整正文/);
+});
