@@ -64,18 +64,31 @@ function plan(r,source,pack,sha){
  function merge(key,incoming){
   const old=r[key]||[];if(!Array.isArray(old))fail('舊資料格式異常');
   const next=structuredClone(old),positions=new Map();old.forEach((m,i)=>{if(m?.id){if(positions.has(m.id))fail('舊資料ID重複，請先核對');positions.set(m.id,i)}});
-  let added=0,replaced=0;
+  let added=0,replaced=0,retainedEarlierDigest=0;
   for(const m of incoming){
    const i=positions.get(m.id);
    if(i===undefined){next.push(m);added++;continue}
    const prior=old[i],ref=prior.predecessorSource;
-   if(ref?.chatId!==source.chatId||ref?.id!==m.predecessorSource.id||ref?.sha256!==sha||prior.role!==m.role||prior.manager!==m.manager)fail('既有ID來源不符，拒絕覆蓋');
+   const where='（'+key+'；新來源 index '+m.predecessorSource.index+'；ID '+m.predecessorSource.id+'）';
+   const mismatch=[];
+   if(ref?.chatId!==source.chatId)mismatch.push('聊天 ID');
+   if(ref?.id!==m.predecessorSource.id)mismatch.push('原始訊息 ID');
+   if(prior.role!==m.role)mismatch.push('角色');
+   if(prior.manager!==m.manager)mismatch.push('副駕駛');
+   if(mismatch.length)fail('既有ID來源不符，拒絕覆蓋：'+mismatch.join('、')+where);
+   if(ref.sha256!==sha){
+    // A differing snapshot digest never authorizes overwriting a legacy row.
+    // A fully identical existing display may satisfy the incoming entry
+    // without changing its old digest, source index, images or any metadata.
+    if(!/^[0-9a-f]{64}$/.test(ref.sha256)||prior.text!==m.text)fail('既有ID來源不符，拒絕覆蓋：舊來源 SHA-256 不同'+(prior.text!==m.text?'且正文不同':'或缺少有效舊雜湊')+where+'；舊 SHA-256 '+(ref.sha256||'未記錄')+'；新 SHA-256 '+sha);
+    retainedEarlierDigest++;continue;
+   }
    // Retain previously attached real images and extra metadata. A user edit
    // or a differing extraction is a conflict, never silently overwritten.
-   if(prior.text!==m.text)fail('既有同來源文字不同，請人工核對');
+   if(prior.text!==m.text)fail('既有同來源文字不同，請人工核對'+where);
    next[i]={...structuredClone(prior),...m,images:structuredClone(prior.images||[])};replaced++;
   }
-  return {rows:next,added,replaced,preserved:old.length-replaced};
+  return {rows:next,added,replaced,preserved:old.length-replaced,retainedEarlierDigest};
  }
  const pilot=merge('pilotMessages',incomingPilot),quiz=merge('quizLogs',incomingQuiz),pilotMessages=pilot.rows,quizLogs=quiz.rows;
  if(!Array.isArray(pack.easterEggs))fail('彩蛋清單格式錯誤');
@@ -90,7 +103,7 @@ function plan(r,source,pack,sha){
  const easterEggs=!eggText||oldEggs.includes(block)?oldEggs:oldEggs+(oldEggs?'\n\n':'')+block;
  const updated={...structuredClone(r),pilotMessages,quizLogs,easterEggs};
  const counts={pilotBefore:(r.pilotMessages||[]).length,pilotAfter:pilotMessages.length,quizBefore:(r.quizLogs||[]).length,quizAfter:quizLogs.length,eggsBefore:(r.easterEggs||'').length,eggsAfter:easterEggs.length,eggCount:pack.easterEggs.length};
- return {updated,counts,sourceCount:view.rows.length,sourceStatus:source.status,sourceEvidence:{joined:view.joined,localCount:view.localCount,isolated,canonical:source.canonical===true},merge:{pilot:{added:pilot.added,replaced:pilot.replaced,preserved:pilot.preserved},quiz:{added:quiz.added,replaced:quiz.replaced,preserved:quiz.preserved},quizMissing:incomingQuiz.length===0,quizPartial:incomingQuiz.length>0&&(!incomingQuiz.some(m=>m.role==='me')||!incomingQuiz.some(m=>m.role==='ai'))},attachments:incomingPilot.concat(incomingQuiz).reduce((n,m)=>n+m.predecessorSource.attachments.length,0)};
+ return {updated,counts,sourceCount:view.rows.length,sourceStatus:source.status,sourceEvidence:{joined:view.joined,localCount:view.localCount,isolated,canonical:source.canonical===true},merge:{pilot:{added:pilot.added,replaced:pilot.replaced,preserved:pilot.preserved,retainedEarlierDigest:pilot.retainedEarlierDigest},quiz:{added:quiz.added,replaced:quiz.replaced,preserved:quiz.preserved,retainedEarlierDigest:quiz.retainedEarlierDigest},quizMissing:incomingQuiz.length===0,quizPartial:incomingQuiz.length>0&&(!incomingQuiz.some(m=>m.role==='me')||!incomingQuiz.some(m=>m.role==='ai'))},attachments:incomingPilot.concat(incomingQuiz).reduce((n,m)=>n+m.predecessorSource.attachments.length,0)};
 }
 function sameUnchanged(before,after){return equal(Object.fromEntries(Object.entries(before).filter(([k])=>!FIELDS.includes(k)&&k!=='updatedAt')),Object.fromEntries(Object.entries(after).filter(([k])=>!FIELDS.includes(k)&&k!=='updatedAt')))}
 return {FORMAT,binding,plan,sameUnchanged};
