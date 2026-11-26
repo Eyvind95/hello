@@ -251,3 +251,17 @@ test('assistant first-match evidence survives virtualization before the second o
  const e=downloads[0];assert.equal(e.status,'matched-unconfirmed');assert.equal(e.domCapture.status,'captured');assert.equal(e.domCapture.observations,1);
  assert.equal(e.observations[0].rawDom.response.outerHTML.text,'<div>A</div>');assert.equal(e.canonical,false);assert.equal(e.importable,false);
 });
+
+test('settling returns a diagnostic anchor immediately without another read or scroll; full scan ignores hook',async()=>{
+ const target={id:'assistant|message:target',role:'assistant',text:'A'},host={},observation={rawDom:{status:'captured'}};
+ let reads=0,anchorReads=0,sleeps=0,now=0;
+ const ctx={pc:{fingerprint:()=> 'same'},historyGuard:()=>{},historyLoading:()=>false,historyRead:()=>{reads++;return [target]},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyStatus:()=>{},sleep:async ms=>{sleeps++;now+=ms},Date:class extends Date{static now(){return now}}};
+ ctx.pc.compareRow=()=>({changes:[]});
+ const script=source.slice(source.indexOf('  async function historySettled'),source.indexOf('  function historyGuard'));
+ vm.createContext(ctx);vm.runInContext(script+';globalThis.settle=historySettled',ctx);
+ const hook=()=>{anchorReads++;return {rows:[target],observation}};
+ const b={mode:'predecessor-anchor',host,scrollStats:{},stabilityIssues:[]};
+ const rows=await ctx.settle(b,{anchorRead:hook});assert.equal(rows[0],target);assert.equal(anchorReads,1);assert.equal(reads,0);assert.equal(sleeps,0);
+ await ctx.settle({...b,mode:'predecessor-history'},{anchorRead:hook});
+ assert.equal(anchorReads,1);assert.ok(reads>=2);assert.ok(sleeps>=2);
+});
