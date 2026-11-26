@@ -268,6 +268,27 @@ test('formal historyRun reaches half-step after overlap loss and rejects disjoin
  }
 });
 
+test('after remount formal scan tries advancing frontier only after old probes and preserves disjoint windows separately',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ for(const valid of [true,false]){
+  let now=1000,output,up=0,targets=[],events=[];
+  const tail=[r('tail')],older=[r('older'),r('tail')],first=[r('first'),r('older')],host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
+  const b={mode:'predecessor-history',host,rows:[],sample:0,knownMinimum:3,hostProof:{maxRange:30000,observedMovement:true},bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
+  const ctx={Date:{now:()=>now},pc:{...c,edgeProof:(rows,all,o)=>o.edge==='bottom'||rows[0]?.id===first[0].id,validateRaw:()=>{},fullCoverageGate:()=>true},state:{bulk:b},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{now+=700;if(!o.upward)return tail;targets.push(o.target);up++;if(up===1){host.scrollTop=8000;return older}if(up===2){host.scrollTop=0;return [older[0]]}if(up===3){host.scrollHeight=30100;return [r('unrelated')]}if(valid&&o.target===28000){host.scrollTop=0;return first}return [r('unrelated')]},historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:(b,event,data)=>events.push({event,data}),sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length,warnings:[],evidence:{continuity:status==='completed'}}),historyDownload:d=>{output=d;return 'formal.json'}};
+  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+  const probes=events.filter(x=>x.event==='rejoin-attempt');
+  const fallback=probes.findIndex(x=>x.data.basis==='verified-frontier');
+  a.ok(fallback>0);a.equal(probes[fallback].data.target,28000);
+  a.equal(b.unjoinedWindows.length,1);a.equal(b.unjoinedWindows[0].importable,false);
+  a.equal(b.unjoinedWindows[0].rows[0].id,r('unrelated').id);
+  a.ok(!b.rows.some(x=>x.id===r('unrelated').id));
+  if(valid){a.equal(output.status,'completed');a.equal(output.count,3);a.ok(events.some(x=>x.event==='rejoin-success'&&x.data.basis==='verified-frontier'))}
+  else{a.equal(output.status,'failed');a.equal(output.count,2)}
+ }
+});
+
 test('two distinct delayed generic images enrich empty or exact ordered subset observations',()=>{
  const old=r('multi'),img=i=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/'+i.repeat(8)+'-1111-4111-8111-111111111111'});
  const fresh={...old,attachments:[img('1'),img('2')]},changes=[];
