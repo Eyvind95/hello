@@ -130,3 +130,38 @@ test('divider recovery does not cross unknown nodes, nonempty separators, duplic
  }
  const f=dividerFixture();assert.throws(()=>f.read(f.body,f.body,'a','唯一前文\n\n額外正文\n\n唯一後文'),/無法安全確認完整正文/);
 });
+
+test('CAT-0015 repeated right paragraph: uniquely bounded exact gap works in both states',()=>{
+ const f=codeFixture({hiddenCode:true});
+ const raw='唯一前文\n\n唯一後文\n\n額外段落\n\n唯一後文';
+ const expected='唯一前文\n\n'+f.value+'\n\n唯一後文\n\n額外段落\n\n唯一後文';
+ assert.equal(f.read(f.body,f.body,'a',raw),expected);
+ assert.equal(f.read(f.body,f.body,'a','唯一前文\n純文字\n'+f.value+'\n\n唯一後文\n\n額外段落\n\n唯一後文'),expected);
+ assert.throws(()=>f.read(f.body,f.body,'a','唯一前文\n\n唯一後文\n\n唯一前文\n\n唯一後文'),/無法安全確認完整正文/);
+ assert.throws(()=>f.read(f.body,f.body,'a','不是唯一前文\n\n唯一後文'),/無法安全確認完整正文/);
+});
+test('two independent code blocks preserve original order and normalize both render states',()=>{
+ const f=codeFixture({value:'甲'.repeat(24),hiddenCode:true}),g=codeFixture({value:'乙'.repeat(69),hiddenCode:true});
+ const group=g.code.parentElement;
+ group.parentElement=f.body;group.previousElementSibling.innerText='第二前文';group.nextElementSibling.innerText='第二後文';
+ f.body.querySelectorAll=q=>q==='code'?[f.code,g.code]:[];
+ const plain='唯一前文\n\n唯一後文\n\n第二前文\n\n第二後文\n\n唯一後文';
+ const one='唯一前文\n純文字\n'+f.value+'\n\n唯一後文\n\n第二前文\n\n第二後文\n\n唯一後文';
+ const both='唯一前文\n純文字\n'+f.value+'\n\n唯一後文\n\n第二前文\n\n純文字\n'+g.value+'\n\n第二後文\n\n唯一後文';
+ const want='唯一前文\n\n'+f.value+'\n\n唯一後文\n\n第二前文\n\n'+g.value+'\n\n第二後文\n\n唯一後文';
+ for(const raw of [plain,one,both])assert.equal(f.read(f.body,f.body,'a',raw),want);
+});
+test('identity recovery walks live viewport and returns only a stable matching window',async()=>{
+ const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
+ const host={scrollTop:0,scrollHeight:6000,clientHeight:600};
+ const marker={getAttribute:()=> 'frontier'};
+ let now=0,reads=0;
+ const root={querySelectorAll:q=>q==='[data-response-body]'&&host.scrollTop<=1800?[marker]:[]};
+ const row={id:'assistant|message:frontier'};
+ const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:()=>{},historyStatus:()=>{},historyScroll:(h,x)=>{h.scrollTop=Math.max(0,Math.min(x,h.scrollHeight-h.clientHeight))},historyLoading:()=>false,historyNativeRetry:async()=>false,historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>{reads++;return [row]}};
+ const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
+ host.scrollTop=5400;const b={host,rows:[row],scrollStats:{}};
+ assert.equal((await recover(b,10000))[0],row);assert.equal(reads,1);assert.equal(host.scrollTop,1800);
+ ctx.historySettled=async()=>[{id:'assistant|message:wrong'}];
+ host.scrollTop=5400;assert.equal(await recover(b,10000),null);
+});
