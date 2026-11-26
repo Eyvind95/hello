@@ -17,7 +17,7 @@ function plan(r,source,pack,sha){
  const map=new Map();source.rows.forEach((row,i)=>{if(!obj(row)||!str(row.id)||map.has(row.id)||row.index!==i||!['user','assistant'].includes(row.role)||typeof row.text!=='string'||!Array.isArray(row.attachments))fail('原始來源索引、ID 或欄位異常：'+i);map.set(row.id,row)});
  const existingIds=new Set(),oldOther=['messages','events','changeLogs'].flatMap(k=>r[k]||[]);for(const m of oldOther)if(m?.id)existingIds.add(m.id);
  function logs(key){
-  if(!Array.isArray(pack[key])||!pack[key].length)fail(key+' 空白，拒絕覆蓋');
+  if(!Array.isArray(pack[key])||(key==='pilotMessages'&&!pack[key].length))fail(key+' 空白或格式錯誤');
   let last=-1;const seen=new Set();
   return pack[key].map((entry,i)=>{
    const row=map.get(entry?.sourceId);if(!row||seen.has(row.id)||row.index<=last||!str(entry.text))fail(key+' 第 '+(i+1)+' 筆來源、順序或正文不符');
@@ -32,16 +32,40 @@ function plan(r,source,pack,sha){
    return {id,role:row.role==='user'?'me':'ai',manager:row.role==='assistant'?pack.manager:'',text:entry.text,images:[],sourceCreatedAt:time,predecessorSource:{chatId:source.chatId,sha256:sha,id:row.id,index:row.index,attachments:structuredClone(row.attachments)}};
   });
  }
- const pilotMessages=logs('pilotMessages'),quizLogs=logs('quizLogs');
- if(!quizLogs.some(m=>m.role==='me')||!quizLogs.some(m=>m.role==='ai'))fail('10題必須包含玩家與 GPT 的實際紀錄');
- if(!Array.isArray(pack.easterEggs)||!pack.easterEggs.length)fail('彩蛋清單空白，拒絕覆蓋');
- const easterEggs=pack.easterEggs.map((e,i)=>{
+ const incomingPilot=logs('pilotMessages'),incomingQuiz=logs('quizLogs');
+ // Only a record already bound to this source, with the exact stable ID and
+ // source row, can be updated. Never infer ownership from a player's text,
+ // manager label, position, or a shared cycle.
+ function merge(key,incoming){
+  const old=r[key]||[];if(!Array.isArray(old))fail('舊資料格式異常');
+  const next=structuredClone(old),positions=new Map();old.forEach((m,i)=>{if(m?.id){if(positions.has(m.id))fail('舊資料ID重複，請先核對');positions.set(m.id,i)}});
+  let added=0,replaced=0;
+  for(const m of incoming){
+   const i=positions.get(m.id);
+   if(i===undefined){next.push(m);added++;continue}
+   const prior=old[i],ref=prior.predecessorSource;
+   if(ref?.chatId!==source.chatId||ref?.id!==m.predecessorSource.id||ref?.sha256!==sha||prior.role!==m.role||prior.manager!==m.manager)fail('既有ID來源不符，拒絕覆蓋');
+   // Retain previously attached real images and extra metadata. A user edit
+   // or a differing extraction is a conflict, never silently overwritten.
+   if(prior.text!==m.text)fail('既有同來源文字不同，請人工核對');
+   next[i]={...structuredClone(prior),...m,images:structuredClone(prior.images||[])};replaced++;
+  }
+  return {rows:next,added,replaced,preserved:old.length-replaced};
+ }
+ const pilot=merge('pilotMessages',incomingPilot),quiz=merge('quizLogs',incomingQuiz),pilotMessages=pilot.rows,quizLogs=quiz.rows;
+ if(!Array.isArray(pack.easterEggs))fail('彩蛋清單格式錯誤');
+ const eggText=pack.easterEggs.map((e,i)=>{
   if(!obj(e)||!str(e.title)||!str(e.text)||!['confirmed','uncertain'].includes(e.status)||!Array.isArray(e.sourceIds)||!e.sourceIds.length||new Set(e.sourceIds).size!==e.sourceIds.length||!e.sourceIds.every(id=>map.has(id)))fail('彩蛋 '+(i+1)+' 缺少來源或確認狀態');
   return (i+1)+'. '+e.title+'（'+(e.status==='confirmed'?'已確認':'待確認')+'）\n'+e.text+'\n來源：'+e.sourceIds.join('、');
  }).join('\n\n');
+ // Keep the existing unstructured easter-egg text in full. Exact repeated
+ // import is idempotent; differing candidate text is appended, not destructive.
+ const oldEggs=r.easterEggs||'';if(typeof oldEggs!=='string')fail('舊彩蛋格式錯誤');
+ const block='【'+pack.manager+'・考古候選｜'+source.chatId+'｜'+sha+'】\n'+eggText;
+ const easterEggs=!eggText||oldEggs.includes(block)?oldEggs:oldEggs+(oldEggs?'\n\n':'')+block;
  const updated={...structuredClone(r),pilotMessages,quizLogs,easterEggs};
  const counts={pilotBefore:(r.pilotMessages||[]).length,pilotAfter:pilotMessages.length,quizBefore:(r.quizLogs||[]).length,quizAfter:quizLogs.length,eggsBefore:(r.easterEggs||'').length,eggsAfter:easterEggs.length,eggCount:pack.easterEggs.length};
- return {updated,counts,sourceCount:source.count,sourceStatus:source.status,attachments:pilotMessages.concat(quizLogs).reduce((n,m)=>n+m.predecessorSource.attachments.length,0)};
+ return {updated,counts,sourceCount:source.count,sourceStatus:source.status,merge:{pilot:{added:pilot.added,replaced:pilot.replaced,preserved:pilot.preserved},quiz:{added:quiz.added,replaced:quiz.replaced,preserved:quiz.preserved},quizMissing:incomingQuiz.length===0,quizPartial:incomingQuiz.length>0&&(!incomingQuiz.some(m=>m.role==='me')||!incomingQuiz.some(m=>m.role==='ai'))},attachments:incomingPilot.concat(incomingQuiz).reduce((n,m)=>n+m.predecessorSource.attachments.length,0)};
 }
 function sameUnchanged(before,after){return equal(Object.fromEntries(Object.entries(before).filter(([k])=>!FIELDS.includes(k)&&k!=='updatedAt')),Object.fromEntries(Object.entries(after).filter(([k])=>!FIELDS.includes(k)&&k!=='updatedAt')))}
 return {FORMAT,binding,plan,sameUnchanged};
