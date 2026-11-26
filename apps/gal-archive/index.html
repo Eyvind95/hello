@@ -2761,7 +2761,7 @@ $('downloadSite').onclick=async()=>{
   if(page.querySelector('#archiveReplayStatus'))page.querySelector('#archiveReplayStatus').textContent='尚未選擇檔案。';
   let html='<!DOCTYPE html>\n'+page.outerHTML;
   const closing='</scr'+'ipt>';
-  for(const asset of ['archive-pilot-import.js?v=5','chrome-extension/gal-core.js?v=0.10.68','chrome-extension/gal-format-evidence.js?v=0.10.68','archive-replay.js?v=12','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=9','handover-cloud.js?v=3','complete-backup.js?v=2','archive-reading-export.js?v=1','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=2']){
+  for(const asset of ['archive-pilot-import.js?v=5','chrome-extension/gal-core.js?v=0.10.68','chrome-extension/gal-format-evidence.js?v=0.10.68','archive-replay.js?v=12','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=9','handover-cloud.js?v=3','complete-backup.js?v=2','archive-reading-export.js?v=2','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=2']){
    const response=await fetch(new URL('./'+asset,location.href),{cache:'no-store'});
    if(!response.ok)throw Error('程式讀取失敗：'+asset+'，HTTP '+response.status);
    const script=await response.text();
@@ -5234,5 +5234,5 @@ window.ArchiveAutoSyncBridge={
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
   }
 })();
-</script><script src="./archive-pilot-import.js?v=5"></script><script src="./chrome-extension/gal-core.js?v=0.10.68"></script><script src="./chrome-extension/gal-format-evidence.js?v=0.10.68"></script><script src="./archive-replay.js?v=12"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=9"></script><script src="./handover-cloud.js?v=3"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-reading-export.js?v=1"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=2"></script>
+</script><script src="./archive-pilot-import.js?v=5"></script><script src="./chrome-extension/gal-core.js?v=0.10.68"></script><script src="./chrome-extension/gal-format-evidence.js?v=0.10.68"></script><script src="./archive-replay.js?v=12"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=9"></script><script src="./handover-cloud.js?v=3"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-reading-export.js?v=2"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=2"></script>
 </body></html>
