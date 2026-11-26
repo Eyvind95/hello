@@ -2675,10 +2675,11 @@
     const candidate=[...rows.slice(0,start),...saved];pc.validateRows(candidate);
     return {added:start,matched:overlap.length,candidate};
   }
-  async function historyPrefixSupplement(expectedId,files,requestedTitle,checkpoint,report,cancel=()=>false){
+  async function historyPrefixSupplement(expectedId,files,requestedTitle,checkpoint,report,cancel=()=>false,observedOnly=false){
     const names=[...new Set(String(files||'').split(/[,，;；\n]/).map(x=>x.trim()).filter(Boolean))];
     expectedId=String(expectedId||'').trim();
-    if(!/^user\|turn:[a-zA-Z0-9_-]+$/.test(expectedId))return {ok:false,error:'補掃必須設定已知開頭 user|turn:…'};
+    if(!observedOnly&&!/^user\|turn:[a-zA-Z0-9_-]+$/.test(expectedId))return {ok:false,error:'補掃必須設定已知開頭 user|turn:…'};
+    if(observedOnly&&(expectedId||names.length))return {ok:false,error:'候選頂端模式請清空已知開頭 ID 與附件條件'};
     if(names.length>20||names.some(n=>n.length>200))return {ok:false,error:'附件條件過多或過長'};
     if(!valid()||state.bulk||state.scanning||state.activeSends||state.timeBusy||state.enabled||isGenerating()||document.getElementById(HISTORY_PANEL))return {ok:false,error:'請先停止本聊天其他操作，關閉舊保全面板'};
     const chat=path(),source=location.origin+chat,title=pc.chatTitle(requestedTitle||document.title);
@@ -2688,7 +2689,7 @@
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
     const startedAt=new Date().toISOString(),runId=crypto.randomUUID(),deadline=Date.now()+900000;
-    let rows=[],join=null,openingVerified=false,error=null,status='failed',windows=0,folds=[],trace=[],lastConflict=null,host=null;
+    let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],lastConflict=null,host=null;
     const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==chat||isGenerating()||!lock.isConnected)throw Error('補掃已停止或聊天狀態變更');if(Date.now()>=deadline)throw Error('補掃達15分鐘上限')};
     const readStable=async()=>{
       let previous=null,lastAt=0;const until=Math.min(deadline,Date.now()+60000);
@@ -2713,19 +2714,20 @@
       while(Date.now()<openingDeadline){
         guard();if(!host.isConnected||host.scrollTop>6)throw Error('已離開頂端，請重新定位');
         const x=historyTopNavigationSnapshot(host,expectedId,names),sig=JSON.stringify([x.firstId,x.found,host.scrollHeight]);
-        if(!x.match||historyLoading(host)||historyNativeFailure(host)){since=null;signature=null}
+        const validFirst=/^user\|turn:[a-zA-Z0-9_-]+$/.test(x.firstId);
+        if(!x.match||!validFirst||historyLoading(host)||historyNativeFailure(host)){since=null;signature=null}
         else if(signature!==sig||since===null){signature=sig;since=Date.now()}
-        else if(Date.now()-since>=8000){openingVerified=true;break}
-        report('核對已知開頭及附件，等待穩定');await sleep(600);
+        else if(Date.now()-since>=8000){observedTopVerified=true;observedFirstId=x.firstId;openingVerified=!observedOnly;break}
+        report(observedOnly?'觀測頂端及原生首則，等待穩定（非真開頭證明）':'核對已知開頭及附件，等待穩定');await sleep(600);
       }
-      if(!openingVerified)throw Error('真正開頭條件未核對，不開始補掃');
+      if(!observedTopVerified)throw Error(observedOnly?'候選頂端未穩定核對，不開始補掃':'真正開頭條件未核對，不開始補掃');
       const initial=await readStable();
-      if(host.scrollTop>6||initial[0]?.id!==expectedId||!historyTopNavigationSnapshot(host,expectedId,names).match)throw Error('首則原文與已知開頭不符');
+      if(host.scrollTop>6||initial[0]?.id!==observedFirstId||!historyTopNavigationSnapshot(host,observedFirstId,names).match)throw Error('首則原文與已核對頂端不符');
       rows=historyPrefixMerge([],initial);windows++;
       let lastProgress=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0;
       while(true){
         guard();join=historyPrefixJoin(rows,saved);
-        if(join){status='joined-evidence';break}
+        if(join){status=observedOnly?'joined-observed-prefix':'joined-evidence';break}
         if(Date.now()-lastProgress>=180000)throw Error('180秒無新增連續訊息');
         if(rows.length>5000)throw Error('局部補掃超過5000則安全上限');
         const target=Math.min(Math.max(0,host.scrollHeight-host.clientHeight),anchorTop+step);
@@ -2748,9 +2750,9 @@
     }catch(e){error=String(e.message||e);status=cancel()?'cancelled':'failed'}
     finally{if(state.bulk===b)state.bulk=null;lock.remove()}
     const candidateRows=join?join.candidate.map((r,index)=>({...r,index})):null;
-    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,windows,trace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true},candidateRows};
+    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true},candidateRows};
     const filename=historyDownload(data);
-    return {ok:!!join,message:join?'局部重疊核對成功｜新增 '+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
+    return {ok:!!join,message:join?(observedOnly?'候選頂端重疊核對成功（真開頭未驗證）｜新增 ':'局部重疊核對成功｜新增 ')+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
   }
 
 
@@ -3081,6 +3083,8 @@
       for(const [value,label] of [['file','選擇原保全 JSON（建議）'],['pinned','已記住的原保全'],['candidate','已記住的候選保全']]){const option=document.createElement('option');option.value=value;option.textContent=label;prefixSlot.append(option)}
       prefixSlot.value='file';
       const prefixFile=document.createElement('input');prefixFile.id=historyPageId('prefix-file');prefixFile.type='file';prefixFile.accept='.json,application/json';prefixFile.style.cssText=input.style.cssText;
+      const prefixObservedLabel=document.createElement('label');prefixObservedLabel.textContent='候選頂端補掃（未驗證真開頭，僅取證；清空開頭ID與附件）';
+      const prefixObserved=document.createElement('input');prefixObserved.id=historyPageId('prefix-observed');prefixObserved.type='checkbox';prefixObserved.checked=false;prefixObservedLabel.append(prefixObserved);
       const prefixStart=document.createElement('button');prefixStart.id=historyPageId('prefix-start');prefixStart.type='button';prefixStart.textContent='↓ 從頂端向下補掃（到保全前沿停止）';
       const prefixStop=document.createElement('button');prefixStop.id=historyPageId('prefix-stop');prefixStop.type='button';prefixStop.textContent='停止並下載局部取證';prefixStop.hidden=true;
       let prefixCancelled=false;
@@ -3088,7 +3092,7 @@
       prefixStart.onclick=async()=>{
         if(pane.dataset.chat!==path()||prefixStart.disabled)return;
         prefixCancelled=false;
-        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,topId,topFiles,rushTop,prefixStart,prefixFile,prefixSlot,close];
+        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,topId,topFiles,rushTop,prefixStart,prefixFile,prefixSlot,prefixObserved,close];
         controls.forEach(n=>n.disabled=true);prefixStop.hidden=false;
         const restore=localProgress(prefixStop,'頂端向下補掃');
         const status=message=>{mode.textContent='目前模式：頂端向下補掃\n'+message;feedback.textContent=message};
@@ -3100,7 +3104,7 @@
           if(!checkpoint)throw Error('找不到指定保全');
           if(prefixCancelled||pane.dataset.chat!==path()||!pane.isConnected)throw Error('補掃已停止或聊天切換');
           status('核對原保全 '+checkpoint.data.count+' 個顯示單元');
-          const r=await historyPrefixSupplement(topId.value,topFiles.value,input.value.trim(),checkpoint,status,()=>prefixCancelled||!pane.isConnected);
+          const r=await historyPrefixSupplement(topId.value,topFiles.value,input.value.trim(),checkpoint,status,()=>prefixCancelled||!pane.isConnected,!!prefixObserved.checked);
           status(r.ok?r.message:'⛔ '+r.error);
         }catch(e){status('⛔ '+String(e.message||e))}
         finally{restore();controls.forEach(n=>n.disabled=false);prefixStop.hidden=true}
@@ -3173,7 +3177,7 @@
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
+      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObservedLabel,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }

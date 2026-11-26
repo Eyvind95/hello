@@ -200,6 +200,18 @@ test('prefix supplement current-top guard and evidence-only export, no scanning 
  now=0;reads=0;moves=[];host.scrollTop=0;snapshot=false;
  assert.equal((await ctx.supplement(a.id,'a.pdf','測試前輩',cp,()=>{})).ok,false);
  assert.equal(reads,0);assert.equal(moves.length,0);assert.equal(downloads.at(-1).candidateRows,null);
+ now=0;reads=0;moves=[];host.scrollTop=0;snapshot=true;
+ assert.equal((await ctx.supplement('','','測試前輩',cp,()=>{})).ok,false);
+ assert.equal((await ctx.supplement(a.id,'','測試前輩',cp,()=>{},()=>false,true)).ok,false);
+ assert.equal((await ctx.supplement('','','測試前輩',cp,()=>{},()=>false,true)).ok,true);
+ const observed=downloads.at(-1);
+ assert.equal(observed.status,'joined-observed-prefix');assert.equal(observed.evidence.openingVerified,false);
+ assert.equal(observed.evidence.observedTopVerified,true);assert.equal(observed.evidence.observedFirstId,a.id);
+ assert.equal(observed.evidence.openingBasis,'observed-top-only');assert.equal(observed.importable,false);
+ assert.equal(observed.canonical,false);assert.equal(observed.continuity,false);assert.equal(observed.candidateRows.length,5);
+ now=0;reads=0;moves=[];host.scrollTop=0;snapshot=false;
+ assert.equal((await ctx.supplement('','','測試前輩',cp,()=>{},()=>false,true)).ok,false);
+ assert.equal(reads,0);assert.equal(moves.length,0);assert.equal(downloads.at(-1).evidence.openingVerified,false);
 });
 
 test('navigation and supplement move to compact left-bottom panel during work, then restore right-side settings and inputs',async()=>{
