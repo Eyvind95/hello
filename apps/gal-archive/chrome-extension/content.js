@@ -2113,8 +2113,8 @@
     if(!b.sample&&!b.isolated&&data.status!=='completed'&&(!b.resume||data.count>b.resume.baseCount)){
       try{await historyRemember(b,data)}catch(_){}
     }
-    b.download.onclick=()=>{try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};
-    b.download.hidden=false;b.stop.textContent='✕ 關閉面板';b.stop.onclick=()=>b.pane.remove();
+    b.download.onclick=event=>{event?.preventDefault();event?.stopPropagation();try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};
+    b.download.hidden=false;b.stop.textContent='✕ 關閉面板';b.stop.setAttribute?.('aria-label','關閉面板');b.stop.onclick=event=>{event?.preventDefault();event?.stopPropagation();b.pane.remove()};
     if(state.bulk===b)state.bulk=null;
     try{historyStatus(b,(data.status==='completed'?(b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。'+(b.memoryStatus?'\n'+b.memoryStatus:''))}
     catch(e){historyStatus(b,'保全已留在本頁，下載觸發失敗：'+e.message)}
@@ -2159,7 +2159,7 @@
       b.info=document.createElement('pre');b.info.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0';
       b.stop=historyPanelButton(document.createElement('button'),'#a13232');b.stop.textContent='停止並保全';b.stop.setAttribute('aria-label','停止並保全掃描');b.stop.onclick=()=>{b.cancelled=true;b.action.textContent='目前動作：停止並保全中'};
       b.stop.id='ga-predecessor-history-close';
-      b.download=historyPanelButton(document.createElement('button'),'#166b65');b.download.textContent='重新下載 JSON';b.download.hidden=true;
+      b.download=historyPanelButton(document.createElement('button'),'#166b65');b.download.id='ga-predecessor-history-redownload';b.download.textContent='重新下載 JSON';b.download.style.cssText+=';width:100%!important';b.download.hidden=true;
       const header=document.createElement('div');header.style.cssText='position:sticky;top:0;z-index:3;background:#202840;padding:4px 0 8px;display:flex;flex-wrap:wrap;align-items:center;gap:8px';
       h.style.cssText='flex:1 1 140px;overflow-wrap:anywhere';
       header.append(h,b.stop);

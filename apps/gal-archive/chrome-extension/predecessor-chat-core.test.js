@@ -857,5 +857,12 @@ test('history close is always in sticky header and download has its own row',()=
  const btn=ctx.styleButton({style:{}},'#a13232');a.equal(btn.type,'button');a.match(btn.style.cssText,/background:#a13232!important/);a.match(btn.style.cssText,/min-height:36px/);
  const begin=src.slice(src.indexOf('  async function historyBegin('),src.indexOf('  async function historyAnchorCapture('));
  a.match(begin,/position:sticky;top:0/);a.match(begin,/header\.append\(h,b\.stop\)/);a.match(begin,/downloads\.append\(b\.download\)/);a.match(begin,/pane\.append\(header,b\.action,b\.summary,controls,downloads,b\.info\)/);
- a.match(src,/b\.download\.hidden=false;b\.stop\.textContent='✕ 關閉面板';b\.stop\.onclick=\(\)=>b\.pane\.remove\(\)/);
+ a.match(src,/b\.download\.hidden=false;b\.stop\.textContent='✕ 關閉面板'/);
+ const handlers=src.slice(src.indexOf('    b.download.onclick=event=>'),src.indexOf('    if(state.bulk===b)state.bulk=null;',src.indexOf('    b.download.onclick=event=>')));
+ let removed=0,downloaded=0,prevented=0,stopped=0;
+ const b={stop:{},download:{hidden:true},pane:{remove(){removed++}}};
+ const event={preventDefault(){prevented++},stopPropagation(){stopped++}};
+ vm.runInNewContext(handlers,{b,data:{},historyDownload(){downloaded++;return 'file.json'},historyStatus(){}});
+ a.equal(b.download.hidden,false);b.stop.onclick(event);a.equal(removed,1);a.equal(downloaded,0);
+ b.download.onclick(event);a.equal(downloaded,1);a.equal(removed,1);a.equal(prevented,2);a.equal(stopped,2);
 });
