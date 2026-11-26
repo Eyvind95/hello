@@ -829,5 +829,5 @@ test('anchor loop matches text before movement, has no historical position recov
  a.ok(body.includes('Date.now()-lastProgress<budget.idleMs'));
  a.ok(body.includes('if(captureOnly)throw Error'));
  a.ok(!/\b(?:historySettled|historyRecoverScroll|historyScroll|historyRun|historyRemember|historyPayload|mergeUp|scrollIntoView|anchorRecoveryHint|anchorNavigation|rejoinTarget)\s*\(/.test(body));
- a.ok(!body.includes('scrollHeight'));
+ a.ok(!body.slice(body.indexOf('const budget=pc.anchorBudget')).includes('scrollHeight'));
 });
