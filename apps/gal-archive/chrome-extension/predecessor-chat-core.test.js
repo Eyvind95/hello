@@ -961,7 +961,7 @@ test('composite evidence continues through exact displayed overlap without prete
  a.deepEqual(rows,[earlier,group,...tail]);
  a.deepEqual(c.mergeUp(rows,[r('w'),earlier,{...group,compositeHtml:'<div>remounted</div>'},...tail])[2],group);
  for(const bad of [{...group,text:'改文'},{...group,structure:[]},{...group,compositeNative:{...p,boundaryVerified:true}},{...group,compositeNative:{...p,declaredIds:['a','b']}}])a.throws(()=>c.mergeUp(rows,[earlier,bad,...tail]));
- for(const id of ['assistant|message:a','assistant|message:b']){a.throws(()=>c.validateRows([group,r(id,'assistant')]));a.throws(()=>c.mergeUp(rows,[r(id,'assistant'),earlier]));}
+ for(const id of ['assistant|message:a','assistant|message:b','assistant|turn:turn']){a.throws(()=>c.validateRows([group,r(id,'assistant')]));a.throws(()=>c.mergeUp(rows,[r(id,'assistant'),earlier]));}
  a.throws(()=>c.mergeUp(tail,[group,r('unknown')]));
  const ev={...raw,format:c.COMPOSITE,importable:false,status:'failed',error:'分界待核對',count:rows.length,rows:rows.map((x,index)=>({...x,index})),evidence:{...raw.evidence,firstId:rows[0].id,lastId:rows.at(-1).id,continuity:false,unresolvedCompositeCount:1,windows:4,hostProof:{maxRange:1000,observedMovement:true}}};
  a.equal(c.validateCompositeEvidence(ev).size,rows.length);
