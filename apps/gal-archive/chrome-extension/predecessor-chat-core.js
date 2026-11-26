@@ -353,6 +353,7 @@ function validateClassification(raw,data,hash){
 }
 // Navigation hints only; never a coverage or continuity proof. Bounds
 // belong to one scrollHeight and are invalidated on virtualization growth.
+function anchorBudget(captureOnly=false){return {durationMs:captureOnly?8000:600000,traceLimit:1200,pollMs:500,stepMs:800}}
 function anchorNavigation(target,indices,geometry,previous={}){
  const {top,height,client}=geometry;
  if(!Number.isInteger(target)||target<0||!Number.isFinite(top)||!Number.isFinite(height)||!Number.isFinite(client)||client<=0||height<client)throw Error('錨點定位參數不符');
@@ -380,5 +381,5 @@ function anchorNavigation(target,indices,geometry,previous={}){
  destination=Math.max(0,Math.min(max,destination));
  return {top:destination,height,low,high,knownMin:min??null,knownMax:maxIndex??null};
 }
-return {anchorNavigation,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {anchorBudget,anchorNavigation,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });

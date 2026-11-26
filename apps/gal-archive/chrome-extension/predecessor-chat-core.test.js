@@ -807,3 +807,5 @@ test('local anchor navigation uses stable rank and invalidates scroll bounds aft
  a.equal(c.anchorNavigation(7,[],g).top,9500);a.equal(c.anchorNavigation(7,[],{...g,top:2000},up).top,4000);
  a.throws(()=>c.anchorNavigation(-1,[],g));
 });
+
+test('local anchor budget allows ten minutes independently of observation count',()=>{a.deepEqual(c.anchorBudget(false),{durationMs:600000,traceLimit:1200,pollMs:500,stepMs:800});a.equal(c.anchorBudget(true).durationMs,8000);const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'content.js'),'utf8');const body=source.slice(source.indexOf('async function historyAnchorCapture'),source.indexOf('const HISTORY_LAUNCHER'));a.ok(body.includes('while(Date.now()<deadline)'));a.ok(body.includes('evidence.navigation.loadingPolls++'));a.ok(body.includes('evidence.navigation.stallPolls++'));a.ok(!body.includes('stalls>=8)throw'));a.ok(!body.includes('&&evidence.trace.length<'));});
