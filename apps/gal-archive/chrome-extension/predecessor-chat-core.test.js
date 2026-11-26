@@ -991,3 +991,50 @@ test('history prepend: keep old coordinate frame even when live top differs by l
  a.throws(()=>c.mergeUp(saved,[r('disjoint')]));
  a.deepEqual(c.mergeUp(saved,[r('older','assistant'),...saved]),[r('older','assistant'),...saved]);
 });
+
+test('native quoted code UI label is repaired in text and structure, never semantic prose',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const snippet=src.slice(src.indexOf('  function historyNativeQuotedCodeLabel('),src.indexOf('  function historyRead(host'));
+ const ctx={historyVisible:()=>true,historyIssue:m=>Error(m)};
+ vm.runInNewContext(snippet+';globalThis.fix=historyAssistantCodeText;globalThis.structure=historyAssistantStructureText;globalThis.proof=historyNativeQuotedCodeLabel;',ctx);
+ const text=s=>({nodeType:3,nodeValue:s,textContent:s});
+ const el=(tag,attrs={},children=[],rendered)=>{
+   const n={nodeType:1,tagName:tag.toUpperCase(),childNodes:children,attrs,outerHTML:'<'+tag+'>',get children(){return this.childNodes.filter(x=>x.nodeType===1)},get textContent(){return this.childNodes.map(x=>x.textContent).join('')},get innerText(){return rendered??this.textContent},
+    getAttribute:k=>attrs[k]??null,matches(q){return q.split(',').some(k=>k.trim().toUpperCase()===this.tagName||k.trim().startsWith('[')&&attrs[k.trim().slice(1,-1).split('=')[0]]!==undefined)},
+    querySelectorAll(q){return this.children.flatMap(c=>[...(c.matches(q)?[c]:[]),...c.querySelectorAll(q)])},
+    contains(x){return this===x||this.childNodes.some(c=>c===x||c.nodeType===1&&c.contains(x))},
+    closest(q){for(let c=this;c;c=c.parentElement)if(c.matches(q))return c;return null},
+    get previousElementSibling(){const x=this.parentElement?.children||[];return x[x.indexOf(this)-1]||null},get nextElementSibling(){const x=this.parentElement?.children||[];return x[x.indexOf(this)+1]||null}};
+   children.forEach(c=>c.parentElement=n);return n;
+ };
+ const value='line A\nline B',label='程式碼';
+ function build({labelText=label,excluded=true,copy=true,extra=false,sourceMarker=true,bodyGap=label+'\n'+value,codeValue=value}={}){
+   const code=el('code',{},[el('span',{},[text(codeValue)])]);
+   const header=el('div',excluded?{'data-markdown-copy':'exclude',contenteditable:'false'}:{},[el('div',{},[text(labelText)]),el('div',{},[el('button',{'aria-label':copy?'複製代碼':'其他'},[])])]);
+   const source=el('div',sourceMarker?{'data-code-block-source':'true'}:{},[code]);
+   const wrapper=el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,source]);
+   const quote=el('blockquote',{},[...(extra?[el('p',{},[text('程式碼')])]:[]),el('div',{},[wrapper])],bodyGap);
+   const body=el('div',{},[el('p',{},[text('before')]),quote,el('p',{},[text('after')])],'before\n\n'+bodyGap+'\n\nafter');
+   return {body,quote,code};
+ }
+ const f=build(),expected='before\n\n'+value+'\n\nafter';
+ a.equal(ctx.proof(f.code,f.body).label,label);
+ a.equal(ctx.fix(f.body,{},'id',f.body.innerText),expected);
+ a.equal(ctx.structure(f.quote,f.body),value);
+ const empty=build({labelText:'',bodyGap:''});a.equal(ctx.proof(empty.code,empty.body),null);
+ a.equal(ctx.fix(empty.body,{},'id',empty.body.innerText),expected);
+ for(const options of [{excluded:false},{copy:false},{extra:true},{sourceMarker:false}]){
+  const q=build(options);a.equal(ctx.proof(q.code,q.body),null);
+  a.equal(ctx.structure(q.quote,q.body),q.quote.innerText);
+  a.equal(ctx.fix(q.body,{},'id',q.body.innerText),q.body.innerText);
+ }
+ const genuine=build({labelText:'',codeValue:label+'\n'+value,bodyGap:label+'\n'+value});
+ a.equal(ctx.fix(genuine.body,{},'id',genuine.body.innerText),genuine.body.innerText);
+ a.equal(ctx.structure(genuine.quote,genuine.body),label+'\n'+value);
+ const missing=build({bodyGap:label});a.equal(ctx.fix(missing.body,{},'id',missing.body.innerText),expected);
+ // The comparator itself is unchanged; a row-only difference remains fatal.
+ const normal={...r('anchor','assistant',expected),identityBasis:'native-dom-id',structure:[{tag:'blockquote',text:value},{tag:'code',text:value}]};
+ const changed={...normal,text:f.body.innerText,structure:[{tag:'blockquote',text:label+'\n'+value},{tag:'code',text:value}]};
+ a.throws(()=>c.mergeUp([normal],[changed]));
+});
