@@ -475,5 +475,53 @@ function anchorLiveRecoveryHint(target,indices,geo,previous={},alternate=false){
  return {...normal,best,improved,restore:false,bounds:normal};
 }
 
-return {anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+
+ // Diagnostic navigation only. The caller must still match a live native ID.
+ // Old rows supply rank, never historical pixel positions or continuity.
+function anchorDiagnosticHint(target,indices,geo,previous={},maxScreens=24,repeat=0){
+ const {top,height,client}=geo;
+ check(Number.isFinite(top)&&Number.isFinite(height)&&Number.isFinite(client)&&client>0&&height>=client,'錨點定位參數不符');
+ check(Number.isInteger(maxScreens)&&maxScreens>=1&&maxScreens<=64,'粗定位視窗數須為1至64');
+ const max=Math.max(0,height-client),clamp=x=>Math.max(0,Math.min(max,x)),ranked=Number.isInteger(target)&&target>=0;
+ const known=ranked?[...new Set(indices)].filter(i=>Number.isInteger(i)&&i>=0).sort((a,b)=>a-b):[];
+ let direction=previous.direction===1?1:-1,mode='coarse',destination=top;
+ const min=known[0],maxIndex=known.at(-1);
+ const closest=known.reduce((a,i)=>a===null||Math.abs(i-target)<Math.abs(a-target)?i:a,null);
+ const distance=closest===null?Infinity:Math.abs(closest-target);
+ const improved=Number.isFinite(distance)&&(!previous.best||distance<previous.best.distance);
+ const best=improved?{top,height,index:closest,distance}:previous.best||null;
+ let restored=improved?false:!!previous.restored;
+ // The bounds are valid only for this layout height. They are hints, not
+ // proof of a gap, and are discarded when live observations contradict them.
+ let low=previous.height===height?previous.low??null:null,high=previous.height===height?previous.high??null:null;
+ if(known.length&&maxIndex<target){low=Math.max(low??0,top);direction=1}
+ else if(known.length&&min>target){high=Math.min(high??max,top);direction=-1}
+ if(low!==null&&high!==null&&low>=high){low=null;high=null}
+ const straddle=known.length&&min<target&&maxIndex>target;
+ const near=distance<=4||straddle;
+ if(known.includes(target))return {top:clamp(top),height,mode:'live-rank-hit',direction,best,improved,restored,low,high};
+ // A lost best live anchor may be restored once, not on every worse window.
+ if(best&&!restored&&distance>best.distance&&(top>=max-6||!known.length)){
+   const estimate=clamp(rejoinTarget(best,height,client));
+   if(Math.abs(estimate-top)>client){destination=estimate;restored=true;mode='restore-live-best'}
+ }
+ if(mode!=='restore-live-best'){
+   if(low!==null&&high!==null&&high-low>client*1.5&&repeat<2){destination=(low+high)/2;mode='rank-bracket'}
+   else if(near||repeat>=2){
+     // Alternate local probes only after reaching a near/repeated window.
+     const step=client*(repeat>=2?Math.min(4,1+Math.floor(repeat/2)):.6);
+     if(straddle||repeat>=3&&repeat%2===1)direction=-direction;
+     destination=top+direction*step;mode='local-probe';
+   }else{
+     const screens=Number.isFinite(distance)?Math.min(maxScreens,Math.max(2,distance*.65)):maxScreens;
+     destination=top+direction*client*screens;
+   }
+   // At an apparent top, first keep requesting older history. If it remains
+   // unchanged, probe the opposite way; scrollTop=0 does not certify absence.
+   if(clamp(destination)===clamp(top)&&repeat>=3&&max>0){direction=-direction;destination=top+direction*client*Math.min(maxScreens,repeat>=5?4:1);mode='edge-probe'}
+ }
+ return {top:clamp(destination),height,mode,direction,best,improved,restored,restore:mode==='restore-live-best',low,high};
+}
+
+return {anchorDiagnosticHint,anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });
