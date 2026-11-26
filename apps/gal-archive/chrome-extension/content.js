@@ -2114,6 +2114,7 @@
   function historyPayload(b,status,error){
     const rows=(b.isolated?b.isolated.originalRows:b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
     const compositeCount=rows.filter(r=>r.identityBasis==='unresolved-native-composite').length+(b.isolated?b.rows.filter(r=>r.identityBasis==='unresolved-native-composite').length:0);
+    if(compositeCount&&status==='completed'){status='failed';error='已抵達觀測頂端；複合原生訊息分界待核對，非正式完整聊天'}
     if(compositeCount)warnings.push('含 '+compositeCount+' 個複合原生單元，count 是顯示單元數而非原生訊息數；分界未核對，不得正式匯入或分類。僅供取證與手動指定保全續掃。');
     if(b.isolated)warnings.push('前沿圖片參照仍有未解衝突；正式 rows 保留原有則數，不合併隔離取證。獨立原文段見 evidence.isolatedSegment，禁止當完整聊天或正式續掃斷點。');
     warnings.push('前輩聊天為文字保全：圖片內容、網址、數量與一致性不在收錄／驗收範圍；純非文字回合只保留原生ID與角色。');
