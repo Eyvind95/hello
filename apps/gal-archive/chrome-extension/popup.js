@@ -44,6 +44,7 @@ function showWatch(watched){$('start').disabled=!chat||watched||!activeBinding;$
   updateTimePanels(data.lastTimeCaptureByChat?.[chat]||data.lastTimeCapture,data.lastTimeUploadByChat?.[chat]||data.lastTimeUpload);
   updateLastWrite(data.lastByChat?.[chat]||(data.last?.chat===chat?data.last:null));
   $('bulkStatus').textContent=data.bulkByChat?.[chat]?.progress||'範圍掃描：尚未執行';
+  refreshPredecessorSaved();
   // 操作提示與最近寫入紀錄分開，避免回補按鈕訊息蓋掉時間／寫入結果。
 })();
 function showTime(iso){
@@ -175,3 +176,30 @@ $('predecessorUp').onclick=async()=>{if(!chat)return notice('請先開啟 ChatGP
 $('predecessorTestTen').onclick=async()=>{if(!chat)return notice('請先開啟 ChatGPT 聊天',true);const title=$('predecessorTitle').value.trim();if(!title)return notice('請填寫聊天名稱',true);const r=await sendTab({type:'predecessor-history-up',title,sample:true});notice(r?.ok?'已開始最近十則測試；請回聊天頁面。':'無法開始：'+(r?.error||'請重新整理該聊天頁面'),!r?.ok)};
 
 $('predecessorTestTwenty').onclick=async()=>{if(!chat)return notice('請先開啟 ChatGPT 聊天',true);const title=$('predecessorTitle').value.trim();if(!title)return notice('請填寫聊天名稱',true);const r=await sendTab({type:'predecessor-history-up',title,sample:20});notice(r?.ok?'已開始最近二十則測試；請回聊天頁面。':'無法開始：'+(r?.error||'請重新整理該聊天頁面'),!r?.ok)};
+
+// Toolbar entry points for the existing predecessor scanner; never start a fresh scan on a resume error.
+async function refreshPredecessorSaved(){
+  const info=$('predecessorSaved'),resume=$('predecessorResume');
+  resume.disabled=true;
+  if(!chat){info.textContent='請先開啟具體 ChatGPT 聊天';return}
+  const result=await sendTab({type:'predecessor-popup-status',chat});
+  if(!result?.ok){info.textContent='無法讀取保全：'+(result?.error||'頁面助手尚未連線');return}
+  const pinned=result.pinned,candidate=result.candidate;
+  info.textContent=pinned?'已記住 '+pinned.count+' 則｜'+pinned.runId+'\nSHA-256 '+pinned.hash:'尚無已記住保全；請使用完整掃描設定匯入';
+  if(candidate&&(!pinned||candidate.count>pinned.count))info.textContent+='\n另有候選 '+candidate.count+' 則｜請到完整掃描設定核定';
+  resume.disabled=!pinned||result.busy;
+  if(result.busy)info.textContent+='\n本聊天正在操作，或仍有待關閉的保全面板';
+}
+$('predecessorResume').onclick=async()=>{
+  if(!chat)return notice('請先開啟 ChatGPT 聊天',true);
+  const title=$('predecessorTitle').value.trim();if(!title)return notice('請填寫聊天名稱',true);
+  $('predecessorResume').disabled=true;
+  const result=await sendTab({type:'predecessor-popup-resume',chat,title});
+  notice(result?.ok?'已開始保全續掃；請回聊天頁面查看狀態。':'無法續掃：'+(result?.error||'頁面助手尚未連線'),!result?.ok);
+  await refreshPredecessorSaved();
+};
+$('predecessorConfig').onclick=async()=>{
+  if(!chat)return notice('請先開啟 ChatGPT 聊天',true);
+  const result=await sendTab({type:'predecessor-popup-config',chat});
+  notice(result?.ok?'已開啟完整掃描設定；請回聊天頁面操作。':'無法開啟：'+(result?.error||'頁面助手尚未連線'),!result?.ok);
+};
