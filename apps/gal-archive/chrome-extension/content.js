@@ -1555,7 +1555,17 @@
   function historyAssistantCodeText(body,owner,id,raw){
     const codes=[...body.querySelectorAll('code')].filter(historyVisible);
     let text=raw;
-    const unique=(s,v)=>v&&s.indexOf(v)>=0&&s.indexOf(v)===s.lastIndexOf(v);
+    // Match an entire line-delimited semantic anchor, not an incidental
+    // substring. A repeated paragraph is allowed only if the ordered pair
+    // and exact permissible gap identify one position.
+    const positions=(s,v)=>{
+      const out=[];if(!v)return out;
+      for(let i=s.indexOf(v);i>=0;i=s.indexOf(v,i+1)){
+        if((i===0||s[i-1]==='\n')&&(i+v.length===s.length||s[i+v.length]==='\n'))out.push(i);
+        if(out.length>128)return null;
+      }
+      return out;
+    };
     const padded=(s,v)=>{const at=s.indexOf(v);return at>=0&&!s.slice(0,at).trim()&&!s.slice(at+v.length).trim()};
     const block=n=>!!n&&n.matches('p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table,pre');
     // HR has no rendered text. The native Markdown root can place it
@@ -1577,9 +1587,10 @@
         if(!block(before)||!block(after)||!historyVisible(before)||!historyVisible(after))continue;
         if(group.closest('p,h1,h2,h3,h4,h5,h6'))continue;
         const a=before.innerText||'',b=after.innerText||'';
-        if(!a.trim()||!b.trim()||!unique(text,a)||!unique(text,b))continue;
-        const start=text.indexOf(a)+a.length,end=text.indexOf(b);
-        if(start>end)continue;
+        if(!a.trim()||!b.trim())continue;
+        const left=positions(text,a),right=positions(text,b);
+        if(!left||!right){conflicting=true;continue}
+        if(!left.length||!right.length)continue;
         // Every non-code text node in the wrapper must be whitespace or one
         // standalone known renderer label. Button text is UI, never prose.
         // No removal based on a label string elsewhere in the answer.
@@ -1599,9 +1610,16 @@
         visit(group);
         const label=copyControl&&extras.length===1&&!extras[0].prose&&/^(純文字|程式碼)$/.test(extras[0].text)?extras[0].text:'';
         if(extras.length&&!label)continue;
-        const gap=text.slice(start,end);
-        const accepted=!gap.trim()||padded(gap,value)||(label&&(padded(gap,label+'\n'+value)||padded(gap,label)));
-        if(!accepted){conflicting=true;continue}
+        const candidates=[];
+        for(const at of left)for(const end of right){
+          const start=at+a.length;
+          if(end<=start)continue;
+          const gap=text.slice(start,end);
+          if(!gap.startsWith('\n')||!gap.endsWith('\n'))continue;
+          if(!gap.trim()||padded(gap,value)||(label&&(padded(gap,label+'\n'+value)||padded(gap,label))))candidates.push({start,end});
+        }
+        if(candidates.length!==1){conflicting=true;continue}
+        const {start,end}=candidates[0];
         // Exact same output when the renderer exposes only the code node,
         // or exposes the label plus its text in the enclosing innerText.
         text=text.slice(0,start)+'\n\n'+value+'\n\n'+text.slice(end);
@@ -2034,6 +2052,51 @@
       b.memoryStatus=result.unchanged?'本機保全未變更':'本機已記住 '+result.count+' 則（'+result.slot+'）';
     }catch(e){b.memoryStatus='本機保全記憶未更新：'+String(e.message||e)}
   }
+  // Navigation-only identity hint. A mounted marker is NOT proof of a
+  // readable row; historySettled and mergeUp still certify the entire window.
+  function historyMountedFrontier(host,id){
+    const root=historyRoot(host),m=/^(user|assistant)\|(turn|message):([a-zA-Z0-9_-]+)$/.exec(id||'');
+    if(!m)return false;
+    const [,role,kind,native]=m;
+    if(kind==='turn')return [...root.querySelectorAll('[data-turn-key]')].some(n=>n.getAttribute('data-turn-key')===native&&historyVisible(n));
+    if(role==='assistant'&&[...root.querySelectorAll('[data-response-body]')].some(n=>n.getAttribute('data-response-body')===native&&historyVisible(n)))return true;
+    return [...root.querySelectorAll('[data-message-id],[data-source-message-id],[data-dil-message-id]')].some(n=>historyVisible(n)&&['data-message-id','data-source-message-id','data-dil-message-id'].some(a=>n.getAttribute(a)===native));
+  }
+  async function historyRejoinByIdentity(b,deadline){
+    const id=b.rows[0]?.id,host=b.host;
+    if(!id)return null;
+    const stats=b.scrollStats;
+    stats.identityRejoinAttempts=(stats.identityRejoinAttempts||0)+1;
+    const record=(event,details={})=>historyTrace(b,'identity-rejoin-'+event,{anchorId:id,...details});
+    record('start');historyStatus(b,'依原生前沿ID重新接合');
+    let steps=0,stalled=0,snaps=0;
+    // The live bottom has already been verified in this scan. Start there
+    // if the anchor is not mounted; never use historical pixel coordinates.
+    if(!historyMountedFrontier(host,id)){
+      historyScroll(host,host.scrollHeight);await sleep(150);
+    }
+    while(steps<=512&&Date.now()<deadline){
+      historyGuard(b);
+      if(historyMountedFrontier(host,id)){
+        record('mounted',{steps,snaps});
+        const live=await historySettled(b,{deadline,upward:true,target:null,allowBoost:false});
+        if(live.some(r=>r.id===id)){record('stable-hit',{steps,firstId:live[0]?.id,lastId:live.at(-1)?.id});return live}
+        record('marker-only',{steps});
+      }
+      if(steps===512)break;
+      if(historyLoading(host)){await sleep(150);continue}
+      if(await historyNativeRetry(b,deadline))continue;
+      const before=host.scrollTop,viewport=host.clientHeight;
+      if(viewport<=0)break;
+      historyScroll(host,before-Math.max(1,viewport));
+      await sleep(50);steps++;
+      stats.identityRejoinSteps=(stats.identityRejoinSteps||0)+1;
+      const actual=host.scrollTop;
+      if(actual>before+viewport&&historyAtBottom(host)){snaps++;record('bottom-snap',{steps,snaps});if(snaps>=2)break}
+      if(Math.abs(actual-before)<1){if(++stalled>=3)break;await sleep(150)}else stalled=0;
+    }
+    record('not-located',{steps,snaps,stalled});return null;
+  }
   async function historyRun(b){
     let status='failed',error=null;
     try{
@@ -2090,12 +2153,13 @@
           b.scrollStats.interWindowBottomReturns=(b.scrollStats.interWindowBottomReturns||0)+1;
           historyTrace(b,'inter-window-bottom-return',{actual:pos,height:currentHeight,verifiedTop:anchor.top,verifiedHeight:anchor.height,estimated:pc.frontierPosition(anchor,currentHeight,b.host.clientHeight)});
         }
-        const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
+        const plans=[{ratio:1},{identity:true,ratio:0},{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
           ...[1,-1,2,-2,4,-4].map(offset=>({ratio:0,offset})),
           {ratio:0,rebase:false}];
         let recovering=false,attempted=new Set();
         for(const plan of plans){
-          const {ratio,offset=0,rebase=true,alternate=false}=plan;
+          const {ratio,offset=0,rebase=true,alternate=false,identity=false}=plan;
+          if(identity&&(lastError!=='視窗沒有重疊訊息'||b.resume||b.isolated||state.identityRejoinAttempted))continue;
           if(alternate&&!lastError.startsWith('頁面反覆自動返回底端'))continue;
           if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息'&&!lastError.startsWith('頁面反覆自動返回底端'))break;
           historyGuard(b);
@@ -2103,16 +2167,23 @@
           const targetHeight=b.host.scrollHeight;
           const baseAnchor=ratio===1&&!recovering&&!savedAnchor?{top:origin,height:anchor.height}:anchor;
           const target=pc.rejoinTarget(baseAnchor,targetHeight,b.host.clientHeight,offset*b.host.clientHeight-step*ratio,rebase);
-          const key=JSON.stringify([Math.round(target),targetHeight,!!state.recoveryAvoidFrontier]);
+          const key=JSON.stringify([Math.round(target),targetHeight,!!state.recoveryAvoidFrontier,identity]);
           if(recovering&&attempted.has(key))continue;
           attempted.add(key);
           if(recovering){
             b.scrollStats.rejoinAttempts=(b.scrollStats.rejoinAttempts||0)+1;
             historyTrace(b,'rejoin-attempt',{ratio,offset,rebase,target,anchorTop:anchor.top,anchorHeight:anchor.height,expectedHeight:targetHeight,anchorId:state.frontier?.id||null});
           }
-          const nativeRetried=await historyNativeRetry(b,deadline);
-          if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
-          try{rows=await historySettled(b,{deadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering})}catch(e){
+          let nativeRetried=false;
+          if(identity)state.identityRejoinAttempted=true;
+          else{
+            nativeRetried=await historyNativeRetry(b,deadline);
+            if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
+          }
+          try{
+            rows=identity?await historyRejoinByIdentity(b,deadline):await historySettled(b,{deadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering});
+            if(!rows)continue;
+          }catch(e){
             historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
             if(e.code!=='HISTORY_RECOVERY_RETRY')throw e;
             lastError=String(e.message||e);recovering=true;rows=null;
@@ -2140,7 +2211,7 @@
             }
             b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),merged,rows);
             b.rows=merged;for(const change of changes)historyAttachmentChange(b,change);b.windows++;if(b.isolated)b.isolated.windows++;
-            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
+            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;if(identity)b.scrollStats.identityRejoinSuccesses=(b.scrollStats.identityRejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,identity,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
             lastError='';break;
           }catch(e){
             b.scrollStats.overlapRetries++;lastError=String(e.message||e);
@@ -2185,7 +2256,7 @@
         if(b.rows.length>lastCount){
           if(state.attempts){b.scrollStats.breakthroughSuccesses=(b.scrollStats.breakthroughSuccesses||0)+1;historyTrace(b,'breakthrough-progress',{attempts:state.attempts,resets:state.resets,previousCount:lastCount});}
           historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos,firstId:rows[0]?.id,lastId:rows.at(-1)?.id});
-          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'new-rows');
+          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;state.identityRejoinAttempted=false;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'new-rows');
           state.frontier={id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight};
         }
         else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
