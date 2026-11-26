@@ -2718,7 +2718,7 @@
       used+=take;if(take<text.length)truncated=true;
       return {text:text.slice(0,take),length:text.length,truncated:take<text.length};
     };
-    const attrs=node=>Array.from(node.attributes||[]).slice(0,100).map(a=>({name:a.name,value:bounded(a.value,4000)}));
+    const attrs=node=>{const all=Array.from(node.attributes||[]);if(all.length>100)truncated=true;return all.slice(0,100).map(a=>({name:a.name,value:bounded(a.value,4000)}))};
     const snap=(node,html=true)=>({tag:node.tagName?.toLowerCase()||null,attributes:attrs(node),innerText:bounded(node.innerText),textContent:bounded(node.textContent),...(html?{outerHTML:bounded(node.outerHTML)}:{})});
     const response=snap(body);
     const selector='blockquote,pre,code,[data-code-block],[data-code-block-source],[data-markdown-copy],button,[role="button"]';
@@ -2727,6 +2727,7 @@
     const details=nodes.slice(0,MAX_NODES).map(node=>{
       const ancestors=[];
       for(let n=node.parentElement;n&&n!==body&&body.contains(n)&&ancestors.length<16;n=n.parentElement)ancestors.push({tag:n.tagName?.toLowerCase()||null,attributes:attrs(n)});
+      if(ancestors.length===16&&node.parentElement!==body)truncated=true;
       return {node:snap(node),ancestors};
     });
     const result={status:'captured',messageId:row.id,observedAt:new Date().toISOString(),scope:'matched-assistant-body-only',ownerTurnKey:owner.getAttribute('data-turn-key'),response,details,nodeCount:nodes.length,capturedNodeCount:details.length,truncated,characterBudget:MAX_TOTAL};
@@ -2859,8 +2860,10 @@
           evidence.status='matched-unconfirmed';evidence.matchedRow=hit.row;evidence.navigation.firstMatchAt=Date.now()-began;pending=null;
           let found=null;
           try{found=capture(host,rows,folds,hit.row.id,atomic)}catch(e){evidence.firstCaptureIssue=String(e.message||e).slice(0,300)}
-          if(!found){evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);return {ok:true,message:'已命中並停止；原文列已保存，訊息容器細節待核對。'}}
+          if(!found){if(assistantTarget)evidence.domCapture={status:'unavailable',observations:0,truncated:false};evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);return {ok:true,message:'已命中並停止；原文列已保存，訊息容器細節待核對。'}}
           const {element:ignored,...first}=found;evidence.observations=[first];
+          const updateDomCapture=()=>{if(assistantTarget)evidence.domCapture={status:evidence.observations.some(o=>o.rawDom?.status==='captured')?'captured':'unavailable',observations:evidence.observations.filter(o=>o.rawDom?.status==='captured').length,truncated:evidence.observations.some(o=>o.rawDom?.truncated===true)}};
+          updateDomCapture();
           progress('已命中原文或指定ID，停止捲動並再次核對（不重新置中）');
           await sleep(650);guard();
           try{
@@ -2873,7 +2876,7 @@
           }catch(e){evidence.secondReadIssue=String(e.message||e).slice(0,300)}
           const confirmed=evidence.observations.length===2&&hit.identityVerified;
           evidence.status=confirmed?'located':'matched-unconfirmed';
-          if(assistantTarget)evidence.domCapture={status:evidence.observations.some(o=>o.rawDom?.status==='captured')?'captured':'unavailable',observations:evidence.observations.filter(o=>o.rawDom?.status==='captured').length,truncated:evidence.observations.some(o=>o.rawDom?.truncated===true)};
+          updateDomCapture();
           evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);
           return {ok:true,message:(confirmed?'已停止捲動並保存指定ID雙次證據（原文差異另記錄）。':'已停止捲動並保存首次命中證據，ID或第二次觀測待核對；不會重新搜尋。')+(assistantTarget?' DOM：'+(evidence.domCapture.status==='captured'?'已保存':'未取得')+(evidence.domCapture.truncated?'（有截斷）':''):'')};
         }
