@@ -88,7 +88,7 @@ test('full DOM read preserves both independently marked assistant bodies in DOM 
  const user={...attrs({}),order:0,closest:()=>null,querySelector:()=>null,querySelectorAll:()=>[],compareDocumentPosition:()=>4};
  const turn={...attrs({'data-turn-key':'q'}),parentElement:null,contains:n=>[user,first,second,unit,turn].includes(n)};
  const root={contains:n=>turn.contains(n),querySelectorAll:q=>q==='[data-response-body]'?[first,second]:q==='[data-message-author-role]'?[]:[turn]};
- const read=vm.runInNewContext(source+';historyRead',{historyRoot:()=>root,historyVisible:()=>true,historyOwner:()=>turn,isUserDescendant:n=>n===user,outerUsers:()=>[user],assistantElements:()=>[],assistantFallbackTexts:new Map(),historyReadText:n=>n.text||'問題',historyIssue:m=>Error(m),getVisibleSourceTime:()=>null,HISTORY_STRUCT:'p',HISTORY_ATTACHMENT:'img',USER_BUBBLE_SELECTOR:'bubble',Node:{DOCUMENT_POSITION_FOLLOWING:4},pc:require('./predecessor-chat-core.js')});
+ const read=vm.runInNewContext(source+';historyRead',{historyRoot:()=>root,historyVisible:()=>true,historyOwner:()=>turn,isUserDescendant:n=>n===user,outerUsers:()=>[user],assistantElements:()=>[],assistantFallbackTexts:new Map(),historyReadText:n=>n.text||'問題',historyIssue:m=>Error(m),getVisibleSourceTime:()=>null,HISTORY_STRUCT:'p',HISTORY_ATTACHMENT:'img',historyAttachment:()=>{throw Error('unexpected attachment')},USER_BUBBLE_SELECTOR:'bubble',Node:{DOCUMENT_POSITION_FOLLOWING:4},pc:require('./predecessor-chat-core.js')});
  const rows=read(root);
  assert.equal(JSON.stringify(rows.map(r=>[r.id,r.text])),JSON.stringify([['user|turn:q','問題'],['assistant|message:a','第一段'],['assistant|message:b','第二段']]));
 });
