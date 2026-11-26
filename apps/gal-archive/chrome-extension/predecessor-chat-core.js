@@ -243,13 +243,17 @@ const scrollStep=(height,unchanged=0)=>Math.max(24,Math.floor(height*(unchanged>
  // A height-only shift is not a reset. For changed heights require a large
  // unexplained displacement AND a bottom landing. The adjusted coordinate
  // is only a recovery attempt; strict message overlap is still required.
-function scrollRecoveryTarget(target,actual,height,expectedHeight,viewport){
+function scrollRecoveryTarget(target,actual,height,expectedHeight,viewport,tolerance=.75){
  if(![target,actual,height,expectedHeight,viewport].every(Number.isFinite)||viewport<=0)return null;
- const max=Math.max(0,height-viewport),delta=height-expectedHeight,threshold=Math.max(32,viewport*.75);
- if(Math.abs(delta)<=2)return actual-target>threshold?Math.min(max,Math.max(0,target)):null;
+ const max=Math.max(0,height-viewport),delta=height-expectedHeight,threshold=Math.max(32,viewport*tolerance);
+ // A genuine far return to the bottom remains a recovery event even when
+ // ordinary local navigation is granted a wider coordinate envelope.
+ const bottomThreshold=Math.max(32,viewport*.75);
+ const farBottom=Math.abs(actual-max)<=6&&actual-Math.max(target,Math.min(max,Math.max(0,target+delta)))>bottomThreshold;
+ if(Math.abs(delta)<=2)return actual-target>threshold||farBottom?Math.min(max,Math.max(0,target)):null;
  const adjusted=Math.min(max,Math.max(0,target+delta));
  const unexplained=actual-Math.max(target,adjusted);
- return Math.abs(actual-max)<=6&&unexplained>threshold?adjusted:null;
+ return farBottom&&unexplained>bottomThreshold?adjusted:null;
 }
 const scrollReset=(...args)=>scrollRecoveryTarget(...args)!==null;
 // An accepted frontier is a coordinate hint, never a continuity proof.
