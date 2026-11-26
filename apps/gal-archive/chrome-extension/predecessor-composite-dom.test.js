@@ -199,3 +199,31 @@ test('disjoint older window searches downward from current position without a bo
  const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
  assert.equal((await recover({host,rows,scrollStats:{}},10000))[0],rows[0]);assert.deepEqual(positions,[1800,2400]);
 });
+
+test('resume identity recovery targets the last verified old index, not an unread earlier prefix',async()=>{
+ const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
+ const host={scrollTop:1800,scrollHeight:6000,clientHeight:600};
+ const rows=['old','current','next','tail'].map(id=>({id:'assistant|message:'+id}));
+ const root={querySelectorAll:q=>q==='[data-response-body]'?[{getAttribute:()=> 'current'}]:[]};
+ let now=0;const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:()=>{},historyStatus:()=>{},historyScroll:()=>{throw Error('already mounted')},historyLoading:()=>false,historyNativeRetry:async()=>false,historyAtBottom:()=>false,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>rows.slice(1,3)};
+ const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
+ const b={host,rows,resumeRows:rows,resume:{frontierVerified:false,minIndex:1},scrollStats:{}};
+ const result=await recover(b,10000);assert.equal(result[0].id,rows[1].id);
+});
+test('relative identity recovery can move during a persistent loading marker but cannot accept an unread window',async()=>{
+ const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
+ const host={scrollTop:5400,scrollHeight:6000,clientHeight:600};
+ const rows=[{id:'assistant|message:frontier'}];let now=0,moves=0,reads=0;
+ const root={querySelectorAll:q=>q==='[data-response-body]'&&host.scrollTop<=1800?[{getAttribute:()=> 'frontier'}]:[]};
+ host.scrollBy=({top})=>{moves++;host.scrollTop=Math.max(0,Math.min(5400,host.scrollTop+top))};
+ const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:()=>{},historyStatus:()=>{},historyScroll:()=>{throw Error('unexpected jump')},historyLoading:()=>true,historyNativeRetry:async()=>false,historyAtBottom:h=>h.scrollTop===5400,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>{reads++;throw Error('loading')}};
+ const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
+ assert.equal(await recover({host,rows,scrollStats:{}},10000),null);assert.ok(moves>0);assert.ok(reads>0);
+});
+test('far bottom reset transfers control to identity before attempting geometric recovery',async()=>{
+ const source=s.slice(s.indexOf('  async function historySettled('),s.indexOf('  function historyGuard('));
+ const host={scrollTop:840000,scrollHeight:840600,clientHeight:600};
+ const ctx={pc:{recoveryPolicy:()=>({})},historyGuard:()=>{},historyNativeRetry:async()=>false,historyAtBottom:()=>true,historyRecoverScroll:()=>{throw Error('unexpected geometric recovery')}};
+ const settle=vm.runInNewContext(source+';historySettled',ctx);
+ await assert.rejects(settle({host,breakthrough:{}},{upward:true,target:5000,targetHeight:840600,preferIdentity:true}),e=>e.code==='HISTORY_RECOVERY_RETRY');
+});
