@@ -897,7 +897,10 @@ test('anchor loop preserves first match, never scrolls or restarts after hit, no
  a.ok(!/\b(?:historyScroll|scrollIntoView|scrollBy|historySettled|historyNativeRetry)\s*\(/.test(matched));
  a.ok(!/\bcontinue\b/.test(matched));
  a.ok(body.includes('await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs)'));
- a.ok(body.includes('pc.anchorLiveRecoveryHint(targetIndex'));
+ a.ok(body.includes('pc.anchorDiagnosticHint(targetIndex,indices,geo,policy,maxScreens,repeat)'));
+ a.ok(body.includes('GalCheckpointMemory.decode(await options.file.arrayBuffer(),source,pc,expectedHash||undefined)'));
+ a.ok(!body.includes('GalCheckpointMemory.save('));
+ a.ok(!body.includes('idOnlyStarted'));
  a.ok(body.includes("positionBasis:'current-session-only; no saved scan coordinates'"));
  a.ok(!/\b(?:historyRun|historyRemember|historyPayload|mergeUp)\s*\(/.test(body));
  a.ok(!body.includes('scrollIntoView'));

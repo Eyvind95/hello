@@ -4,7 +4,7 @@ const source=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=source
 function fixture(){
  const nodes=new Map(),calls=[];let route='/c/first',result={ok:true},saved=null,records={},readHook=null,localHook=null;
  const element=tag=>({tag,id:'',dataset:{},style:{},children:[],append(...children){this.children.push(...children);for(const n of children)if(n.id)nodes.set(n.id,n)},remove(){nodes.delete(this.id);for(const n of this.children)if(n.id)nodes.delete(n.id)},setAttribute(){},click(){return this.onclick?.()},scrollIntoView(){calls.push('existing')}});
- const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async(...args)=>{if(readHook)await readHook(...args);return saved}},chrome:{storage:{local:{get:async()=>records}},runtime:{id:'testextension',getManifest:()=>({version:'0.10.48'}),sendMessage:async m=>{calls.push([m.type,m.expectedHash]);return {ok:true,readback:true,hash:m.expectedHash,count:2,runId:'run'}}}},historyPrefixSupplement:async (id,files,title,checkpoint,report)=>{calls.push(['prefix',id,files,title,checkpoint.hash]);if(localHook)await localHook('prefix');return {ok:true,message:'prefix evidence'}},historyRushTop:async (id,files,report)=>{calls.push(['rush',id,files]);report('navigation');if(localHook)await localHook('rush');return {ok:true,message:'navigation only'}},historyAnchorCapture:async (id,title,report,capture)=>{calls.push(['anchor',id,title,capture]);return {ok:true,message:'local evidence'}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
+ const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async(...args)=>{if(readHook)await readHook(...args);return saved}},chrome:{storage:{local:{get:async()=>records}},runtime:{id:'testextension',getManifest:()=>({version:'0.10.48'}),sendMessage:async m=>{calls.push([m.type,m.expectedHash]);return {ok:true,readback:true,hash:m.expectedHash,count:2,runId:'run'}}}},historyPrefixSupplement:async (id,files,title,checkpoint,report)=>{calls.push(['prefix',id,files,title,checkpoint.hash]);if(localHook)await localHook('prefix');return {ok:true,message:'prefix evidence'}},historyRushTop:async (id,files,report)=>{calls.push(['rush',id,files]);report('navigation');if(localHook)await localHook('rush');return {ok:true,message:'navigation only'}},historyAnchorCapture:async (id,title,report,capture,cancel,options)=>{calls.push(['anchor',id,title,capture]);if(options?.file)calls.push(['anchor-options',options.file.name,options.expectedHash,options.maxScreens]);return {ok:true,message:'local evidence'}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
  Object.assign(ctx,{state:{},isGenerating:()=>false});vm.createContext(ctx);vm.runInContext(block+';globalThis.launch=historyLauncher;globalThis.popup=historyPopupCommand;',ctx);
  return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x},saved:x=>{saved=x},records:x=>{records=x},readHook:x=>{readHook=x},localHook:x=>{localHook=x},popup:ctx.popup,state:ctx.state};
 }
@@ -108,7 +108,7 @@ test('new toolbar and right launcher ignore old-version launcher and configurati
  f.nodes.set(oldButton.id,oldButton);f.nodes.set(oldPane.id,oldPane);
  await f.popup({type:'predecessor-popup-config',chat:'/c/first'});
  const launcher=f.nodes.get('ga-predecessor-page-launcher--testextension'),pane=f.nodes.get('ga-predecessor-page-config--testextension');
- assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/right:18px/);assert.match(pane.style.cssText,/right:18px/);
+ assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/left:18px/);assert.match(pane.style.cssText,/left:18px/);
  assert.match(launcher.textContent,/V0\.10\.48/);assert.equal(legacyClicks,0);
  assert.equal(f.nodes.get(oldButton.id),oldButton);assert.equal(f.nodes.get(oldPane.id),oldPane);
  f.route('/c/second');f.launch();assert.equal(f.nodes.has(pane.id),false);assert.equal(f.nodes.get(oldPane.id),oldPane);
@@ -264,4 +264,43 @@ test('settling returns a diagnostic anchor immediately without another read or s
  const rows=await ctx.settle(b,{anchorRead:hook});assert.equal(rows[0],target);assert.equal(anchorReads,1);assert.equal(reads,0);assert.equal(sleeps,0);
  await ctx.settle({...b,mode:'predecessor-history'},{anchorRead:hook});
  assert.equal(anchorReads,1);assert.ok(reads>=2);assert.ok(sleeps>=2);
+});
+
+test('guided anchor settings pass a readonly selected file and configurable coarse step',async()=>{
+ const f=fixture();f.launch();f.nodes.get('ga-predecessor-page-launcher--testextension').onclick();
+ const file={name:'checkpoint.json',size:200};
+ f.nodes.get('ga-predecessor-page-anchor-id--testextension').value='assistant|message:target';
+ f.nodes.get('ga-predecessor-page-anchor-file--testextension').files=[file];
+ f.nodes.get('ga-predecessor-page-anchor-hash--testextension').value='a'.repeat(64);
+ const step=f.nodes.get('ga-predecessor-page-anchor-step--testextension');assert.equal(step.value,'24');step.value='48';
+ await f.nodes.get('ga-predecessor-page-anchor-locate--testextension').onclick();
+ assert.deepEqual(f.calls,[['anchor','assistant|message:target','測試前輩',false],['anchor-options','checkpoint.json','a'.repeat(64),48]]);
+});
+test('guided anchor coarse moves, near moves, current-start probes and rank bounds',()=>{
+ const pc=require('./predecessor-chat-core'),g={top:80000,height:100000,client:674};
+ const far=pc.anchorDiagnosticHint(1,[84,85],g,{},24);
+ assert.equal(far.mode,'coarse');assert.equal(far.top,80000-24*674);assert.equal(far.best.index,84);
+ const near=pc.anchorDiagnosticHint(1,[3,4],{...g,top:10000},far,24);
+ assert.equal(near.mode,'local-probe');assert.ok(Math.abs(near.top-10000)<674);
+ const unknown=pc.anchorDiagnosticHint(undefined,[],g,{},24);
+ assert.equal(unknown.top,80000-24*674);assert.equal(unknown.best,null);
+ const below=pc.anchorDiagnosticHint(20,[3,4],{...g,top:10000},{},24);
+ const above=pc.anchorDiagnosticHint(20,[40,41],{...g,top:50000},below,24);
+ assert.equal(above.mode,'rank-bracket');assert.equal(above.top,30000);
+ const changed=pc.anchorDiagnosticHint(20,[40],{...g,top:50000,height:120000},below,24);
+ assert.equal(changed.low,null);assert.equal(changed.mode,'coarse');
+ assert.throws(()=>pc.anchorDiagnosticHint(1,[3],g,{},65),/1至64/);
+});
+test('guided anchor lost live rank restored at most once until improvement',()=>{
+ const pc=require('./predecessor-chat-core'),g={top:10000,height:100000,client:674};
+ const best=pc.anchorDiagnosticHint(1,[5],g,{},24);
+ const bottom={...g,top:99326};
+ const restored=pc.anchorDiagnosticHint(1,[85],bottom,best,24);
+ assert.equal(restored.mode,'restore-live-best');assert.equal(restored.restored,true);
+ const repeated=pc.anchorDiagnosticHint(1,[85],bottom,restored,24);
+ assert.equal(repeated.restore,false);assert.equal(repeated.restored,true);
+ const better=pc.anchorDiagnosticHint(1,[2],{...g,top:5000},repeated,24);
+ assert.equal(better.improved,true);assert.equal(better.restored,false);
+ const edge=pc.anchorDiagnosticHint(undefined,[],{...g,top:0},{},24,4);
+ assert.equal(edge.mode,'edge-probe');assert.ok(edge.top>0);
 });

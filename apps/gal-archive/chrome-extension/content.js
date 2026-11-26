@@ -2754,7 +2754,7 @@
     return {rows,observation};
   }
 
-  async function historyAnchorCapture(target,requestedTitle,report,captureOnly=false,cancel=()=>false){
+  async function historyAnchorCapture(target,requestedTitle,report,captureOnly=false,cancel=()=>false,options={}){
     if(!pc||!valid()||state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating()||document.getElementById(HISTORY_PANEL))return {ok:false,error:'請先結束本聊天其他工作及掃描面板'};
     const chat=path(),source=location.origin+chat,title=pc.chatTitle(requestedTitle||document.title);
     if(!title||!/^(?:user\|(?:turn|message)|assistant\|message):[a-zA-Z0-9_-]+$/.test(target))return {ok:false,error:'請填入完整玩家或 GPT 原生訊息ID及聊天名稱'};
@@ -2790,22 +2790,34 @@
       return {row:rows[index],neighborIds:rows.slice(Math.max(0,index-2),index+3).map(r=>r.id),neighborRows:rows.slice(Math.max(0,index-2),index+3),folds:folds.filter(x=>x.messageId===actualId),images,controls,rect:rect(el),ownerTurnKey:owner.getAttribute('data-turn-key'),element:el};
     };
     try{
-      const checkpoint=await GalCheckpointMemory.read(chrome.storage.local,source,pc);guard();
+      // An explicitly selected baseline is read-only and never replaces a
+      // remembered checkpoint. Invalid or mismatched selection cannot fall back.
+      const maxScreens=Number(options.maxScreens??24);
+      if(!Number.isInteger(maxScreens)||maxScreens<1||maxScreens>64)throw Error('粗定位視窗數須為1至64');
+      let checkpoint;
+      if(options.file){
+        if(options.file.size>GalCheckpointMemory.MAX)throw Error('定位基準超過100MiB');
+        const expectedHash=String(options.expectedHash||'').trim().toLowerCase();
+        if(expectedHash&&!/^[a-f0-9]{64}$/.test(expectedHash))throw Error('定位基準 SHA-256 格式錯誤');
+        checkpoint=await GalCheckpointMemory.decode(await options.file.arrayBuffer(),source,pc,expectedHash||undefined);
+      }else{
+        checkpoint=await GalCheckpointMemory.read(chrome.storage.local,source,pc);
+      }
+      guard();
       if(!checkpoint&&!assistantTarget)throw Error('請先記住本聊天已驗證的原始保全');
       const baselineRows=(checkpoint?.data.rows||[]).map(pc.withoutImages),rank=new Map(baselineRows.map((r,i)=>[r.id,i])),targetIndex=rank.get(target);
-      if(targetIndex===undefined&&!assistantTarget)throw Error('指定ID不在已記住的正式基準內');
+      if(targetIndex===undefined&&(!assistantTarget||options.file))throw Error('指定ID不在選用的定位基準內');
       const idOnly=targetIndex===undefined;
-      evidence.baseline=checkpoint?{runId:checkpoint.data.runId,sha256:checkpoint.hash,count:checkpoint.data.count,index:targetIndex??null}:null;
+      evidence.baseline=checkpoint?{runId:checkpoint.data.runId,sha256:checkpoint.hash,count:checkpoint.data.count,index:targetIndex??null,source:options.file?'selected-file-read-only':'remembered'}:null;
       const {watch={}}=await chrome.storage.local.get('watch');guard();
       if(watch[chat]===true){delete watch[chat];await chrome.storage.local.set({watch})}
       state.enabled=false;state.watchedPath=null;candidates.clear();guard();
       attempted=true;
       const expected=idOnly?{id:target,role:'assistant',text:null}:baselineRows[targetIndex],uniqueText=!assistantTarget&&!!expected.text&&baselineRows.filter(r=>r.role==='user'&&r.text===expected.text).length===1;
-      evidence.search={method:idOnly?'native-id-sequential':'original-text-live-recovery',expectedText:expected.text,uniqueText,identityRequired:true,positionBasis:'current-session-only; no saved scan coordinates'};
-      let idOnlyStarted=false;
+      evidence.search={method:idOnly?'native-id-coarse-probe':'baseline-rank-coarse-local',expectedText:expected.text,uniqueText,identityRequired:true,positionBasis:'current-session-only; no saved scan coordinates',maxScreens,coarseProbeMaySkip:true};
       const budget=pc.anchorBudget(captureOnly),began=Date.now(),deadline=began+budget.hardMs;
       let lastProgress=began,previousHost=null,lastWindow=null,stalls=0,previousBottom=false,pending=null,policy={},settleFailures=0;
-      const seen=new Set();
+      const seen=new Set(),visited=new Map();
       evidence.navigation={idleMs:budget.idleMs,hardMs:budget.hardMs,traceLimit:budget.traceLimit,hostWaitPolls:0,loadingPolls:0,readIssuePolls:0,observedWindows:0,traceOverflow:0,stallPolls:0,interWindowBottomReturns:0,uniqueObserved:0,relativeSteps:0,bestIndex:null,bestDistance:null,directionChanges:0,settleFailures:0,liveRecoveryAttempts:0,firstMatchAt:null};
       const elapsed=()=>Math.floor((Date.now()-began)/1000);
       const progress=message=>report(message+'｜'+elapsed()+' 秒｜無新ID '+Math.floor((Date.now()-lastProgress)/1000)+'/'+Math.round(budget.idleMs/1000)+'秒');
@@ -2813,7 +2825,7 @@
       const appendTrace=entry=>{if(evidence.trace.length>=budget.traceLimit){evidence.trace.shift();evidence.navigation.traceOverflow++}evidence.trace.push(entry)};
       while(Date.now()<deadline&&Date.now()-lastProgress<budget.idleMs){
         guard();const host=historyHost();if(!host){evidence.navigation.hostWaitPolls++;progress('等待聊天捲動容器');await sleep(budget.pollMs);continue}
-        if(previousHost&&previousHost!==host){lastWindow=null;previousBottom=false;pending=null;policy={};settleFailures=0;b.breakthrough={resets:0,attempts:0,frontier:null}}
+        if(previousHost&&previousHost!==host){lastWindow=null;previousBottom=false;pending=null;policy={};visited.clear();settleFailures=0;b.breakthrough={resets:0,attempts:0,frontier:null}}
         previousHost=host;b.host=host;
         let rows,atomic=null,folds=[];
         const readWindow=(readHost=host)=>{folds=[];const read=historyAnchorReadWindow(readHost,x=>folds.push(x),expected,uniqueText);rows=read.rows;atomic=read.observation;return read};
@@ -2826,7 +2838,7 @@
           }
           if(!rows||!pc.anchorTextMatch(expected,rows,uniqueText)){
             try{
-              const stable=await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs),upward:true,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true,anchorRead:assistantTarget?readWindow:null});
+              const stable=await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs),upward:pending?.direction!==1,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true,anchorRead:assistantTarget?readWindow:null});
               guard();if(!atomic)readWindow();
               // A matching live row must not be discarded because a neighbor
               // changed during hydration. Otherwise require stable fingerprint.
@@ -2886,28 +2898,26 @@
           return {ok:true,message:(confirmed?'已停止捲動並保存指定ID雙次證據（原文差異另記錄）。':'已停止捲動並保存首次命中證據，ID或第二次觀測待核對；不會重新搜尋。')+(assistantTarget?' DOM：'+(evidence.domCapture.status==='captured'?'已保存':'未取得')+(evidence.domCapture.truncated?'（有截斷）':''):'')};
         }
         if(captureOnly)throw Error('目前掛載範圍未命中原文或指定ID；未捲動');
-        // Reuse V0.10.44's live rank-guided recovery only to reach a
-        // candidate viewport. Its state belongs to this run/current host.
+        // Start from the current viewport. A selected source provides rank,
+        // not saved pixel coordinates; coarse movement never proves coverage.
         const geo={top:host.scrollTop,height:host.scrollHeight,client:host.clientHeight};
-        // An assistant ID missing from the old baseline is still searchable.
-        // Inspect the current window first, then start at the live bottom
-        // and walk upward by overlapping viewports. Geometry is never proof.
-        const hint=idOnly?{top:idOnlyStarted?Math.max(0,geo.top-Math.max(1,Math.floor(geo.client*.6))):Math.max(0,geo.height-geo.client),bounds:{}}:pc.anchorLiveRecoveryHint(targetIndex,indices,geo,policy,settleFailures%2===1);
-        if(idOnly)idOnlyStarted=true;
+        const visitKey=JSON.stringify([Math.round(geo.height),Math.round(geo.top/Math.max(1,geo.client)),rows[0]?.id,rows.at(-1)?.id]);
+        const repeat=newIds.length?0:(visited.get(visitKey)||0);
+        if(visited.size>=4096&&!visited.has(visitKey))visited.delete(visited.keys().next().value);
+        visited.set(visitKey,repeat+1);
+        const hint=pc.anchorDiagnosticHint(targetIndex,indices,geo,policy,maxScreens,repeat);
         if(hint.improved){
           b.breakthrough.resets=0;b.breakthrough.attempts=0;pc.clearRecoveryPolicy(b.breakthrough);settleFailures=0;
-          b.breakthrough.frontier={top:hint.best.top,height:hint.best.height,id:checkpoint.data.rows[hint.best.index].id};
+          b.breakthrough.frontier={top:hint.best.top,height:hint.best.height,id:baselineRows[hint.best.index].id};
           historyTrace(b,'anchor-rank-progress',{index:hint.best.index,distance:hint.best.distance});
         }
         if(hint.restore){evidence.navigation.liveRecoveryAttempts++;historyTrace(b,'anchor-live-recovery',{bestIndex:hint.best.index,target:hint.top})}
-        // A missing ID inside a rank interval is not a match. Probe locally
-        // instead of declaring absence or treating the interval as proof.
-        if(hint.stop){hint.top=Math.max(0,geo.top-Math.max(1,Math.floor(geo.client*.6)));hint.bounds={}}
+        if(policy.direction&&hint.direction!==policy.direction)evidence.navigation.directionChanges++;
         const signature=JSON.stringify([geo.top,geo.height,rows[0]?.id,rows.at(-1)?.id,hint.top]);
         stalls=signature===lastWindow?stalls+1:0;lastWindow=signature;policy=hint;
-        Object.assign(record,{...geo,destination:hint.top??null,bestIndex:evidence.navigation.bestIndex,restoring:hint.restore});
+        Object.assign(record,{...geo,destination:hint.top,bestIndex:evidence.navigation.bestIndex,restoring:!!hint.restore,mode:hint.mode,repeat});
         if(stalls>=8&&!hint.restore){evidence.navigation.stallPolls++;progress('等待目前視窗穩定');await sleep(2000);continue}
-        if(Math.abs(hint.top-geo.top)>2){pending={top:hint.top,height:geo.height};historyScroll(host,hint.top);evidence.navigation.relativeSteps++;await sleep(180)}
+        if(Math.abs(hint.top-geo.top)>2){pending={top:hint.top,height:geo.height,direction:hint.top>geo.top?1:-1};historyScroll(host,hint.top);evidence.navigation.relativeSteps++;await sleep(180)}
         else await sleep(budget.stepMs);
       }
       throw Error(captureOnly?'目前錨點擷取逾時，未證明目標不存在':Date.now()>=deadline?'原文搜尋達60分鐘安全上限，未證明目標不存在':'原文搜尋10分鐘未觀測新ID，未證明目標不存在');
@@ -2933,14 +2943,14 @@
     button.textContent='📚 前輩聊天掃描 V'+chrome.runtime.getManifest().version;
     button.setAttribute('aria-label','開啟前輩聊天掃描助手');
     button.title='獨立 ChatGPT 完整聊天 JSON 掃描（此安裝版本）';
-    button.style.cssText='position:fixed!important;left:auto!important;right:18px!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
+    button.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
     button.onclick=()=>{
       const active=document.getElementById(HISTORY_PANEL);
       if(active){if(active.dataset?.gaExtensionId===chrome.runtime.id)active.gaShowHistoryDetails?.();else button.title='此頁已有其他版本掃描或保全面板，請勿同頁重複掃描';return}
       if(document.getElementById(HISTORY_CONFIG)){if(state.bulk?.mode==='predecessor-top-navigation')return;document.getElementById(HISTORY_CONFIG).remove();return}
       const pane=document.createElement('section');pane.id=HISTORY_CONFIG;pane.dataset.chat=path();
       pane.setAttribute('role','dialog');pane.setAttribute('aria-label','前輩完整聊天掃描設定');
-      pane.style.cssText='position:fixed!important;left:auto!important;right:18px!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
+      pane.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
       const heading=document.createElement('strong');heading.textContent='前輩聊天掃描助手';
       const version=document.createElement('p');version.textContent='V'+chrome.runtime.getManifest().version+'｜獨立 JSON，不上傳正史';
       const mode=document.createElement('div');mode.id=historyPageId('mode');mode.setAttribute('role','status');mode.style.cssText='position:sticky;top:0;z-index:2;padding:10px;margin:6px 0 12px;background:#111827;border:1px solid #8edcd3;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere';mode.textContent='目前模式：尚未開始｜請選擇原文搜尋、完整掃描或保全續掃';
@@ -3054,6 +3064,11 @@
       };
       const anchorLabel=document.createElement('strong');anchorLabel.textContent='① 局部取證・原文搜尋（只找指定訊息）';
       const anchorInput=document.createElement('input');anchorInput.id=historyPageId('anchor-id');anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='原文搜尋：玩家或 GPT 原生訊息 ID';anchorInput.style.cssText=input.style.cssText;
+      const anchorFileLabel=document.createElement('label');anchorFileLabel.textContent='定位基準 JSON（唯讀，不替換保全；建議選同聊天原始斷點）';
+      const anchorFile=document.createElement('input');anchorFile.id=historyPageId('anchor-file');anchorFile.type='file';anchorFile.accept='.json,application/json';anchorFile.style.cssText=input.style.cssText;
+      const anchorHash=document.createElement('input');anchorHash.id=historyPageId('anchor-hash');anchorHash.type='text';anchorHash.maxLength=64;anchorHash.placeholder='定位基準 SHA-256（選填）';anchorHash.style.cssText=input.style.cssText;
+      const anchorStepLabel=document.createElement('label');anchorStepLabel.textContent='遠距粗定位最大視窗數（1–64，接近目標自動縮步）';
+      const anchorStep=document.createElement('input');anchorStep.id=historyPageId('anchor-step');anchorStep.type='number';anchorStep.min='1';anchorStep.max='64';anchorStep.step='1';anchorStep.value='24';anchorStep.style.cssText=input.style.cssText;
       const anchorLocate=document.createElement('button');anchorLocate.id=historyPageId('anchor-locate');anchorLocate.type='button';anchorLocate.textContent='依原文搜尋（10分鐘無進展停止）';
       const anchorCapture=document.createElement('button');anchorCapture.id=historyPageId('anchor-capture');anchorCapture.type='button';anchorCapture.textContent='擷取目前錨點（不捲動）';
       const anchorStop=document.createElement('button');anchorStop.id=historyPageId('anchor-stop');anchorStop.type='button';anchorStop.textContent='停止定位';anchorStop.hidden=true;
@@ -3070,9 +3085,9 @@
         const target=anchorInput.value.trim();
         const status=message=>{mode.textContent='目前模式：'+activeMode+'\n目標：'+target+'\n目前動作：'+message;feedback.textContent=message};
         status('準備讀取原文');
-        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,rushTop,prefixStart,close];
+        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,anchorFile,anchorHash,anchorStep,rushTop,prefixStart,close];
         controls.forEach(n=>n.disabled=true);anchorStop.hidden=false;
-        try{const r=await historyAnchorCapture(target,input.value.trim(),status,captureOnly,()=>anchorCancelled||!pane.isConnected);status(r.ok?r.message:'⛔ '+r.error)}
+        try{const r=await historyAnchorCapture(target,input.value.trim(),status,captureOnly,()=>anchorCancelled||!pane.isConnected,{file:anchorFile.files?.[0],expectedHash:anchorHash.value,maxScreens:Number(anchorStep.value)});status(r.ok?r.message:'⛔ '+r.error)}
         catch(e){status('⛔ '+String(e.message||e))}
         finally{controls.forEach(n=>n.disabled=false);anchorStop.hidden=true}
       };
@@ -3115,7 +3130,7 @@
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixStart,prefixStop,anchorLabel,anchorInput,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
+      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }
