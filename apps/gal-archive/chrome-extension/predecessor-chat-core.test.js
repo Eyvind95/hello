@@ -527,7 +527,7 @@ test('trusted wheel observation is passive, scoped and bounded',()=>{
 
 test('predecessor status panel stays at bottom, supports compact view and moves without scrolling',()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
- const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyPanelControls('),src.indexOf('  function historyAtBottom('));
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyPanelButton('),src.indexOf('  function historyAtBottom('));
  const element=()=>({style:{},children:[],hidden:false,setAttribute(k,v){this[k]=v},append(...nodes){this.children.push(...nodes)}});
  const ctx={document:{createElement:element},window:{innerWidth:450}};vm.runInNewContext(block+';globalThis.controls=historyPanelControls;globalThis.status=historyStatus;',ctx);
  const pane=element(),b={info:element(),summary:element(),download:{hidden:true},rows:[r('anchor')]};
@@ -847,4 +847,15 @@ test('anchor loop preserves first match, never scrolls or restarts after hit, no
  a.ok(body.includes("positionBasis:'current-session-only; no saved scan coordinates'"));
  a.ok(!/\b(?:historyRun|historyRemember|historyPayload|mergeUp)\s*\(/.test(body));
  a.ok(!body.includes('scrollIntoView'));
+});
+
+test('history close is always in sticky header and download has its own row',()=>{
+ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const part=src.slice(src.indexOf('  function historyPanelButton('),src.indexOf('  function historyPanelControls('));
+ const ctx={};vm.runInNewContext(part+';globalThis.styleButton=historyPanelButton;',ctx);
+ const btn=ctx.styleButton({style:{}},'#a13232');a.equal(btn.type,'button');a.match(btn.style.cssText,/background:#a13232!important/);a.match(btn.style.cssText,/min-height:36px/);
+ const begin=src.slice(src.indexOf('  async function historyBegin('),src.indexOf('  async function historyAnchorCapture('));
+ a.match(begin,/position:sticky;top:0/);a.match(begin,/header\.append\(h,b\.stop\)/);a.match(begin,/downloads\.append\(b\.download\)/);a.match(begin,/pane\.append\(header,b\.action,b\.summary,controls,downloads,b\.info\)/);
+ a.match(src,/b\.download\.hidden=false;b\.stop\.textContent='✕ 關閉面板';b\.stop\.onclick=\(\)=>b\.pane\.remove\(\)/);
 });
