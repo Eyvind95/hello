@@ -876,3 +876,17 @@ test('history close is always in sticky header and download has its own row',()=
  a.equal(c.anchorTextMatch({...expected,text:'正文'},[{...actual,id:'assistant|message:other'}],true),null);
  a.equal(c.anchorTextMatch(expected,[actual,actual],false),null);
  });
+
+test('predecessor text projection ignores image count, duplicate references and URLs without changing originals',()=>{
+ const image={kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/11111111-1111-4111-8111-111111111111'};
+ const old=r('user|turn:stable'),tail=r('assistant|message:next','assistant');
+ const p={...old,attachments:[image,image]},q={...old,attachments:[{...image,url:'blob:https://chatgpt.com/22222222-2222-4222-8222-222222222222'}]};
+ for(const raw of [old,p,q])a.deepEqual(c.mergeUp([c.withoutImages(old),tail],[c.withoutImages(raw),tail]),[old,tail]);
+ a.equal(p.attachments.length,2);
+ a.throws(()=>c.mergeUp([old,tail],[c.withoutImages({...p,text:'changed'}),tail]));
+ a.throws(()=>c.mergeUp([old,tail],[c.withoutImages({...p,structure:[{tag:'b',text:'changed'}]}),tail]));
+ const only=c.withoutImages({...p,text:''});a.equal(only.text,'');a.equal(only.nonTextOmitted,true);a.deepEqual(only.attachments,[]);a.equal(c.validateRows([only]).size,1);
+ a.throws(()=>c.validateRows([{...only,nonTextOmitted:false}]));
+ const file={kind:'attachment-reference',label:'notes.pdf',url:null};
+ a.deepEqual(c.withoutImages({...p,attachments:[image,file]}).attachments,[file]);
+});

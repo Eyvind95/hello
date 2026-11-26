@@ -1437,7 +1437,10 @@
   const HISTORY_ATTACHMENT='img,a[href],[data-testid*="attachment"],[data-testid*="file-chip"]';
   const HISTORY_SKIP=FALLBACK_SKIP+', [data-testid="conversation-turn-tools"], [data-testid="turn-actions"], [data-radix-popper-content-wrapper]';
   function historyAttachment(n){
-    const src=n.tagName==='IMG'?n.getAttribute('src'):n.tagName==='A'?n.getAttribute('href'):null;
+    // Images are outside the predecessor text archive. The transient marker
+    // is used only to retain the native identity of an image-only turn.
+    if(n.tagName==='IMG'||(n.querySelector?.('img')&&!n.querySelector?.('[data-testid*="file-chip"]')&&!String(n.innerText||'').trim()))return {kind:'image-reference',label:'',url:null};
+    const src=n.tagName==='A'?n.getAttribute('href'):null;
     return {kind:n.tagName==='IMG'?'image-reference':n.tagName==='A'?'link':'attachment-reference',label:n.getAttribute('alt')||n.getAttribute('aria-label')||n.innerText||'',url:src||null};
   }
   function historyIssue(message,owner,details={}){
@@ -1712,6 +1715,7 @@
       return a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1;
     });
     for(const group of owners.values())if(group.some(x=>x.row.contentBasis==='composite-after-user-dom')&&(group.filter(x=>x.row.role==='user').length!==1||group.filter(x=>x.row.role==='assistant').length!==1))throw historyIssue('備援 GPT 與玩家來源無法形成唯一回合',group[0].owner);
+    for(const entry of entries)entry.row=pc.withoutImages(entry.row);
     const rows=entries.map(x=>x.row);pc.validateRows(rows);
     if(!rows.length)throw Error('尚未讀到對話訊息');
     onEntries(entries);
@@ -2021,6 +2025,7 @@
   function historyPayload(b,status,error){
     const rows=(b.isolated?b.isolated.originalRows:b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
     if(b.isolated)warnings.push('前沿圖片參照仍有未解衝突；正式 rows 保留原有則數，不合併隔離取證。獨立原文段見 evidence.isolatedSegment，禁止當完整聊天或正式續掃斷點。');
+    warnings.push('前輩聊天為文字保全：圖片內容、網址、數量與一致性不在收錄／驗收範圍；純非文字回合只保留原生ID與角色。');
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
     if(b.nativeHistoryRetry?.attempts)warnings.push('曾觸發原生歷史載入重試；錯誤消失不代表訊息已取得，仍依原文重疊及前沿核對。');
     if(b.trustedWheelCount)warnings.push('掃描期間觀測到可信滾輪輸入，不能當成無人工介入的自動驗收；來源可能是使用者或瀏覽器自動化。');
@@ -2035,7 +2040,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images; not checked',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+(data.evidence.isolatedSegment?.count??data.count):'')+'.json';
@@ -2340,13 +2345,13 @@
     if(checkpoint){
       if(b.sample)return {ok:false,error:'測試不能續掃'};
       try{
-        b.resumeRows=pc.validateCheckpoint(checkpoint.data,location.origin+b.chat);
+        b.resumeRows=pc.validateCheckpoint(checkpoint.data,location.origin+b.chat,true);
         if(!/^[a-f0-9]{64}$/.test(checkpoint.hash))throw Error('斷點雜湊無效');
-        b.resume={baseCount:b.resumeRows.length,sourceRunId:checkpoint.data.runId,sourceVersion:checkpoint.data.scannerVersion||null,sourceSha256:checkpoint.hash,sourceFirstId:b.resumeRows[0].id,sourceLastId:b.resumeRows.at(-1).id,tailVerified:false,frontierVerified:false,minIndex:b.resumeRows.length,checkedWindows:0};
+        b.resume={baseCount:b.resumeRows.length,sourceRunId:checkpoint.data.runId,sourceVersion:checkpoint.data.scannerVersion||null,imagePolicy:'omit-images; original checkpoint hash unchanged',sourceSha256:checkpoint.hash,sourceFirstId:b.resumeRows[0].id,sourceLastId:b.resumeRows.at(-1).id,tailVerified:false,frontierVerified:false,minIndex:b.resumeRows.length,checkedWindows:0};
         const sourceEvidence=checkpoint.data.evidence;
         b.resumeFoldObservations=[...(Array.isArray(sourceEvidence.inheritedFoldObservations)?sourceEvidence.inheritedFoldObservations:[]),...(Array.isArray(sourceEvidence.foldObservations)?sourceEvidence.foldObservations:[])];
         // Keep prior variant snapshots in later checkpoints; original rows remain unchanged.
-        b.foldTailVariants=Array.isArray(sourceEvidence.foldTailVariants)?sourceEvidence.foldTailVariants.slice():[];
+        b.foldTailVariants=Array.isArray(sourceEvidence.foldTailVariants)?sourceEvidence.foldTailVariants.map(x=>({...x,previous:pc.withoutImages(x.previous),current:pc.withoutImages(x.current)})):[];
         if(b.foldTailVariants.length>1000)throw Error('斷點折疊尾端差異證據過多');
         b.knownMinimum=Math.max(b.knownMinimum,b.resume.baseCount);
       }catch(e){return {ok:false,error:String(e.message||e)}}
@@ -2422,14 +2427,14 @@
       if(outer.length!==1)throw Error('指定ID可見但無法確認唯一玩家容器');
       const el=outer[0],owner=historyOwner(el);
       const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
-      const images=[...el.querySelectorAll('img')].filter(historyVisible).map(n=>({src:n.getAttribute('src'),currentSrc:n.currentSrc||null,alt:n.getAttribute('alt'),naturalWidth:n.naturalWidth,naturalHeight:n.naturalHeight,complete:n.complete,rect:rect(n),parent:{tag:n.parentElement?.tagName||null,testId:n.parentElement?.getAttribute('data-testid')||null,role:n.parentElement?.getAttribute('role')||null,rect:n.parentElement?rect(n.parentElement):null}}));
+      const images=[]; // no image capture in predecessor anchor diagnostics
       const controls=expandButtons(owner).filter(historyVisible).map(n=>({label:String(n.innerText||n.textContent||n.getAttribute('aria-label')||'').trim(),rect:rect(n)}));
       return {row:rows[index],neighborIds:rows.slice(Math.max(0,index-2),index+3).map(r=>r.id),neighborRows:rows.slice(Math.max(0,index-2),index+3),folds:folds.filter(x=>x.messageId===actualId),images,controls,rect:rect(el),ownerTurnKey:owner.getAttribute('data-turn-key'),element:el};
     };
     try{
       const checkpoint=await GalCheckpointMemory.read(chrome.storage.local,source,pc);guard();
       if(!checkpoint&&!assistantTarget)throw Error('請先記住本聊天已驗證的原始保全');
-      const baselineRows=checkpoint?.data.rows||[],rank=new Map(baselineRows.map((r,i)=>[r.id,i])),targetIndex=rank.get(target);
+      const baselineRows=(checkpoint?.data.rows||[]).map(pc.withoutImages),rank=new Map(baselineRows.map((r,i)=>[r.id,i])),targetIndex=rank.get(target);
       if(targetIndex===undefined&&!assistantTarget)throw Error('指定ID不在已記住的正式基準內');
       const idOnly=targetIndex===undefined;
       evidence.baseline=checkpoint?{runId:checkpoint.data.runId,sha256:checkpoint.hash,count:checkpoint.data.count,index:targetIndex??null}:null;
