@@ -153,8 +153,8 @@ test('two independent code blocks preserve original order and normalize both ren
 });
 test('identity recovery walks live viewport and returns only a stable matching window',async()=>{
  const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
- const host={scrollTop:0,scrollHeight:6000,clientHeight:600};
- const marker={getAttribute:()=> 'frontier'};
+ const host={scrollTop:0,scrollHeight:6000,clientHeight:600,getBoundingClientRect:()=>({top:0,bottom:600})};
+ const marker={getAttribute:()=> 'frontier',getBoundingClientRect:()=>({top:0,bottom:200})};
  let now=0,reads=0;
  const root={querySelectorAll:q=>q==='[data-response-body]'&&host.scrollTop<=1800?[marker]:[]};
  const row={id:'assistant|message:frontier'};
@@ -164,4 +164,38 @@ test('identity recovery walks live viewport and returns only a stable matching w
  assert.equal((await recover(b,10000))[0],row);assert.equal(reads,1);assert.equal(host.scrollTop,1800);
  ctx.historySettled=async()=>[{id:'assistant|message:wrong'}];
  host.scrollTop=5400;assert.equal(await recover(b,10000),null);
+});
+
+test('identity window does not mistake nonadjacent mounted replies for a contiguous prefix',()=>{
+ const src=s.slice(s.indexOf('  function historyIdentityWindow('),s.indexOf('  async function historyRejoinByIdentity('));
+ const valid=vm.runInNewContext(src+';historyIdentityWindow');
+ const rows=['a','u','b','v'].map(id=>({id}));
+ assert.equal(valid(rows,[rows[0],rows[2]],false),false);
+ assert.equal(valid(rows,[rows[0]],true),false);
+ assert.equal(valid(rows,[rows[0],rows[1]],true),true);
+ assert.equal(valid(rows,[{id:'older'},rows[0],rows[1]],true),true);
+ assert.equal(valid(rows,[rows[0],rows[1],{id:'unknown-tail'}],true),false);
+});
+test('identity recovery can traverse over 512 viewports without resetting to the bottom',async()=>{
+ const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
+ const host={scrollTop:900000,scrollHeight:900600,clientHeight:600};
+ let now=0;const positions=[];
+ const rows=Array.from({length:901},(_,i)=>({id:'assistant|message:a'+i}));
+ const root={querySelectorAll:q=>q==='[data-response-body]'?[{getAttribute:()=> 'a'+Math.floor(host.scrollTop/1000)}]:[]};
+ host.scrollBy=({top})=>{host.scrollTop=Math.max(0,Math.min(900000,host.scrollTop+top));positions.push(host.scrollTop)};
+ const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:()=>{},historyStatus:()=>{},historyScroll:()=>{throw Error('unexpected absolute scroll')},historyLoading:()=>false,historyNativeRetry:async()=>false,historyAtBottom:h=>h.scrollTop===900000,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>rows.slice(0,2)};
+ const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
+ const b={host,rows,scrollStats:{},resume:{frontierVerified:false}};
+ const result=await recover(b,180000);
+ assert.equal(result[0].id,rows[0].id);assert.ok(b.scrollStats.identityRejoinSteps>512);assert.ok(positions.every((x,i)=>!i||x<=positions[i-1]));
+});
+test('disjoint older window searches downward from current position without a bottom reset',async()=>{
+ const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
+ const host={scrollTop:1200,scrollHeight:12000,clientHeight:600};
+ const rows=[{id:'assistant|message:frontier'},{id:'user|turn:next'}];let now=0;const positions=[];
+ const root={querySelectorAll:q=>q==='[data-response-body]'&&host.scrollTop>=2400?[{getAttribute:()=> 'frontier'}]:[]};
+ host.scrollBy=({top})=>{host.scrollTop=Math.max(0,Math.min(11400,host.scrollTop+top));positions.push(host.scrollTop)};
+ const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:()=>{},historyStatus:()=>{},historyScroll:()=>{throw Error('unexpected absolute scroll')},historyLoading:()=>false,historyNativeRetry:async()=>false,historyAtBottom:h=>h.scrollTop===11400,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>rows};
+ const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
+ assert.equal((await recover({host,rows,scrollStats:{}},10000))[0],rows[0]);assert.deepEqual(positions,[1800,2400]);
 });

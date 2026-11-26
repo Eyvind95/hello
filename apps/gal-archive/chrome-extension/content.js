@@ -2062,40 +2062,80 @@
     if(role==='assistant'&&[...root.querySelectorAll('[data-response-body]')].some(n=>n.getAttribute('data-response-body')===native&&historyVisible(n)))return true;
     return [...root.querySelectorAll('[data-message-id],[data-source-message-id],[data-dil-message-id]')].some(n=>historyVisible(n)&&['data-message-id','data-source-message-id','data-dil-message-id'].some(a=>n.getAttribute(a)===native));
   }
+  // Native markers guide navigation only; even a matching marker may have
+  // no readable user body, or be separated from the next row by a gap.
+  function historyMountedRanks(host,saved){
+    const root=historyRoot(host),ranks=new Map(),found=new Map();
+    saved.forEach((r,i)=>{const key=r.id.split('|')[1];if(key){const a=ranks.get(key)||[];a.push(i);ranks.set(key,a)}});
+    const selectors=[['[data-turn-key]','data-turn-key','turn:'],['[data-response-body]','data-response-body','message:'],['[data-message-id],[data-source-message-id],[data-dil-message-id]','data-message-id','message:']];
+    for(const [selector,attr,prefix] of selectors)for(const n of root.querySelectorAll(selector)){
+      if(!historyVisible(n))continue;
+      const value=n.getAttribute(attr)||(attr==='data-message-id'&&(n.getAttribute('data-source-message-id')||n.getAttribute('data-dil-message-id')));
+      for(const rank of ranks.get(prefix+value)||[])if(!found.has(rank))found.set(rank,n);
+    }
+    return found;
+  }
+  function historyIdentityWindow(saved,live,requirePair=false){
+    const ranks=new Map(saved.map((r,i)=>[r.id,i]));
+    const known=live.map((r,i)=>({i,rank:ranks.get(r.id)})).filter(x=>x.rank!==undefined);
+    if(!known.length||known[0].rank!==0||known.at(-1).i!==live.length-1)return false;
+    if(requirePair&&known.length<2)return false;
+    return known.every((x,i)=>x.rank===i&&x.i===known[0].i+i);
+  }
   async function historyRejoinByIdentity(b,deadline){
     const id=b.rows[0]?.id,host=b.host;
     if(!id)return null;
     const stats=b.scrollStats;
     stats.identityRejoinAttempts=(stats.identityRejoinAttempts||0)+1;
     const record=(event,details={})=>historyTrace(b,'identity-rejoin-'+event,{anchorId:id,...details});
+    // Do not reset to the bottom: a disjoint window can already be older
+    // than the saved frontier. Relative navigation is not an archive merge.
     record('start');historyStatus(b,'依原生前沿ID重新接合');
-    let steps=0,stalled=0,snaps=0;
-    // The live bottom has already been verified in this scan. Start there
-    // if the anchor is not mounted; never use historical pixel coordinates.
-    if(!historyMountedFrontier(host,id)){
-      historyScroll(host,host.scrollHeight);await sleep(150);
-    }
-    while(steps<=512&&Date.now()<deadline){
+    const maxSteps=4096,requirePair=!!(b.resume&&!b.resume.frontierVerified);
+    let steps=0,stalled=0,snaps=0,edges=0,direction=historyAtBottom(host)?-1:1,best=Infinity;
+    let lastProgress=Date.now(),lastProbe='',lastProbeAt=0;
+    while(steps<=maxSteps&&Date.now()<deadline&&Date.now()-lastProgress<30000){
       historyGuard(b);
-      if(historyMountedFrontier(host,id)){
-        record('mounted',{steps,snaps});
-        const live=await historySettled(b,{deadline,upward:true,target:null,allowBoost:false});
-        if(live.some(r=>r.id===id)){record('stable-hit',{steps,firstId:live[0]?.id,lastId:live.at(-1)?.id});return live}
-        record('marker-only',{steps});
-      }
-      if(steps===512)break;
+      const hints=historyMountedRanks(host,b.rows),ranks=[...hints.keys()].sort((a,c)=>a-c);
+      if(ranks.length&&ranks[0]<best){best=ranks[0];lastProgress=Date.now();record('rank-progress',{steps,best})}
+      if(hints.has(0)){
+        const key=JSON.stringify([Math.round(host.scrollTop),host.scrollHeight,ranks]);
+        if(key!==lastProbe||Date.now()-lastProbeAt>=1500){
+          lastProbe=key;lastProbeAt=Date.now();record('mounted',{steps,snaps,ranks:ranks.slice(0,8)});
+          let live=null;
+          try{live=await historySettled(b,{deadline:Math.min(deadline,Date.now()+2500),upward:true,target:null,allowBoost:false})}
+          catch(e){record('probe-failed',{steps,reason:String(e.message||e)});historyGuard(b)}
+          if(live&&historyIdentityWindow(b.rows,live,requirePair)){
+            record('stable-hit',{steps,firstId:live[0]?.id,lastId:live.at(-1)?.id});return live;
+          }
+          record('marker-only',{steps,liveIds:live?.map(r=>r.id)||[]});
+        }
+        const rect=hints.get(0)?.getBoundingClientRect?.(),hr=host.getBoundingClientRect?.();
+        if(rect&&hr&&rect.bottom<=hr.top)direction=-1;
+        else if(rect&&hr&&rect.top>=hr.bottom)direction=1;
+        else direction=1; // expose the next adjacent row, not an assumed gap
+      }else if(ranks.length)direction=-1;
+      if(steps===maxSteps)break;
       if(historyLoading(host)){await sleep(150);continue}
       if(await historyNativeRetry(b,deadline))continue;
       const before=host.scrollTop,viewport=host.clientHeight;
       if(viewport<=0)break;
-      historyScroll(host,before-Math.max(1,viewport));
+      if((direction<0&&before<=2)||(direction>0&&historyAtBottom(host))){
+        if(++edges>2)break;direction=-direction;record('edge-turn',{steps,direction,edges});
+      }
+      const delta=direction*Math.max(1,Math.floor(viewport*(hints.has(0)?.5:1)));
+      if(typeof host.scrollBy==='function')host.scrollBy({top:delta,behavior:'instant'});
+      else historyScroll(host,before+delta);
       await sleep(50);steps++;
       stats.identityRejoinSteps=(stats.identityRejoinSteps||0)+1;
       const actual=host.scrollTop;
-      if(actual>before+viewport&&historyAtBottom(host)){snaps++;record('bottom-snap',{steps,snaps});if(snaps>=2)break}
+      if(delta<0&&actual>before+viewport&&historyAtBottom(host)){
+        snaps++;record('bottom-snap',{steps,snaps});if(snaps>=4)break;
+        direction=-1;
+      }
       if(Math.abs(actual-before)<1){if(++stalled>=3)break;await sleep(150)}else stalled=0;
     }
-    record('not-located',{steps,snaps,stalled});return null;
+    record('not-located',{steps,snaps,stalled,best:Number.isFinite(best)?best:null});return null;
   }
   async function historyRun(b){
     let status='failed',error=null;
@@ -2140,8 +2180,9 @@
           state.attempts++;b.scrollStats.breakthroughAttempts=(b.scrollStats.breakthroughAttempts||0)+1;
           historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from:origin,to:Math.max(0,origin-step),step,anchor:state.frontier?.id||null});
         }
-        if(pc.noNewRows(lastGrowth,Date.now())){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
+        if(pc.noNewRows(lastGrowth,Date.now())&&Date.now()>=(state.identityGraceUntil||0)){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
         const deadline=lastGrowth+60000;
+        const attemptDeadline=Math.max(deadline,state.identityGraceUntil||0);
         let rows=null,lastError='';
         // Keep the last verified viewport in its original coordinate frame.
         // Rebase each retry, and never trigger another breakthrough while
@@ -2159,11 +2200,11 @@
         let recovering=false,attempted=new Set();
         for(const plan of plans){
           const {ratio,offset=0,rebase=true,alternate=false,identity=false}=plan;
-          if(identity&&(lastError!=='視窗沒有重疊訊息'||b.sample||b.resume||b.isolated||state.identityRejoinAttempted))continue;
+          if(identity&&(!(/視窗沒有重疊訊息|頁面反覆自動返回底端|恢復向上捲動位置/.test(lastError))||b.sample||b.isolated||state.identityRejoinAttempted))continue;
           if(alternate&&!lastError.startsWith('頁面反覆自動返回底端'))continue;
           if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息'&&!lastError.startsWith('頁面反覆自動返回底端'))break;
           historyGuard(b);
-          if(Date.now()>=deadline)break;
+          if(!identity&&Date.now()>=attemptDeadline)break;
           const targetHeight=b.host.scrollHeight;
           const baseAnchor=ratio===1&&!recovering&&!savedAnchor?{top:origin,height:anchor.height}:anchor;
           const target=pc.rejoinTarget(baseAnchor,targetHeight,b.host.clientHeight,offset*b.host.clientHeight-step*ratio,rebase);
@@ -2177,15 +2218,15 @@
           let nativeRetried=false;
           if(identity)state.identityRejoinAttempted=true;
           else{
-            nativeRetried=await historyNativeRetry(b,deadline);
+            nativeRetried=await historyNativeRetry(b,attemptDeadline);
             if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
           }
           try{
-            rows=identity?await historyRejoinByIdentity(b,deadline):await historySettled(b,{deadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering});
+            rows=identity?await historyRejoinByIdentity(b,Date.now()+180000):await historySettled(b,{deadline:attemptDeadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering});
             if(!rows)continue;
           }catch(e){
             historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
-            if(e.code!=='HISTORY_RECOVERY_RETRY')throw e;
+            if(e.code!=='HISTORY_RECOVERY_RETRY'&&(b.sample||b.isolated||state.identityRejoinAttempted||!String(e.message||e).includes('等待逾時：恢復向上捲動位置')))throw e;
             lastError=String(e.message||e);recovering=true;rows=null;
             pc.alternateRecoveryPolicy(state);
             b.scrollStats.recoveryPlanRetries=(b.scrollStats.recoveryPlanRetries||0)+1;
@@ -2200,7 +2241,7 @@
               if(merged.length>b.rows.length&&!q.frontier)throw Error('續掃前沿未核對，不能增加舊訊息');
               b.resume.checkedWindows++;
               if(q.minIndex<b.resume.minIndex){
-                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'resume-earlier-index');
+                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;state.identityRejoinAttempted=false;state.identityGraceUntil=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'resume-earlier-index');
                 state.frontier={id:b.resumeRows[q.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
                 historyTrace(b,'resume-progress',{minIndex:q.minIndex,matched:q.matched});
               }
@@ -2211,7 +2252,7 @@
             }
             b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),merged,rows);
             b.rows=merged;for(const change of changes)historyAttachmentChange(b,change);b.windows++;if(b.isolated)b.isolated.windows++;
-            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;if(identity)b.scrollStats.identityRejoinSuccesses=(b.scrollStats.identityRejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,identity,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
+            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;if(identity){b.scrollStats.identityRejoinSuccesses=(b.scrollStats.identityRejoinSuccesses||0)+1;state.identityGraceUntil=Date.now()+10000}historyTrace(b,'rejoin-success',{ratio,offset,target,identity,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
             lastError='';break;
           }catch(e){
             b.scrollStats.overlapRetries++;lastError=String(e.message||e);
@@ -2256,7 +2297,7 @@
         if(b.rows.length>lastCount){
           if(state.attempts){b.scrollStats.breakthroughSuccesses=(b.scrollStats.breakthroughSuccesses||0)+1;historyTrace(b,'breakthrough-progress',{attempts:state.attempts,resets:state.resets,previousCount:lastCount});}
           historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos,firstId:rows[0]?.id,lastId:rows.at(-1)?.id});
-          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;state.identityRejoinAttempted=false;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'new-rows');
+          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;state.identityRejoinAttempted=false;state.identityGraceUntil=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'new-rows');
           state.frontier={id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight};
         }
         else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
@@ -2271,7 +2312,7 @@
             historyTrace(b,'checkpoint-download',{count:b.rows.length,file});
           }catch(e){historyTrace(b,'checkpoint-download-failed',{reason:String(e.message||e)})}
         }
-        if(pc.noNewRows(lastGrowth,Date.now()))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
+        if(pc.noNewRows(lastGrowth,Date.now())&&Date.now()>=(state.identityGraceUntil||0))throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描');
         await sleep(150);
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
