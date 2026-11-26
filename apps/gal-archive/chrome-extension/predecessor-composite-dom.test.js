@@ -98,7 +98,7 @@ function codeFixture({value='原樣程式碼\n  第二行',label='純文字',amb
  const code=make('code',value);if(hiddenCode)code.innerText='';
  const before=make('p','唯一前文'),after=make('p',ambiguous?'唯一前文':'唯一後文'),body=make('article');
  const group=make('div');group.childNodes=[make(labelTag,label),code,make('button',copyLabel),make('span',extra)];group.previousElementSibling=before;group.nextElementSibling=after;group.parentElement=body;code.parentElement=group;group.querySelectorAll=q=>q==='code'?[code]:[];body.querySelectorAll=q=>q==='code'?[code]:[];
- const helper=s.slice(s.indexOf('  function historyAssistantCodeText('),s.indexOf('  function historyRead(host,'));
+ const helper=s.slice(s.indexOf('  function historyNativeQuotedCodeLabel('),s.indexOf('  function historyRead(host,'));
  const read=vm.runInNewContext(helper+';historyAssistantCodeText',{historyVisible:()=>true,historyIssue:(m,o,d)=>Object.assign(Error(m),{details:d})});
  return {body,code,read,value,raw:'唯一前文\n\n唯一後文'};
 }
@@ -148,7 +148,7 @@ function dividerFixture({value='修'.repeat(55),hiddenCode=true,separator='hr',s
  if(rawAfter)markdown.childNodes.push({nodeType:3,nodeValue:'未辨識後文'});
  if(inlineAfter)source.childNodes.push({nodeType:3,nodeValue:'其他正文'});
  if(duplicateBefore)link(markdown,make('p','唯一前文'),before,group,...trailing);
- const helper=s.slice(s.indexOf('  function historyAssistantCodeText('),s.indexOf('  function historyRead(host,'));
+ const helper=s.slice(s.indexOf('  function historyNativeQuotedCodeLabel('),s.indexOf('  function historyRead(host,'));
  const read=vm.runInNewContext(helper+';historyAssistantCodeText',{historyVisible:()=>true,historyIssue:(m,o,d)=>Object.assign(Error(m),{details:d})});
  return {body,read,value,raw:terminal?(duplicateBefore?'唯一前文\n\n唯一前文':'唯一前文'):'唯一前文\n\n唯一後文'};
 }
