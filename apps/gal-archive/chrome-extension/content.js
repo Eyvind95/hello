@@ -1606,6 +1606,31 @@
       while(n?.tagName==='HR'&&historyVisible(n)&&!String(n.textContent||'').trim())n=n[direction];
       return n;
     };
+    // A terminal code block has no right prose anchor. Prove its position
+    // using native source/block markers and the entire child-node path,
+    // including text nodes that nextElementSibling would otherwise miss.
+    const whitespace=n=>n.nodeType===3&&!String(n.nodeValue||'').trim()||n.nodeType===8;
+    const separator=n=>n.nodeType===1&&n.tagName==='HR'&&historyVisible(n)&&!String(n.textContent||'').trim();
+    const terminalProof=(code,group)=>{
+      const source=code.parentElement;
+      if(source?.getAttribute?.('data-code-block-source')!=='true'||
+         ![...source.childNodes].includes(code)||
+         [...source.childNodes].some(n=>n!==code&&!whitespace(n)))return false;
+      let native=false,found=false;
+      for(let n=source;n&&n!==body;n=n.parentElement){
+        if(n.getAttribute?.('data-code-block')==='true'||n.getAttribute?.('data-markdown-copy')==='code-block')native=true;
+        if(n===group){found=true;break}
+        const parent=n.parentElement,children=[...(parent?.childNodes||[])];
+        if(!children.includes(n)||children.some(x=>x!==n&&!whitespace(x)&&
+           !(x.nodeType===1&&x.getAttribute?.('data-markdown-copy')==='exclude'&&x.querySelectorAll('code').length===0)))return false;
+      }
+      if(!native||!found)return false;
+      for(let n=group;n!==body;n=n.parentElement){
+        const parent=n.parentElement,children=[...(parent?.childNodes||[])],at=children.indexOf(n);
+        if(at<0||children.slice(at+1).some(x=>!whitespace(x)&&!separator(x)))return false;
+      }
+      return true;
+    };
     const evidence=[];
     for(const code of codes){
       const value=code.innerText||code.textContent||'';
@@ -1614,13 +1639,16 @@
       for(let group=code.parentElement;group&&group!==body;group=group.parentElement){
         if(group.querySelectorAll('code').length!==1)break;
         const before=boundary(group,'previousElementSibling'),after=boundary(group,'nextElementSibling');
-        if(!block(before)||!block(after)||!historyVisible(before)||!historyVisible(after))continue;
+        const terminal=!after&&block(before)&&historyVisible(before)&&
+          String(code.textContent||'')===value&&terminalProof(code,group);
+        if(!block(before)||!historyVisible(before)||(!terminal&&(!block(after)||!historyVisible(after))))continue;
         if(group.closest('p,h1,h2,h3,h4,h5,h6'))continue;
-        const a=before.innerText||'',b=after.innerText||'';
-        if(!a.trim()||!b.trim())continue;
-        const left=positions(text,a),right=positions(text,b);
+        const a=before.innerText||'',b=after?.innerText||'';
+        if(!a.trim()||(!terminal&&!b.trim()))continue;
+        const left=positions(text,a),right=terminal?[text.length]:positions(text,b);
         if(!left||!right){conflicting=true;continue}
         if(!left.length||!right.length)continue;
+        if(terminal&&left.length!==1){conflicting=true;continue}
         // Every non-code text node in the wrapper must be whitespace or one
         // standalone known renderer label. Button text is UI, never prose.
         // No removal based on a label string elsewhere in the answer.
@@ -1643,20 +1671,25 @@
         const candidates=[];
         for(const at of left)for(const end of right){
           const start=at+a.length;
-          if(end<=start)continue;
+          if(end<start||(!terminal&&end===start))continue;
           const gap=text.slice(start,end);
-          if(!gap.startsWith('\n')||!gap.endsWith('\n'))continue;
+          if(terminal?gap.length&&!gap.startsWith('\n'):!gap.startsWith('\n')||!gap.endsWith('\n'))continue;
           if(!gap.trim()||padded(gap,value)||(label&&(padded(gap,label+'\n'+value)||padded(gap,label))))candidates.push({start,end});
         }
         if(candidates.length!==1){conflicting=true;continue}
         const {start,end}=candidates[0];
         // Exact same output when the renderer exposes only the code node,
         // or exposes the label plus its text in the enclosing innerText.
-        text=text.slice(0,start)+'\n\n'+value+'\n\n'+text.slice(end);
+        text=text.slice(0,start)+'\n\n'+value+(terminal?'':'\n\n'+text.slice(end));
         repaired=true;break;
       }
       if(!repaired&&(conflicting||!text.includes(value))){
-        evidence.push({codeText:value,codeHtml:String(code.outerHTML||'').slice(0,20000),parentHtml:String(code.parentElement?.outerHTML||'').slice(0,60000),renderedText:String(code.innerText||''),domText:String(code.textContent||'')});
+        const path=[];for(let n=code;n&&n!==body&&path.length<12;n=n.parentElement){
+          const parent=n.parentElement,children=[...(parent?.childNodes||[])],at=children.indexOf(n);
+          const brief=x=>({type:x.nodeType,tag:x.tagName||null,length:String(x.textContent||x.nodeValue||'').length,source:x.getAttribute?.('data-code-block-source')||null,block:x.getAttribute?.('data-code-block')||null,copy:x.getAttribute?.('data-markdown-copy')||null});
+          path.push({node:brief(n),index:at,siblings:children.length,before:children.slice(Math.max(0,at-3),Math.max(0,at)).map(brief),after:children.slice(at+1,at+7).map(brief)});
+        }
+        evidence.push({codeText:value,codeHtml:String(code.outerHTML||'').slice(0,20000),parentHtml:String(code.parentElement?.outerHTML||'').slice(0,60000),renderedText:String(code.innerText||''),domText:String(code.textContent||''),ancestorPath:path,bodyHtml:String(body.outerHTML||'').slice(0,120000),bodyHtmlTruncated:String(body.outerHTML||'').length>120000});
       }
     }
     // Also reject a missing repeated code occurrence. Do not guess a placement.
