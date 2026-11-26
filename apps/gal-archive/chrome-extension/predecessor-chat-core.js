@@ -301,6 +301,12 @@ function verifiedViewportAnchor(verified,actual,height,viewport){
  if(max<=viewport*4||actual<max-6||predicted===null||actual-predicted<viewport*4)return null;
  return {top:verified.top,height:verified.height};
 }
+// Only significant positive height changes justify these extra probes.
+ // Position estimates cannot establish message identity or continuity.
+function heightGrowthRejoinAnchor(verified,height,viewport){
+ if(!verified||![verified.top,verified.height,height,viewport].every(Number.isFinite)||viewport<=0||verified.top<0||verified.height<viewport||verified.top>scrollRange(verified.height,viewport)||height-verified.height<viewport)return null;
+ return {top:verified.top,height:verified.height};
+}
 function breakthroughStep(state,viewport){
  if(!state||state.resets<5||state.attempts>=3)return 0;
  return scrollStep(viewport,8)*(2+state.attempts);
@@ -469,5 +475,5 @@ function anchorLiveRecoveryHint(target,indices,geo,previous={},alternate=false){
  return {...normal,best,improved,restore:false,bounds:normal};
 }
 
-return {anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });

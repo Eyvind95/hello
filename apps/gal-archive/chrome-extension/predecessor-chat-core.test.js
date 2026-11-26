@@ -971,3 +971,20 @@ test('composite evidence continues through exact displayed overlap without prete
  a.throws(()=>c.validateCompositeEvidence({...ev,status:'completed'}));a.throws(()=>c.validateCompositeEvidence({...ev,evidence:{...ev.evidence,continuity:true}}));
  a.throws(()=>c.validateClassification(ev,{},'a'.repeat(64)));
 });
+
+test('history prepend: keep old coordinate frame even when live top differs by less than half a viewport',()=>{
+ const viewport=704,oldHeight=381944,height=390242;
+ const old={top:0,height:oldHeight},frontier={top:1755.2,height:oldHeight},live={top:1997.6,height};
+ a.equal(c.verifiedViewportAnchor(old,live.top,height,viewport),null);
+ a.ok(Math.abs(frontier.top-live.top)<viewport/2);
+ a.equal(c.rejoinTarget(c.heightGrowthRejoinAnchor(old,height,viewport),height,viewport),8298);
+ a.equal(c.rejoinTarget(c.heightGrowthRejoinAnchor(frontier,height,viewport),height,viewport),10053.2);
+ a.equal(c.rejoinTarget(c.heightGrowthRejoinAnchor(frontier,389600,viewport),389600,viewport),9411.2);
+ a.equal(c.rejoinTarget(c.heightGrowthRejoinAnchor(frontier,height,viewport),height,viewport,0,false),1755.2);
+ for(const bad of [null,{top:-1,height:oldHeight},{top:Infinity,height:oldHeight},{top:oldHeight,height:oldHeight},live])a.equal(c.heightGrowthRejoinAnchor(bad,height,viewport),null);
+ a.equal(c.heightGrowthRejoinAnchor(old,oldHeight+703,viewport),null);
+ a.equal(c.heightGrowthRejoinAnchor(old,oldHeight-8298,viewport),null);
+ const saved=[r('anchor'),r('later','assistant')];
+ a.throws(()=>c.mergeUp(saved,[r('disjoint')]));
+ a.deepEqual(c.mergeUp(saved,[r('older','assistant'),...saved]),[r('older','assistant'),...saved]);
+});
