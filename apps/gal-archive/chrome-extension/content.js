@@ -2731,7 +2731,41 @@
     document.body.append(button);
   }
 
+  // The toolbar reuses the same chat-scoped memory and historyBegin entry point.
+  // It must not clear a running scan, close a pending export, or fall back to a fresh scan.
+  async function historyPopupCommand(message){
+    const chat=path();
+    if(!pc||!valid()||message.chat!==chat)throw Error('聊天已切換或不是具體 ChatGPT 聊天');
+    const busy=()=>!!(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating()||document.getElementById(HISTORY_PANEL));
+    if(message.type==='predecessor-popup-status'){
+      const source=location.origin+chat,keys=['pinned','candidate'].map(slot=>GalCheckpointMemory.key(source,slot));
+      const records=await chrome.storage.local.get(keys);
+      if(path()!==chat)throw Error('聊天已切換');
+      const meta=record=>record?{count:record.count,runId:record.runId,hash:record.hash}:null;
+      return {ok:true,pinned:meta(records[keys[0]]),candidate:meta(records[keys[1]]),busy:busy()||!!document.getElementById(HISTORY_CONFIG)};
+    }
+    if(busy())throw Error('本聊天正在操作或尚有保全面板，請勿中斷');
+    if(message.type==='predecessor-popup-config'){
+      if(!document.getElementById(HISTORY_CONFIG)){
+        historyLauncher();
+        const button=document.getElementById(HISTORY_LAUNCHER);
+        if(!button)throw Error('找不到頁面掃描助手');
+        button.click();
+      }
+      if(!document.getElementById(HISTORY_CONFIG))throw Error('無法開啟完整掃描設定');
+      return {ok:true};
+    }
+    if(message.type!=='predecessor-popup-resume')throw Error('未知掃描入口');
+    if(document.getElementById(HISTORY_CONFIG))throw Error('請在已開啟的完整設定操作續掃');
+    const checkpoint=await GalCheckpointMemory.read(chrome.storage.local,location.origin+chat,pc,'pinned');
+    if(!checkpoint)throw Error('尚無已記住的保全，請先從完整掃描設定匯入');
+    if(path()!==chat||!valid())throw Error('聊天已切換，停止續掃');
+    if(busy())throw Error('本聊天正在操作或尚有保全面板，請勿中斷');
+    if(document.getElementById(HISTORY_CONFIG))throw Error('請在已開啟的完整設定操作續掃');
+    return historyBegin(message.title,false,0,checkpoint);
+  }
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if(['predecessor-popup-status','predecessor-popup-config','predecessor-popup-resume'].includes(message?.type)){historyPopupCommand(message).then(respond,e=>respond({ok:false,error:String(e.message||e)}));return true}
     if(message?.type==='predecessor-history-up'){historyBegin(message.title,message.sample).then(respond,e=>respond({ok:false,error:String(e.message||e)}));return true}
     if(['predecessor-history','predecessor-anchor'].includes(state.bulk?.mode)&&['bulk-down','bulk-range','backfill-visible','begin-watch','end-watch','test-last-time'].includes(message?.type)){respond({ok:false,error:'前輩聊天掃描中，不得開始其他操作'});return;}
 
