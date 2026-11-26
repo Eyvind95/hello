@@ -2,11 +2,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),p=require('node:path');
 const source=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=source.slice(source.indexOf("  const HISTORY_LAUNCHER="),source.indexOf("  chrome.runtime.onMessage.addListener"));
 function fixture(){
- const nodes=new Map(),calls=[];let route='/c/first',result={ok:true},saved=null,records={},readHook=null;
+ const nodes=new Map(),calls=[];let route='/c/first',result={ok:true},saved=null,records={},readHook=null,localHook=null;
  const element=tag=>({tag,id:'',dataset:{},style:{},children:[],append(...children){this.children.push(...children);for(const n of children)if(n.id)nodes.set(n.id,n)},remove(){nodes.delete(this.id);for(const n of this.children)if(n.id)nodes.delete(n.id)},setAttribute(){},click(){return this.onclick?.()},scrollIntoView(){calls.push('existing')}});
- const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async(...args)=>{if(readHook)await readHook(...args);return saved}},chrome:{storage:{local:{get:async()=>records}},runtime:{id:'testextension',getManifest:()=>({version:'0.10.48'}),sendMessage:async m=>{calls.push([m.type,m.expectedHash]);return {ok:true,readback:true,hash:m.expectedHash,count:2,runId:'run'}}}},historyPrefixSupplement:async (id,files,title,checkpoint,report)=>{calls.push(['prefix',id,files,title,checkpoint.hash]);return {ok:true,message:'prefix evidence'}},historyRushTop:async (id,files,report)=>{calls.push(['rush',id,files]);report('navigation');return {ok:true,message:'navigation only'}},historyAnchorCapture:async (id,title,report,capture)=>{calls.push(['anchor',id,title,capture]);return {ok:true,message:'local evidence'}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
+ const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async(...args)=>{if(readHook)await readHook(...args);return saved}},chrome:{storage:{local:{get:async()=>records}},runtime:{id:'testextension',getManifest:()=>({version:'0.10.48'}),sendMessage:async m=>{calls.push([m.type,m.expectedHash]);return {ok:true,readback:true,hash:m.expectedHash,count:2,runId:'run'}}}},historyPrefixSupplement:async (id,files,title,checkpoint,report)=>{calls.push(['prefix',id,files,title,checkpoint.hash]);if(localHook)await localHook('prefix');return {ok:true,message:'prefix evidence'}},historyRushTop:async (id,files,report)=>{calls.push(['rush',id,files]);report('navigation');if(localHook)await localHook('rush');return {ok:true,message:'navigation only'}},historyAnchorCapture:async (id,title,report,capture)=>{calls.push(['anchor',id,title,capture]);return {ok:true,message:'local evidence'}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
  Object.assign(ctx,{state:{},isGenerating:()=>false});vm.createContext(ctx);vm.runInContext(block+';globalThis.launch=historyLauncher;globalThis.popup=historyPopupCommand;',ctx);
- return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x},saved:x=>{saved=x},records:x=>{records=x},readHook:x=>{readHook=x},popup:ctx.popup,state:ctx.state};
+ return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x},saved:x=>{saved=x},records:x=>{records=x},readHook:x=>{readHook=x},localHook:x=>{localHook=x},popup:ctx.popup,state:ctx.state};
 }
 test('web button appears once, opens named scan directly without browser toolbar',async()=>{
  const f=fixture();f.launch();const button=f.nodes.get('ga-predecessor-page-launcher--testextension');assert.ok(button);f.launch();assert.equal(f.nodes.get(button.id),button);
@@ -200,4 +200,21 @@ test('prefix supplement current-top guard and evidence-only export, no scanning 
  now=0;reads=0;moves=[];host.scrollTop=0;snapshot=false;
  assert.equal((await ctx.supplement(a.id,'a.pdf','測試前輩',cp,()=>{})).ok,false);
  assert.equal(reads,0);assert.equal(moves.length,0);assert.equal(downloads.at(-1).candidateRows,null);
+});
+
+test('navigation and supplement move to compact left-bottom panel during work, then restore right-side settings and inputs',async()=>{
+ const f=fixture();f.launch();f.nodes.get('ga-predecessor-page-launcher--testextension').onclick();
+ const get=n=>f.nodes.get('ga-predecessor-page-'+n+'--testextension'),pane=get('config'),mode=get('mode'),id=get('top-id'),file=get('prefix-file');
+ pane.isConnected=true;id.value='user|turn:abc';f.saved({data:{count:987},hash:'a'.repeat(64)});get('prefix-slot').value='candidate';
+ const original=pane.style.cssText,originalFile=file.style.cssText;
+ let seen=[];
+ f.localHook(kind=>{
+  seen.push(kind);assert.match(pane.style.cssText,/left:12px!important;right:auto!important;bottom:156px/);
+  assert.equal(mode.hidden,false);assert.equal(id.hidden,true);assert.match(file.style.cssText,/display:none!important/);
+  assert.equal(get(kind==='rush'?'rush-stop':'prefix-stop').hidden,false);
+  assert.equal(get(kind==='rush'?'prefix-stop':'rush-stop').hidden,true);
+ });
+ await get('rush-top').onclick();assert.equal(pane.style.cssText,original);assert.equal(id.value,'user|turn:abc');assert.equal(get('rush-stop').hidden,true);
+ await get('prefix-start').onclick();assert.equal(pane.style.cssText,original);assert.equal(file.style.cssText,originalFile);assert.equal(get('prefix-slot').value,'candidate');assert.equal(get('prefix-stop').hidden,true);
+ assert.deepEqual(seen,['rush','prefix']);
 });
