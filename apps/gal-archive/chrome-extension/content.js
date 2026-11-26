@@ -1820,6 +1820,7 @@
   }
   function historyGuard(b){
     if(b.cancelled)throw Error('使用者停止');
+    if(b.mode==='predecessor-anchor'&&isGenerating())throw Error('聊天正在生成，停止局部定位');
     if(state.bulk!==b||!valid()||path()!==b.chat||!b.host.isConnected)throw Error('聊天來源或捲動容器已變更');
   }
   // Passive trusted wheel evidence only: no synthesized input, no new scroll.
@@ -1850,6 +1851,7 @@
     bar.append(compact,move);render();return bar;
   }
   function historyStatus(b,msg){
+    if(b.mode==='predecessor-anchor'){b.anchorProgress?.(msg);return}
     const count=b.isolated?b.isolated.originalRows.length+'（另有隔離取證 '+b.rows.length+' 則，含重疊）':b.sample?Math.min(b.sample,b.rows.length)+' / '+b.sample:b.rows.length;
     b.info.textContent=msg+'\n已保全 '+count+' 則；不會上傳 Firebase。';
     if(b.summary)b.summary.textContent='已保全 '+count+' 則｜'+(b.download.hidden?(b.cancelled?'停止中':'掃描中'):'已結束，詳情可展開');
@@ -1860,7 +1862,8 @@
     const trace=b.scrollTrace;
     const entry={at:new Date().toISOString(),event,count:b.rows.length,...(b.isolated?{scope:'isolated-frontier'}:{}),scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,clientHeight:b.host.clientHeight,...details};
     trace.push(entry);
-    if(trace.length>40)trace.shift();
+    const limit=b.mode==='predecessor-anchor'?1200:40;
+    if(trace.length>limit){trace.shift();if(b.mode==='predecessor-anchor')b.recoveryTraceOverflow=(b.recoveryTraceOverflow||0)+1}
     if(event.startsWith('bottom-escape-')){
       const saved=b.bottomEscapeTrace||(b.bottomEscapeTrace=[]);
       if(saved.length>=64){saved.shift();b.bottomEscapeTraceOverflow=(b.bottomEscapeTraceOverflow||0)+1}
@@ -1868,12 +1871,14 @@
     }
   }
   function historyFoldObservation(b,observation){
+    if(b.mode==='predecessor-anchor'&&observation.messageId!==b.anchorId)return;
     const key=JSON.stringify(observation);
     if(b.foldObservations.has(key))return;
     if(b.foldObservations.size>=2000){b.foldObservationOverflow++;return}
     b.foldObservations.set(key,observation);
   }
   function historyAttachmentChange(b,change){
+    if(b.mode==='predecessor-anchor'&&change.messageId!==b.anchorId)return;
     const key=JSON.stringify(change);
     if(change.type==='folded-user-tail-variant'){
       const list=b.foldTailVariants||(b.foldTailVariants=[]);
@@ -2165,9 +2170,14 @@
     if(!pc||!valid()||state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating()||document.getElementById(HISTORY_PANEL))return {ok:false,error:'請先結束本聊天其他工作及掃描面板'};
     const chat=path(),source=location.origin+chat,title=pc.chatTitle(requestedTitle||document.title);
     if(!title||!/^user\|(turn|message):[a-zA-Z0-9_-]+$/.test(target))return {ok:false,error:'請填入完整玩家訊息ID及聊天名稱'};
-    const b={mode:'predecessor-anchor',chat,cancelled:false};state.bulk=b;
+    const b={mode:'predecessor-anchor',chat,anchorId:target,get cancelled(){return cancel()},
+      rows:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,
+      attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,
+      scrollStats:{scrollResets:0,loadingPolls:0,loadingNudges:0,fingerprintChanges:0},
+      breakthrough:{resets:0,attempts:0,frontier:null}};state.bulk=b;
     const evidence={format:'gal-predecessor-anchor-evidence',version:1,canonical:false,importable:false,continuity:false,status:'not-located',title,chatId:pc.sourceId(source),sourceUrl:source,runId:crypto.randomUUID(),scannerVersion:chrome.runtime.getManifest().version,startedAt:new Date().toISOString(),target,trace:[]};
     let attempted=false;
+    const recoveryEvidence=()=>{evidence.recovery={stats:b.scrollStats,trace:b.scrollTrace,traceOverflow:b.recoveryTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,nativeRetry:b.nativeHistoryRetry||null,lastReadIssue:b.lastReadIssue?{at:b.lastReadIssue.at,reason:b.lastReadIssue.reason,scrollTop:b.lastReadIssue.scrollTop,scrollHeight:b.lastReadIssue.scrollHeight}:null}};
     const guard=()=>{if(cancel()||state.bulk!==b||path()!==chat||!valid()||isGenerating())throw Error('定位已停止或聊天狀態變更')};
     const capture=(host,rows,folds)=>{
       const index=rows.findIndex(r=>r.id===target);if(index<0)return null;
@@ -2195,30 +2205,61 @@
       if(watch[chat]===true){delete watch[chat];await chrome.storage.local.set({watch})}
       state.enabled=false;state.watchedPath=null;candidates.clear();guard();
       attempted=true;
-      const budget=pc.anchorBudget(captureOnly),began=Date.now(),deadline=began+budget.durationMs;let policy={},stalls=0,last=null;
-      evidence.navigation={durationMs:budget.durationMs,traceLimit:budget.traceLimit,hostWaitPolls:0,loadingPolls:0,readIssuePolls:0,observedWindows:0,traceOverflow:0,stallPolls:0};
+      const budget=pc.anchorBudget(captureOnly),began=Date.now(),deadline=began+budget.durationMs;let policy={},stalls=0,last=null,pending=null,settleFailures=0;
+      evidence.navigation={durationMs:budget.durationMs,traceLimit:budget.traceLimit,hostWaitPolls:0,loadingPolls:0,readIssuePolls:0,observedWindows:0,traceOverflow:0,stallPolls:0,interWindowBottomReturns:0,settleFailures:0,bestIndex:null,bestDistance:null};
       const elapsed=()=>Math.floor((Date.now()-began)/1000);
       const progress=message=>report(message+'｜'+elapsed()+'/'+Math.round(budget.durationMs/1000)+' 秒');
+      b.anchorProgress=progress;
       while(Date.now()<deadline){
         guard();const host=historyHost();if(!host){evidence.navigation.hostWaitPolls++;progress('等待聊天捲動容器');await sleep(budget.pollMs);continue}
-        if(historyLoading(host)){evidence.navigation.loadingPolls++;progress('等待原生歷史載入，暫不捲動');await sleep(budget.pollMs);continue}
+        if(b.host&&b.host!==host){pending=null;policy={};settleFailures=0;b.breakthrough={resets:0,attempts:0,frontier:null}}
+        b.host=host;
         let rows,folds=[];
-        try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300);evidence.navigation.readIssuePolls++;progress('等待可辨識的聊天視窗');await sleep(budget.pollMs);continue}
+        if(!captureOnly){
+          try{
+            // Same recovery/stability machinery as the full scanner, but
+            // never call historyRun, mergeUp, historyRemember or historyPayload.
+            const stable=await historySettled(b,{deadline,upward:true,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true});
+            guard();rows=historyRead(host,x=>folds.push(x));
+            if(pc.fingerprint(stable)!==pc.fingerprint(rows)){evidence.navigation.readIssuePolls++;await sleep(350);continue}
+            pending=null;
+          }catch(e){
+            guard();
+            const reason=String(e.message||e);
+            if(e.code!=='HISTORY_RECOVERY_RETRY'&&!reason.startsWith('等待逾時：'))throw e;
+            evidence.navigation.settleFailures++;settleFailures++;
+            historyTrace(b,'anchor-settle-failed',{reason,attempt:settleFailures});
+            pc.alternateRecoveryPolicy(b.breakthrough);
+            pending=null;await sleep(Math.min(1000,Math.max(0,deadline-Date.now())));continue;
+          }
+        }else{
+          // Current-anchor capture is strictly no-scroll/no-retry-click.
+          if(historyLoading(host)){evidence.navigation.loadingPolls++;progress('等待目前畫面載入，暫不捲動');await sleep(budget.pollMs);continue}
+          try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300);evidence.navigation.readIssuePolls++;progress('等待可辨識的聊天視窗');await sleep(budget.pollMs);continue}
+        }
         const geo={top:host.scrollTop,height:host.scrollHeight,client:host.clientHeight};
         const indices=rows.map(r=>rank.get(r.id)).filter(Number.isInteger);
-        const hint=pc.anchorNavigation(targetIndex,indices,geo,policy);
+        const hint=pc.anchorRecoveryHint(targetIndex,indices,geo,policy,settleFailures%2===1);
+        if(hint.improved){
+          evidence.navigation.bestIndex=hint.best.index;evidence.navigation.bestDistance=hint.best.distance;
+          b.breakthrough.resets=0;b.breakthrough.attempts=0;pc.clearRecoveryPolicy(b.breakthrough);settleFailures=0;
+          b.breakthrough.frontier={top:hint.best.top,height:hint.best.height,id:checkpoint.data.rows[hint.best.index].id};
+          historyTrace(b,'anchor-rank-progress',{index:hint.best.index,distance:hint.best.distance});
+          historyNativeProgress(b,'anchor-closer-rank');
+        }
+        if(hint.restore){evidence.navigation.interWindowBottomReturns++;historyTrace(b,'anchor-inter-window-bottom-return',{bestIndex:hint.best.index,bestTop:hint.best.top,bestHeight:hint.best.height,target:hint.top,alternate:settleFailures%2===1})}
         evidence.navigation.observedWindows++;
         if(evidence.trace.length>=budget.traceLimit){evidence.trace.shift();evidence.navigation.traceOverflow++}
-        evidence.trace.push({at:new Date().toISOString(),elapsedMs:Date.now()-began,...geo,knownMin:indices.length?Math.min(...indices):null,knownMax:indices.length?Math.max(...indices):null,firstId:rows[0]?.id,lastId:rows.at(-1)?.id,destination:hint.top??null});
-        progress('錨點定位 '+evidence.navigation.observedWindows+' 次｜目前基準索引 '+(indices.length?Math.min(...indices)+'–'+Math.max(...indices):'未命中')+' / '+targetIndex);
+        evidence.trace.push({at:new Date().toISOString(),elapsedMs:Date.now()-began,...geo,knownMin:indices.length?Math.min(...indices):null,knownMax:indices.length?Math.max(...indices):null,firstId:rows[0]?.id,lastId:rows.at(-1)?.id,destination:hint.top??null,bestIndex:hint.best?.index??null,restoring:hint.restore});
+        progress('錨點定位 '+evidence.navigation.observedWindows+' 次｜目前基準索引 '+(indices.length?Math.min(...indices)+'–'+Math.max(...indices):'未命中')+' / '+targetIndex+'｜最接近 '+(evidence.navigation.bestIndex??'未命中'));
         const found=capture(host,rows,folds);
         if(found){
           if(!captureOnly){found.element.scrollIntoView({block:'center',behavior:'instant'});await sleep(650);guard()}
           const currentHost=historyHost();if(!currentHost)throw Error('定位後捲動容器消失');
           let currentFolds=[];const currentRows=historyRead(currentHost,x=>currentFolds.push(x)),second=capture(currentHost,currentRows,currentFolds);
-          if(!second){policy={};await sleep(350);continue}
+          if(!second){policy={};pending=null;await sleep(350);continue}
           const {element:ignored,...first}=found,{element:ignored2,...latest}=second;
-          evidence.observations=[first,latest];evidence.status='located';evidence.finishedAt=new Date().toISOString();
+          evidence.observations=[first,latest];evidence.status='located';evidence.finishedAt=new Date().toISOString();recoveryEvidence();
           historyDownload(evidence);
           return {ok:true,message:'已定位並保存局部證據。請核對畫面；若手動展開，再按「擷取目前錨點」。'};
         }
@@ -2229,13 +2270,13 @@
         // An unchanged viewport can be native hydration, not a proven failure.
         // Preserve the stall evidence and back off without consuming a separate
         // window/stall exit budget. Hard safety/identity failures still stop.
-        if(stalls>=8){evidence.navigation.stallPolls++;progress('定位暫時停滯，等待載入後再確認');await sleep(2000);continue}
-        if(Math.abs(hint.top-geo.top)>2)historyScroll(host,hint.top);
-        await sleep(budget.stepMs);
+        if(stalls>=8&&!hint.restore){evidence.navigation.stallPolls++;progress('定位暫時停滯，等待載入後再確認');await sleep(2000);continue}
+        if(Math.abs(hint.top-geo.top)>2){pending={top:hint.top,height:geo.height};historyScroll(host,hint.top);await sleep(180)}
+        else await sleep(budget.stepMs);
       }
       throw Error(captureOnly?'目前錨點擷取時間到達，未證明目標不存在':'局部定位10分鐘時限到達，未證明目標不存在');
     }catch(e){
-      evidence.error=String(e.message||e);evidence.finishedAt=new Date().toISOString();
+      evidence.error=String(e.message||e);evidence.finishedAt=new Date().toISOString();recoveryEvidence();
       if(attempted)historyDownload(evidence);
       return {ok:false,error:evidence.error};
     }finally{if(state.bulk===b)state.bulk=null}

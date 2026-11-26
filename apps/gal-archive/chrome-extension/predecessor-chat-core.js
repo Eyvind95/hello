@@ -381,5 +381,20 @@ function anchorNavigation(target,indices,geometry,previous={}){
  destination=Math.max(0,Math.min(max,destination));
  return {top:destination,height,low,high,knownMin:min??null,knownMax:maxIndex??null};
 }
-return {anchorBudget,anchorNavigation,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+// Best observed rank is a navigation hint, not coverage. Preserve it
+// across inter-window bottom returns; coordinates are always estimates.
+function anchorRecoveryHint(target,indices,geo,previous={},alternate=false){
+ const normal=anchorNavigation(target,indices,geo,previous.bounds||{});
+ const valid=indices.filter(Number.isInteger),distance=valid.length?Math.min(...valid.map(i=>Math.abs(i-target))):Infinity;
+ const closest=valid.find(i=>Math.abs(i-target)===distance);
+ const prior=previous.best||null;
+ const improved=Number.isFinite(distance)&&(!prior||distance<prior.distance);
+ const best=improved?{top:geo.top,height:geo.height,index:closest,distance}:prior;
+ const saved=best&&distance>best.distance?verifiedViewportAnchor(best,geo.top,geo.height,geo.client):null;
+ if(!normal.found&&!normal.stop&&saved){
+  return {...normal,top:rejoinTarget(saved,geo.height,geo.client,0,!alternate),best,improved,restore:true,bounds:{}};
+ }
+ return {...normal,best,improved,restore:false,bounds:normal};
+}
+return {anchorRecoveryHint,anchorBudget,anchorNavigation,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });
