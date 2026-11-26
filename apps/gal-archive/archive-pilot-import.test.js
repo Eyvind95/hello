@@ -13,7 +13,51 @@ test('reject cross-world, cross-cycle, title, source digest and wrong chat',()=>
 test('reject fabricated, duplicated, out-of-order, embedded story, missing evidence and empty overwrite',()=>{for(const mutate of [p=>p.pilotMessages[0].text='劇情',p=>p.pilotMessages[0].text='虛構',p=>p.pilotMessages.push(p.pilotMessages[0]),p=>p.pilotMessages.reverse(),p=>p.easterEggs[0].sourceIds=['unknown'] ,p=>p.pilotMessages=[]]){const {r,source,pack}=fixture();mutate(pack);assert.throws(()=>api.plan(r,source,pack,sha))}});
 test('idempotent message IDs, preserved source references but not invented image bytes',()=>{const {r,source,pack}=fixture();source.rows[0].attachments=[{kind:'image-reference',url:'blob:example'}];const a=api.plan(r,source,pack,sha),b=api.plan(a.updated,source,pack,sha);assert.deepEqual(a.updated,b.updated);assert.deepEqual(a.updated.pilotMessages[1].images,[]);assert.equal(a.attachments,1);assert.equal(a.updated.pilotMessages[1].predecessorSource.attachments.length,1)});
 
-test('website wires scoped import and PWA cache, inline code parses',()=>{const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8'),sw=fs.readFileSync(path.join(__dirname,'sw.js'),'utf8');assert.match(html,/id="pilotArchiveImport"/);assert.match(html,/openPilotArchiveImport\(r\)/);assert.match(html,/archive-pilot-import\.js\?v=2/);assert.match(sw,/archive-pilot-import\.js\?v=2/);for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);});
+test('website wires scoped import and PWA cache, inline code parses',()=>{const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8'),sw=fs.readFileSync(path.join(__dirname,'sw.js'),'utf8');assert.match(html,/id="pilotArchiveImport"/);assert.match(html,/openPilotArchiveImport\(r\)/);assert.match(html,/archive-pilot-import\.js\?v=3/);assert.match(sw,/archive-pilot-import\.js\?v=3/);for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);});
 
 test('co-managed cycles retain all legacy rows, images and existing eggs, empty quiz is no-op',()=>{const {r,source,pack}=fixture();r.pilotMessages=[{id:'iron',role:'ai',manager:'鐵墓前輩',text:'原紀錄',images:[{id:'img'}]},{id:'player',role:'me',text:'不明歸屬'}];r.quizLogs=[{id:'dark',role:'ai',manager:'暗夢前輩',text:'原考核'}];pack.quizLogs=[];const p=api.plan(r,source,pack,sha);assert.deepEqual(p.updated.pilotMessages.slice(0,2),r.pilotMessages);assert.deepEqual(p.updated.quizLogs,r.quizLogs);assert.equal(p.merge.quizMissing,true);assert.ok(p.updated.easterEggs.startsWith(r.easterEggs));assert.deepEqual(api.plan(p.updated,source,pack,sha).updated,p.updated)});
 test('same stable ID but edited text or foreign provenance never overwrites',()=>{const {r,source,pack}=fixture();const p=api.plan(r,source,pack,sha);p.updated.pilotMessages[1].text='手動改過';assert.throws(()=>api.plan(p.updated,source,pack,sha),/文字不同/);p.updated.pilotMessages[1].text=pack.pilotMessages[0].text;p.updated.pilotMessages[1].predecessorSource.chatId='other';assert.throws(()=>api.plan(p.updated,source,pack,sha),/來源不符/)});
+
+function joinedFixture(){
+ const {r,source:old,pack}=fixture();
+ const candidateRows=[...old.rows,{id:'a3',index:4,role:'assistant',text:'後段完整顯示',attachments:[]},{id:'assistant|composite:ambiguous',index:5,role:'assistant',text:'不可自行拆分',attachments:[],identityBasis:'unresolved-native-composite',compositeNative:{ids:['a','b']}}].map(row=>({...row,structure:[]}));
+ const source={format:'gal-predecessor-prefix-supplement-evidence',version:1,status:'joined-evidence',canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',error:null,runId:'new-run',chatId:old.chatId,count:4,rows:structuredClone(candidateRows.slice(0,4)),candidateRows,base:{runId:'old-run',count:4,firstId:'u2',sha256:'b'.repeat(64)},evidence:{openingVerified:true,originalCheckpointUnchanged:true,lastConflict:null,expectedId:'u1',added:2,matched:2,joinedCandidateCount:6}};
+ pack.pilotMessages.push({sourceId:'a3',text:'後段完整顯示'});
+ return {r,source,pack};
+}
+test('joined prefix evidence uses complete candidate rows without changing source or legacy shared data',()=>{
+ const {r,source,pack}=joinedFixture();
+ r.pilotMessages=[{id:'iron',manager:'鐵墓前輩',role:'ai',text:'舊資料',images:[{id:'image'}]},{id:'legacy-user',role:'me',text:'不明歸屬'}];
+ r.quizLogs=[{id:'dark',manager:'暗夢前輩',role:'ai',text:'舊考核'}];
+ const before=structuredClone(r),raw=structuredClone(source),p=api.plan(r,source,pack,sha);
+ assert.deepEqual(r,before);assert.deepEqual(source,raw);assert.ok(api.sameUnchanged(r,p.updated));
+ assert.equal(p.sourceCount,6);assert.deepEqual(p.sourceEvidence,{joined:true,localCount:4,isolated:1,canonical:false});
+ assert.deepEqual(p.updated.pilotMessages.slice(0,2),before.pilotMessages);assert.deepEqual(p.updated.quizLogs[0],before.quizLogs[0]);
+ assert.equal(p.updated.pilotMessages.at(-1).text,'後段完整顯示');
+ assert.equal(p.updated.pilotMessages.at(-1).predecessorSource.sha256,sha);
+ assert.equal(p.updated.pilotMessages.at(-1).predecessorSource.sourceFormat,source.format);
+ assert.equal(p.updated.pilotMessages.at(-1).predecessorSource.canonical,false);
+ assert.deepEqual(api.plan(p.updated,source,pack,sha).updated,p.updated);
+});
+test('joined evidence rejects incomplete, mismatched, fabricated or relabeled snapshots',()=>{
+ for(const mutate of [
+  s=>s.status='failed',s=>s.canonical=true,s=>s.importable=true,s=>s.continuity=true,s=>s.fidelity='native',s=>s.error='failed',
+  s=>s.evidence.openingVerified=false,s=>s.evidence.originalCheckpointUnchanged=false,s=>s.evidence.lastConflict={},
+  s=>s.evidence.expectedId='wrong',s=>s.evidence.added=1,s=>s.evidence.matched=1,s=>s.evidence.joinedCandidateCount=7,
+  s=>s.base.count=5,s=>s.base.sha256='bad',s=>s.base.firstId='wrong',s=>s.candidateRows.pop(),s=>s.rows.pop(),
+  s=>s.candidateRows[1].text='changed',s=>s.candidateRows[3].structure.push({tag:'em',text:'changed'}),
+  s=>s.candidateRows[5].id='a3',s=>s.candidateRows[5].index=4
+ ]){const {r,source,pack}=joinedFixture();mutate(source);assert.throws(()=>api.plan(r,source,pack,sha))}
+});
+test('joined evidence prohibits unresolved composite references in every import tab',()=>{
+ for(const key of ['pilotMessages','quizLogs','easterEggs']){
+  const {r,source,pack}=joinedFixture(),id=source.candidateRows[5].id;
+  if(key==='easterEggs')pack[key][0].sourceIds=[id];else pack[key].push({sourceId:id,text:'不可自行拆分'});
+  assert.throws(()=>api.plan(r,source,pack,sha));
+ }
+});
+test('joined evidence rejects a digest for the base or a rewritten candidate',()=>{
+ const {r,source,pack}=joinedFixture();
+ assert.throws(()=>api.plan(r,source,pack,source.base.sha256),/SHA/);
+ pack.sourceSha256='c'.repeat(64);assert.throws(()=>api.plan(r,source,pack,sha),/SHA/);
+});
