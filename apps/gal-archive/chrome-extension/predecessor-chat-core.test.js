@@ -797,42 +797,37 @@ test('installed checkpoint imports only own non-web-accessible resource, verifie
  a.ok(!manifest.web_accessible_resources);a.ok(!manifest.host_permissions.some(x=>x.includes('127.0.0.1')||x.includes('file:')));
 });
 
-test('local anchor navigation uses stable rank and invalidates scroll bounds after hydration',()=>{
- const g={top:6000,height:10000,client:500};
- a.equal(c.anchorNavigation(7,[6,7,8],g).found,true);
- a.equal(c.anchorNavigation(7,[6,8],g).stop,true);
- const up=c.anchorNavigation(7,[30,31],g);a.ok(up.top<6000);a.equal(up.high,6000);
- const down=c.anchorNavigation(7,[1,2],{...g,top:1000},up);a.equal(down.top,3500);a.equal(down.low,1000);
- const rebase=c.anchorNavigation(7,[30,31],{...g,height:20000,top:7000},down);a.equal(rebase.low,null);a.equal(rebase.high,7000);
- a.equal(c.anchorNavigation(7,[],g).top,9500);a.equal(c.anchorNavigation(7,[],{...g,top:2000},up).top,4000);
- a.throws(()=>c.anchorNavigation(-1,[],g));
-});
 
-test('local anchor budget allows ten minutes independently of observation count',()=>{a.deepEqual(c.anchorBudget(false),{durationMs:600000,traceLimit:1200,pollMs:500,stepMs:800});a.equal(c.anchorBudget(true).durationMs,8000);const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'content.js'),'utf8');const body=source.slice(source.indexOf('async function historyAnchorCapture'),source.indexOf('const HISTORY_LAUNCHER'));a.ok(body.includes('while(Date.now()<deadline)'));a.ok(body.includes('evidence.navigation.loadingPolls++'));a.ok(body.includes('evidence.navigation.stallPolls++'));a.ok(!body.includes('stalls>=8)throw'));a.ok(!body.includes('&&evidence.trace.length<'));});
-
-test('anchor recovery retains nearest rank across measured bottom snap, rebases or probes old frame',()=>{
- // Synthetic IDs, recorded geometry from a real two-window bottom-return pattern.
- const before={top:9530.4,height:306187,client:674};
- const a1=c.anchorRecoveryHint(0,[474,475],before);
- a.equal(a1.improved,true);a.equal(a1.best.index,474);
- const bottom={top:323484.8,height:324159,client:674};
- const a2=c.anchorRecoveryHint(0,[657,658,659,660],bottom,a1);
- a.equal(a2.restore,true);a.equal(a2.best.index,474);a.ok(Math.abs(a2.top-27502.4)<.01);
- const a3=c.anchorRecoveryHint(0,[657,658,659,660],bottom,a2,true);
- a.equal(a3.top,before.top);
- const a4=c.anchorRecoveryHint(0,[400,401],{top:800,height:324159,client:674},a3);
- a.equal(a4.improved,true);a.equal(a4.best.index,400);
- a.equal(c.anchorRecoveryHint(304,[304,305],bottom,a4).found,true);
- a.equal(c.anchorRecoveryHint(304,[302,306],bottom,a4).stop,true);
- a.equal(c.anchorRecoveryHint(0,[],{top:1000,height:10000,client:674}).best,null);
+test('original text anchor stops on exact source, records ID-only text difference, never verifies other ID',()=>{
+ const row=(id,text,role='user')=>({id,text,role}),expected=row('u304','原文\n完整句子');
+ a.equal(c.anchorTextMatch(expected,[row('other','原文\n完整句子','assistant')],true),null);
+ a.equal(c.anchorTextMatch(expected,[row('other','原文')],true),null);
+ a.equal(c.anchorTextMatch(expected,[row('other',expected.text)],false),null);
+ a.equal(c.anchorTextMatch(expected,[row('other',expected.text),row('other2',expected.text)],true),null);
+ a.equal(c.anchorTextMatch(expected,[row('other',expected.text)],true).identityVerified,false);
+ a.equal(c.anchorTextMatch(expected,[row('u304','原文')],true).kind,'id-text-difference');
+ a.equal(c.anchorTextMatch(expected,[expected],true).kind,'text-and-id');
+ a.equal(c.anchorTextMatch(row('img',''),[row('other','')],true),null);
 });
-test('anchor locate shares stabilized recovery without merging or writing a checkpoint; capture stays passive',()=>{
+test('sequential navigation uses live rank only for direction, moves less than one viewport',()=>{
+ a.equal(c.anchorTextDirection(304,[560,561]),-1);
+ a.equal(c.anchorTextDirection(304,[300,301]),1);
+ a.equal(c.anchorTextDirection(304,[],1),1);
+ a.equal(c.anchorRelativeDelta(674,-1),-539);
+ a.equal(c.anchorRelativeDelta(674,1),539);
+ a.throws(()=>c.anchorRelativeDelta(0,1));
+ a.equal(c.anchorBudget(false).idleMs,600000);
+ a.equal(c.anchorBudget(false).hardMs,3600000);
+ a.equal(c.anchorBudget(true).hardMs,8000);
+});
+test('anchor loop matches text before movement, has no historical position recovery and no canonical writes',()=>{
  const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'content.js'),'utf8');
  const body=source.slice(source.indexOf('async function historyAnchorCapture'),source.indexOf('const HISTORY_LAUNCHER'));
- a.ok(body.includes('await historySettled(b,{deadline,upward:true'));
- a.ok(body.includes('pc.anchorRecoveryHint(targetIndex'));
- a.ok(body.includes('get cancelled(){return cancel()}'));
- a.ok(body.includes('recoveryEvidence()'));
- a.ok(body.includes('Current-anchor capture is strictly no-scroll/no-retry-click'));
- a.ok(!/\b(?:historyRun|historyRemember|historyPayload|mergeUp)\s*\(/.test(body));
+ a.ok(body.includes('pc.anchorTextMatch(expected,rows,uniqueText)'));
+ a.ok(body.indexOf('if(hit)')<body.indexOf('host.scrollBy('));
+ a.ok(body.includes("evidence.status='matched-unconfirmed'"));
+ a.ok(body.includes('Date.now()-lastProgress<budget.idleMs'));
+ a.ok(body.includes('if(captureOnly)throw Error'));
+ a.ok(!/\b(?:historySettled|historyRecoverScroll|historyScroll|historyRun|historyRemember|historyPayload|mergeUp|scrollIntoView|anchorRecoveryHint|anchorNavigation|rejoinTarget)\s*\(/.test(body));
+ a.ok(!body.includes('scrollHeight'));
 });
