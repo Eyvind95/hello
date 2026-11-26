@@ -4,7 +4,7 @@ const source=fs.readFileSync(p.join(__dirname,'content.js'),'utf8'),block=source
 function fixture(){
  const nodes=new Map(),calls=[];let route='/c/first',result={ok:true},saved=null,records={},readHook=null;
  const element=tag=>({tag,id:'',dataset:{},style:{},children:[],append(...children){this.children.push(...children);for(const n of children)if(n.id)nodes.set(n.id,n)},remove(){nodes.delete(this.id);for(const n of this.children)if(n.id)nodes.delete(n.id)},setAttribute(){},click(){return this.onclick?.()},scrollIntoView(){calls.push('existing')}});
- const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async(...args)=>{if(readHook)await readHook(...args);return saved}},chrome:{storage:{local:{get:async()=>records}},runtime:{id:'testextension',getManifest:()=>({version:'0.10.48'}),sendMessage:async m=>{calls.push([m.type,m.expectedHash]);return {ok:true,readback:true,hash:m.expectedHash,count:2,runId:'run'}}}},historyRushTop:async (id,files,report)=>{calls.push(['rush',id,files]);report('navigation');return {ok:true,message:'navigation only'}},historyAnchorCapture:async (id,title,report,capture)=>{calls.push(['anchor',id,title,capture]);return {ok:true,message:'local evidence'}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
+ const body=element('body'),ctx={pc:require('./predecessor-chat-core'),document:{title:'測試前輩 - ChatGPT',body,createElement:element,getElementById:id=>nodes.get(id)},location:{origin:'https://chatgpt.com'},GalCheckpointMemory:{key:(source,slot)=>source+slot,read:async(...args)=>{if(readHook)await readHook(...args);return saved}},chrome:{storage:{local:{get:async()=>records}},runtime:{id:'testextension',getManifest:()=>({version:'0.10.48'}),sendMessage:async m=>{calls.push([m.type,m.expectedHash]);return {ok:true,readback:true,hash:m.expectedHash,count:2,runId:'run'}}}},historyPrefixSupplement:async (id,files,title,checkpoint,report)=>{calls.push(['prefix',id,files,title,checkpoint.hash]);return {ok:true,message:'prefix evidence'}},historyRushTop:async (id,files,report)=>{calls.push(['rush',id,files]);report('navigation');return {ok:true,message:'navigation only'}},historyAnchorCapture:async (id,title,report,capture)=>{calls.push(['anchor',id,title,capture]);return {ok:true,message:'local evidence'}},HISTORY_PANEL:'active-scan',valid:()=>route.startsWith('/c/'),path:()=>route,historyBegin:async (title,sample,minimum,checkpoint)=>{calls.push(checkpoint?[title,checkpoint.hash]:sample?[title,sample]:minimum?[title,minimum]:title);return result}};
  Object.assign(ctx,{state:{},isGenerating:()=>false});vm.createContext(ctx);vm.runInContext(block+';globalThis.launch=historyLauncher;globalThis.popup=historyPopupCommand;',ctx);
  return {nodes,calls,launch:ctx.launch,route:x=>{route=x},result:x=>{result=x},saved:x=>{saved=x},records:x=>{records=x},readHook:x=>{readHook=x},popup:ctx.popup,state:ctx.state};
 }
@@ -158,4 +158,46 @@ test('attachment anchor must match the first user owner, not later turns or arbi
  assert.equal(ctx.snap({},'user|turn:abc',['a.pdf','b.pdf','c.pdf']).match,true);
  assert.equal(ctx.snap({},'user|turn:later',['a.pdf']).match,false);
  assert.equal(ctx.snap({},'user|turn:abc',['a.pdf','missing.pdf']).match,false);
+});
+
+test('top-down supplement uses explicitly selected saved candidate without launching scan or replacing it',async()=>{
+ const f=fixture();f.saved({data:{count:987},hash:'b'.repeat(64)});f.launch();f.nodes.get('ga-predecessor-page-launcher--testextension').onclick();
+ f.nodes.get('ga-predecessor-page-config--testextension').isConnected=true;
+ f.nodes.get('ga-predecessor-page-top-id--testextension').value='user|turn:abc';
+ f.nodes.get('ga-predecessor-page-top-files--testextension').value='a.pdf,b.pdf,c.pdf';
+ f.nodes.get('ga-predecessor-page-prefix-slot--testextension').value='candidate';
+ f.readHook((storage,source,core,slot)=>assert.equal(slot,'candidate'));
+ await f.nodes.get('ga-predecessor-page-prefix-start--testextension').onclick();
+ assert.deepEqual(f.calls,[['prefix','user|turn:abc','a.pdf,b.pdf,c.pdf','測試前輩','b'.repeat(64)]]);
+ assert.match(f.nodes.get('ga-predecessor-page-mode--testextension').textContent,/頂端向下補掃/);
+});
+test('prefix supplement uses strict contiguous overlap, at least two original starting rows, and never changes saved rows',()=>{
+ const pc=require('./predecessor-chat-core'),ctx={pc};
+ const block=source.slice(source.indexOf('  function historyPrefixMerge'),source.indexOf('  async function historyPrefixSupplement'));
+ vm.createContext(ctx);vm.runInContext(block+';globalThis.merge=historyPrefixMerge;globalThis.join=historyPrefixJoin',ctx);
+ const r=(id,role='user',text=id)=>({id,role,text,identityBasis:'turn-key',sourceCreatedAt:null,structure:[],attachments:[]});
+ const a=r('a'),b=r('b','assistant'),c=r('c'),d=r('d','assistant'),e=r('e');
+ const saved=[c,d,e],before=JSON.stringify(saved);
+ assert.equal(ctx.join([a,b,c],saved),null);
+ assert.equal(ctx.join([a,b,c,d],saved).matched,2);
+ assert.equal(ctx.join([a,b,c,d],saved).added,2);
+ assert.equal(JSON.stringify(ctx.join([a,b,c,d],saved).candidate),JSON.stringify([a,b,c,d,e]));
+ assert.equal(JSON.stringify(saved),before);
+ assert.equal(JSON.stringify(ctx.merge([a,b],[b,c,d])),JSON.stringify([a,b,c,d]));
+ assert.equal(JSON.stringify(ctx.merge([a,b,c],[b,c])),JSON.stringify([a,b,c]));
+ for(const bad of [[d,e],[a,c],[b,{...c,text:'changed'}],[b,a,c]])assert.throws(()=>ctx.merge([a,b,c],bad));
+ for(const bad of [[a,d,e],[a,c,e],[a,c,{...d,text:'changed'}],[a,c,d,e,r('extra')]])assert.throws(()=>ctx.join(bad,saved));
+});
+test('prefix supplement current-top guard and evidence-only export, no scanning when opening is not proven',async()=>{
+ const pc0=require('./predecessor-chat-core'),r=(id,role='user')=>({id,role,text:id,identityBasis:'turn-key',sourceCreatedAt:null,structure:[],attachments:[]});
+ const a=r('user|turn:abc'),b=r('assistant|turn:abc','assistant'),c=r('user|turn:next'),d=r('assistant|turn:next','assistant'),e=r('user|turn:tail');
+ let now=0,reads=0,downloads=[],moves=[],snapshot=true,host={scrollTop:0,scrollHeight:3000,clientHeight:600,isConnected:true};
+ const ctx={pc:{...pc0,validateCheckpoint:()=>[c,d,e],sourceId:()=> 'test'},state:{},location:{origin:'https://chatgpt.com'},document:{title:'測試前輩',getElementById:()=>null,createElement:()=>({dataset:{},isConnected:true,remove(){}}),body:{append(){}}},chrome:{runtime:{id:'test',getManifest:()=>({version:'0.10.67'})}},crypto:{randomUUID:()=> 'test-run'},valid:()=>true,path:()=>'/c/test',isGenerating:()=>false,HISTORY_PANEL:'scan',historyHost:()=>host,historyTopNavigationSnapshot:()=>({match:snapshot,firstId:a.id,found:3}),historyLoading:()=>false,historyNativeFailure:()=>false,historyRead:()=>{reads++;return host.scrollTop===0?[a,b]:[b,c,d]},historyScroll:(h,to)=>{h.scrollTop=to;moves.push(to)},historyAtBottom:()=>false,sleep:async ms=>{now+=ms},Date:class extends Date{static now(){return now}},historyDownload:x=>{downloads.push(x);return 'evidence.json'}};
+ const block=source.slice(source.indexOf('  function historyPrefixMerge'),source.indexOf('  async function historyAnchorCapture'));vm.createContext(ctx);vm.runInContext(block+';globalThis.supplement=historyPrefixSupplement',ctx);
+ const cp={hash:'a'.repeat(64),data:{runId:'base'}};
+ const result=await ctx.supplement(a.id,'a.pdf,b.pdf,c.pdf','測試前輩',cp,()=>{});
+ assert.equal(result.ok,true);assert.ok(moves.every(x=>x>0));assert.equal(downloads[0].importable,false);assert.equal(downloads[0].continuity,false);assert.equal(downloads[0].evidence.openingVerified,true);assert.equal(downloads[0].evidence.added,2);assert.equal(downloads[0].evidence.matched,2);assert.equal(downloads[0].candidateRows.length,5);assert.equal(ctx.state.bulk,null);
+ now=0;reads=0;moves=[];host.scrollTop=0;snapshot=false;
+ assert.equal((await ctx.supplement(a.id,'a.pdf','測試前輩',cp,()=>{})).ok,false);
+ assert.equal(reads,0);assert.equal(moves.length,0);assert.equal(downloads.at(-1).candidateRows,null);
 });
