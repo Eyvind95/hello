@@ -10,6 +10,14 @@ const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 // fields strictly. Never infer equal bytes from equal labels or positions.
 const transientImage=a=>a?.kind==='image-reference'&&typeof a.url==='string'&&/^blob:https:\/\/chatgpt\.com\/[0-9a-f-]{36}$/i.test(a.url);
 function comparisonRow(r){return {...r,attachments:r.attachments.map(a=>transientImage(a)?{...a,url:'blob:chatgpt-image-reference'}:a)}}
+// Current predecessor scans project out image references. Legacy raw files
+// remain unchanged and can still be validated with their original rules.
+function withoutImages(row){
+ const attachments=row.attachments.filter(a=>a.kind!=='image-reference');
+ const out={...row,attachments};
+ if(!row.text.trim()&&!attachments.length&&(row.nonTextOmitted===true||row.attachments.some(a=>a.kind==='image-reference')))out.nonTextOmitted=true;
+ return out;
+}
 function fingerprint(rows){return JSON.stringify(rows.map(comparisonRow))}
 function compareRow(previous,current){
  const before=comparisonRow(previous),after=comparisonRow(current);
@@ -113,7 +121,7 @@ function validateRows(rows){
  const ids=new Set();
  for(const r of rows){
   check(r&&validId(r.id)&&!ids.has(r.id)&&['user','assistant'].includes(r.role)&&typeof r.text==='string'&&Array.isArray(r.structure)&&Array.isArray(r.attachments)&&typeof r.identityBasis==='string'&&r.identityBasis&&r.identityBasis!=='position','訊息 ID、角色或內容格式不符');
-  check(r.text.trim()||r.attachments.length,'空白訊息缺少可核對附件');
+  check(r.text.trim()||r.attachments.length||(r.nonTextOmitted===true&&/^(user|assistant)\|(turn|message):[a-zA-Z0-9_-]+$/.test(r.id)&&r.id.startsWith(r.role+'|')&&['turn-key','native-dom-id'].includes(r.identityBasis)),'空白訊息缺少可核對附件或非文字回合證據');
   check(r.structure.every(x=>x&&typeof x.tag==='string'&&typeof x.text==='string'),'格式記錄不符');
   check(r.attachments.every(x=>x&&typeof x.kind==='string'&&typeof x.label==='string'&&(x.url===null||typeof x.url==='string')),'附件參照格式不符');
   ids.add(r.id);
@@ -204,7 +212,7 @@ function validateRaw(data){
 }
 // Checkpoints are user-selected, previously preserved partial scans. Never
 // treat their rows as newly read or accept a different branch or tail.
-function validateCheckpoint(data,source){
+function validateCheckpoint(data,source,omitImages=false){
  validateRaw(data);
  check(['failed','cancelled'].includes(data.status)&&data.count>=2,'請選擇至少兩則的未完成完整掃描保全檔');
  check(data.chatId===sourceId(source)&&new URL(data.sourceUrl).pathname.replace(/\/$/,'')===new URL(source).pathname.replace(/\/$/,''),'續掃來源不是目前聊天');
@@ -214,7 +222,7 @@ function validateCheckpoint(data,source){
  check(ev.hostProof?ev.hostProof.maxRange>8&&ev.hostProof.observedMovement===true:Array.isArray(ev.scrollTrace)&&ev.scrollTrace.some(t=>scrollRange(t.scrollHeight,t.clientHeight)>8),'斷點缺少有效捲動證據');
  check(!String(data.error||'').startsWith('輸出核對失敗'),'斷點輸出驗證失敗');
  if(ev.resume)check(ev.resume.tailVerified&&ev.resume.frontierVerified,'前次續掃尚未核對前沿，請使用原始斷點');
- return data.rows.map(({index,...r})=>r);
+ return data.rows.map(({index,...r})=>omitImages?withoutImages(r):r);
 }
 function resumeWindow(saved,live){
  const pos=new Map(saved.map((r,i)=>[r.id,i])),indices=live.map(r=>pos.get(r.id)).filter(i=>i!==undefined);
@@ -423,5 +431,5 @@ function anchorLiveRecoveryHint(target,indices,geo,previous={},alternate=false){
  return {...normal,best,improved,restore:false,bounds:normal};
 }
 
-return {anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,SAMPLE,SAMPLE_LIMIT,VERSION,categories,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });
