@@ -1604,6 +1604,8 @@
   // semantic prose, but the native action bar is explicitly excluded from
   // Markdown copying. Prove this narrow topology before removing a label.
   function historyNativeQuotedCodeLabel(code,body){
+    const quote=code.closest?.('blockquote');
+    if(!quote||!body.contains?.(quote))return null;
     const source=code.parentElement,block=source?.parentElement;
     if(source?.getAttribute?.('data-code-block-source')!=='true'||
        block?.getAttribute?.('data-code-block')!=='true'||
@@ -1621,8 +1623,7 @@
     if(!/^(程式碼|純文字)$/.test(label))return null;
     const copy=[...header.querySelectorAll('button,[role="button"]')].some(n=>/複製|copy/i.test([n.getAttribute('aria-label'),n.getAttribute('title'),n.getAttribute('data-testid')].filter(Boolean).join(' ')));
     if(!copy)return null;
-    const quote=block.closest('blockquote');
-    if(!quote||!body.contains(quote)||quote.querySelectorAll('code').length!==1)return null;
+    if(block.closest('blockquote')!==quote||quote.querySelectorAll('code').length!==1)return null;
     for(let n=block;n!==quote;n=n.parentElement){
       const parent=n.parentElement;
       if(!parent||!only(parent,[n])||(parent!==quote&&parent.tagName!=='DIV'))return null;
