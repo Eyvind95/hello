@@ -62,11 +62,11 @@ test('marked response with nested PDF citation is read once in full before legac
  assert.equal(rows.length,2);assert.equal(rows[0].id,'user|turn:question-id');assert.equal(rows[1].id,'assistant|message:answer-id');assert.equal(rows[1].text,text);
 });
 
-function codeFixture({value='原樣程式碼\n  第二行',label='純文字',ambiguous=false,extra='',hiddenCode=false}={}){
+function codeFixture({value='原樣程式碼\n  第二行',label='純文字',ambiguous=false,extra='',hiddenCode=false,labelTag='div',copyLabel='複製'}={}){
  const make=(tag,txt='')=>({nodeType:1,tagName:tag.toUpperCase(),innerText:txt,textContent:txt,childNodes:txt?[{nodeType:3,nodeValue:txt}]:[],parentElement:null,previousElementSibling:null,nextElementSibling:null,matches(q){return q.split(',').includes(tag)},closest(){return null},querySelectorAll(){return []}});
  const code=make('code',value);if(hiddenCode)code.innerText='';
  const before=make('p','唯一前文'),after=make('p',ambiguous?'唯一前文':'唯一後文'),body=make('article');
- const group=make('div');group.childNodes=[make('div',label),code,make('button','複製'),make('span',extra)];group.previousElementSibling=before;group.nextElementSibling=after;group.parentElement=body;code.parentElement=group;group.querySelectorAll=q=>q==='code'?[code]:[];body.querySelectorAll=q=>q==='code'?[code]:[];
+ const group=make('div');group.childNodes=[make(labelTag,label),code,make('button',copyLabel),make('span',extra)];group.previousElementSibling=before;group.nextElementSibling=after;group.parentElement=body;code.parentElement=group;group.querySelectorAll=q=>q==='code'?[code]:[];body.querySelectorAll=q=>q==='code'?[code]:[];
  const helper=s.slice(s.indexOf('  function historyAssistantCodeText('),s.indexOf('  function historyRead(host,'));
  const read=vm.runInNewContext(helper+';historyAssistantCodeText',{historyVisible:()=>true,historyIssue:(m,o,d)=>Object.assign(Error(m),{details:d})});
  return {body,code,read,value,raw:'唯一前文\n\n唯一後文'};
@@ -92,4 +92,12 @@ test('ordinary inline code remains unchanged, missing inline code is rejected',(
  const raw='普通段落 '+f.value+' 結尾';
  assert.equal(f.read(f.body,f.body,'a',raw),raw);
  assert.throws(()=>f.read(f.body,f.body,'a','普通段落 結尾'),/無法安全確認完整正文/);
+});
+
+test('literal paragraph label and wrapper without a copy control are not treated as renderer UI',()=>{
+ for(const f of [codeFixture({labelTag:'p'}),codeFixture({copyLabel:'其他操作'})]){
+  const raw='唯一前文\n\n純文字\n'+f.value+'\n\n唯一後文';
+  assert.equal(f.read(f.body,f.body,'a',raw),raw);
+  assert.throws(()=>f.read(f.body,f.body,'a',f.raw),/無法安全確認完整正文/);
+ }
 });

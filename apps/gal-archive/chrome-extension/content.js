@@ -1575,15 +1575,21 @@
         // Every non-code text node in the wrapper must be whitespace or one
         // standalone known renderer label. Button text is UI, never prose.
         // No removal based on a label string elsewhere in the answer.
-        const extras=[];
-        const visit=n=>{
+        const extras=[];let copyControl=false;
+        const visit=(n,prose=false)=>{
           if(n===code)return;
-          if(n.nodeType===3){if((n.nodeValue||'').trim())extras.push(n.nodeValue.trim());return}
-          if(n.nodeType!==1||n.matches('button,[role="button"],[hidden],[aria-hidden="true"]'))return;
-          for(const child of n.childNodes)visit(child);
+          if(n.nodeType===3){if((n.nodeValue||'').trim())extras.push({text:n.nodeValue.trim(),prose});return}
+          if(n.nodeType!==1||n.matches('[hidden],[aria-hidden="true"]'))return;
+          if(n.matches('button,[role="button"]')){
+            const hint=[n.innerText,n.getAttribute?.('aria-label'),n.getAttribute?.('title'),n.getAttribute?.('data-testid')].filter(Boolean).join(' ');
+            if(/複製|copy/i.test(hint))copyControl=true;
+            return;
+          }
+          const semantic=prose||n.matches('p,blockquote,h1,h2,h3,h4,h5,h6,li,td,th');
+          for(const child of n.childNodes)visit(child,semantic);
         };
         visit(group);
-        const label=extras.length===1&&/^(純文字|程式碼)$/.test(extras[0])?extras[0]:'';
+        const label=copyControl&&extras.length===1&&!extras[0].prose&&/^(純文字|程式碼)$/.test(extras[0].text)?extras[0].text:'';
         if(extras.length&&!label)continue;
         const gap=text.slice(start,end);
         const accepted=!gap.trim()||padded(gap,value)||(label&&(padded(gap,label+'\n'+value)||padded(gap,label)));
