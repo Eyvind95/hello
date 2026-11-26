@@ -356,13 +356,16 @@ function validateClassification(raw,data,hash){
 // Original text is the search key. ID is the independent identity proof.
 function anchorBudget(captureOnly=false){return {idleMs:captureOnly?8000:600000,hardMs:captureOnly?8000:3600000,traceLimit:5000,pollMs:500,stepMs:350}}
 function anchorTextMatch(expected,rows,uniqueText){
- const users=rows.filter(r=>r.role==='user');
- const exact=expected.text.length?users.filter(r=>r.text===expected.text):[];
- const id=users.find(r=>r.id===expected.id);
- if(id)return {row:id,kind:id.text===expected.text?'text-and-id':'id-text-difference',identityVerified:true,textExact:id.text===expected.text};
+ const role=expected.role==='assistant'?'assistant':'user';
+ const users=rows.filter(r=>r.role===role);
+ const exact=typeof expected.text==='string'&&expected.text.length?users.filter(r=>r.text===expected.text):[];
+ const ids=users.filter(r=>r.id===expected.id);
+ if(ids.length>1)return null;
+ const id=ids[0];
+ if(id)return {row:id,kind:expected.text===null?'id-only':id.text===expected.text?'text-and-id':'id-text-difference',identityVerified:true,textExact:expected.text===null?null:id.text===expected.text};
  // An identical unique nonempty original is an observation, not proof
  // that a changed native ID refers to the same message.
- if(uniqueText&&exact.length===1)return {row:exact[0],kind:'text-only',identityVerified:false,textExact:true};
+ if(role==='user'&&uniqueText&&exact.length===1)return {row:exact[0],kind:'text-only',identityVerified:false,textExact:true};
  return null;
 }
 // Direction uses only live message identity/order, never historical geometry.

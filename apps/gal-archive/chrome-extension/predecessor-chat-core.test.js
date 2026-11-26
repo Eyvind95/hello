@@ -866,3 +866,13 @@ test('history close is always in sticky header and download has its own row',()=
  a.equal(b.download.hidden,false);b.stop.onclick(event);a.equal(removed,1);a.equal(downloaded,0);
  b.download.onclick(event);a.equal(downloaded,1);a.equal(removed,1);a.equal(prevented,2);a.equal(stopped,2);
 });
+
+ test('assistant native ID search is exact, role checked, and independent of old baseline text',()=>{
+ const expected={id:'assistant|message:target',role:'assistant',text:null};
+ const actual={...expected,text:'正文'};
+ a.equal(c.anchorTextMatch(expected,[actual],false).kind,'id-only');
+ a.equal(c.anchorTextMatch(expected,[actual],false).textExact,null);
+ a.equal(c.anchorTextMatch(expected,[{...actual,role:'user'}],true),null);
+ a.equal(c.anchorTextMatch({...expected,text:'正文'},[{...actual,id:'assistant|message:other'}],true),null);
+ a.equal(c.anchorTextMatch(expected,[actual,actual],false),null);
+ });
