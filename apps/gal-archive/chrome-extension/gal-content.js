@@ -1,8 +1,8 @@
-/* Independent Gal AI page scanner. v0.10.60: independent history-source-only supplement. */
+/* Independent Gal AI page scanner. v0.10.61: independent history-source-only supplement. */
 (() => {
 'use strict';
 if(globalThis.GalArchivePageScanner)return;
-const SCANNER_VERSION='0.10.60';
+const SCANNER_VERSION='0.10.61';
  // Large JSON is retained in the isolated page and pulled by its owning
  // background document in small, independently checked pieces. No story
  // content is sent to the network or persisted outside the existing exports.
