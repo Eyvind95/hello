@@ -1835,7 +1835,7 @@
   // the same row, outside conversation turns. Never use a global text click.
   function historyNativeFailure(host){
     if(!host?.querySelectorAll)return null;
-    const excluded='[data-turn-key],[data-message-author-role],[data-testid^="conversation-turn-"],#ga-predecessor-history-panel,#ga-predecessor-page-config';
+    const excluded='[data-turn-key],[data-message-author-role],[data-testid^="conversation-turn-"],#ga-predecessor-history-panel,#ga-predecessor-page-config,[id^="ga-predecessor-page-config--"]';
     const norm=v=>String(v||'').trim().replace(/\s+/g,' ');
     const matches=[...host.querySelectorAll('[role="status"]')].filter(n=>norm(n.textContent)==='無法載入較早的訊息'&&!n.closest(excluded)&&historyVisible(n));
     if(!matches.length)return null;
@@ -2471,7 +2471,7 @@
       state.enabled=false;state.watchedPath=null;candidates.clear();
       historyGuard(b);
       document.getElementById(HISTORY_PANEL)?.remove();
-      const pane=document.createElement('section');pane.id=HISTORY_PANEL;
+      const pane=document.createElement('section');pane.id=HISTORY_PANEL;pane.dataset.gaExtensionId=chrome.runtime.id;
       pane.style.cssText='position:fixed;z-index:2147483646;left:12px;bottom:156px;top:auto;box-sizing:border-box;max-width:calc(100vw - 24px);max-height:min(35vh,calc(100vh - 180px));overflow:auto;background:#202840;color:#fff;border:1px solid #9ba9cb;padding:10px;border-radius:12px;font:13px system-ui;box-shadow:0 3px 20px #0006';
       const h=document.createElement('strong');h.textContent='V'+chrome.runtime.getManifest().version+'｜'+(b.sample?'最近'+b.sample+'則・測試掃描':b.resume?'完整聊天・保全續掃':'完整聊天・從底端向上掃描');
       b.action=document.createElement('div');b.action.setAttribute('role','status');b.action.style.cssText='padding:8px;margin:5px 0;background:#111827;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere';b.action.textContent='目前動作：準備掃描';
@@ -2659,7 +2659,8 @@
       return {ok:false,error:evidence.error};
     }finally{if(state.bulk===b)state.bulk=null}
   }
-  const HISTORY_LAUNCHER='ga-predecessor-page-launcher',HISTORY_CONFIG='ga-predecessor-page-config';
+  const HISTORY_LAUNCHER='ga-predecessor-page-launcher--'+chrome.runtime.id,HISTORY_CONFIG='ga-predecessor-page-config--'+chrome.runtime.id;
+  const historyPageId=name=>'ga-predecessor-page-'+name+'--'+chrome.runtime.id;
   function historyLauncher(){
     const existing=document.getElementById(HISTORY_LAUNCHER);
     const config=document.getElementById(HISTORY_CONFIG);
@@ -2671,35 +2672,35 @@
     if(existing)return;
     const button=document.createElement('button');
     button.id=HISTORY_LAUNCHER;button.type='button';
-    button.textContent='📚 前輩聊天掃描';
+    button.textContent='📚 前輩聊天掃描 V'+chrome.runtime.getManifest().version;
     button.setAttribute('aria-label','開啟前輩聊天掃描助手');
-    button.title='獨立 ChatGPT 完整聊天 JSON 掃描';
-    button.style.cssText='position:fixed!important;right:18px!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
+    button.title='獨立 ChatGPT 完整聊天 JSON 掃描（此安裝版本）';
+    button.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
     button.onclick=()=>{
       const active=document.getElementById(HISTORY_PANEL);
-      if(active){active.gaShowHistoryDetails?.();return}
+      if(active){if(active.dataset?.gaExtensionId===chrome.runtime.id)active.gaShowHistoryDetails?.();else button.title='此頁已有其他版本掃描或保全面板，請勿同頁重複掃描';return}
       if(document.getElementById(HISTORY_CONFIG)){document.getElementById(HISTORY_CONFIG).remove();return}
       const pane=document.createElement('section');pane.id=HISTORY_CONFIG;pane.dataset.chat=path();
       pane.setAttribute('role','dialog');pane.setAttribute('aria-label','前輩完整聊天掃描設定');
-      pane.style.cssText='position:fixed!important;right:18px!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
+      pane.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
       const heading=document.createElement('strong');heading.textContent='前輩聊天掃描助手';
       const version=document.createElement('p');version.textContent='V'+chrome.runtime.getManifest().version+'｜獨立 JSON，不上傳正史';
-      const mode=document.createElement('div');mode.id='ga-predecessor-page-mode';mode.setAttribute('role','status');mode.style.cssText='position:sticky;top:0;z-index:2;padding:10px;margin:6px 0 12px;background:#111827;border:1px solid #8edcd3;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere';mode.textContent='目前模式：尚未開始｜請選擇原文搜尋、完整掃描或保全續掃';
-      const label=document.createElement('label');label.textContent='聊天名稱（請確認）';label.htmlFor='ga-predecessor-page-title';
-      const input=document.createElement('input');input.id='ga-predecessor-page-title';input.type='text';input.maxLength=512;
+      const mode=document.createElement('div');mode.id=historyPageId('mode');mode.setAttribute('role','status');mode.style.cssText='position:sticky;top:0;z-index:2;padding:10px;margin:6px 0 12px;background:#111827;border:1px solid #8edcd3;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere';mode.textContent='目前模式：尚未開始｜請選擇原文搜尋、完整掃描或保全續掃';
+      const label=document.createElement('label');label.textContent='聊天名稱（請確認）';label.htmlFor=historyPageId('title');
+      const input=document.createElement('input');input.id=historyPageId('title');input.type='text';input.maxLength=512;
       input.value=pc.chatTitle(document.title);
       input.style.cssText='display:block;width:100%;margin:6px 0 12px;padding:8px;background:#111827;color:white;border:1px solid #9ba9cb;border-radius:7px';
-      const minLabel=document.createElement('label');minLabel.textContent='已知最低訊息數（完整掃描，未知填0）';minLabel.htmlFor='ga-predecessor-page-minimum';
-      const minimum=document.createElement('input');minimum.id='ga-predecessor-page-minimum';minimum.type='number';minimum.min='0';minimum.step='1';minimum.value='0';minimum.style.cssText=input.style.cssText;
+      const minLabel=document.createElement('label');minLabel.textContent='已知最低訊息數（完整掃描，未知填0）';minLabel.htmlFor=historyPageId('minimum');
+      const minimum=document.createElement('input');minimum.id=historyPageId('minimum');minimum.type='number';minimum.min='0';minimum.step='1';minimum.value='0';minimum.style.cssText=input.style.cssText;
       const checkpointLabel=document.createElement('label');checkpointLabel.textContent='選擇舊完整掃描保全 JSON（首次或替換用，可略過）';
-      const checkpointFile=document.createElement('input');checkpointFile.id='ga-predecessor-page-checkpoint';checkpointFile.type='file';checkpointFile.accept='.json,application/json';checkpointFile.style.cssText=input.style.cssText;
-      const resumeButton=document.createElement('button');resumeButton.id='ga-predecessor-page-resume';resumeButton.type='button';resumeButton.textContent='⚡ 完整聊天續掃（使用已記住的保全）';
-      const candidateButton=document.createElement('button');candidateButton.id='ga-predecessor-page-resume-candidate';candidateButton.type='button';candidateButton.textContent='使用較新候選保全續掃（需核定）';candidateButton.hidden=true;
-      const savedInfo=document.createElement('p');savedInfo.id='ga-predecessor-page-saved-checkpoint';savedInfo.textContent='尚未讀取本機保全記憶';
-      const hashInput=document.createElement('input');hashInput.id='ga-predecessor-page-checkpoint-hash';hashInput.type='text';hashInput.maxLength=64;hashInput.placeholder='免選檔匯入：原檔 SHA-256';hashInput.style.cssText=input.style.cssText;
-      const localImport=document.createElement('button');localImport.id='ga-predecessor-page-local-import';localImport.type='button';localImport.textContent='從安裝目錄讀取並記住保全';
+      const checkpointFile=document.createElement('input');checkpointFile.id=historyPageId('checkpoint');checkpointFile.type='file';checkpointFile.accept='.json,application/json';checkpointFile.style.cssText=input.style.cssText;
+      const resumeButton=document.createElement('button');resumeButton.id=historyPageId('resume');resumeButton.type='button';resumeButton.textContent='⚡ 完整聊天續掃（使用已記住的保全）';
+      const candidateButton=document.createElement('button');candidateButton.id=historyPageId('resume-candidate');candidateButton.type='button';candidateButton.textContent='使用較新候選保全續掃（需核定）';candidateButton.hidden=true;
+      const savedInfo=document.createElement('p');savedInfo.id=historyPageId('saved-checkpoint');savedInfo.textContent='尚未讀取本機保全記憶';
+      const hashInput=document.createElement('input');hashInput.id=historyPageId('checkpoint-hash');hashInput.type='text';hashInput.maxLength=64;hashInput.placeholder='免選檔匯入：原檔 SHA-256';hashInput.style.cssText=input.style.cssText;
+      const localImport=document.createElement('button');localImport.id=historyPageId('local-import');localImport.type='button';localImport.textContent='從安裝目錄讀取並記住保全';
       const savedSource=()=>location.origin+pane.dataset.chat;
-      const manualImport=document.createElement('button');manualImport.id='ga-predecessor-page-manual-import';manualImport.type='button';manualImport.textContent='手動離線分段匯入（備用）';
+      const manualImport=document.createElement('button');manualImport.id=historyPageId('manual-import');manualImport.type='button';manualImport.textContent='手動離線分段匯入（備用）';
       const showSaved=async()=>{
         try{
           const source=savedSource(),storage=chrome.storage.local;
@@ -2726,10 +2727,10 @@
       };
       localImport.onclick=()=>importCheckpoint(false);manualImport.onclick=()=>importCheckpoint(true);
       const anchorLabel=document.createElement('strong');anchorLabel.textContent='① 局部取證・原文搜尋（只找指定訊息）';
-      const anchorInput=document.createElement('input');anchorInput.id='ga-predecessor-page-anchor-id';anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='原文搜尋：玩家或 GPT 原生訊息 ID';anchorInput.style.cssText=input.style.cssText;
-      const anchorLocate=document.createElement('button');anchorLocate.id='ga-predecessor-page-anchor-locate';anchorLocate.type='button';anchorLocate.textContent='依原文搜尋（10分鐘無進展停止）';
-      const anchorCapture=document.createElement('button');anchorCapture.id='ga-predecessor-page-anchor-capture';anchorCapture.type='button';anchorCapture.textContent='擷取目前錨點（不捲動）';
-      const anchorStop=document.createElement('button');anchorStop.id='ga-predecessor-page-anchor-stop';anchorStop.type='button';anchorStop.textContent='停止定位';anchorStop.hidden=true;
+      const anchorInput=document.createElement('input');anchorInput.id=historyPageId('anchor-id');anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='原文搜尋：玩家或 GPT 原生訊息 ID';anchorInput.style.cssText=input.style.cssText;
+      const anchorLocate=document.createElement('button');anchorLocate.id=historyPageId('anchor-locate');anchorLocate.type='button';anchorLocate.textContent='依原文搜尋（10分鐘無進展停止）';
+      const anchorCapture=document.createElement('button');anchorCapture.id=historyPageId('anchor-capture');anchorCapture.type='button';anchorCapture.textContent='擷取目前錨點（不捲動）';
+      const anchorStop=document.createElement('button');anchorStop.id=historyPageId('anchor-stop');anchorStop.type='button';anchorStop.textContent='停止定位';anchorStop.hidden=true;
       const anchorStyle='display:block!important;width:100%!important;box-sizing:border-box!important;padding:10px!important;margin:6px 0!important;background:#166b65!important;color:white!important;border:1px solid #8edcd3!important;border-radius:8px!important;cursor:pointer!important;text-align:center!important';
       anchorLocate.style.cssText=anchorStyle;anchorCapture.style.cssText=anchorStyle;anchorStop.style.cssText='padding:8px;color:white;background:#9f3131;border-radius:7px;margin:6px 0';
       let anchorCancelled=false;
@@ -2751,11 +2752,11 @@
       const fullLabel=document.createElement('strong');fullLabel.textContent='② 完整聊天保全（不是原文搜尋）';
       const note=document.createElement('p');note.textContent='建議先測試最近10則（玩家及GPT各算一則），再完整掃描至頂端。載入最多等待60秒；本聊天的原監看將停止。';
       const feedback=document.createElement('p');feedback.setAttribute('role','status');feedback.style.whiteSpace='pre-wrap';
-      const start=document.createElement('button');start.type='button';start.id='ga-predecessor-page-start';start.textContent='↑ 從最底端向上完整掃描';
+      const start=document.createElement('button');start.type='button';start.id=historyPageId('start');start.textContent='↑ 從最底端向上完整掃描';
       start.style.cssText='display:block;width:100%;padding:10px;background:#6456b8;color:white;border:1px solid #c0afff;border-radius:8px;cursor:pointer';
-      const trial=document.createElement('button');trial.type='button';trial.id='ga-predecessor-page-test-ten';trial.textContent='🧪 測試掃描 10 則';
+      const trial=document.createElement('button');trial.type='button';trial.id=historyPageId('test-ten');trial.textContent='🧪 測試掃描 10 則';
       trial.style.cssText='display:block;width:100%;padding:10px;margin-bottom:8px;background:#166b65;color:white;border:1px solid #8edcd3;border-radius:8px;cursor:pointer';
-      const twenty=document.createElement('button');twenty.type='button';twenty.id='ga-predecessor-page-test-twenty';twenty.textContent='🧪 測試掃描 20 則';twenty.style.cssText=trial.style.cssText;
+      const twenty=document.createElement('button');twenty.type='button';twenty.id=historyPageId('test-twenty');twenty.textContent='🧪 測試掃描 20 則';twenty.style.cssText=trial.style.cssText;
       const close=document.createElement('button');close.type='button';close.textContent='關閉';close.style.cssText='margin-top:8px;padding:7px 12px;background:#374151;color:white;border-radius:7px;cursor:pointer';
       close.onclick=()=>pane.remove();
       const launch=async(sample,resume=false)=>{
