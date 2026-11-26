@@ -572,7 +572,10 @@ test('native retry is bounded, deadline-preserving, and never certifies rows',as
 test('history progress timeout includes false top and retry cannot reset it',()=>{
  const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
  const run=src.slice(src.indexOf('  async function historyRun('),src.indexOf('  async function historyBegin('));
- a.match(run,/const deadline=lastGrowth\+60000;/);a.doesNotMatch(run,/noNewRows\(lastGrowth,Date.now\(\)\)&&pos>2/);
+ a.match(run,/const growthLimit=b.sample\|\|b.isolated\?60000:180000;/);
+ a.match(run,/const deadline=lastGrowth\+growthLimit;/);
+ a.equal((run.match(/pc\.noNewRows\(lastGrowth,Date.now\(\),growthLimit\)/g)||[]).length,2);
+ a.doesNotMatch(run,/noNewRows\(lastGrowth,Date.now\(\),growthLimit\)&&pos>2/);
  a.match(run,/nativeRetried\?null:target/);
 });
 
