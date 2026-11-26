@@ -231,12 +231,12 @@ test('far bottom reset transfers control to identity before attempting geometric
 test('identity recovery survives more than 12 total and six consecutive bottom snaps',async()=>{
  const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
  const host={scrollTop:5400,scrollHeight:6000,clientHeight:600};
- const rows=[{id:'assistant|message:frontier'}];let now=0,snaps=0,moves=0;
+ const rows=[{id:'assistant|message:frontier'}];let now=0,snaps=0,moves=0,observed=0;
  const root={querySelectorAll:q=>q==='[data-response-body]'&&host.scrollTop<=1800?[{getAttribute:()=> 'frontier'}]:[]};
- host.scrollBy=({top})=>{moves++;const before=host.scrollTop;host.scrollTop=Math.max(0,Math.min(5400,before+top));if(snaps<15&&host.scrollTop<=4500){snaps++;host.scrollTop=5400}};
- const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:()=>{},historyStatus:()=>{},historyScroll:()=>{throw Error('unexpected absolute scroll')},historyLoading:()=>false,historyNativeRetry:async()=>false,historyAtBottom:h=>h.scrollTop===5400,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>rows};
+ host.scrollBy=({top})=>{moves++;const before=host.scrollTop;host.scrollTop=Math.max(0,Math.min(5400,before+top));if(snaps<15&&host.scrollTop<=3900){snaps++;host.scrollTop=5400}};
+ const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:(b,event)=>{if(event==='identity-rejoin-bottom-snap')observed++},historyStatus:()=>{},historyScroll:()=>{throw Error('unexpected absolute scroll')},historyLoading:()=>false,historyNativeRetry:async()=>false,historyAtBottom:h=>h.scrollTop===5400,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>rows};
  const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
- assert.equal((await recover({host,rows,scrollStats:{}},120000))[0],rows[0]);assert.equal(snaps,15);assert.ok(moves>15);
+ assert.equal((await recover({host,rows,scrollStats:{}},120000))[0],rows[0]);assert.equal(snaps,15);assert.equal(observed,15);assert.ok(moves>15);
 });
 test('full navigation retains geometric first and fallback after identity failure',()=>{
  const run=s.slice(s.indexOf('  async function historyRun(b){'));
