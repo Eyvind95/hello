@@ -1599,6 +1599,47 @@
   // A rendered assistant body can temporarily omit a code block even when
   // the code node itself is already present. Never accept missing code or
   // erase arbitrary text. Repair only a uniquely bounded DOM code group.
+
+  // A native code block can be nested inside a blockquote. The quote is
+  // semantic prose, but the native action bar is explicitly excluded from
+  // Markdown copying. Prove this narrow topology before removing a label.
+  function historyNativeQuotedCodeLabel(code,body){
+    const source=code.parentElement,block=source?.parentElement;
+    if(source?.getAttribute?.('data-code-block-source')!=='true'||
+       block?.getAttribute?.('data-code-block')!=='true'||
+       block.getAttribute('data-markdown-copy')!=='code-block'||
+       !body.contains(block))return null;
+    const white=n=>n.nodeType===8||(n.nodeType===3&&!String(n.nodeValue||'').trim());
+    const only=(parent,children)=>[...parent.childNodes].filter(n=>!white(n)).length===children.length&&
+      [...parent.childNodes].filter(n=>!white(n)).every((n,i)=>n===children[i]);
+    if(!only(source,[code]))return null;
+    const headers=[...block.children].filter(n=>n.getAttribute('data-markdown-copy')==='exclude'&&n.getAttribute('contenteditable')==='false');
+    if(headers.length!==1)return null;
+    const header=headers[0];
+    if(!only(block,[header,source])||header.querySelectorAll('code,pre,p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table').length)return null;
+    const label=String(header.textContent||'').trim();
+    if(!/^(程式碼|純文字)$/.test(label))return null;
+    const copy=[...header.querySelectorAll('button,[role="button"]')].some(n=>/複製|copy/i.test([n.getAttribute('aria-label'),n.getAttribute('title'),n.getAttribute('data-testid')].filter(Boolean).join(' ')));
+    if(!copy)return null;
+    const quote=block.closest('blockquote');
+    if(!quote||!body.contains(quote)||quote.querySelectorAll('code').length!==1)return null;
+    for(let n=block;n!==quote;n=n.parentElement){
+      const parent=n.parentElement;
+      if(!parent||!only(parent,[n])||(parent!==quote&&parent.tagName!=='DIV'))return null;
+    }
+    const value=code.innerText||code.textContent||'';
+    if(!value.trim()||value!==String(code.textContent||''))return null;
+    return {quote,header,label,value};
+  }
+  function historyAssistantStructureText(node,body){
+    const raw=node.innerText||node.textContent||'';
+    if(node.tagName!=='BLOCKQUOTE')return raw;
+    const codes=[...node.querySelectorAll('code')];
+    if(codes.length!==1)return raw;
+    const proof=historyNativeQuotedCodeLabel(codes[0],body);
+    return proof&&proof.quote===node&&raw===proof.label+'\n'+proof.value?proof.value:raw;
+  }
+
   function historyAssistantCodeText(body,owner,id,raw){
     const codes=[...body.querySelectorAll('code')].filter(historyVisible);
     let text=raw;
@@ -1670,9 +1711,10 @@
         // standalone known renderer label. Button text is UI, never prose.
         // No removal based on a label string elsewhere in the answer.
         const extras=[];let copyControl=false;
+        const quotedLabel=historyNativeQuotedCodeLabel(code,body);
         const visit=(n,prose=false)=>{
           if(n===code)return;
-          if(n.nodeType===3){if((n.nodeValue||'').trim())extras.push({text:n.nodeValue.trim(),prose});return}
+          if(n.nodeType===3){if((n.nodeValue||'').trim())extras.push({text:n.nodeValue.trim(),prose,node:n});return}
           if(n.nodeType!==1||n.matches('[hidden],[aria-hidden="true"]'))return;
           if(n.matches('button,[role="button"]')){
             const hint=[n.innerText,n.getAttribute?.('aria-label'),n.getAttribute?.('title'),n.getAttribute?.('data-testid')].filter(Boolean).join(' ');
@@ -1683,7 +1725,7 @@
           for(const child of n.childNodes)visit(child,semantic);
         };
         visit(group);
-        const label=copyControl&&extras.length===1&&!extras[0].prose&&/^(純文字|程式碼)$/.test(extras[0].text)?extras[0].text:'';
+        const label=copyControl&&extras.length===1&&/^(純文字|程式碼)$/.test(extras[0].text)&&(!extras[0].prose||(quotedLabel?.quote===group&&quotedLabel.label===extras[0].text&&quotedLabel.header.contains(extras[0].node)))?extras[0].text:'';
         if(extras.length&&!label)continue;
         const candidates=[];
         for(const at of left)for(const end of right){
@@ -1738,7 +1780,7 @@
       const stable=composite?pc.compositeId(composite.compositeNative.turnId,composite.compositeNative.ids):role+'|'+(native?'message:'+native:'turn:'+turn);
       let text=historyReadText(body,identityHint?body:owner,stable,onFold);
       if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text);
-      const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
+      const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:role==='assistant'?historyAssistantStructureText(n,body):n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
       const row={id:stable,role,text,identityBasis:composite?'unresolved-native-composite':native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments,...(composite||{})};
