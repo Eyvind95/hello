@@ -1,11 +1,22 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.ArchivePilotImport=api})(globalThis,function(){
 'use strict';
-const FORMAT='gal-predecessor-cycle-overwrite',FIELDS=['pilotMessages','quizLogs','easterEggs'];
+const FORMAT='gal-predecessor-cycle-overwrite',FIELDS=['pilotMessages','quizLogs','easterEggs','casinoLogs','realChatLogs','rejectedEvents'],EXTRA=['casinoLogs','realChatLogs','rejectedEvents'],BUNDLE='gal-predecessor-import-bundle';
 const fail=m=>{throw Error(m)};
 const str=(x)=>typeof x==='string'&&x.trim().length>0;
 const obj=x=>x&&typeof x==='object'&&!Array.isArray(x);
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function binding(r){return {worldKey:r.world,cycleId:r.id,cycleTitle:r.title}}
+function resolveTarget(records,pack){
+ if(!obj(pack?.target)||!str(pack.target.cycleId)||!Array.isArray(records))fail('缺少有效輪迴綁定');
+ const found=records.filter(r=>r?.id===pack.target.cycleId);
+ if(found.length!==1||!Object.entries(binding(found[0])).every(([k,v])=>pack.target[k]===v))fail('找不到唯一且完全吻合的世界觀／輪迴 ID／輪迴名稱，不會猜測或新建');
+ return found[0];
+}
+function unpack(bundle){
+ if(!obj(bundle)||bundle.format!==BUNDLE||bundle.version!==1||!str(bundle.sourceText)||!obj(bundle.pack))fail('不是單檔前輩匯入包');
+ let source;try{source=JSON.parse(bundle.sourceText.replace(/^\uFEFF/,''))}catch(e){fail('內嵌原始聊天 JSON 無法解析')}
+ return {source,sourceText:bundle.sourceText,pack:bundle.pack};
+}
 const JOINED='gal-predecessor-prefix-supplement-evidence';
 function validateRows(rows,strict=false){
  const map=new Map();
@@ -32,7 +43,7 @@ function sourceView(source){
 const unresolved=row=>row.identityBasis==='unresolved-native-composite'||row.id.startsWith('assistant|composite:')||row.compositeNative!==undefined||row.compositeHtml!==undefined;
 function plan(r,source,pack,sha){
  if(!obj(r)||!str(r.world)||!str(r.id)||!str(r.title))fail('缺少目前輪迴');
- if(!obj(pack)||pack.format!==FORMAT||pack.version!==1)fail('不是副駕駛三分頁覆蓋 JSON V1');
+ if(!obj(pack)||pack.format!==FORMAT||![1,2].includes(pack.version))fail('不是支援的前輩考古匯入 JSON');
  if(!obj(pack.target)||!Object.entries(binding(r)).every(([k,v])=>pack.target[k]===v))fail('世界觀／輪迴 ID／輪迴名稱不符');
  const view=sourceView(source);
  if(!/^[0-9a-f]{64}$/.test(sha)||pack.sourceSha256!==sha||pack.chatId!==source.chatId)fail('來源聊天 ID 或 SHA-256 不符');
@@ -42,7 +53,7 @@ function plan(r,source,pack,sha){
  for(const row of view.rows)if(unresolved(row))map.delete(row.id);
  const existingIds=new Set(),oldOther=['messages','events','changeLogs'].flatMap(k=>r[k]||[]);for(const m of oldOther)if(m?.id)existingIds.add(m.id);
  function logs(key){
-  if(!Array.isArray(pack[key])||(key==='pilotMessages'&&!pack[key].length))fail(key+' 空白或格式錯誤');
+  if(!Array.isArray(pack[key])||(pack.version===1&&key==='pilotMessages'&&!pack[key].length))fail(key+' 空白或格式錯誤');
   let last=-1;const seen=new Set();
   return pack[key].map((entry,i)=>{
    const row=map.get(entry?.sourceId);if(!row||seen.has(row.id)||row.index<=last||!str(entry.text))fail(key+' 第 '+(i+1)+' 筆來源、順序或正文不符');
@@ -51,13 +62,22 @@ function plan(r,source,pack,sha){
    if(key==='pilotMessages'&&row.role==='user'){const match=marker.exec(allowed);if(match)allowed=allowed.slice(0,match.index)}
    if(!allowed.includes(entry.text)|| (key==='pilotMessages'&&row.role==='user'&&marker.test(entry.text)))fail(key+' 第 '+(i+1)+' 筆不是可保留的原文（劇情區塊不可混入）');
    seen.add(row.id);last=row.index;
+   let rejectedEvidence;
+   if(key==='rejectedEvents'){
+    const decision=map.get(entry.decisionSourceId);
+    if(!decision||decision.role!=='user'||!str(entry.decisionText)||!decision.text.includes(entry.decisionText))fail('拒絕事件缺少玩家原文決定證據：'+row.index);
+    if(entry.title!==undefined&&(!str(entry.title)||!row.text.includes(entry.title)))fail('拒絕事件標題不在來源原文');
+    rejectedEvidence={status:'declined',canonical:false,title:entry.title||'未命名拒絕事件',decisionSourceId:decision.id,decisionIndex:decision.index,decisionText:entry.decisionText,decisionAttachments:structuredClone(decision.attachments)};
+   }
    const id='predecessor:'+key+':'+source.chatId+':'+row.id;
    if(existingIds.has(id))fail('訊息 ID 與其他分頁衝突');
    const time=typeof row.sourceCreatedAt==='string'&&Number.isFinite(Date.parse(row.sourceCreatedAt))?row.sourceCreatedAt:null;
-   return {id,role:row.role==='user'?'me':'ai',manager:row.role==='assistant'?pack.manager:'',text:entry.text,images:[],sourceCreatedAt:time,predecessorSource:{chatId:source.chatId,sha256:sha,id:row.id,index:row.index,attachments:structuredClone(row.attachments),...(view.joined?{sourceFormat:JOINED,sourceStatus:source.status,canonical:false,structure:structuredClone(row.structure)}:{})}};
+   return {...(rejectedEvidence?{rejectedEvidence}:{}),id,role:row.role==='user'?'me':'ai',manager:row.role==='assistant'?pack.manager:'',text:entry.text,images:[],sourceCreatedAt:time,predecessorSource:{chatId:source.chatId,sha256:sha,id:row.id,index:row.index,attachments:structuredClone(row.attachments),...(view.joined?{sourceFormat:JOINED,sourceStatus:source.status,canonical:false,structure:structuredClone(row.structure)}:{})}};
   });
  }
  const incomingPilot=logs('pilotMessages'),incomingQuiz=logs('quizLogs');
+ if(pack.version===2&&EXTRA.some(k=>!Array.isArray(pack[k])))fail('新版必須明確提供賭場、現實聊天、我拒絕的事件三份清單（沒有時填空陣列）');
+ const extraIncoming=Object.fromEntries(EXTRA.filter(k=>pack.version===2||Object.hasOwn(pack,k)).map(k=>[k,logs(k)]));
  // Only a record already bound to this source, with the exact stable ID and
  // source row, can be updated. Never infer ownership from a player's text,
  // manager label, position, or a shared cycle.
@@ -75,6 +95,7 @@ function plan(r,source,pack,sha){
    if(ref?.id!==m.predecessorSource.id)mismatch.push('原始訊息 ID');
    if(prior.role!==m.role)mismatch.push('角色');
    if(prior.manager!==m.manager)mismatch.push('副駕駛');
+   if(key==='rejectedEvents'&&!equal(prior.rejectedEvidence,m.rejectedEvidence))mismatch.push('拒絕事件證據');
    if(mismatch.length)fail('既有ID來源不符，拒絕覆蓋：'+mismatch.join('、')+where);
    if(ref.sha256!==sha){
     // A differing snapshot digest never authorizes overwriting a legacy row.
@@ -101,10 +122,11 @@ function plan(r,source,pack,sha){
  const oldEggs=r.easterEggs||'';if(typeof oldEggs!=='string')fail('舊彩蛋格式錯誤');
  const block='【'+pack.manager+'・考古候選｜'+source.chatId+'｜'+sha+'】\n'+eggText;
  const easterEggs=!eggText||oldEggs.includes(block)?oldEggs:oldEggs+(oldEggs?'\n\n':'')+block;
- const updated={...structuredClone(r),pilotMessages,quizLogs,easterEggs};
- const counts={pilotBefore:(r.pilotMessages||[]).length,pilotAfter:pilotMessages.length,quizBefore:(r.quizLogs||[]).length,quizAfter:quizLogs.length,eggsBefore:(r.easterEggs||'').length,eggsAfter:easterEggs.length,eggCount:pack.easterEggs.length};
- return {updated,counts,sourceCount:view.rows.length,sourceStatus:source.status,sourceEvidence:{joined:view.joined,localCount:view.localCount,isolated,canonical:source.canonical===true},merge:{pilot:{added:pilot.added,replaced:pilot.replaced,preserved:pilot.preserved,retainedEarlierDigest:pilot.retainedEarlierDigest},quiz:{added:quiz.added,replaced:quiz.replaced,preserved:quiz.preserved,retainedEarlierDigest:quiz.retainedEarlierDigest},quizMissing:incomingQuiz.length===0,quizPartial:incomingQuiz.length>0&&(!incomingQuiz.some(m=>m.role==='me')||!incomingQuiz.some(m=>m.role==='ai'))},attachments:incomingPilot.concat(incomingQuiz).reduce((n,m)=>n+m.predecessorSource.attachments.length,0)};
+ const extraMerge=Object.fromEntries(Object.entries(extraIncoming).map(([key,rows])=>[key,merge(key,rows)]));
+ const updated={...structuredClone(r),pilotMessages,quizLogs,easterEggs,...Object.fromEntries(Object.entries(extraMerge).map(([key,v])=>[key,v.rows]))};
+ const counts={pilotBefore:(r.pilotMessages||[]).length,pilotAfter:pilotMessages.length,quizBefore:(r.quizLogs||[]).length,quizAfter:quizLogs.length,eggsBefore:(r.easterEggs||'').length,eggsAfter:easterEggs.length,eggCount:pack.easterEggs.length,extra:Object.fromEntries(Object.entries(extraMerge).map(([key,v])=>[key,{before:(r[key]||[]).length,after:v.rows.length,added:v.added,preserved:v.preserved,retainedEarlierDigest:v.retainedEarlierDigest}]))};
+ return {updated,counts,sourceCount:view.rows.length,sourceStatus:source.status,sourceEvidence:{joined:view.joined,localCount:view.localCount,isolated,canonical:source.canonical===true},merge:{pilot:{added:pilot.added,replaced:pilot.replaced,preserved:pilot.preserved,retainedEarlierDigest:pilot.retainedEarlierDigest},quiz:{added:quiz.added,replaced:quiz.replaced,preserved:quiz.preserved,retainedEarlierDigest:quiz.retainedEarlierDigest},quizMissing:incomingQuiz.length===0,quizPartial:incomingQuiz.length>0&&(!incomingQuiz.some(m=>m.role==='me')||!incomingQuiz.some(m=>m.role==='ai'))},attachments:incomingPilot.concat(incomingQuiz,...Object.values(extraIncoming)).reduce((n,m)=>n+m.predecessorSource.attachments.length+(m.rejectedEvidence?.decisionAttachments.length||0),0)};
 }
 function sameUnchanged(before,after){return equal(Object.fromEntries(Object.entries(before).filter(([k])=>!FIELDS.includes(k)&&k!=='updatedAt')),Object.fromEntries(Object.entries(after).filter(([k])=>!FIELDS.includes(k)&&k!=='updatedAt')))}
-return {FORMAT,binding,plan,sameUnchanged};
+return {FORMAT,BUNDLE,binding,resolveTarget,unpack,plan,sameUnchanged};
 });
