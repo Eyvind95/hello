@@ -58,17 +58,26 @@ function codeRenderEquivalent(a,b,fields){
 // ellipsis. Preserve both observations; this proves a narrow overlap variant,
 // not original text completeness or a server-side edit history.
 function foldedTailEvidence(previous,current,fields,context){
- if(!context||context.currentOverflow||!Array.isArray(context.source)||!context.current||
-    !/^[a-f0-9]{64}$/.test(context.sourceSha256||'')||
+ if(!context||context.currentOverflow||!context.current||
     previous.role!=='user'||current.role!=='user'||previous.id!==current.id||
     fields.length!==1||fields[0]!=='text'||!same(previous.attachments,current.attachments)||
     !current.text.trim()||previous.text!==current.text+'\n…')return null;
- if([...context.current.values()].some(x=>x.messageId===current.id))return null;
- const observation=context.source.find(x=>x.messageId===previous.id&&x.collapsed===true&&x.fullTextVerified===false&&
-  /^(?:顯示較多|顯示更多|顯示全部|展開全文|Show more|Read more)$/i.test(x.label||'')&&
-  x.removedSuffix==='\n'+x.label&&x.rawLength===previous.text.length+x.removedSuffix.length);
- if(!observation)return null;
- return {type:'folded-user-tail-variant',messageId:previous.id,fields:['text'],previous,current,sourceFoldObservation:observation,sourceSha256:context.sourceSha256,fullTextVerified:false};
+ const observed=[...context.current.values()].filter(x=>x.messageId===current.id);
+ const matches=(x,row,collapsed)=>x.messageId===row.id&&x.collapsed===collapsed&&x.fullTextVerified===false&&
+  (collapsed?/^(?:顯示較多|顯示更多|顯示全部|展開全文|Show more|Read more)$/i:/^(?:顯示較少|Show less)$/i).test(x.label||'')&&
+  x.removedSuffix==='\n'+x.label&&x.rawLength===row.text.length+x.removedSuffix.length;
+ const source=Array.isArray(context.source)&&/^[a-f0-9]{64}$/.test(context.sourceSha256||'')?
+   context.source.find(x=>matches(x,previous,true)):null;
+ const local=observed.find(x=>matches(x,previous,true));
+ const expanded=observed.find(x=>matches(x,current,false));
+ // Preserve the existing checkpoint-to-unfolded path with no fold control.
+ // A live fold control must be corroborated by the exact expanded observation.
+ // Within a run require both exact folded and expanded observations.
+ if(!source&&!(local&&expanded))return null;
+ if(observed.length&&!expanded)return null;
+ return {type:'folded-user-tail-variant',messageId:previous.id,fields:['text'],previous,current,
+  sourceFoldObservation:source||local,sourceSha256:source?context.sourceSha256:null,
+  foldBasis:source?'checkpoint':'same-run',currentFoldObservation:expanded||null,fullTextVerified:false};
 }
 // Only accepted windows in this run can bridge a temporary image URL change.
 const genericUserImages=a=>a.length>0&&a.every(x=>transientImage(x)&&x.label==='使用者附件')&&new Set(a.map(x=>x.url)).size===a.length;
