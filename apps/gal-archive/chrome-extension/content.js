@@ -1920,7 +1920,7 @@
     }
     return true;
   }
-  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true,preferIdentity=false}={}){
+  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true,preferIdentity=false,anchorRead=null}={}){
     const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;const policy=upward?pc.recoveryPolicy(b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null})):null;
     const retryError=()=>Object.assign(Error('頁面反覆自動返回底端；本次定位策略無法穩定'),{code:'HISTORY_RECOVERY_RETRY'});
     const farBottom=()=>preferIdentity&&upward&&target!==null&&historyAtBottom(b.host)&&b.host.scrollTop-target>b.host.clientHeight*4;
@@ -1995,7 +1995,12 @@
       }
       else{spinAt=0;
         try{
-            const rows=historyRead(b.host,observation=>historyFoldObservation(b,observation),undefined,b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
+            // A forensic anchor match is not a canonical overlap: return its
+            // same-window evidence before recovery or a stability sleep can
+            // unmount it. Full scans never supply anchorRead.
+            const anchor=b.mode==='predecessor-anchor'&&anchorRead?anchorRead(b.host):null;
+            if(anchor?.observation)return anchor.rows;
+            const rows=anchor?anchor.rows:historyRead(b.host,observation=>historyFoldObservation(b,observation),undefined,b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
             if(lastRows&&last!==null&&last!==fingerprint){
               b.scrollStats.fingerprintChanges++;
@@ -2811,7 +2816,7 @@
         if(previousHost&&previousHost!==host){lastWindow=null;previousBottom=false;pending=null;policy={};settleFailures=0;b.breakthrough={resets:0,attempts:0,frontier:null}}
         previousHost=host;b.host=host;
         let rows,atomic=null,folds=[];
-        const readWindow=()=>{const read=historyAnchorReadWindow(host,x=>folds.push(x),expected,uniqueText);rows=read.rows;atomic=read.observation};
+        const readWindow=(readHost=host)=>{folds=[];const read=historyAnchorReadWindow(readHost,x=>folds.push(x),expected,uniqueText);rows=read.rows;atomic=read.observation;return read};
         if(!captureOnly){
           // Check the currently mounted window before any recovery can move it.
           // Only use the proven live navigation to reach more history, never
@@ -2821,8 +2826,8 @@
           }
           if(!rows||!pc.anchorTextMatch(expected,rows,uniqueText)){
             try{
-              const stable=await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs),upward:true,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true});
-              guard();folds=[];readWindow();
+              const stable=await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs),upward:true,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true,anchorRead:assistantTarget?readWindow:null});
+              guard();if(!atomic)readWindow();
               // A matching live row must not be discarded because a neighbor
               // changed during hydration. Otherwise require stable fingerprint.
               if(!pc.anchorTextMatch(expected,rows,uniqueText)&&pc.fingerprint(stable)!==pc.fingerprint(rows)){evidence.navigation.readIssuePolls++;await sleep(350);continue}
