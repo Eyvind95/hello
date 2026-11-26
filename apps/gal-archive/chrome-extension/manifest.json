@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.49",
-  "version_name": "V0.10.49 前輩原生正文辨識",
-  "description": "輪迴檔案館：前輩原生回答容器優先辨識與相鄰正文取證。",
+  "version": "0.10.50",
+  "version_name": "V0.10.50 GPT 正文與程式碼框一致性",
+  "description": "輪迴檔案館：原生回答辨識及程式碼框正文完整性檢查。",
   "permissions": [
     "storage",
     "activeTab",

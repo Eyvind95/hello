@@ -1506,6 +1506,9 @@
     };
     visit(owner);
     const text=pieces.join('');
+    // Composite fallback also fails closed if its text walk missed code.
+    const codeCounts=new Map();for(const z of structures)if(z.tag==='code'&&z.text.trim())codeCounts.set(z.text,(codeCounts.get(z.text)||0)+1);
+    for(const [value,n] of codeCounts)if(text.split(value).length-1<n)throw historyIssue('備援 GPT 正文與程式碼框不一致',owner,{codeText:value,expectedOccurrences:n});
     if(!anchor||(!text.trim()&&!attachments.length))throw historyIssue('玩家之後未找到可證明的 GPT 渲染內容',owner,{userBoundaries:users.length});
     if(!text.trim()&&attachments.every(x=>x.kind==='link'))throw historyIssue('玩家之後只有連結，無法確認 GPT 正文',owner);
     return {anchor,text,structure:structures,attachments,segments,sourceTextNodes:textNodes.length,sourceTextCharacters:textNodes.reduce((n,v)=>n+v.length,0)};
@@ -1546,6 +1549,66 @@
       throw historyIssue('明確 GPT 正文的角色或原生訊息 ID 無法唯一核對',owner,{responseBodyId:id,unitKey,unitIds,selection});
     return id;
   }
+  // A rendered assistant body can temporarily omit a code block even when
+  // the code node itself is already present. Never accept missing code or
+  // erase arbitrary text. Repair only a uniquely bounded DOM code group.
+  function historyAssistantCodeText(body,owner,id,raw){
+    const codes=[...body.querySelectorAll('code')].filter(historyVisible);
+    let text=raw;
+    const unique=(s,v)=>v&&s.indexOf(v)>=0&&s.indexOf(v)===s.lastIndexOf(v);
+    const padded=(s,v)=>{const at=s.indexOf(v);return at>=0&&!s.slice(0,at).trim()&&!s.slice(at+v.length).trim()};
+    const block=n=>!!n&&n.matches('p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table,pre');
+    const evidence=[];
+    for(const code of codes){
+      const value=code.innerText||code.textContent||'';
+      if(!value.trim())continue;
+      let repaired=false,conflicting=false;
+      for(let group=code.parentElement;group&&group!==body;group=group.parentElement){
+        if(group.querySelectorAll('code').length!==1)break;
+        const before=group.previousElementSibling,after=group.nextElementSibling;
+        if(!block(before)||!block(after)||!historyVisible(before)||!historyVisible(after))continue;
+        if(group.closest('p,h1,h2,h3,h4,h5,h6'))continue;
+        const a=before.innerText||'',b=after.innerText||'';
+        if(!a.trim()||!b.trim()||!unique(text,a)||!unique(text,b))continue;
+        const start=text.indexOf(a)+a.length,end=text.indexOf(b);
+        if(start>end)continue;
+        // Every non-code text node in the wrapper must be whitespace or one
+        // standalone known renderer label. Button text is UI, never prose.
+        // No removal based on a label string elsewhere in the answer.
+        const extras=[];let copyControl=false;
+        const visit=(n,prose=false)=>{
+          if(n===code)return;
+          if(n.nodeType===3){if((n.nodeValue||'').trim())extras.push({text:n.nodeValue.trim(),prose});return}
+          if(n.nodeType!==1||n.matches('[hidden],[aria-hidden="true"]'))return;
+          if(n.matches('button,[role="button"]')){
+            const hint=[n.innerText,n.getAttribute?.('aria-label'),n.getAttribute?.('title'),n.getAttribute?.('data-testid')].filter(Boolean).join(' ');
+            if(/複製|copy/i.test(hint))copyControl=true;
+            return;
+          }
+          const semantic=prose||n.matches('p,blockquote,h1,h2,h3,h4,h5,h6,li,td,th');
+          for(const child of n.childNodes)visit(child,semantic);
+        };
+        visit(group);
+        const label=copyControl&&extras.length===1&&!extras[0].prose&&/^(純文字|程式碼)$/.test(extras[0].text)?extras[0].text:'';
+        if(extras.length&&!label)continue;
+        const gap=text.slice(start,end);
+        const accepted=!gap.trim()||padded(gap,value)||(label&&(padded(gap,label+'\n'+value)||padded(gap,label)));
+        if(!accepted){conflicting=true;continue}
+        // Exact same output when the renderer exposes only the code node,
+        // or exposes the label plus its text in the enclosing innerText.
+        text=text.slice(0,start)+'\n\n'+value+'\n\n'+text.slice(end);
+        repaired=true;break;
+      }
+      if(!repaired&&(conflicting||!text.includes(value))){
+        evidence.push({codeText:value,codeHtml:String(code.outerHTML||'').slice(0,20000),parentHtml:String(code.parentElement?.outerHTML||'').slice(0,60000),renderedText:String(code.innerText||''),domText:String(code.textContent||'')});
+      }
+    }
+    // Also reject a missing repeated code occurrence. Do not guess a placement.
+    const counts=new Map();for(const code of codes){const v=code.innerText||code.textContent||'';if(v.trim())counts.set(v,(counts.get(v)||0)+1)}
+    for(const [value,n] of counts)if(text.split(value).length-1<n)evidence.push({codeText:value,expectedOccurrences:n,observedOccurrences:text.split(value).length-1});
+    if(evidence.length)throw historyIssue('GPT 正文與程式碼框不一致，無法安全確認完整正文',owner,{messageId:id,codeEvidence:evidence.slice(0,20),codeEvidenceOverflow:Math.max(0,evidence.length-20)});
+    return text;
+  }
   function historyRead(host,onFold=()=>{}){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
     const add=(role,el,body,identityHint,fallback=false)=>{
@@ -1566,7 +1629,8 @@
       const roleMarker=el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
       if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
       const stable=role+'|'+(native?'message:'+native:'turn:'+turn);
-      const text=historyReadText(body,identityHint?body:owner,stable,onFold);
+      let text=historyReadText(body,identityHint?body:owner,stable,onFold);
+      if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text);
       const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
