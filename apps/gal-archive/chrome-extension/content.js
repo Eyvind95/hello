@@ -2109,7 +2109,7 @@
     const maxSteps=4096,requirePair=!!(b.resume&&!b.resume.frontierVerified);
     let steps=0,stalled=0,snaps=0,consecutiveSnaps=0,steady=0,edges=0,direction=historyAtBottom(host)?-1:1,best=Infinity;
     let lastProgress=Date.now(),lastProbe='',lastProbeAt=0;
-    while(steps<=maxSteps&&Date.now()<deadline&&Date.now()-lastProgress<45000){
+    while(steps<=maxSteps&&Date.now()<deadline&&Date.now()-lastProgress<120000){
       historyGuard(b);
       const hints=historyMountedRanks(host,saved),ranks=[...hints.keys()].sort((a,c)=>a-c);
       if(ranks.length&&ranks[0]<best){best=ranks[0];lastProgress=Date.now();record('rank-progress',{steps,best})}
@@ -2148,7 +2148,8 @@
       stats.identityRejoinSteps=(stats.identityRejoinSteps||0)+1;
       const actual=host.scrollTop;
       if(delta<0&&actual>before+viewport&&historyAtBottom(host)){
-        snaps++;consecutiveSnaps++;steady=0;record('bottom-snap',{steps,snaps,consecutiveSnaps,before,actual,loading});if(snaps>=12||consecutiveSnaps>=6)break;
+        // A bottom snap is ordinary virtualization behavior, not a terminal condition.
+        snaps++;consecutiveSnaps++;steady=0;record('bottom-snap',{steps,snaps,consecutiveSnaps,before,actual,loading});
         direction=-1;await sleep(500);
       }else if(Math.abs(actual-before)>=1){if(++steady>=32){consecutiveSnaps=0;steady=0}}
       if(steps%16===0)record('relative-progress',{steps,best:Number.isFinite(best)?best:null,before,actual,loading,delta,rankCount:ranks.length});
@@ -2201,7 +2202,7 @@
         }
         if(pc.noNewRows(lastGrowth,Date.now())&&Date.now()>=(state.identityGraceUntil||0)){historyTrace(b,'no-new-rows-timeout');throw Error('60秒未取得新訊息；已保全，禁止無限重複掃描')}
         const deadline=lastGrowth+60000;
-        const attemptDeadline=Math.max(deadline,state.identityGraceUntil||0);
+        let attemptDeadline=Math.max(deadline,state.identityGraceUntil||0);
         let rows=null,lastError='';
         // Keep the last verified viewport in its original coordinate frame.
         // Rebase each retry, and never trigger another breakthrough while
@@ -2213,13 +2214,12 @@
           b.scrollStats.interWindowBottomReturns=(b.scrollStats.interWindowBottomReturns||0)+1;
           historyTrace(b,'inter-window-bottom-return',{actual:pos,height:currentHeight,verifiedTop:anchor.top,verifiedHeight:anchor.height,estimated:pc.frontierPosition(anchor,currentHeight,b.host.clientHeight)});
         }
-        const preferIdentity=!b.sample&&!b.isolated&&!state.identityRejoinAttempted;
-        const identityFirst=!!savedAnchor&&preferIdentity;
-        if(identityFirst)lastError='頁面反覆自動返回底端；優先原生ID定位';
-        const plans=[...(identityFirst?[{identity:true,ratio:0}]:[{ratio:1},{identity:true,ratio:0}]),{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
+        // V0.10.41 reached the observed top with geometric/staged recovery.
+        // Keep that path first; identity is an alternative, not a terminal gate.
+        const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{identity:true,ratio:0},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
           ...[1,-1,2,-2,4,-4].map(offset=>({ratio:0,offset})),
           {ratio:0,rebase:false}];
-        let recovering=identityFirst,attempted=new Set();
+        let recovering=false,attempted=new Set();
         for(const plan of plans){
           const {ratio,offset=0,rebase=true,alternate=false,identity=false}=plan;
           if(identity&&(!(/視窗沒有重疊訊息|頁面反覆自動返回底端|恢復向上捲動位置/.test(lastError))||b.sample||b.isolated||state.identityRejoinAttempted))continue;
@@ -2244,11 +2244,11 @@
             if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
           }
           try{
-            rows=identity?await historyRejoinByIdentity(b,Date.now()+240000):await historySettled(b,{deadline:attemptDeadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering,preferIdentity:preferIdentity&&!state.identityRejoinAttempted});
-            if(!rows){if(identity&&historyAtBottom(b.host)&&b.host.scrollTop-target>b.host.clientHeight*4){lastError='原生前沿定位未成功；禁止重複長距離跳轉';break}continue}
+            rows=identity?await historyRejoinByIdentity(b,Date.now()+600000):await historySettled(b,{deadline:attemptDeadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering});
+            if(!rows){if(identity){lastError='頁面反覆自動返回底端；原生ID定位未完成，返回幾何備援';attemptDeadline=Math.max(attemptDeadline,Date.now()+60000);historyTrace(b,'identity-rejoin-geometric-fallback',{target,anchorId:state.frontier?.id||null})}continue}
           }catch(e){
             historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
-            if(e.code!=='HISTORY_RECOVERY_RETRY'&&(b.sample||b.isolated||state.identityRejoinAttempted||!String(e.message||e).includes('等待逾時：恢復向上捲動位置')))throw e;
+            if(e.code!=='HISTORY_RECOVERY_RETRY'&&(b.sample||b.isolated||!String(e.message||e).includes('等待逾時：恢復向上捲動位置')))throw e;
             lastError=String(e.message||e);recovering=true;rows=null;
             pc.alternateRecoveryPolicy(state);
             b.scrollStats.recoveryPlanRetries=(b.scrollStats.recoveryPlanRetries||0)+1;
