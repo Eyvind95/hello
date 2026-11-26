@@ -2475,6 +2475,69 @@
     try{historyStatus(b,(data.status==='completed'?(b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。'+(b.memoryStatus?'\n'+b.memoryStatus:''))}
     catch(e){historyStatus(b,'保全已留在本頁，下載觸發失敗：'+e.message)}
   }
+
+  // Navigation only: no historyRead, archive rows, checkpoint, download or upload.
+  function historyTopNavigationSnapshot(host,expectedId,names){
+    const root=historyRoot(host);
+    const owners=[...new Set([...root.querySelectorAll('[data-turn-key],[data-testid^="conversation-turn-"],[data-message-author-role]')].filter(historyVisible).map(historyOwner))];
+    const first=owners[0];
+    const key=first?.getAttribute('data-turn-key')||'';
+    const firstId=key?'user|turn:'+key:'';
+    const isUser=!!first&&(first.getAttribute('data-message-author-role')==='user'||outerUsers().some(n=>first.contains(n)));
+    const labels=new Set();
+    if(first&&isUser&&names.length){
+      // Match visible attachment controls/labels, never the message body as a whole.
+      for(const el of first.querySelectorAll('[data-testid*="attachment"],[data-testid*="file-chip"],button,a,[title],[aria-label]')){
+        if(!historyVisible(el))continue;
+        for(const value of [el.getAttribute('title'),el.getAttribute('aria-label'),el.innerText]){
+          for(const line of String(value||'').split(/\r?\n/))if(line.trim())labels.add(line.trim());
+        }
+      }
+    }
+    const match=!!first&&isUser&&(!expectedId||firstId===expectedId)&&names.every(n=>labels.has(n));
+    return {firstId,isUser,match,found:names.filter(n=>labels.has(n)).length,owner:first};
+  }
+  async function historyRushTop(expectedId,files,report,cancel=()=>false){
+    expectedId=String(expectedId||'').trim();
+    const names=[...new Set(String(files||'').split(/[,，;；\n]/).map(x=>x.trim()).filter(Boolean))];
+    if(expectedId&&!/^user\|turn:[a-zA-Z0-9_-]+$/.test(expectedId))return {ok:false,error:'開頭 ID 必須是 user|turn:…'};
+    if(names.length>20||names.some(n=>n.length>200))return {ok:false,error:'附件條件過多或過長'};
+    if(!valid()||state.bulk||state.scanning||state.activeSends||state.timeBusy||state.enabled||isGenerating()||document.getElementById(HISTORY_PANEL))return {ok:false,error:'請先停止本聊天的監看、生成或其他操作，並關閉前一批已保全面板'};
+    const b={mode:'predecessor-top-navigation',chat:path()};
+    // Shared panel ID prevents another installed version starting a scan on this page.
+    const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
+    state.bulk=b;document.body.append(lock);
+    let stableSince=null,lastSignature='',lastProgress=Date.now(),best=Infinity,lastHost=null,lastFirst='',lastHeight=0;
+    const known=!!expectedId||names.length>0;
+    try{
+      while(true){
+        if(cancel()||state.bulk!==b||!valid()||path()!==b.chat||isGenerating()||!lock.isConnected)throw Error('導航已停止或聊天狀態已變更');
+        const h=historyHost(),now=Date.now();
+        if(!h){
+          stableSince=null;lastSignature='';
+          if(now-lastProgress>=180000)throw Error('找不到有效聊天捲動容器');
+          report('等待聊天載入（不掃描）');await sleep(600);continue;
+        }
+        const x=historyTopNavigationSnapshot(h,expectedId,names),top=h.scrollTop,height=h.scrollHeight,loading=historyLoading(h);
+        if(h!==lastHost||x.firstId!==lastFirst||height!==lastHeight||top<best-8){
+          if(h!==lastHost||height!==lastHeight)best=Infinity;
+          lastProgress=now;best=Math.min(best,top);
+          lastHost=h;lastFirst=x.firstId;lastHeight=height;
+        }
+        const signature=[top<=6,height,x.firstId,x.isUser,x.match,x.found].join('|');
+        const eligible=top<=6&&!loading&&!!x.owner&&(!known||x.match);
+        if(!eligible||signature!==lastSignature)stableSince=null;
+        if(eligible&&stableSince===null)stableSince=now;
+        lastSignature=signature;
+        if(eligible&&now-stableSince>=8000)return {ok:true,verified:known,message:known?'已確認抵達指定開頭（只導航，未掃描）':'已抵達觀測頂端；未指定開頭條件，尚未確認真正開頭'};
+        if(now-lastProgress>=180000)throw Error(known?'180秒無新進展，未找到指定開頭；不能宣告抵頂':'180秒無新進展，未確認抵頂');
+        report('只導航｜距頂 '+Math.round(top)+' px｜'+(known?(x.match?'開頭條件吻合，等待穩定':'尋找指定開頭；附件 '+x.found+'/'+names.length):'未指定開頭條件')+(loading?'｜等待歷史載入':''));
+        if(!loading&&(!eligible||top>6))historyScroll(h,0);
+        await sleep(600);
+      }
+    }finally{if(state.bulk===b)state.bulk=null;lock.remove()}
+  }
+
   async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null){
     if(!pc||!valid())return {ok:false,error:'請開啟具體 ChatGPT 聊天並載入新版'};
     if(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating())return {ok:false,error:'此聊天正在監看擷取、掃描或生成，稍後再開始'};
@@ -2716,7 +2779,7 @@
     button.onclick=()=>{
       const active=document.getElementById(HISTORY_PANEL);
       if(active){if(active.dataset?.gaExtensionId===chrome.runtime.id)active.gaShowHistoryDetails?.();else button.title='此頁已有其他版本掃描或保全面板，請勿同頁重複掃描';return}
-      if(document.getElementById(HISTORY_CONFIG)){document.getElementById(HISTORY_CONFIG).remove();return}
+      if(document.getElementById(HISTORY_CONFIG)){if(state.bulk?.mode==='predecessor-top-navigation')return;document.getElementById(HISTORY_CONFIG).remove();return}
       const pane=document.createElement('section');pane.id=HISTORY_CONFIG;pane.dataset.chat=path();
       pane.setAttribute('role','dialog');pane.setAttribute('aria-label','前輩完整聊天掃描設定');
       pane.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
@@ -2750,7 +2813,7 @@
       };
       const importCheckpoint=async(manual=false)=>{
         if(pane.dataset.chat!==path())return;
-        localImport.disabled=true;manualImport.disabled=true;anchorLocate.disabled=true;anchorCapture.disabled=true;resumeButton.disabled=true;candidateButton.disabled=true;start.disabled=true;trial.disabled=true;twenty.disabled=true;close.disabled=true;
+        localImport.disabled=true;manualImport.disabled=true;anchorLocate.disabled=true;anchorCapture.disabled=true;resumeButton.disabled=true;candidateButton.disabled=true;start.disabled=true;trial.disabled=true;twenty.disabled=true;close.disabled=true;rushTop.disabled=true;
         try{
           const expectedHash=hashInput.value.trim().toLowerCase();
           if(!/^[a-f0-9]{64}$/.test(expectedHash))throw Error('請輸入原始檔 SHA-256');
@@ -2760,15 +2823,33 @@
           feedback.textContent=manual?'已開啟擴充功能獨立匯入頁。完成後返回此頁。':'已記住 '+result.count+' 則｜'+result.runId+'｜SHA-256 已回讀核對；未啟動掃描。';
           await showSaved();
         }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
-        finally{localImport.disabled=false;manualImport.disabled=false;anchorLocate.disabled=false;anchorCapture.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;start.disabled=false;trial.disabled=false;twenty.disabled=false;close.disabled=false}
+        finally{localImport.disabled=false;manualImport.disabled=false;anchorLocate.disabled=false;anchorCapture.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;start.disabled=false;trial.disabled=false;twenty.disabled=false;close.disabled=false;rushTop.disabled=false}
       };
       localImport.onclick=()=>importCheckpoint(false);manualImport.onclick=()=>importCheckpoint(true);
+      const topLabel=document.createElement('strong');topLabel.textContent='⓪ 直衝到頂・只導航（不掃描）';
+      const topId=document.createElement('input');topId.id=historyPageId('top-id');topId.type='text';topId.maxLength=160;topId.placeholder='已知開頭 user|turn:…（選填）';topId.style.cssText=input.style.cssText;
+      const topFiles=document.createElement('input');topFiles.id=historyPageId('top-files');topFiles.type='text';topFiles.maxLength=4200;topFiles.placeholder='首則附件檔名，逗號分隔（選填）';topFiles.style.cssText=input.style.cssText;
+      const rushTop=document.createElement('button');rushTop.id=historyPageId('rush-top');rushTop.type='button';rushTop.textContent='↑ 直衝到頂（不掃描）';
+      const rushStop=document.createElement('button');rushStop.id=historyPageId('rush-stop');rushStop.type='button';rushStop.textContent='停止導航';rushStop.hidden=true;
+      let rushCancelled=false;
+      rushStop.onclick=()=>{rushCancelled=true;mode.textContent='目前模式：直衝到頂｜正在停止'};
+      rushTop.onclick=async()=>{
+        if(pane.dataset.chat!==path()||rushTop.disabled)return;
+        rushCancelled=false;
+        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,topId,topFiles,rushTop,close];
+        controls.forEach(n=>n.disabled=true);rushStop.hidden=false;
+        const status=message=>{mode.textContent='目前模式：直衝到頂（不掃描）\n'+message;feedback.textContent=message};
+        try{status('準備導航');const r=await historyRushTop(topId.value,topFiles.value,status,()=>rushCancelled||!pane.isConnected);status(r.ok?r.message:'⛔ '+r.error)}
+        catch(e){status('⛔ '+String(e.message||e))}
+        finally{controls.forEach(n=>n.disabled=false);rushStop.hidden=true}
+      };
       const anchorLabel=document.createElement('strong');anchorLabel.textContent='① 局部取證・原文搜尋（只找指定訊息）';
       const anchorInput=document.createElement('input');anchorInput.id=historyPageId('anchor-id');anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='原文搜尋：玩家或 GPT 原生訊息 ID';anchorInput.style.cssText=input.style.cssText;
       const anchorLocate=document.createElement('button');anchorLocate.id=historyPageId('anchor-locate');anchorLocate.type='button';anchorLocate.textContent='依原文搜尋（10分鐘無進展停止）';
       const anchorCapture=document.createElement('button');anchorCapture.id=historyPageId('anchor-capture');anchorCapture.type='button';anchorCapture.textContent='擷取目前錨點（不捲動）';
       const anchorStop=document.createElement('button');anchorStop.id=historyPageId('anchor-stop');anchorStop.type='button';anchorStop.textContent='停止定位';anchorStop.hidden=true;
       const anchorStyle='display:block!important;width:100%!important;box-sizing:border-box!important;padding:10px!important;margin:6px 0!important;background:#166b65!important;color:white!important;border:1px solid #8edcd3!important;border-radius:8px!important;cursor:pointer!important;text-align:center!important';
+      rushTop.style.cssText=anchorStyle;rushStop.style.cssText='padding:8px;color:white;background:#9f3131;border-radius:7px;margin:6px 0';
       anchorLocate.style.cssText=anchorStyle;anchorCapture.style.cssText=anchorStyle;anchorStop.style.cssText='padding:8px;color:white;background:#9f3131;border-radius:7px;margin:6px 0';
       let anchorCancelled=false;
       anchorStop.onclick=()=>{anchorCancelled=true;mode.textContent='目前模式：原文局部取證｜正在停止並保全';feedback.textContent='正在停止定位…'};
@@ -2779,7 +2860,7 @@
         const target=anchorInput.value.trim();
         const status=message=>{mode.textContent='目前模式：'+activeMode+'\n目標：'+target+'\n目前動作：'+message;feedback.textContent=message};
         status('準備讀取原文');
-        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,close];
+        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,rushTop,close];
         controls.forEach(n=>n.disabled=true);anchorStop.hidden=false;
         try{const r=await historyAnchorCapture(target,input.value.trim(),status,captureOnly,()=>anchorCancelled||!pane.isConnected);status(r.ok?r.message:'⛔ '+r.error)}
         catch(e){status('⛔ '+String(e.message||e))}
@@ -2799,7 +2880,7 @@
       const launch=async(sample,resume=false)=>{
         if(pane.dataset.chat!==path()){pane.remove();return}
         if(!pc.chatTitle(input.value)){feedback.textContent='請填寫聊天實際名稱，不能使用新對話等預設名稱';return}
-        start.disabled=true;trial.disabled=true;twenty.disabled=true;resumeButton.disabled=true;candidateButton.disabled=true;localImport.disabled=true;manualImport.disabled=true;anchorLocate.disabled=true;anchorCapture.disabled=true;close.disabled=true;feedback.textContent='正在開啟掃描…';mode.textContent='目前模式：'+(resume?'完整聊天・保全續掃':sample?'測試掃描':'完整聊天・從底端向上掃描')+'｜準備中';
+        start.disabled=true;trial.disabled=true;twenty.disabled=true;resumeButton.disabled=true;candidateButton.disabled=true;localImport.disabled=true;manualImport.disabled=true;anchorLocate.disabled=true;anchorCapture.disabled=true;close.disabled=true;rushTop.disabled=true;feedback.textContent='正在開啟掃描…';mode.textContent='目前模式：'+(resume?'完整聊天・保全續掃':sample?'測試掃描':'完整聊天・從底端向上掃描')+'｜準備中';
         try{
           let checkpoint=null;
           if(resume){
@@ -2819,12 +2900,12 @@
           if(result?.ok){pane.remove();return}
           feedback.textContent='⛔ '+(result?.error||'無法啟動掃描');
         }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
-        finally{start.disabled=false;trial.disabled=false;twenty.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;localImport.disabled=false;manualImport.disabled=false;anchorLocate.disabled=false;anchorCapture.disabled=false;close.disabled=false}
+        finally{start.disabled=false;trial.disabled=false;twenty.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;localImport.disabled=false;manualImport.disabled=false;anchorLocate.disabled=false;anchorCapture.disabled=false;close.disabled=false;rushTop.disabled=false}
       };
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,mode,label,input,savedInfo,anchorLabel,anchorInput,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
+      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,anchorLabel,anchorInput,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }
@@ -2865,7 +2946,7 @@
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if(['predecessor-popup-status','predecessor-popup-config','predecessor-popup-resume'].includes(message?.type)){historyPopupCommand(message).then(respond,e=>respond({ok:false,error:String(e.message||e)}));return true}
     if(message?.type==='predecessor-history-up'){historyBegin(message.title,message.sample).then(respond,e=>respond({ok:false,error:String(e.message||e)}));return true}
-    if(['predecessor-history','predecessor-anchor'].includes(state.bulk?.mode)&&['bulk-down','bulk-range','backfill-visible','begin-watch','end-watch','test-last-time'].includes(message?.type)){respond({ok:false,error:'前輩聊天掃描中，不得開始其他操作'});return;}
+    if(['predecessor-history','predecessor-anchor','predecessor-top-navigation'].includes(state.bulk?.mode)&&['bulk-down','bulk-range','backfill-visible','begin-watch','end-watch','test-last-time'].includes(message?.type)){respond({ok:false,error:'前輩聊天掃描中，不得開始其他操作'});return;}
 
     if(message?.type==='bulk-down'){
       bulkBeginDown(message.replay===true).then(respond,e=>respond({ok:false,error:String(e?.message||e)}));
