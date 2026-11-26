@@ -135,7 +135,7 @@ function chatTitle(value){const title=String(value||'').replace(/\s*[-–|]\s*Ch
 const validId=x=>typeof x==='string'&&x.length>0&&x.length<=512;
 function validateRows(rows){
  check(Array.isArray(rows),'訊息不是陣列');
- const ids=new Set(),nativeClaims=new Set(),compositeClaims=new Set();
+ const ids=new Set(),nativeClaims=new Set(),compositeClaims=new Set(),assistantTurns=new Set(),compositeTurns=new Set();
  for(const r of rows){
   check(r&&validId(r.id)&&!ids.has(r.id)&&['user','assistant'].includes(r.role)&&typeof r.text==='string'&&Array.isArray(r.structure)&&Array.isArray(r.attachments)&&typeof r.identityBasis==='string'&&r.identityBasis&&r.identityBasis!=='position','訊息 ID、角色或內容格式不符');
   check(r.text.trim()||r.attachments.length||(r.nonTextOmitted===true&&/^(user|assistant)\|(turn|message):[a-zA-Z0-9_-]+$/.test(r.id)&&r.id.startsWith(r.role+'|')&&['turn-key','native-dom-id'].includes(r.identityBasis)),'空白訊息缺少可核對附件或非文字回合證據');
@@ -146,9 +146,11 @@ function validateRows(rows){
   if(isComposite(r)){
    const p=r.compositeNative,token=x=>typeof x==='string'&&/^[a-zA-Z0-9_-]+$/.test(x);
    check(r.role==='assistant'&&r.text.trim()&&p&&token(p.turnId)&&Array.isArray(p.ids)&&p.ids.length===2&&p.ids.every(token)&&new Set(p.ids).size===2&&p.bodyId===p.ids[0]&&same(p.declaredIds,[p.ids[0],p.ids[0],p.ids[1]])&&p.boundaryVerified===false&&r.id===compositeId(p.turnId,p.ids)&&typeof r.compositeHtml==='string'&&r.compositeHtml.length>0&&r.compositeHtml.length<=120000,'複合原生單元證據不符');
+   check(!assistantTurns.has(p.turnId)&&!compositeTurns.has(p.turnId),'複合回合與另一 GPT 回合衝突');compositeTurns.add(p.turnId);
    p.ids.forEach(claim);
   }else{
    check(!r.id.startsWith('assistant|composite:')&&r.compositeNative===undefined&&r.compositeHtml===undefined,'複合單元不得偽裝原生訊息');
+   const turn=/^assistant\|turn:(.+)$/.exec(r.id);if(turn){check(!compositeTurns.has(turn[1]),'複合回合與另一 GPT 回合衝突');assistantTurns.add(turn[1])}
    const m=/^(?:user|assistant)\|message:(.+)$/.exec(r.id);if(m){check(!compositeClaims.has(m[1]),'複合原生 ID 與另一列衝突');nativeClaims.add(m[1])}
   }
  }
