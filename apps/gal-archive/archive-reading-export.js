@@ -12,6 +12,8 @@ function block(m,i,kind){
  for(const k of ['sourceMessageId','sourceEventId','sourcePartIndex','messageOrder','sourceCreatedAt','gameTime','nativeGameTime','storyPlacement','autoContinue'])if(m[k]!==undefined)s+=k+'：'+JSON.stringify(m[k])+'\n';
  s+=text(m.title)?'標題：'+m.title+'\n':'';
  s+=text(m.text);
+ if(m.predecessorSource)s+='\n【考古來源】'+JSON.stringify(m.predecessorSource);
+ if(m.rejectedEvidence)s+='\n【非正史拒絕證據】'+JSON.stringify(m.rejectedEvidence);
  if(Array.isArray(m.images)&&m.images.length)s+='\n【附圖 '+m.images.length+' 張：原始輪迴 JSON 保留原資料】';
  if(Array.isArray(m.nativeImageReferences)&&m.nativeImageReferences.length)s+='\n【原站圖片參照：'+JSON.stringify(m.nativeImageReferences)+'；未擅自下載】';
  return s+'\n\n';
@@ -22,7 +24,7 @@ function cycleReadingName(w,name,title,hero){
  const cycle=m?'第'+m[1].padStart(2,'0')+'輪迴':part(title);
  return shortWorld(w,name)+'｜'+cycle+(hero?'・'+part(hero):'');
 }
-const VOLUME_LABELS={'02・完整劇情原始對話':'完整劇情','03・副駕駛聊天':'副駕駛聊天','06・事件簿':'事件簿','02b・已證明定位的劇情閱讀順序':'含事件閱讀版','07a・10題':'10題','07b・修改紀錄':'修改紀錄','文字與評語':'文字與評語'};
+const VOLUME_LABELS={'02・完整劇情原始對話':'完整劇情','03・副駕駛聊天':'副駕駛聊天','06・事件簿':'事件簿','02b・已證明定位的劇情閱讀順序':'含事件閱讀版','07a・10題':'10題','07b・修改紀錄':'修改紀錄','08a・賭場':'賭場','08b・現實聊天':'現實聊天','08c・我拒絕的事件':'我拒絕的事件','文字與評語':'文字與評語'};
 function writeVolumes(add,dir,label,items,heading,prefix,limit=32000){
  const addVolume=(suffix,bytes)=>add(dir+'/'+label+'/'+prefix+'｜'+VOLUME_LABELS[label]+'｜'+suffix,bytes,true);
  let buffer='',first=1,volume=1;
@@ -58,8 +60,8 @@ function plan(cycles,worlds){
   writeVolumes(add,dir,'02b・已證明定位的劇情閱讀順序',tl.out,head+'｜只按明確 storyPlacement 插入已接事件；未定位事件見索引，不推測時間或位置',prefix);
   writeVolumes(add,dir,'03・副駕駛聊天',pilot.map((m,i)=>block(m,i,'pilot')),head+'｜非 Gal AI 正史',prefix);
   writeVolumes(add,dir,'06・事件簿',events.map((m,i)=>block(m,i,'event')),head+'｜全部狀態，不等於全部已接取',prefix);
-  for(const [k,label] of [['quizLogs','07a・10題'],['changeLogs','07b・修改紀錄']])writeVolumes(add,dir,label,list(c[k],label).map((m,i)=>block(m,i,k)),head+'｜非正史',prefix);
-  metadata.push({worldId:c.world,cycleId:c.id,title,hero:text(c.hero),path:dir,messages:msgs.length,events:events.length,pilot:pilot.length,unplacedAcceptedEventIndexes:tl.unplaced});
+  for(const [k,label] of [['quizLogs','07a・10題'],['changeLogs','07b・修改紀錄'],['casinoLogs','08a・賭場'],['realChatLogs','08b・現實聊天'],['rejectedEvents','08c・我拒絕的事件']])writeVolumes(add,dir,label,list(c[k],label).map((m,i)=>block(m,i,k)),head+'｜非正史',prefix);
+  metadata.push({worldId:c.world,cycleId:c.id,title,hero:text(c.hero),path:dir,messages:msgs.length,events:events.length,pilot:pilot.length,casino:list(c.casinoLogs,'賭場').length,realChat:list(c.realChatLogs,'現實聊天').length,rejectedEvents:list(c.rejectedEvents,'我拒絕的事件').length,unplacedAcceptedEventIndexes:tl.unplaced});
  }
  add('00・閱讀索引.json',JSON.stringify({format:'gal-archive-reading-zip',version:1,canonical:false,cycles:metadata,notice:'僅閱讀副本，不含附件原始位元組或交接稿備份；請另存完整.gab。'},null,2)+'\n');
  return files;
