@@ -2147,13 +2147,18 @@
       await sleep(cautious?150:50);steps++;
       stats.identityRejoinSteps=(stats.identityRejoinSteps||0)+1;
       const actual=host.scrollTop;
-      if(delta<0&&actual>before+viewport&&historyAtBottom(host)){
-        // A bottom snap is ordinary virtualization behavior, not a terminal condition.
-        snaps++;consecutiveSnaps++;steady=0;record('bottom-snap',{steps,snaps,consecutiveSnaps,before,actual,loading});
+      const bottomReturn=delta<0&&historyAtBottom(host)&&actual>=before-1;
+      if(bottomReturn){
+        // A jump or failure to leave the bottom is not a terminal condition.
+        // Keep independent time/step budgets; do not turn a bottom hold into
+        // the three-stalled-movements abort.
+        const jumped=actual>before+viewport;if(jumped)snaps++;
+        consecutiveSnaps++;steady=0;stalled=0;
+        record(jumped?'bottom-snap':'bottom-hold',{steps,snaps,consecutiveSnaps,before,actual,loading});
         direction=-1;await sleep(500);
       }else if(Math.abs(actual-before)>=1){if(++steady>=32){consecutiveSnaps=0;steady=0}}
       if(steps%16===0)record('relative-progress',{steps,best:Number.isFinite(best)?best:null,before,actual,loading,delta,rankCount:ranks.length});
-      if(Math.abs(actual-before)<1){if(++stalled>=3)break;await sleep(150)}else stalled=0;
+      if(Math.abs(actual-before)<1){if(!bottomReturn&&++stalled>=3)break;await sleep(150)}else stalled=0;
     }
     record('not-located',{steps,snaps,stalled,best:Number.isFinite(best)?best:null});return null;
   }

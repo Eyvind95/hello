@@ -244,3 +244,14 @@ test('full navigation retains geometric first and fallback after identity failur
  assert.ok(run.includes("historyTrace(b,'identity-rejoin-geometric-fallback'"));
  assert.ok(!run.includes('禁止重複長距離跳轉'));
 });
+
+test('repeated failure to depart from bottom uses time budget instead of three-stall abort',async()=>{
+ const source=s.slice(s.indexOf('  function historyMountedFrontier('),s.indexOf('  async function historyRun(b){'));
+ const host={scrollTop:5400,scrollHeight:6000,clientHeight:600};
+ const rows=[{id:'assistant|message:frontier'}];let now=0,holds=0,observed=0;
+ const root={querySelectorAll:q=>q==='[data-response-body]'&&host.scrollTop<=1800?[{getAttribute:()=> 'frontier'}]:[]};
+ host.scrollBy=({top})=>{if(holds<15){holds++;return}host.scrollTop=Math.max(0,Math.min(5400,host.scrollTop+top))};
+ const ctx={historyRoot:()=>root,historyVisible:()=>true,historyGuard:()=>{},historyTrace:(b,event)=>{if(event==='identity-rejoin-bottom-hold')observed++},historyStatus:()=>{},historyScroll:()=>{throw Error('unexpected absolute scroll')},historyLoading:()=>false,historyNativeRetry:async()=>false,historyAtBottom:h=>h.scrollTop===5400,sleep:async x=>{now+=x},Date:{now:()=>now},historySettled:async()=>rows};
+ const recover=vm.runInNewContext(source+';historyRejoinByIdentity',ctx);
+ assert.equal((await recover({host,rows,scrollStats:{}},120000))[0],rows[0]);assert.equal(holds,15);assert.equal(observed,15);
+});
