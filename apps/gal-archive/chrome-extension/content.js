@@ -2324,23 +2324,36 @@
         if(!b.sample&&!b.isolated&&state.frontier?.id&&state.frontier.id===(b.resume&&!b.resume.frontierVerified?b.resumeRows[b.resume.minIndex]?.id:b.rows[0]?.id)&&Number.isFinite(state.frontier.top)&&Number.isFinite(state.frontier.height)&&Math.abs(state.frontier.top-anchor.top)>=b.host.clientHeight*.5){
           plans.push({ratio:0,frontier:true},{ratio:0,frontier:true,rebase:false});
         }
+        // A prepend can change the coordinate frame before this iteration
+        // starts. Keep the actual last accepted viewport and advancing
+        // frontier, rather than rebasing an already shifted live coordinate.
+        // These bounded probes are fallback only; mergeUp still proves overlap.
+        if(!b.sample&&!b.isolated){
+          for(const growth of ['viewport','frontier']){
+            plans.push({ratio:0,growth},{ratio:0,growth,offset:1},{ratio:0,growth,offset:-1},{ratio:0,growth,rebase:false});
+          }
+        }
         let recovering=false,attempted=new Set();
         for(const plan of plans){
-          const {ratio,offset=0,rebase=true,alternate=false,frontier:useFrontier=false}=plan;
+          const {ratio,offset=0,rebase=true,alternate=false,frontier:useFrontier=false,growth}=plan;
           if(alternate&&!lastError.startsWith('頁面反覆自動返回底端'))continue;
           if(useFrontier&&(lastError!=='視窗沒有重疊訊息'||Math.abs(b.host.scrollHeight-state.frontier.height)<b.host.clientHeight))continue;
           if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息'&&!lastError.startsWith('頁面反覆自動返回底端'))break;
           historyGuard(b);
           if(Date.now()>=deadline)break;
           const targetHeight=b.host.scrollHeight;
-          const baseAnchor=useFrontier?state.frontier:ratio===1&&!recovering&&!savedAnchor?{top:origin,height:anchor.height}:anchor;
+          const frontierId=b.resume&&!b.resume.frontierVerified?b.resumeRows[b.resume.minIndex]?.id:b.rows[0]?.id;
+          const growthAnchor=growth&&lastError==='視窗沒有重疊訊息'?pc.heightGrowthRejoinAnchor(growth==='viewport'?verifiedViewport:state.frontier?.id===frontierId?state.frontier:null,targetHeight,b.host.clientHeight):null;
+          if(growth&&!growthAnchor)continue;
+          const baseAnchor=growthAnchor|| (useFrontier?state.frontier:ratio===1&&!recovering&&!savedAnchor?{top:origin,height:anchor.height}:anchor);
+          const basis=growth?'height-growth-'+growth:useFrontier?'verified-frontier':'verified-viewport';
           const target=pc.rejoinTarget(baseAnchor,targetHeight,b.host.clientHeight,offset*b.host.clientHeight-step*ratio,rebase);
           const key=JSON.stringify([Math.round(target),targetHeight,!!state.recoveryAvoidFrontier]);
           if(recovering&&attempted.has(key))continue;
           attempted.add(key);
           if(recovering){
             b.scrollStats.rejoinAttempts=(b.scrollStats.rejoinAttempts||0)+1;
-            historyTrace(b,'rejoin-attempt',{ratio,offset,rebase,target,anchorTop:baseAnchor.top,anchorHeight:baseAnchor.height,expectedHeight:targetHeight,anchorId:state.frontier?.id||null,basis:useFrontier?'verified-frontier':'verified-viewport'});
+            historyTrace(b,'rejoin-attempt',{ratio,offset,rebase,target,anchorTop:baseAnchor.top,anchorHeight:baseAnchor.height,expectedHeight:targetHeight,anchorId:state.frontier?.id||null,basis});
           }
           const nativeRetried=await historyNativeRetry(b,deadline);
           if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
@@ -2372,7 +2385,7 @@
             }
             b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),merged,rows);
             b.rows=merged;for(const change of changes)historyAttachmentChange(b,change);b.windows++;if(b.isolated)b.isolated.windows++;
-            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,firstId:rows[0]?.id,lastId:rows.at(-1)?.id,basis:useFrontier?'verified-frontier':'verified-viewport'})}
+            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,firstId:rows[0]?.id,lastId:rows.at(-1)?.id,basis})}
             lastError='';break;
           }catch(e){
             b.scrollStats.overlapRetries++;lastError=String(e.message||e);
@@ -2699,14 +2712,14 @@
     button.textContent='📚 前輩聊天掃描 V'+chrome.runtime.getManifest().version;
     button.setAttribute('aria-label','開啟前輩聊天掃描助手');
     button.title='獨立 ChatGPT 完整聊天 JSON 掃描（此安裝版本）';
-    button.style.cssText='position:fixed!important;right:18px!important;left:auto!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
+    button.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
     button.onclick=()=>{
       const active=document.getElementById(HISTORY_PANEL);
       if(active){if(active.dataset?.gaExtensionId===chrome.runtime.id)active.gaShowHistoryDetails?.();else button.title='此頁已有其他版本掃描或保全面板，請勿同頁重複掃描';return}
       if(document.getElementById(HISTORY_CONFIG)){document.getElementById(HISTORY_CONFIG).remove();return}
       const pane=document.createElement('section');pane.id=HISTORY_CONFIG;pane.dataset.chat=path();
       pane.setAttribute('role','dialog');pane.setAttribute('aria-label','前輩完整聊天掃描設定');
-      pane.style.cssText='position:fixed!important;right:18px!important;left:auto!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
+      pane.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
       const heading=document.createElement('strong');heading.textContent='前輩聊天掃描助手';
       const version=document.createElement('p');version.textContent='V'+chrome.runtime.getManifest().version+'｜獨立 JSON，不上傳正史';
       const mode=document.createElement('div');mode.id=historyPageId('mode');mode.setAttribute('role','status');mode.style.cssText='position:sticky;top:0;z-index:2;padding:10px;margin:6px 0 12px;background:#111827;border:1px solid #8edcd3;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere';mode.textContent='目前模式：尚未開始｜請選擇原文搜尋、完整掃描或保全續掃';
