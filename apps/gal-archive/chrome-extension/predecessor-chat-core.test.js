@@ -796,3 +796,14 @@ test('installed checkpoint imports only own non-web-accessible resource, verifie
  const manifest=JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname,'manifest.json'),'utf8'));
  a.ok(!manifest.web_accessible_resources);a.ok(!manifest.host_permissions.some(x=>x.includes('127.0.0.1')||x.includes('file:')));
 });
+
+test('local anchor navigation uses stable rank and invalidates scroll bounds after hydration',()=>{
+ const g={top:6000,height:10000,client:500};
+ a.equal(c.anchorNavigation(7,[6,7,8],g).found,true);
+ a.equal(c.anchorNavigation(7,[6,8],g).stop,true);
+ const up=c.anchorNavigation(7,[30,31],g);a.ok(up.top<6000);a.equal(up.high,6000);
+ const down=c.anchorNavigation(7,[1,2],{...g,top:1000},up);a.equal(down.top,3500);a.equal(down.low,1000);
+ const rebase=c.anchorNavigation(7,[30,31],{...g,height:20000,top:7000},down);a.equal(rebase.low,null);a.equal(rebase.high,7000);
+ a.equal(c.anchorNavigation(7,[],g).top,9500);a.equal(c.anchorNavigation(7,[],{...g,top:2000},up).top,4000);
+ a.throws(()=>c.anchorNavigation(-1,[],g));
+});
