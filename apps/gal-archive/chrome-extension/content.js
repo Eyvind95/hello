@@ -2934,6 +2934,27 @@
         finally{localImport.disabled=false;manualImport.disabled=false;anchorLocate.disabled=false;anchorCapture.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;start.disabled=false;trial.disabled=false;twenty.disabled=false;close.disabled=false;rushTop.disabled=false;prefixStart.disabled=false}
       };
       localImport.onclick=()=>importCheckpoint(false);manualImport.onclick=()=>importCheckpoint(true);
+      // Keep the form (including selected file and anchors) alive, but hide it
+      // during local operations so the history viewport is not covered.
+      const localProgress=(stop,operation)=>{
+        const originalStyle=pane.style.cssText,originalHeading=heading.textContent;
+        const children=[...pane.children].map(n=>[n,n.hidden]);
+        const keep=new Set([heading,mode,stop]);
+        for(const [node] of children)node.hidden=!keep.has(node);
+        heading.textContent='V'+chrome.runtime.getManifest().version+'｜'+operation;
+        pane.style.cssText='position:fixed!important;left:12px!important;right:auto!important;bottom:156px!important;top:auto!important;z-index:2147483646!important;width:min(300px,calc(100vw - 24px))!important;max-height:min(35vh,calc(100vh - 180px))!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:10px!important;border-radius:12px!important;font:13px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
+        // Some form children have display:block!important. Hidden alone cannot
+        // override those rules, so use a temporary inline important declaration.
+        const styles=children.filter(([node])=>!keep.has(node)).map(([node])=>[node,node.style.cssText]);
+        for(const [node] of styles)node.style.cssText+=';display:none!important';
+        pane.scrollTop=0;
+        return ()=>{
+          for(const [node,style] of styles)node.style.cssText=style;
+          for(const [node,hidden] of children)node.hidden=hidden;
+          heading.textContent=originalHeading;pane.style.cssText=originalStyle;
+          pane.scrollTop=0;
+        };
+      };
       const topLabel=document.createElement('strong');topLabel.textContent='⓪ 直衝到頂・只導航（不掃描）';
       const topId=document.createElement('input');topId.id=historyPageId('top-id');topId.type='text';topId.maxLength=160;topId.placeholder='已知開頭 user|turn:…（選填）';topId.style.cssText=input.style.cssText;
       const topFiles=document.createElement('input');topFiles.id=historyPageId('top-files');topFiles.type='text';topFiles.maxLength=4200;topFiles.placeholder='首則附件檔名，逗號分隔（選填）';topFiles.style.cssText=input.style.cssText;
@@ -2946,10 +2967,11 @@
         rushCancelled=false;
         const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,topId,topFiles,rushTop,prefixStart,close];
         controls.forEach(n=>n.disabled=true);rushStop.hidden=false;
+        const restore=localProgress(rushStop,'直衝到頂（不掃描）');
         const status=message=>{mode.textContent='目前模式：直衝到頂（不掃描）\n'+message;feedback.textContent=message};
         try{status('準備導航');const r=await historyRushTop(topId.value,topFiles.value,status,()=>rushCancelled||!pane.isConnected);status(r.ok?r.message:'⛔ '+r.error)}
         catch(e){status('⛔ '+String(e.message||e))}
-        finally{controls.forEach(n=>n.disabled=false);rushStop.hidden=true}
+        finally{restore();controls.forEach(n=>n.disabled=false);rushStop.hidden=true}
       };
       const prefixLabel=document.createElement('strong');prefixLabel.textContent='⓪-2 頂端向下補掃（與原保全接合）';
       const prefixSlot=document.createElement('select');prefixSlot.id=historyPageId('prefix-slot');prefixSlot.style.cssText=input.style.cssText;
@@ -2965,6 +2987,7 @@
         prefixCancelled=false;
         const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,topId,topFiles,rushTop,prefixStart,prefixFile,prefixSlot,close];
         controls.forEach(n=>n.disabled=true);prefixStop.hidden=false;
+        const restore=localProgress(prefixStop,'頂端向下補掃');
         const status=message=>{mode.textContent='目前模式：頂端向下補掃\n'+message;feedback.textContent=message};
         try{
           const source=savedSource(),file=prefixFile.files?.[0];
@@ -2977,7 +3000,7 @@
           const r=await historyPrefixSupplement(topId.value,topFiles.value,input.value.trim(),checkpoint,status,()=>prefixCancelled||!pane.isConnected);
           status(r.ok?r.message:'⛔ '+r.error);
         }catch(e){status('⛔ '+String(e.message||e))}
-        finally{controls.forEach(n=>n.disabled=false);prefixStop.hidden=true}
+        finally{restore();controls.forEach(n=>n.disabled=false);prefixStop.hidden=true}
       };
       const anchorLabel=document.createElement('strong');anchorLabel.textContent='① 局部取證・原文搜尋（只找指定訊息）';
       const anchorInput=document.createElement('input');anchorInput.id=historyPageId('anchor-id');anchorInput.type='text';anchorInput.maxLength=160;anchorInput.placeholder='原文搜尋：玩家或 GPT 原生訊息 ID';anchorInput.style.cssText=input.style.cssText;
