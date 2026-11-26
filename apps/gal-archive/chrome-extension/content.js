@@ -1842,9 +1842,11 @@
     }
     return true;
   }
-  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true}={}){
+  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true,preferIdentity=false}={}){
     const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;const policy=upward?pc.recoveryPolicy(b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null})):null;
     const retryError=()=>Object.assign(Error('頁面反覆自動返回底端；本次定位策略無法穩定'),{code:'HISTORY_RECOVERY_RETRY'});
+    const farBottom=()=>preferIdentity&&upward&&target!==null&&historyAtBottom(b.host)&&b.host.scrollTop-target>b.host.clientHeight*4;
+    const handoffIdentity=()=>Object.assign(Error('頁面反覆自動返回底端；改用相對原生ID定位'),{code:'HISTORY_RECOVERY_RETRY'});
     const recoverWait=async recovered=>{
       await sleep(Math.min(recovered.delay,Math.max(0,until-Date.now())));
       if(!recovered.escape||Date.now()>=until)return recovered;
@@ -1898,6 +1900,7 @@
     while(Date.now()<until){
       historyGuard(b);
       if(upward&&await historyNativeRetry(b,until)){target=null;targetHeight=null;last=null;lastRows=null;spinAt=0;continue}
+      if(farBottom())throw handoffIdentity();
       const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read',allowBoost,policy):null;
       if(recovered){
         target=recovered.target;targetHeight=recovered.height;
@@ -1924,6 +1927,7 @@
             lastRows=rows;
             if(last===fingerprint&&Date.now()-lastAt>=550){
               if(upward&&historyNativeFailure(b.host)){last=null;lastRows=null;continue}
+              if(farBottom())throw handoffIdentity();
               const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost,policy):null;
               if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);const result=await recoverWait(recovered);target=result.target;targetHeight=result.height;continue}
               return rows;
@@ -1990,6 +1994,11 @@
     trace.push(entry);
     const limit=b.mode==='predecessor-anchor'?1200:40;
     if(trace.length>limit){trace.shift();if(b.mode==='predecessor-anchor')b.recoveryTraceOverflow=(b.recoveryTraceOverflow||0)+1}
+    if(event.startsWith('identity-rejoin-')){
+      const saved=b.identityRejoinTrace||(b.identityRejoinTrace=[]);
+      if(saved.length>=2048){saved.shift();b.identityRejoinTraceOverflow=(b.identityRejoinTraceOverflow||0)+1}
+      saved.push(entry);
+    }
     if(event.startsWith('bottom-escape-')){
       const saved=b.bottomEscapeTrace||(b.bottomEscapeTrace=[]);
       if(saved.length>=64){saved.shift();b.bottomEscapeTraceOverflow=(b.bottomEscapeTraceOverflow||0)+1}
@@ -2040,7 +2049,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images; not checked',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
+    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images; not checked',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,identityRejoinTrace:b.identityRejoinTrace||[],identityRejoinTraceOverflow:b.identityRejoinTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+(data.evidence.isolatedSegment?.count??data.count):'')+'.json';
@@ -2088,20 +2097,21 @@
     return known.every((x,i)=>x.rank===i&&x.i===known[0].i+i);
   }
   async function historyRejoinByIdentity(b,deadline){
-    const id=b.rows[0]?.id,host=b.host;
+    const startIndex=b.resume&&!b.resume.frontierVerified?Math.max(0,b.rows.findIndex(r=>r.id===b.resumeRows?.[b.resume.minIndex]?.id)):0;
+    const saved=b.rows.slice(startIndex),id=saved[0]?.id,host=b.host;
     if(!id)return null;
     const stats=b.scrollStats;
     stats.identityRejoinAttempts=(stats.identityRejoinAttempts||0)+1;
     const record=(event,details={})=>historyTrace(b,'identity-rejoin-'+event,{anchorId:id,...details});
     // Do not reset to the bottom: a disjoint window can already be older
     // than the saved frontier. Relative navigation is not an archive merge.
-    record('start');historyStatus(b,'依原生前沿ID重新接合');
+    record('start',{startIndex});historyStatus(b,'依原生前沿ID重新接合');
     const maxSteps=4096,requirePair=!!(b.resume&&!b.resume.frontierVerified);
-    let steps=0,stalled=0,snaps=0,edges=0,direction=historyAtBottom(host)?-1:1,best=Infinity;
+    let steps=0,stalled=0,snaps=0,consecutiveSnaps=0,steady=0,edges=0,direction=historyAtBottom(host)?-1:1,best=Infinity;
     let lastProgress=Date.now(),lastProbe='',lastProbeAt=0;
-    while(steps<=maxSteps&&Date.now()<deadline&&Date.now()-lastProgress<30000){
+    while(steps<=maxSteps&&Date.now()<deadline&&Date.now()-lastProgress<45000){
       historyGuard(b);
-      const hints=historyMountedRanks(host,b.rows),ranks=[...hints.keys()].sort((a,c)=>a-c);
+      const hints=historyMountedRanks(host,saved),ranks=[...hints.keys()].sort((a,c)=>a-c);
       if(ranks.length&&ranks[0]<best){best=ranks[0];lastProgress=Date.now();record('rank-progress',{steps,best})}
       if(hints.has(0)){
         const key=JSON.stringify([Math.round(host.scrollTop),host.scrollHeight,ranks]);
@@ -2110,7 +2120,7 @@
           let live=null;
           try{live=await historySettled(b,{deadline:Math.min(deadline,Date.now()+2500),upward:true,target:null,allowBoost:false})}
           catch(e){record('probe-failed',{steps,reason:String(e.message||e)});historyGuard(b)}
-          if(live&&historyIdentityWindow(b.rows,live,requirePair)){
+          if(live&&historyIdentityWindow(saved,live,requirePair)){
             record('stable-hit',{steps,firstId:live[0]?.id,lastId:live.at(-1)?.id});return live;
           }
           record('marker-only',{steps,liveIds:live?.map(r=>r.id)||[]});
@@ -2121,23 +2131,27 @@
         else direction=1; // expose the next adjacent row, not an assumed gap
       }else if(ranks.length)direction=-1;
       if(steps===maxSteps)break;
-      if(historyLoading(host)){await sleep(150);continue}
+      // Loading indicators may persist while relative scroll remains possible.
+      // Never accept a loading window; historySettled still gates that read.
+      const loading=historyLoading(host);
       if(await historyNativeRetry(b,deadline))continue;
       const before=host.scrollTop,viewport=host.clientHeight;
       if(viewport<=0)break;
       if((direction<0&&before<=2)||(direction>0&&historyAtBottom(host))){
         if(++edges>2)break;direction=-direction;record('edge-turn',{steps,direction,edges});
       }
-      const delta=direction*Math.max(1,Math.floor(viewport*(hints.has(0)?.5:1)));
+      const cautious=consecutiveSnaps>0||loading;
+      const delta=direction*Math.max(1,Math.floor(viewport*(hints.has(0)||cautious?.5:1)));
       if(typeof host.scrollBy==='function')host.scrollBy({top:delta,behavior:'instant'});
       else historyScroll(host,before+delta);
-      await sleep(50);steps++;
+      await sleep(cautious?150:50);steps++;
       stats.identityRejoinSteps=(stats.identityRejoinSteps||0)+1;
       const actual=host.scrollTop;
       if(delta<0&&actual>before+viewport&&historyAtBottom(host)){
-        snaps++;record('bottom-snap',{steps,snaps});if(snaps>=4)break;
-        direction=-1;
-      }
+        snaps++;consecutiveSnaps++;steady=0;record('bottom-snap',{steps,snaps,consecutiveSnaps,before,actual,loading});if(snaps>=12||consecutiveSnaps>=6)break;
+        direction=-1;await sleep(500);
+      }else if(Math.abs(actual-before)>=1){if(++steady>=32){consecutiveSnaps=0;steady=0}}
+      if(steps%16===0)record('relative-progress',{steps,best:Number.isFinite(best)?best:null,before,actual,loading,delta,rankCount:ranks.length});
       if(Math.abs(actual-before)<1){if(++stalled>=3)break;await sleep(150)}else stalled=0;
     }
     record('not-located',{steps,snaps,stalled,best:Number.isFinite(best)?best:null});return null;
@@ -2199,10 +2213,13 @@
           b.scrollStats.interWindowBottomReturns=(b.scrollStats.interWindowBottomReturns||0)+1;
           historyTrace(b,'inter-window-bottom-return',{actual:pos,height:currentHeight,verifiedTop:anchor.top,verifiedHeight:anchor.height,estimated:pc.frontierPosition(anchor,currentHeight,b.host.clientHeight)});
         }
-        const plans=[{ratio:1},{identity:true,ratio:0},{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
+        const preferIdentity=!b.sample&&!b.isolated&&!state.identityRejoinAttempted;
+        const identityFirst=!!savedAnchor&&preferIdentity;
+        if(identityFirst)lastError='頁面反覆自動返回底端；優先原生ID定位';
+        const plans=[...(identityFirst?[{identity:true,ratio:0}]:[{ratio:1},{identity:true,ratio:0}]),{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
           ...[1,-1,2,-2,4,-4].map(offset=>({ratio:0,offset})),
           {ratio:0,rebase:false}];
-        let recovering=false,attempted=new Set();
+        let recovering=identityFirst,attempted=new Set();
         for(const plan of plans){
           const {ratio,offset=0,rebase=true,alternate=false,identity=false}=plan;
           if(identity&&(!(/視窗沒有重疊訊息|頁面反覆自動返回底端|恢復向上捲動位置/.test(lastError))||b.sample||b.isolated||state.identityRejoinAttempted))continue;
@@ -2227,8 +2244,8 @@
             if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
           }
           try{
-            rows=identity?await historyRejoinByIdentity(b,Date.now()+180000):await historySettled(b,{deadline:attemptDeadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering});
-            if(!rows)continue;
+            rows=identity?await historyRejoinByIdentity(b,Date.now()+240000):await historySettled(b,{deadline:attemptDeadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering,preferIdentity:preferIdentity&&!state.identityRejoinAttempted});
+            if(!rows){if(identity&&historyAtBottom(b.host)&&b.host.scrollTop-target>b.host.clientHeight*4){lastError='原生前沿定位未成功；禁止重複長距離跳轉';break}continue}
           }catch(e){
             historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
             if(e.code!=='HISTORY_RECOVERY_RETRY'&&(b.sample||b.isolated||state.identityRejoinAttempted||!String(e.message||e).includes('等待逾時：恢復向上捲動位置')))throw e;
