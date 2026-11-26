@@ -1732,7 +1732,7 @@
   // Preserve intended scroll position across ChatGPT auto-scroll and expansion.
   function historyRecoverScroll(b,target,height,stage,allowBoost=true,policy=null){
     const actual=b.host.scrollTop,currentHeight=b.host.scrollHeight;
-    const recovery=pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight,b.mode==='predecessor-history'&&!b.sample&&!b.isolated?3:.75);
+    const recovery=pc.scrollRecoveryTarget(target,actual,currentHeight,height,b.host.clientHeight);
     if(recovery===null)return null;
     b.scrollStats.scrollResets++;
     const state=b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null});
@@ -2218,9 +2218,8 @@
           historyTrace(b,'breakthrough-attempt',{attempt:state.attempts,resets:state.resets,from:origin,to:Math.max(0,origin-step),step,anchor:state.frontier?.id||null});
         }
         const growthLimit=b.sample||b.isolated?60000:180000;
-        if(pc.noNewRows(lastGrowth,Date.now(),growthLimit)&&Date.now()>=(state.identityGraceUntil||0)){historyTrace(b,'no-new-rows-timeout');throw Error((growthLimit/1000)+'秒未取得新訊息；已保全，禁止無限重複掃描')}
+        if(pc.noNewRows(lastGrowth,Date.now(),growthLimit)){historyTrace(b,'no-new-rows-timeout');throw Error((growthLimit/1000)+'秒未取得新訊息；已保全，禁止無限重複掃描')}
         const deadline=lastGrowth+growthLimit;
-        let attemptDeadline=Math.max(deadline,state.identityGraceUntil||0);
         let rows=null,lastError='';
         // Keep the last verified viewport in its original coordinate frame.
         // Rebase each retry, and never trigger another breakthrough while
@@ -2232,39 +2231,30 @@
           b.scrollStats.interWindowBottomReturns=(b.scrollStats.interWindowBottomReturns||0)+1;
           historyTrace(b,'inter-window-bottom-return',{actual:pos,height:currentHeight,verifiedTop:anchor.top,verifiedHeight:anchor.height,estimated:pc.frontierPosition(anchor,currentHeight,b.host.clientHeight)});
         }
-        // V0.10.41 reached the observed top with geometric/staged recovery.
-        // Keep that path first; identity is an alternative, not a terminal gate.
-        const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{identity:true,ratio:0},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
-          ...(b.sample||b.isolated?[1,-1,2,-2,4,-4]:[1,-1,2,-2,4,-4,8,-8,16,-16,32,-32]).map(offset=>({ratio:0,offset})),
+        // V0.10.41 observed-top navigation: exhaust geometric overlap probes, not long-range identity searches.
+        const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0},
+          ...[1,-1,2,-2,4,-4].map(offset=>({ratio:0,offset})),
           {ratio:0,rebase:false}];
         let recovering=false,attempted=new Set();
         for(const plan of plans){
-          const {ratio,offset=0,rebase=true,alternate=false,identity=false}=plan;
-          if(identity&&(!(/視窗沒有重疊訊息|頁面反覆自動返回底端|恢復向上捲動位置/.test(lastError))||b.sample||b.isolated||state.identityRejoinAttempted))continue;
+          const {ratio,offset=0,rebase=true,alternate=false}=plan;
           if(alternate&&!lastError.startsWith('頁面反覆自動返回底端'))continue;
           if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息'&&!lastError.startsWith('頁面反覆自動返回底端'))break;
           historyGuard(b);
-          if(!identity&&Date.now()>=attemptDeadline)break;
+          if(Date.now()>=deadline)break;
           const targetHeight=b.host.scrollHeight;
           const baseAnchor=ratio===1&&!recovering&&!savedAnchor?{top:origin,height:anchor.height}:anchor;
           const target=pc.rejoinTarget(baseAnchor,targetHeight,b.host.clientHeight,offset*b.host.clientHeight-step*ratio,rebase);
-          const key=JSON.stringify([Math.round(target),targetHeight,!!state.recoveryAvoidFrontier,identity]);
+          const key=JSON.stringify([Math.round(target),targetHeight,!!state.recoveryAvoidFrontier]);
           if(recovering&&attempted.has(key))continue;
           attempted.add(key);
           if(recovering){
             b.scrollStats.rejoinAttempts=(b.scrollStats.rejoinAttempts||0)+1;
             historyTrace(b,'rejoin-attempt',{ratio,offset,rebase,target,anchorTop:anchor.top,anchorHeight:anchor.height,expectedHeight:targetHeight,anchorId:state.frontier?.id||null});
           }
-          let nativeRetried=false;
-          if(identity)state.identityRejoinAttempted=true;
-          else{
-            nativeRetried=await historyNativeRetry(b,attemptDeadline);
-            if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
-          }
-          try{
-            rows=identity?await historyRejoinByIdentity(b,Date.now()+1200000):await historySettled(b,{deadline:attemptDeadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering});
-            if(!rows){if(identity){lastError='頁面反覆自動返回底端；原生ID定位未完成，返回幾何備援';attemptDeadline=Math.max(attemptDeadline,Date.now()+growthLimit);historyTrace(b,'identity-rejoin-geometric-fallback',{target,anchorId:state.frontier?.id||null})}continue}
-          }catch(e){
+          const nativeRetried=await historyNativeRetry(b,deadline);
+          if(!nativeRetried){historyScroll(b.host,target);await sleep(180);b.scrollStats.attempts++}
+          try{rows=await historySettled(b,{deadline,upward:true,target:nativeRetried?null:target,targetHeight:nativeRetried?null:targetHeight,allowBoost:!recovering})}catch(e){
             historyTrace(b,'settle-failed',{ratio,step,target,targetHeight,reason:String(e.message||e)});
             if(e.code!=='HISTORY_RECOVERY_RETRY'&&(b.sample||b.isolated||!String(e.message||e).includes('等待逾時：恢復向上捲動位置')))throw e;
             lastError=String(e.message||e);recovering=true;rows=null;
@@ -2281,7 +2271,7 @@
               if(merged.length>b.rows.length&&!q.frontier)throw Error('續掃前沿未核對，不能增加舊訊息');
               b.resume.checkedWindows++;
               if(q.minIndex<b.resume.minIndex){
-                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;state.identityRejoinAttempted=false;state.identityGraceUntil=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'resume-earlier-index');
+                b.resume.minIndex=q.minIndex;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'resume-earlier-index');
                 state.frontier={id:b.resumeRows[q.minIndex].id,top:b.host.scrollTop,height:b.host.scrollHeight};
                 historyTrace(b,'resume-progress',{minIndex:q.minIndex,matched:q.matched});
               }
@@ -2292,7 +2282,7 @@
             }
             b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),merged,rows);
             b.rows=merged;for(const change of changes)historyAttachmentChange(b,change);b.windows++;if(b.isolated)b.isolated.windows++;
-            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;if(identity){b.scrollStats.identityRejoinSuccesses=(b.scrollStats.identityRejoinSuccesses||0)+1;state.identityGraceUntil=Date.now()+10000}historyTrace(b,'rejoin-success',{ratio,offset,target,identity,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
+            if(recovering){b.scrollStats.rejoinSuccesses=(b.scrollStats.rejoinSuccesses||0)+1;historyTrace(b,'rejoin-success',{ratio,offset,target,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
             lastError='';break;
           }catch(e){
             b.scrollStats.overlapRetries++;lastError=String(e.message||e);
@@ -2337,7 +2327,7 @@
         if(b.rows.length>lastCount){
           if(state.attempts){b.scrollStats.breakthroughSuccesses=(b.scrollStats.breakthroughSuccesses||0)+1;historyTrace(b,'breakthrough-progress',{attempts:state.attempts,resets:state.resets,previousCount:lastCount});}
           historyTrace(b,'new-rows',{previousCount:lastCount,step,from:pos,firstId:rows[0]?.id,lastId:rows.at(-1)?.id});
-          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;state.identityRejoinAttempted=false;state.identityGraceUntil=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'new-rows');
+          lastCount=b.rows.length;lastGrowth=Date.now();unchanged=0;state.resets=0;state.attempts=0;pc.clearRecoveryPolicy(state);historyNativeProgress(b,'new-rows');
           state.frontier={id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight};
         }
         else{unchanged++;b.scrollStats.noGrowthWindows++;historyTrace(b,'no-new-rows',{step,from:pos,unchanged,msSinceGrowth:Date.now()-lastGrowth,firstId:rows[0]?.id,lastId:rows.at(-1)?.id})}
@@ -2352,7 +2342,7 @@
             historyTrace(b,'checkpoint-download',{count:b.rows.length,file});
           }catch(e){historyTrace(b,'checkpoint-download-failed',{reason:String(e.message||e)})}
         }
-        if(pc.noNewRows(lastGrowth,Date.now(),growthLimit)&&Date.now()>=(state.identityGraceUntil||0))throw Error((growthLimit/1000)+'秒未取得新訊息；已保全，禁止無限重複掃描');
+        if(pc.noNewRows(lastGrowth,Date.now(),growthLimit))throw Error((growthLimit/1000)+'秒未取得新訊息；已保全，禁止無限重複掃描');
         await sleep(150);
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}

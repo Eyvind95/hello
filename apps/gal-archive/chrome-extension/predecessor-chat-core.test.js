@@ -251,6 +251,23 @@ test('actual historyRun rejoins after height changes during an unsuccessful upwa
  a.equal(output.status,'completed');a.equal(output.count,2);a.equal(targets[0].target,9915);a.equal(targets[1].target,29957.5);a.equal(targets[1].allowBoost,false);a.equal(b.scrollStats.rejoinSuccesses,1);
 });
 
+test('formal historyRun reaches half-step after overlap loss and rejects disjoint evidence',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ for(const valid of [true,false]){
+  let now=1000,output,up=0,targets=[],events=[],identityCalls=0;
+  const tail=[r('tail')],older=[r('older'),r('tail')],host={scrollTop:10000,scrollHeight:10100,clientHeight:100};
+  const b={mode:'predecessor-history',host,rows:[],sample:0,knownMinimum:2,hostProof:{maxRange:10000,observedMovement:true},bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{}};
+  const ctx={Date:{now:()=>now},pc:{...c,edgeProof:()=>true,validateRaw:()=>{},fullCoverageGate:()=>true},state:{bulk:b},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to)),historySettled:async(b,o)=>{now+=700;if(!o.upward)return tail;targets.push({target:o.target,allowBoost:o.allowBoost});if(++up===1){host.scrollHeight+=20000;return [r('unrelated')]}if(valid){host.scrollTop=0;return older}return [r('unrelated')]},historyRejoinByIdentity:async()=>{identityCalls++;throw Error('identity detour forbidden')},historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:(b,event,data)=>events.push({event,data}),sleep:async ms=>{now+=ms},historyPayload:(b,status,error)=>({status,error,count:b.rows.length,warnings:[],evidence:{continuity:status==='completed'}}),historyDownload:d=>{output=d;return 'formal.json'}};
+  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+  a.equal(identityCalls,0);a.equal(targets[0].target,9915);a.equal(targets[1].target,29957.5);
+  a.equal(targets[1].allowBoost,false);
+  if(valid){a.equal(output.status,'completed');a.equal(output.count,2);a.ok(events.some(x=>x.event==='rejoin-success'&&x.data.ratio===.5));}
+  else{a.equal(output.status,'failed');a.equal(output.count,1);a.match(output.error,/無法核對前後視窗連續性/);}
+ }
+});
+
 test('two distinct delayed generic images enrich empty or exact ordered subset observations',()=>{
  const old=r('multi'),img=i=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/'+i.repeat(8)+'-1111-4111-8111-111111111111'});
  const fresh={...old,attachments:[img('1'),img('2')]},changes=[];
