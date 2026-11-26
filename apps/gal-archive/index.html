@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輪迴檔案館 V5.138｜Gal AI</title>
+<title>輪迴檔案館 V5.139｜Gal AI</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#151d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -349,6 +349,43 @@ async function refresh(){
 }
 async function put(record){record.updatedAt=new Date().toISOString();await operation('readwrite',{type:'put',item:record});await refresh()}
 function current(){return records.find(r=>r.id===selected)}
+
+function openPilotArchiveImport(record){
+ const api=window.ArchivePilotImport;if(!api)return notify('副駕駛匯入模組尚未載入，請重新整理');
+ if(document.getElementById('pilotArchiveImportDialog'))return;
+ const dialog=document.createElement('dialog');dialog.id='pilotArchiveImportDialog';dialog.style.cssText='width:min(680px,94vw);max-height:85vh;overflow:auto;background:#202a41;color:#edf2ff;border:1px solid #64748b;border-radius:12px;padding:18px';
+ dialog.innerHTML='<h2>副駕駛整理 JSON・三分頁覆蓋</h2><p id="paiTarget"></p><p>只覆蓋副駕駛聊天、10題與這輪彩蛋。原始聊天候選並非正式完整正史，附件僅保留來源參照。原有三分頁將備份，其他分頁不變。若開啟自動雲端同步，成功寫入後仍依既有同步設定運作。</p><button class="btn" id="paiBinding">複製工具人輪迴綁定</button><label>① 原始聊天／離線整合候選 JSON<input type="file" id="paiSource" accept=".json,application/json"></label><label>② 工具人整理覆蓋 JSON<input type="file" id="paiPack" accept=".json,application/json"></label><div class="actions"><button class="btn" id="paiPreview">核對來源與覆蓋預覽</button><button class="btn danger" id="paiApply" disabled>備份並覆蓋這三個分頁</button><button class="btn" id="paiClose">關閉</button></div><pre id="paiStatus" style="white-space:pre-wrap;overflow-wrap:anywhere" role="status"></pre>';
+ document.body.append(dialog);
+ const get=id=>dialog.querySelector('#'+id),status=s=>get('paiStatus').textContent=s;
+ get('paiTarget').textContent='目標：'+record.title+'｜'+record.world+'｜'+record.id;
+ let preview=null,busy=false;
+ const invalidate=()=>{preview=null;get('paiApply').disabled=true};
+ const sameTarget=()=>{const r=current();if(!r||r.id!==record.id||r.world!==record.world||r.title!==record.title)throw Error('輪迴已切換，請關閉後重新開啟');return r};
+ get('paiBinding').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(api.binding(sameTarget()),null,2));status('已複製輪迴綁定')}catch(e){status(e.message)}};
+ get('paiSource').onchange=get('paiPack').onchange=()=>{invalidate();status('檔案已變更，請重新預覽')};
+ async function readFile(id){const f=get(id).files[0];if(!f||f.size>100*1024*1024)throw Error('請選擇不超過100 MiB 的 JSON');const bytes=await f.arrayBuffer();return {data:JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),sha:[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join(''),file:f}}
+ function showCounts(p){const c=p.counts;return '來源 '+p.sourceCount+' 則（'+p.sourceStatus+'）\n副駕駛聊天：'+c.pilotBefore+' → '+c.pilotAfter+' 則\n10題：'+c.quizBefore+' → '+c.quizAfter+' 則\n彩蛋：'+c.eggsBefore+' → '+c.eggsAfter+' 字（'+c.eggCount+' 項）\n附件參照 '+p.attachments+' 個；不代表已取得圖片原檔。\n請確認上述目標及數量，再按覆蓋。'}
+ get('paiPreview').onclick=async()=>{if(busy)return;busy=true;invalidate();try{
+  const a=await readFile('paiSource'),b=await readFile('paiPack'),r=sameTarget(),p=api.plan(r,a.data,b.data,a.sha);
+  preview={a,b,snapshot:JSON.stringify(r),plan:p};status(showCounts(p));get('paiApply').disabled=false;
+ }catch(e){status('⛔ '+e.message)}finally{busy=false}};
+ get('paiApply').onclick=async()=>{if(busy||!preview)return;busy=true;get('paiApply').disabled=true;const v=preview;try{
+  if(window.__archiveAutoSyncBusy)throw Error('目前雲端同步中，請稍後重新預覽');
+  if(get('paiSource').files[0]!==v.a.file||get('paiPack').files[0]!==v.b.file)throw Error('檔案已改變');
+  const r=sameTarget();if(JSON.stringify(r)!==v.snapshot)throw Error('輪迴已變更，請重新預覽');
+  const p=api.plan(r,v.a.data,v.b.data,v.a.sha);if(!api.sameUnchanged(r,p.updated))throw Error('非目標欄位出現差異');
+  downloadText('輪迴檔案館_'+r.title+'_副駕駛覆蓋前_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',JSON.stringify({format:'gal-ai-restore-backup',version:1,exportedAt:new Date().toISOString(),cycle:r},null,2));
+  p.updated.updatedAt=new Date().toISOString();
+  // Compare and replace in one IndexedDB transaction: no stale preview can overwrite a concurrent edit.
+  await new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite'),os=tx.objectStore(STORE),req=os.get(r.id);let conflict=false;req.onsuccess=()=>{if(JSON.stringify(req.result)!==v.snapshot){conflict=true;tx.abort();return}os.put(p.updated)};tx.oncomplete=resolve;tx.onabort=()=>reject(Error(conflict?'資料庫版本已變更，未覆蓋':String(tx.error||'寫入中止')));tx.onerror=()=>reject(tx.error)});
+  const persisted=await operation('readonly'),saved=persisted.find(x=>x.id===r.id);
+  if(!saved||JSON.stringify(saved)!==JSON.stringify(p.updated))throw Error('寫入後回讀不符，請保留覆蓋前備份');
+  await refresh();window.dispatchEvent(new Event('archive:local-changed'));
+  status('✅ 本機覆蓋與完整回讀核對完成。\n'+showCounts(p)+'\n其他欄位未改動。已觸發原有同步通知，未直接操作 Firebase。');invalidate();notify('副駕駛三分頁已覆蓋');
+ }catch(e){status('⛔ '+e.message);invalidate()}finally{busy=false}};
+ get('paiClose').onclick=()=>{if(!busy)dialog.close()};dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault()});dialog.addEventListener('close',()=>dialog.remove());dialog.showModal();
+}
+
 function archiveCompleteMessageCount(r){return (r.messages||[]).length+(r.events||[]).filter(e=>e.status==='accepted').length}
 
 const CYCLE_SORT_KEY='gal-archive-cycle-sort-v1';
@@ -420,7 +457,7 @@ window.ArchiveObservatoryBridge={
  }
 };
 
-function renderContent(){if(window.ArchiveHandover?.isActive(world)){window.ArchiveHandover.renderActive(world);return}const r=current();if(!r){$('content').innerHTML=`<div class="empty"><strong>${safe(WORLDS.find(w=>w.id===world)?.name||'')}</strong>先點左側「編輯目前世界觀」填入作品共用設定，或新增輪迴。</div>`;return}let tabs=[['chat','完整對話'],['events','事件簿'],['pilotChat','副駕駛聊天'],['gptReview','GPT 評語與總結'],['relationships','角色關係圖鑑'],['opening','輪迴開場'],['lore','世界觀（唯讀）'],['notes','補充筆記'],['quiz','10題'],['changes','與皮卡修改記錄'],['personality','人格設定'],['easterEggs','這輪彩蛋'],['copilot','副駕駛閱讀']];$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">${safe(WORLDS.find(w=>w.id===r.world).name)}</div><h2>${safe(r.title)}</h2><div class="stat">${safe([r.hero&&'主角：'+r.hero,r.partner&&'重要角色：'+r.partner,cycleManagerLabel(r)&&'負責副駕駛：'+cycleManagerLabel(r)].filter(Boolean).join(' ／ '))}</div></div><div class="actions"><button class="btn small" id="copyCycleId">複製輪迴 ID</button><button class="btn small" id="copyScanBinding">複製完整掃描綁定</button><button class="btn small" id="editCycle">編輯資料</button><button class="btn small danger" id="deleteCycle">刪除輪迴</button></div></div><div class="tabs">${tabs.map(([id,name])=>`<button class="tab ${id===tab?'active':''}" data-tab="${id}">${name}</button>`).join('')}</div><div id="tabBody"></div>`;renderTab(r)}
+function renderContent(){if(window.ArchiveHandover?.isActive(world)){window.ArchiveHandover.renderActive(world);return}const r=current();if(!r){$('content').innerHTML=`<div class="empty"><strong>${safe(WORLDS.find(w=>w.id===world)?.name||'')}</strong>先點左側「編輯目前世界觀」填入作品共用設定，或新增輪迴。</div>`;return}let tabs=[['chat','完整對話'],['events','事件簿'],['pilotChat','副駕駛聊天'],['gptReview','GPT 評語與總結'],['relationships','角色關係圖鑑'],['opening','輪迴開場'],['lore','世界觀（唯讀）'],['notes','補充筆記'],['quiz','10題'],['changes','與皮卡修改記錄'],['personality','人格設定'],['easterEggs','這輪彩蛋'],['copilot','副駕駛閱讀']];$('content').innerHTML=`<div class="sectionhead"><div><div class="sub">${safe(WORLDS.find(w=>w.id===r.world).name)}</div><h2>${safe(r.title)}</h2><div class="stat">${safe([r.hero&&'主角：'+r.hero,r.partner&&'重要角色：'+r.partner,cycleManagerLabel(r)&&'負責副駕駛：'+cycleManagerLabel(r)].filter(Boolean).join(' ／ '))}</div></div><div class="actions"><button class="btn small" id="copyCycleId">複製輪迴 ID</button><button class="btn small" id="copyScanBinding">複製完整掃描綁定</button><button class="btn primary small" id="pilotArchiveImport">📥 匯入副駕駛整理 JSON</button><button class="btn small" id="editCycle">編輯資料</button><button class="btn small danger" id="deleteCycle">刪除輪迴</button></div></div><div class="tabs">${tabs.map(([id,name])=>`<button class="tab ${id===tab?'active':''}" data-tab="${id}">${name}</button>`).join('')}</div><div id="tabBody"></div>`;renderTab(r)}
 function renderTab(r){if(tab==='gptReview')return renderArchiveExtras(r,'gptEvaluations');if(tab==='relationships')return renderArchiveExtras(r,'characterRelations');if(tab==='chat'){renderChat(r);mountArchiveComposerImages();return}if(tab==='events'){renderEvents(r);mountArchiveComposerImages();return}if(tab==='pilotChat'){renderPilotChat(r);mountArchiveComposerImages();return}if(tab==='quiz'||tab==='changes'){renderLog(r,tab);mountArchiveComposerImages();return}if(tab==='copilot')return renderCopilot(r);if(tab==='lore')return renderReadOnlyWorld(r);if(tab==='notes')return renderNotesSections(r);let names={opening:['輪迴開場','保存最初的角色、時間、地點、開場文字與設定。'],lore:['世界觀設定','可以寫規則、角色設定、能力、人物關係、重要限制。'],notes:['補充筆記','正史摘要、重大事件、前輩交接、尚待確認事項等。'],personality:['人格設定','記錄主角人格、個性、言行、心理、重要人際關係與本輪差異。'],easterEggs:['這輪彩蛋','記錄這輪彩蛋、伏筆、出處、對應原作與確認結果。']};let [title,hint]=names[tab];$('tabBody').innerHTML=`<h3>${title}</h3><p class="note">${hint}</p><textarea id="docEditor" class="tall" placeholder="在這裡貼入完整內容…">${safe(r[tab]||'')}</textarea><div class="actions topsp"><button id="saveDoc" class="btn primary">儲存${title}</button><button id="copyDoc" class="btn">複製文字</button></div>`}
 
 function archiveExtraRows(rows){
@@ -2283,6 +2320,7 @@ if(b.id==='renameWorld'){
   const item={...(worldDocs[world]||{}),id:world,name:name.trim(),text:worldDocs[world]?.text||'',updatedAt:new Date().toISOString()};
   await operation('readwrite',{type:'put',item},WORLDSTORE);await refresh();notify('世界觀已重新命名');return
 }if(b.id==='copyWorld'){await navigator.clipboard.writeText($('worldEditor').value);notify('已複製世界觀');return}const r=current();if(!r)return;
+if(b.id==='pilotArchiveImport'){openPilotArchiveImport(r);return;}
 if(b.id==='archiveTimeForensicsExport'){
   const report=archiveTimeForensics(r);
   downloadText('輪迴檔案館_時間診斷_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',JSON.stringify(report,null,2));
@@ -2713,7 +2751,7 @@ $('downloadSite').onclick=async()=>{
   if(page.querySelector('#archiveReplayStatus'))page.querySelector('#archiveReplayStatus').textContent='尚未選擇檔案。';
   let html='<!DOCTYPE html>\n'+page.outerHTML;
   const closing='</scr'+'ipt>';
-  for(const asset of ['chrome-extension/gal-core.js?v=0.10.47','chrome-extension/gal-format-evidence.js?v=0.10.47','archive-replay.js?v=12','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=9','handover-cloud.js?v=3','complete-backup.js?v=2','archive-reading-export.js?v=1','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=2']){
+  for(const asset of ['archive-pilot-import.js?v=1','chrome-extension/gal-core.js?v=0.10.47','chrome-extension/gal-format-evidence.js?v=0.10.47','archive-replay.js?v=12','archive-reconcile.js?v=1','time-machine.js?v=2','handover.js?v=9','handover-cloud.js?v=3','complete-backup.js?v=2','archive-reading-export.js?v=1','archive-observatory-core.js?v=2','archive-observatory.js?v=2','archive-auto-sync-core.js?v=1','archive-auto-sync.js?v=2']){
    const response=await fetch(new URL('./'+asset,location.href),{cache:'no-store'});
    if(!response.ok)throw Error('程式讀取失敗：'+asset+'，HTTP '+response.status);
    const script=await response.text();
@@ -5186,5 +5224,5 @@ window.ArchiveAutoSyncBridge={
     window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('檔案館離線功能無法註冊：',err)));
   }
 })();
-</script><script src="./chrome-extension/gal-core.js?v=0.10.47"></script><script src="./chrome-extension/gal-format-evidence.js?v=0.10.47"></script><script src="./archive-replay.js?v=12"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=9"></script><script src="./handover-cloud.js?v=3"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-reading-export.js?v=1"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=2"></script>
+</script><script src="./archive-pilot-import.js?v=1"></script><script src="./chrome-extension/gal-core.js?v=0.10.47"></script><script src="./chrome-extension/gal-format-evidence.js?v=0.10.47"></script><script src="./archive-replay.js?v=12"></script><script src="./archive-reconcile.js?v=1"></script><script src="./time-machine.js?v=2"></script><script src="./handover.js?v=9"></script><script src="./handover-cloud.js?v=3"></script><script src="./complete-backup.js?v=2"></script><script src="./archive-reading-export.js?v=1"></script><script src="./archive-observatory-core.js?v=2"></script><script src="./archive-observatory.js?v=2"></script><script src="./archive-auto-sync-core.js?v=1"></script><script src="./archive-auto-sync.js?v=2"></script>
 </body></html>
