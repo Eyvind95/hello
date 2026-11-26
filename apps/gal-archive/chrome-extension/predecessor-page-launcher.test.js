@@ -218,3 +218,50 @@ test('navigation and supplement move to compact left-bottom panel during work, t
  await get('prefix-start').onclick();assert.equal(pane.style.cssText,original);assert.equal(file.style.cssText,originalFile);assert.equal(get('prefix-slot').value,'candidate');assert.equal(get('prefix-stop').hidden,true);
  assert.deepEqual(seen,['rush','prefix']);
 });
+
+test('anchor DOM evidence is captured synchronously from the exact native assistant only',()=>{
+ const target='assistant|message:target',other='assistant|message:other',row={id:target,role:'assistant',identityBasis:'native-dom-id',text:'A'},otherRow={...row,id:other},code={tagName:'CODE',attributes:[{name:'data-markdown-copy',value:'contents'}],innerText:'A',textContent:'A',outerHTML:'<code>A</code>'},quote={tagName:'BLOCKQUOTE',attributes:[],innerText:'程式碼\\nA',textContent:'程式碼\\nA',outerHTML:'<blockquote><button>程式碼</button><code>A</code></blockquote>'};
+ const body={tagName:'DIV',isConnected:true,attributes:[{name:'data-response-body',value:'true'}],innerText:'程式碼\\nA',textContent:'程式碼\\nA',outerHTML:'<div data-response-body>'+quote.outerHTML+'</div>',contains:n=>[body,quote,code].includes(n),querySelectorAll:()=>[quote,code],getBoundingClientRect:()=>({x:1,y:2,width:3,height:4})};
+ quote.parentElement=body;code.parentElement=quote;
+ const owner={contains:n=>n===body,getAttribute:()=> 'turn'},entry={row,el:body,owner,body},unrelated={row:otherRow,get body(){throw Error('unrelated DOM must not be captured')}};
+ let reads=0;
+ const ctx={pc:require('./predecessor-chat-core'),historyRead:(host,fold,onEntries)=>{reads++;onEntries([entry,unrelated]);body.isConnected=false;body.outerHTML='';return [row,otherRow]}};
+ const script=source.slice(source.indexOf('  function historyAnchorDomSnapshot'),source.indexOf('  async function historyAnchorCapture'));
+ vm.createContext(ctx);vm.runInContext(script+';globalThis.read=historyAnchorReadWindow;globalThis.snapshot=historyAnchorDomSnapshot',ctx);
+ const result=ctx.read({},()=>{},{id:target,role:'assistant',text:null},false);
+ assert.equal(reads,1);assert.equal(result.observation.rawDom.status,'captured');assert.equal(result.observation.rawDom.messageId,target);
+ assert.match(result.observation.rawDom.response.outerHTML.text,/程式碼/);
+ assert.equal(result.observation.rawDom.details[1].node.textContent.text,'A');
+ assert.equal(result.observation.rawDom.details[1].ancestors[0].tag,'blockquote');
+ assert.equal(result.observation.rawDom.truncated,false);assert.equal(body.isConnected,false);
+ assert.equal(ctx.snapshot(entry).status,'unavailable');
+ assert.equal(ctx.read({},()=>{},{id:'assistant|message:missing',role:'assistant',text:null},false).observation,null);
+ body.isConnected=true;body.outerHTML='x'.repeat(130000);
+ const capped=ctx.snapshot(entry);assert.equal(capped.truncated,true);assert.equal(capped.response.outerHTML.length,130000);assert.equal(capped.response.outerHTML.text.length,120000);
+});
+test('assistant first-match evidence survives virtualization before the second observation',async()=>{
+ const target='assistant|message:target',row={id:target,role:'assistant',identityBasis:'native-dom-id',text:'A'},host={scrollTop:10,scrollHeight:100,clientHeight:20};
+ const body={tagName:'DIV',isConnected:true,attributes:[],innerText:'A',textContent:'A',outerHTML:'<div>A</div>',contains:n=>n===body,querySelectorAll:()=>[],getBoundingClientRect:()=>({x:0,y:0,width:10,height:10})},owner={contains:n=>n===body,getAttribute:()=> 'turn'};
+ let mounted=true,reads=0,downloads=[];
+ const ctx={pc:require('./predecessor-chat-core'),state:{},valid:()=>true,path:()=>'/c/test',location:{origin:'https://chatgpt.com'},document:{title:'測試',getElementById:()=>null},HISTORY_PANEL:'panel',isGenerating:()=>false,crypto:{randomUUID:()=> 'run'},GalCheckpointMemory:{read:async()=>null},chrome:{runtime:{getManifest:()=>({version:'0.10.69'})},storage:{local:{get:async()=>({}),set:async()=>{}}}},candidates:new Map(),historyHost:()=>host,historyLoading:()=>false,historyRead:(h,f,onEntries)=>{reads++;if(!mounted)return [];onEntries([{row,el:body,owner,body}]);return [row]},historyNativeProgress:()=>{},historyAtBottom:()=>false,historyDownload:e=>{downloads.push(e);return 'evidence.json'},sleep:async()=>{mounted=false;body.isConnected=false}};
+ const script=source.slice(source.indexOf('  function historyAnchorDomSnapshot'),source.indexOf('  const HISTORY_LAUNCHER='));
+ vm.createContext(ctx);vm.runInContext(script+';globalThis.capture=historyAnchorCapture',ctx);
+ const result=await ctx.capture(target,'測試',()=>{},true);
+ assert.equal(result.ok,true);assert.equal(reads,2);assert.equal(downloads.length,1);
+ const e=downloads[0];assert.equal(e.status,'matched-unconfirmed');assert.equal(e.domCapture.status,'captured');assert.equal(e.domCapture.observations,1);
+ assert.equal(e.observations[0].rawDom.response.outerHTML.text,'<div>A</div>');assert.equal(e.canonical,false);assert.equal(e.importable,false);
+});
+
+test('settling returns a diagnostic anchor immediately without another read or scroll; full scan ignores hook',async()=>{
+ const target={id:'assistant|message:target',role:'assistant',text:'A'},host={},observation={rawDom:{status:'captured'}};
+ let reads=0,anchorReads=0,sleeps=0,now=0;
+ const ctx={pc:{fingerprint:()=> 'same'},historyGuard:()=>{},historyLoading:()=>false,historyRead:()=>{reads++;return [target]},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyStatus:()=>{},sleep:async ms=>{sleeps++;now+=ms},Date:class extends Date{static now(){return now}}};
+ ctx.pc.compareRow=()=>({changes:[]});
+ const script=source.slice(source.indexOf('  async function historySettled'),source.indexOf('  function historyGuard'));
+ vm.createContext(ctx);vm.runInContext(script+';globalThis.settle=historySettled',ctx);
+ const hook=()=>{anchorReads++;return {rows:[target],observation}};
+ const b={mode:'predecessor-anchor',host,scrollStats:{},stabilityIssues:[]};
+ const rows=await ctx.settle(b,{anchorRead:hook});assert.equal(rows[0],target);assert.equal(anchorReads,1);assert.equal(reads,0);assert.equal(sleeps,0);
+ await ctx.settle({...b,mode:'predecessor-history'},{anchorRead:hook});
+ assert.equal(anchorReads,1);assert.ok(reads>=2);assert.ok(sleeps>=2);
+});

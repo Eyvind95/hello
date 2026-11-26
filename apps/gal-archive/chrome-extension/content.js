@@ -1744,7 +1744,7 @@
       const row={id:stable,role,text,identityBasis:composite?'unresolved-native-composite':native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments,...(composite||{})};
       const sameOwner=owners.get(owner)||[];
       if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
-      sameOwner.push({row,el,owner});owners.set(owner,sameOwner);entries.push({row,el,owner});
+      const item={row,el,owner,body};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
     };
     // Read the entire marked response before the legacy selector can pick
     // a nested PDF citation. Keep native message identity, not the user turn ID.
@@ -1920,7 +1920,7 @@
     }
     return true;
   }
-  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true,preferIdentity=false}={}){
+  async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true,preferIdentity=false,anchorRead=null}={}){
     const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;const policy=upward?pc.recoveryPolicy(b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null})):null;
     const retryError=()=>Object.assign(Error('頁面反覆自動返回底端；本次定位策略無法穩定'),{code:'HISTORY_RECOVERY_RETRY'});
     const farBottom=()=>preferIdentity&&upward&&target!==null&&historyAtBottom(b.host)&&b.host.scrollTop-target>b.host.clientHeight*4;
@@ -1995,7 +1995,12 @@
       }
       else{spinAt=0;
         try{
-            const rows=historyRead(b.host,observation=>historyFoldObservation(b,observation),undefined,b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
+            // A forensic anchor match is not a canonical overlap: return its
+            // same-window evidence before recovery or a stability sleep can
+            // unmount it. Full scans never supply anchorRead.
+            const anchor=b.mode==='predecessor-anchor'&&anchorRead?anchorRead(b.host):null;
+            if(anchor?.observation)return anchor.rows;
+            const rows=anchor?anchor.rows:historyRead(b.host,observation=>historyFoldObservation(b,observation),undefined,b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
             if(lastRows&&last!==null&&last!==fingerprint){
               b.scrollStats.fingerprintChanges++;
@@ -2705,6 +2710,50 @@
     return {ok:!!join,message:join?'局部重疊核對成功｜新增 '+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
   }
 
+
+  // Diagnostic only. Capture immutable strings while the matching native DOM
+  // is still mounted, not after a sleep, scroll, or second historyRead.
+  function historyAnchorDomSnapshot(entry){
+    const {row,el,owner,body}=entry;
+    if(row.role!=='assistant'||row.identityBasis!=='native-dom-id'||!body||!el.isConnected||!body.isConnected||!owner.contains(body))return {status:'unavailable',reason:'native assistant body not mounted'};
+    const MAX_TOTAL=1000000,MAX_FIELD=120000,MAX_NODES=120;
+    let used=0,truncated=false;
+    const bounded=(value,limit=MAX_FIELD)=>{
+      const text=String(value??''),take=Math.max(0,Math.min(limit,MAX_TOTAL-used,text.length));
+      used+=take;if(take<text.length)truncated=true;
+      return {text:text.slice(0,take),length:text.length,truncated:take<text.length};
+    };
+    const attrs=node=>{const all=Array.from(node.attributes||[]);if(all.length>100)truncated=true;return all.slice(0,100).map(a=>({name:a.name,value:bounded(a.value,4000)}))};
+    const snap=(node,html=true)=>({tag:node.tagName?.toLowerCase()||null,attributes:attrs(node),innerText:bounded(node.innerText),textContent:bounded(node.textContent),...(html?{outerHTML:bounded(node.outerHTML)}:{})});
+    const response=snap(body);
+    const selector='blockquote,pre,code,[data-code-block],[data-code-block-source],[data-markdown-copy],button,[role="button"]';
+    const nodes=[...body.querySelectorAll(selector)];
+    if(nodes.length>MAX_NODES)truncated=true;
+    const details=nodes.slice(0,MAX_NODES).map(node=>{
+      const ancestors=[];
+      for(let n=node.parentElement;n&&n!==body&&body.contains(n)&&ancestors.length<16;n=n.parentElement)ancestors.push({tag:n.tagName?.toLowerCase()||null,attributes:attrs(n)});
+      if(ancestors.length===16&&node.parentElement!==body)truncated=true;
+      return {node:snap(node),ancestors};
+    });
+    const result={status:'captured',messageId:row.id,observedAt:new Date().toISOString(),scope:'matched-assistant-body-only',ownerTurnKey:owner.getAttribute('data-turn-key'),response,details,nodeCount:nodes.length,capturedNodeCount:details.length,truncated,characterBudget:MAX_TOTAL};
+    return result;
+  }
+  function historyAnchorReadWindow(host,onFold,expected,uniqueText){
+    let observation=null;
+    const rows=historyRead(host,onFold,entries=>{
+      const hit=pc.anchorTextMatch(expected,entries.map(e=>e.row),uniqueText);
+      if(!hit||!hit.identityVerified||hit.row.role!=='assistant')return;
+      const matching=entries.filter(e=>e.row.id===hit.row.id);
+      if(matching.length!==1)return;
+      const entry=matching[0],index=entries.indexOf(entry),neighbors=entries.slice(Math.max(0,index-2),index+3).map(e=>e.row);
+      const r=entry.el.getBoundingClientRect();
+      let rawDom;
+      try{rawDom=historyAnchorDomSnapshot(entry)}catch(e){rawDom={status:'unavailable',reason:String(e.message||e).slice(0,300)}}
+      observation={row:entry.row,neighborIds:neighbors.map(r=>r.id),neighborRows:neighbors,images:[],controls:[],rect:{x:r.x,y:r.y,width:r.width,height:r.height},ownerTurnKey:entry.owner.getAttribute('data-turn-key'),rawDom};
+    });
+    return {rows,observation};
+  }
+
   async function historyAnchorCapture(target,requestedTitle,report,captureOnly=false,cancel=()=>false){
     if(!pc||!valid()||state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating()||document.getElementById(HISTORY_PANEL))return {ok:false,error:'請先結束本聊天其他工作及掃描面板'};
     const chat=path(),source=location.origin+chat,title=pc.chatTitle(requestedTitle||document.title);
@@ -2719,14 +2768,11 @@
     let attempted=false;
     const recoveryEvidence=()=>{evidence.recovery={stats:b.scrollStats,trace:b.scrollTrace,traceOverflow:b.recoveryTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,nativeRetry:b.nativeHistoryRetry||null,lastReadIssue:b.lastReadIssue?{at:b.lastReadIssue.at,reason:b.lastReadIssue.reason,scrollTop:b.lastReadIssue.scrollTop,scrollHeight:b.lastReadIssue.scrollHeight}:null}};
     const guard=()=>{if(cancel()||state.bulk!==b||path()!==chat||!valid()||isGenerating())throw Error('定位已停止或聊天狀態變更')};
-    const capture=(host,rows,folds,actualId)=>{
+    const capture=(host,rows,folds,actualId,atomic=null)=>{
       const index=rows.findIndex(r=>r.id===actualId);if(index<0)return null;
       if(actualId.startsWith('assistant|')){
-        let matched=[];
-        const reread=historyRead(host,()=>{},entries=>{matched=entries.filter(x=>x.row.id===actualId&&x.row.role==='assistant')});
-        if(matched.length!==1||!reread.some(r=>r.id===actualId&&r.text===rows[index].text))throw Error('指定 GPT 容器或正文無法再次唯一核對');
-        const {el,owner}=matched[0],r=el.getBoundingClientRect();
-        return {row:rows[index],neighborIds:rows.slice(Math.max(0,index-2),index+3).map(r=>r.id),neighborRows:rows.slice(Math.max(0,index-2),index+3),folds:folds.filter(x=>x.messageId===actualId),images:[],controls:[],rect:{x:r.x,y:r.y,width:r.width,height:r.height},ownerTurnKey:owner.getAttribute('data-turn-key'),element:el};
+        if(!atomic||atomic.row.id!==actualId||atomic.row.text!==rows[index].text)throw Error('指定 GPT 首次掛載容器無法唯一核對');
+        return {...atomic,folds:folds.filter(x=>x.messageId===actualId)};
       }
       const roots=[...new Set([...historyRoot(host).querySelectorAll('[data-message-author-role="user"]'),...outerUsers()])].filter(el=>historyRoot(host).contains(el)&&historyVisible(el));
       const matching=roots.filter(el=>{
@@ -2769,18 +2815,19 @@
         guard();const host=historyHost();if(!host){evidence.navigation.hostWaitPolls++;progress('等待聊天捲動容器');await sleep(budget.pollMs);continue}
         if(previousHost&&previousHost!==host){lastWindow=null;previousBottom=false;pending=null;policy={};settleFailures=0;b.breakthrough={resets:0,attempts:0,frontier:null}}
         previousHost=host;b.host=host;
-        let rows,folds=[];
+        let rows,atomic=null,folds=[];
+        const readWindow=(readHost=host)=>{folds=[];const read=historyAnchorReadWindow(readHost,x=>folds.push(x),expected,uniqueText);rows=read.rows;atomic=read.observation;return read};
         if(!captureOnly){
           // Check the currently mounted window before any recovery can move it.
           // Only use the proven live navigation to reach more history, never
           // as proof of matching a target. Old checkpoint geometry is unused.
           if(!historyLoading(host)){
-            try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300)}
+            try{readWindow()}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300)}
           }
           if(!rows||!pc.anchorTextMatch(expected,rows,uniqueText)){
             try{
-              const stable=await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs),upward:true,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true});
-              guard();folds=[];rows=historyRead(host,x=>folds.push(x));
+              const stable=await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs),upward:true,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true,anchorRead:assistantTarget?readWindow:null});
+              guard();if(!atomic)readWindow();
               // A matching live row must not be discarded because a neighbor
               // changed during hydration. Otherwise require stable fingerprint.
               if(!pc.anchorTextMatch(expected,rows,uniqueText)&&pc.fingerprint(stable)!==pc.fingerprint(rows)){evidence.navigation.readIssuePolls++;await sleep(350);continue}
@@ -2796,7 +2843,7 @@
         }else{
           // Capture-only is strictly passive: no scrolling or retry click.
           if(historyLoading(host)){evidence.navigation.loadingPolls++;progress('等待目前畫面載入，不捲動');await sleep(budget.pollMs);continue}
-          try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300);evidence.navigation.readIssuePolls++;await sleep(budget.pollMs);continue}
+          try{readWindow()}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300);evidence.navigation.readIssuePolls++;await sleep(budget.pollMs);continue}
         }
         const indices=rows.map(r=>rank.get(r.id)).filter(Number.isInteger),newIds=rows.filter(r=>!seen.has(r.id));
         for(const r of newIds)seen.add(r.id);
@@ -2817,23 +2864,26 @@
           evidence.match={kind:hit.kind,actualId:hit.row.id,identityVerified:hit.identityVerified,textExact:hit.textExact};
           evidence.status='matched-unconfirmed';evidence.matchedRow=hit.row;evidence.navigation.firstMatchAt=Date.now()-began;pending=null;
           let found=null;
-          try{found=capture(host,rows,folds,hit.row.id)}catch(e){evidence.firstCaptureIssue=String(e.message||e).slice(0,300)}
-          if(!found){evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);return {ok:true,message:'已命中並停止；原文列已保存，訊息容器細節待核對。'}}
+          try{found=capture(host,rows,folds,hit.row.id,atomic)}catch(e){evidence.firstCaptureIssue=String(e.message||e).slice(0,300)}
+          if(!found){if(assistantTarget)evidence.domCapture={status:'unavailable',observations:0,truncated:false};evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);return {ok:true,message:'已命中並停止；原文列已保存，訊息容器細節待核對。'}}
           const {element:ignored,...first}=found;evidence.observations=[first];
+          const updateDomCapture=()=>{if(assistantTarget)evidence.domCapture={status:evidence.observations.some(o=>o.rawDom?.status==='captured')?'captured':'unavailable',observations:evidence.observations.filter(o=>o.rawDom?.status==='captured').length,truncated:evidence.observations.some(o=>o.rawDom?.truncated===true)}};
+          updateDomCapture();
           progress('已命中原文或指定ID，停止捲動並再次核對（不重新置中）');
           await sleep(650);guard();
           try{
             const currentHost=historyHost(),currentFolds=[];
             if(currentHost&&!historyLoading(currentHost)){
-              const currentRows=historyRead(currentHost,x=>currentFolds.push(x));
-              const second=capture(currentHost,currentRows,currentFolds,hit.row.id);
+              const current=historyAnchorReadWindow(currentHost,x=>currentFolds.push(x),{id:hit.row.id,role:hit.row.role,text:null},false);
+              const second=capture(currentHost,current.rows,currentFolds,hit.row.id,current.observation);
               if(second){const {element:ignored2,...latest}=second;evidence.observations.push(latest)}
             }
           }catch(e){evidence.secondReadIssue=String(e.message||e).slice(0,300)}
           const confirmed=evidence.observations.length===2&&hit.identityVerified;
           evidence.status=confirmed?'located':'matched-unconfirmed';
+          updateDomCapture();
           evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);
-          return {ok:true,message:confirmed?'已停止捲動並保存指定ID雙次證據（原文差異另記錄）。':'已停止捲動並保存首次命中證據，ID或第二次觀測待核對；不會重新搜尋。'};
+          return {ok:true,message:(confirmed?'已停止捲動並保存指定ID雙次證據（原文差異另記錄）。':'已停止捲動並保存首次命中證據，ID或第二次觀測待核對；不會重新搜尋。')+(assistantTarget?' DOM：'+(evidence.domCapture.status==='captured'?'已保存':'未取得')+(evidence.domCapture.truncated?'（有截斷）':''):'')};
         }
         if(captureOnly)throw Error('目前掛載範圍未命中原文或指定ID；未捲動');
         // Reuse V0.10.44's live rank-guided recovery only to reach a
