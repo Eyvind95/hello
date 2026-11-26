@@ -47,6 +47,23 @@ test('current response body identity is corroborated, duplicate identical search
  unit.getAttribute=k=>k==='data-chatgpt-search-unit-key'?'fallback-turn-3:2:assistant':id+' another';
  assert.throws(()=>read(body,owner),/無法唯一核對/);
 });
+test('multi-ID unit accepts only distinct visible complete marked bodies and rejects unbound identities',()=>{
+ const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyRead(host,'));
+ const attrs=v=>({getAttribute:k=>v[k]??null});
+ let declared='one two',bodies=[];
+ const unit={...attrs({'data-chatgpt-search-unit-key':'fallback-turn-5:2:assistant'}),getAttribute:k=>k==='data-chatgpt-search-message-ids'?declared:'fallback-turn-5:2:assistant',querySelectorAll:()=>bodies};
+ const make=id=>({...attrs({'data-response-body':id}),closest:q=>q==='[data-chatgpt-search-unit-key]'?unit:null,querySelectorAll:()=>[],contains(n){return n===this}});
+ const one=make('one'),two=make('two'),owner={contains:n=>n===unit,querySelectorAll:()=>bodies,outerHTML:'private diagnostic fixture'};
+ bodies=[one,two];
+ const read=vm.runInNewContext(source+';historyResponseIdentity',{historyIssue:(m,o,details)=>Object.assign(Error(m),{details}),historyVisible:n=>!n.hidden,isUserDescendant:n=>!!n.user});
+ assert.equal(read(one,owner),'one');assert.equal(read(two,owner),'two');
+ for(const bad of [[one],[one,make('one')],[one,two,make('extra')],[one,make('wrong')]]){bodies=bad;assert.throws(()=>read(one,owner),e=>/無法唯一核對/.test(e.message)&&e.details.ownerHtml==='private diagnostic fixture');}
+ bodies=[one,two];two.hidden=true;assert.throws(()=>read(one,owner));two.hidden=false;
+ two.user=true;assert.throws(()=>read(one,owner));two.user=false;
+ two.querySelectorAll=()=>[{getAttribute:()=> 'one'}];assert.throws(()=>read(one,owner));two.querySelectorAll=()=>[];
+ one.contains=n=>n===one||n===two;assert.throws(()=>read(one,owner));one.contains=n=>n===one;
+ declared='one two three';assert.throws(()=>read(one,owner));
+});
 test('marked response with nested PDF citation is read once in full before legacy fallback, native identity differs from turn',()=>{
  const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyEdgeOrdinal('));
  const attrs=(values)=>({getAttribute:k=>values[k]??null,hasAttribute:k=>k in values});
