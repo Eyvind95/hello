@@ -2159,7 +2159,7 @@
         let recovering=false,attempted=new Set();
         for(const plan of plans){
           const {ratio,offset=0,rebase=true,alternate=false,identity=false}=plan;
-          if(identity&&(lastError!=='視窗沒有重疊訊息'||b.resume||b.isolated||state.identityRejoinAttempted))continue;
+          if(identity&&(lastError!=='視窗沒有重疊訊息'||b.sample||b.resume||b.isolated||state.identityRejoinAttempted))continue;
           if(alternate&&!lastError.startsWith('頁面反覆自動返回底端'))continue;
           if((offset||!rebase)&&lastError!=='視窗沒有重疊訊息'&&!lastError.startsWith('頁面反覆自動返回底端'))break;
           historyGuard(b);
