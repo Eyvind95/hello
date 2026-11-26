@@ -331,3 +331,48 @@ test('repeated mounted marker with invalid overlap expands relative search beyon
  host.scrollTop=1500;now=0;ctx.historySettled=async()=>[rows[0]];
  assert.equal(await recover({host,rows,resume:{frontierVerified:false},scrollStats:{}},6000),null);
 });
+
+test('observed duplicated ID sequence in one complete markdown body is evidence only',()=>{
+ const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyRead(host,'));
+ const attrs=v=>({getAttribute:k=>v[k]??null});
+ const markers={'data-content-search-unit-key':'fallback-turn-5:2:assistant','data-chatgpt-search-unit-key':'fallback-turn-5:2:assistant','data-chatgpt-search-message-ids':'a a b'};
+ const role=attrs({'data-conversation-role':'assistant'});let extra=[],complete=[{}],md=[{}],bodies=[];
+ const unit={...attrs(markers),querySelectorAll:q=>q==='[data-response-body]'?bodies:q==='[data-conversation-role]'?[role]:extra};
+ const body={...attrs({'data-response-body':'a'}),parentElement:unit,closest:q=>q==='[data-chatgpt-search-unit-key]'?unit:null,querySelectorAll:q=>q==='[data-markdown-text-style="assistant-message"]'?md:[],contains:n=>n===body};
+ bodies=[body];
+ const owner={...attrs({'data-turn-key':'turn'}),contains:n=>n===unit,querySelectorAll:q=>q==='[data-talvt-turn-state="complete"]'?complete:[],outerHTML:'<div>diagnostic</div>'};
+ const read=vm.runInNewContext(source+';historyResponseIdentity',{pc:require('./predecessor-chat-core.js'),historyIssue:(m,o,details)=>Object.assign(Error(m),{details}),historyVisible:()=>true,isUserDescendant:()=>false});
+ assert.throws(()=>read(body,owner));
+ const result=read(body,owner,true);
+ assert.equal(JSON.stringify(result.compositeNative),JSON.stringify({turnId:'turn',ids:['a','b'],declaredIds:['a','a','b'],bodyId:'a',boundaryVerified:false}));
+ assert.equal(result.compositeHtml,owner.outerHTML);
+ for(const bad of ['a b','a a b c','b b a']){markers['data-chatgpt-search-message-ids']=bad;assert.throws(()=>read(body,owner,true))}
+ markers['data-chatgpt-search-message-ids']='a a b';
+ extra=[{}];assert.throws(()=>read(body,owner,true));extra=[];
+ complete=[];assert.throws(()=>read(body,owner,true));complete=[{}];
+ md=[{},{}];assert.throws(()=>read(body,owner,true));md=[{}];
+ owner.outerHTML='x'.repeat(120001);assert.throws(()=>read(body,owner,true));
+});
+
+test('full reader keeps composite text in order and payload is non-importable even at observed top',()=>{
+ const pc=require('./predecessor-chat-core.js');
+ const source=s.slice(s.indexOf('  function historyResponseIdentity('),s.indexOf('  function historyEdgeOrdinal('));
+ const attrs=v=>({getAttribute:k=>v[k]??null,hasAttribute:k=>k in v});
+ const unitKey='fallback-turn-5:2:assistant';
+ const role=attrs({'data-conversation-role':'assistant'});
+ const unit={...attrs({'data-chatgpt-search-unit-key':unitKey,'data-content-search-unit-key':unitKey,'data-chatgpt-search-message-ids':'a a b'}),closest:()=>null,querySelectorAll:q=>q==='[data-response-body]'?[body]:q==='[data-conversation-role]'?[role]:[]};
+ const paragraph={tagName:'P',innerText:'第一段'};
+ const body={...attrs({'data-response-body':'a'}),parentElement:unit,closest:q=>q==='[data-chatgpt-search-unit-key]'?unit:null,contains:n=>n===body||n===paragraph,querySelectorAll:q=>q==='[data-markdown-text-style="assistant-message"]'?[paragraph]:q==='p'?[paragraph]:[],compareDocumentPosition:()=>2,text:'第一段\n第二段'};
+ const user={...attrs({}),closest:()=>null,querySelector:()=>null,querySelectorAll:()=>[],compareDocumentPosition:()=>4};
+ const turn={...attrs({'data-turn-key':'q'}),parentElement:null,contains:n=>[user,body,unit,turn].includes(n),querySelectorAll:q=>q==='[data-talvt-turn-state="complete"]'?[{}]:[],outerHTML:'<div>original rendered evidence</div>'};
+ const root={contains:n=>turn.contains(n),querySelectorAll:q=>q==='[data-response-body]'?[body]:q==='[data-message-author-role]'?[]:[turn]};
+ const ctx={historyRoot:()=>root,historyVisible:()=>true,historyOwner:()=>turn,isUserDescendant:n=>n===user,outerUsers:()=>[user],assistantElements:()=>[],assistantFallbackTexts:new Map(),historyReadText:n=>n.text||'問題',historyIssue:m=>Error(m),getVisibleSourceTime:()=>null,HISTORY_STRUCT:'p',HISTORY_ATTACHMENT:'img',historyAttachment:()=>{throw Error('unexpected attachment')},USER_BUBBLE_SELECTOR:'bubble',Node:{DOCUMENT_POSITION_FOLLOWING:4},pc,location:{origin:'https://chatgpt.com'},chrome:{runtime:{getManifest:()=>({version:'0.10.64'})}}};
+ const read=vm.runInNewContext(source+';historyRead',ctx);
+ assert.throws(()=>read(root));
+ const rows=read(root,undefined,undefined,true);
+ assert.equal(rows.length,2);assert.equal(rows[1].id,'assistant|composite:q:a+b');assert.equal(rows[1].text,'第一段\n第二段');assert.equal(rows[1].structure[0].text,'第一段');
+ const payload=vm.runInNewContext(s.slice(s.indexOf('  function historyPayload('),s.indexOf('  function historyDownload('))+';historyPayload',ctx);
+ const data=payload({rows,title:'fixture',chat:'/c/test',runId:'run',startedAt:'2026-11-25T00:00:00Z',sample:0,bottomReached:true,topReached:true,bottomStableMs:4000,topStableMs:9000,windows:4,hostProof:{maxRange:500,observedMovement:true},foldObservations:new Map(),attachmentChanges:[]},'completed',null);
+ assert.equal(data.format,pc.COMPOSITE);assert.equal(data.status,'failed');assert.equal(data.importable,false);assert.equal(data.evidence.topReached,true);assert.equal(data.evidence.continuity,false);assert.equal(data.evidence.unresolvedCompositeCount,1);
+ assert.equal(pc.validateCompositeEvidence(data).size,2);assert.throws(()=>pc.validateRaw(data));
+});

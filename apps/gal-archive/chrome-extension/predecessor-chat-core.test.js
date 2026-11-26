@@ -952,3 +952,22 @@ test('wide navigation envelope tolerates local displacement but still detects ge
  a.equal(c.scrollRecoveryTarget(28000,29400,30000,30000,600,3),28000);
  a.equal(c.scrollRecoveryTarget(5000,30400,31000,30000,600,3),6000);
 });
+
+test('composite evidence continues through exact displayed overlap without pretending native boundaries',()=>{
+ const p={turnId:'turn',ids:['a','b'],declaredIds:['a','a','b'],bodyId:'a',boundaryVerified:false};
+ const group={...r(c.compositeId(p.turnId,p.ids),'assistant','第一段\n第二段'),identityBasis:'unresolved-native-composite',compositeNative:p,compositeHtml:'<div>evidence</div>',structure:[{tag:'code',text:'第一段'}]};
+ const tail=[r('x'),r('y','assistant')], earlier=r('z');
+ const rows=c.mergeUp(tail,[earlier,group,...tail]);
+ a.deepEqual(rows,[earlier,group,...tail]);
+ a.deepEqual(c.mergeUp(rows,[r('w'),earlier,{...group,compositeHtml:'<div>remounted</div>'},...tail])[2],group);
+ for(const bad of [{...group,text:'改文'},{...group,structure:[]},{...group,compositeNative:{...p,boundaryVerified:true}},{...group,compositeNative:{...p,declaredIds:['a','b']}}])a.throws(()=>c.mergeUp(rows,[earlier,bad,...tail]));
+ for(const id of ['assistant|message:a','assistant|message:b','assistant|turn:turn']){a.throws(()=>c.validateRows([group,r(id,'assistant')]));a.throws(()=>c.mergeUp(rows,[r(id,'assistant'),earlier]));}
+ a.throws(()=>c.mergeUp(tail,[group,r('unknown')]));
+ const ev={...raw,format:c.COMPOSITE,importable:false,status:'failed',error:'分界待核對',count:rows.length,rows:rows.map((x,index)=>({...x,index})),evidence:{...raw.evidence,firstId:rows[0].id,lastId:rows.at(-1).id,continuity:false,unresolvedCompositeCount:1,windows:4,hostProof:{maxRange:1000,observedMovement:true}}};
+ a.equal(c.validateCompositeEvidence(ev).size,rows.length);
+ a.equal(c.validateCheckpoint(ev,ev.sourceUrl).length,rows.length);
+ a.throws(()=>c.validateCheckpoint(ev,'https://chatgpt.com/c/wrong'));
+ a.throws(()=>c.validateRaw(ev));a.throws(()=>c.validateRaw({...ev,format:c.FORMAT,importable:true}));
+ a.throws(()=>c.validateCompositeEvidence({...ev,status:'completed'}));a.throws(()=>c.validateCompositeEvidence({...ev,evidence:{...ev.evidence,continuity:true}}));
+ a.throws(()=>c.validateClassification(ev,{},'a'.repeat(64)));
+});

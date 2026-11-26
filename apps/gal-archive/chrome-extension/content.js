@@ -1542,11 +1542,12 @@
   // Current ChatGPT fallback-turn renderer exposes a complete assistant
   // response body; nested copy-contents spans may merely be file citations.
   // Require corroborating role and ID evidence instead of choosing a citation.
-  function historyResponseIdentity(body,owner){
+  function historyResponseIdentity(body,owner,allowComposite=false){
     const id=body.getAttribute('data-response-body');
     const unit=body.closest('[data-chatgpt-search-unit-key]');
     const unitKey=unit?.getAttribute('data-chatgpt-search-unit-key')||'';
-    const unitIds=[...new Set(String(unit?.getAttribute('data-chatgpt-search-message-ids')||'').trim().split(/\s+/).filter(Boolean))];
+    const declaredIds=String(unit?.getAttribute('data-chatgpt-search-message-ids')||'').trim().split(/\s+/).filter(Boolean);
+    const unitIds=[...new Set(declaredIds)];
     const selection=[...new Set([...body.querySelectorAll('[data-chatgpt-selection-message-id]')].map(n=>n.getAttribute('data-chatgpt-selection-message-id')).filter(Boolean))];
     const validId=x=>typeof x==='string'&&/^[a-zA-Z0-9_-]+$/.test(x);
     const diagnostic=()=>{
@@ -1568,6 +1569,22 @@
     // Never treat a list of IDs as proof of separate content or branches.
     const bodies=unit.querySelectorAll?[...unit.querySelectorAll('[data-response-body]')]:[];
     const ids=bodies.map(n=>n.getAttribute('data-response-body'));
+    // Observed CAT-0028 layout: a completed turn, two distinct declared IDs
+    // (first duplicated), one assistant body and one markdown root. Keep the
+    // rendered unit intact as evidence, never infer a native message boundary.
+    if(allowComposite&&bodies.length===1&&bodies[0]===body&&unitIds.length===2&&
+       declaredIds.length===3&&declaredIds[0]===id&&declaredIds[1]===id&&declaredIds[2]===unitIds[1]&&
+       selection.length===0&&historyVisible(body)&&body.parentElement===unit&&
+       unit.getAttribute('data-content-search-unit-key')===unitKey&&
+       unit.querySelectorAll('[data-conversation-role]').length===1&&
+       unit.querySelectorAll('[data-conversation-role]')[0].getAttribute('data-conversation-role')==='assistant'&&
+       body.querySelectorAll('[data-markdown-text-style="assistant-message"]').length===1&&
+       unit.querySelectorAll('[data-message-id],[data-source-message-id],[data-dil-message-id],[data-chatgpt-selection-message-id],[data-message-author-role]').length===0&&
+       owner.querySelectorAll('[data-talvt-turn-state="complete"]').length===1){
+      const turnId=owner.getAttribute('data-turn-key'),html=String(owner.outerHTML||'');
+      if(validId(turnId)&&html.length>0&&html.length<=120000&&pc.compositeId(turnId,unitIds).length<=512)
+        return {compositeNative:{turnId,ids:unitIds,declaredIds,bodyId:id,boundaryVerified:false},compositeHtml:html};
+    }
     if(bodies.length!==unitIds.length||new Set(ids).size!==ids.length||!bodies.includes(body)||unitIds.some(x=>!ids.includes(x)))fail();
     for(const n of bodies){
       const nid=n.getAttribute('data-response-body');
@@ -1698,11 +1715,12 @@
     if(evidence.length)throw historyIssue('GPT 正文與程式碼框不一致，無法安全確認完整正文',owner,{messageId:id,codeEvidence:evidence.slice(0,20),codeEvidenceOverflow:Math.max(0,evidence.length-20)});
     return text;
   }
-  function historyRead(host,onFold=()=>{},onEntries=()=>{}){
+  function historyRead(host,onFold=()=>{},onEntries=()=>{},allowComposite=false){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
     const add=(role,el,body,identityHint,fallback=false)=>{
       if(!el||!body||!root.contains(el)||!historyVisible(el))return;
-      const owner=historyOwner(el),native=identityHint||el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
+      const composite=typeof identityHint==='object'&&identityHint?.compositeNative?identityHint:null;
+      const owner=historyOwner(el),native=(composite?null:identityHint)||el.closest('[data-message-id]')?.getAttribute('data-message-id')||el.getAttribute('data-message-id')||body.getAttribute('data-dil-message-id')||el.closest('[data-source-message-id]')?.getAttribute('data-source-message-id');
       const turn=owner.getAttribute('data-turn-key'); // data-testid ordinal alone is not a source ID
       if(fallback){
         if(role!=='assistant'||el!==owner)throw historyIssue('備援 GPT 容器與回合不符',owner);
@@ -1717,13 +1735,13 @@
       if(!native&&!turn)throw historyIssue('訊息缺少穩定來源 ID（禁止使用畫面位置）',owner,{role});
       const roleMarker=el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role');
       if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
-      const stable=role+'|'+(native?'message:'+native:'turn:'+turn);
+      const stable=composite?pc.compositeId(composite.compositeNative.turnId,composite.compositeNative.ids):role+'|'+(native?'message:'+native:'turn:'+turn);
       let text=historyReadText(body,identityHint?body:owner,stable,onFold);
       if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text);
       const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
-      const row={id:stable,role,text,identityBasis:native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments};
+      const row={id:stable,role,text,identityBasis:composite?'unresolved-native-composite':native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments,...(composite||{})};
       const sameOwner=owners.get(owner)||[];
       if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
       sameOwner.push({row,el,owner});owners.set(owner,sameOwner);entries.push({row,el,owner});
@@ -1734,7 +1752,7 @@
       if(body.parentElement?.closest('[data-response-body]'))continue;
       const owner=historyOwner(body);
       if(!historyVisible(owner))continue;
-      const native=historyResponseIdentity(body,owner);
+      const native=historyResponseIdentity(body,owner,allowComposite);
       if(!historyVisible(body))throw historyIssue('明確 GPT 正文尚未穩定掛載',owner,{responseBodyId:native});
       add('assistant',body,body,native);
       explicit.push({el:body,role:'assistant',owner});
@@ -1977,7 +1995,7 @@
       }
       else{spinAt=0;
         try{
-            const rows=historyRead(b.host,observation=>historyFoldObservation(b,observation)),fingerprint=pc.fingerprint(rows);
+            const rows=historyRead(b.host,observation=>historyFoldObservation(b,observation),undefined,b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
             if(lastRows&&last!==null&&last!==fingerprint){
               b.scrollStats.fingerprintChanges++;
@@ -2042,8 +2060,10 @@
   function historyStatus(b,msg){
     if(b.mode==='predecessor-anchor'){b.anchorProgress?.(msg);return}
     const count=b.isolated?b.isolated.originalRows.length+'（另有隔離取證 '+b.rows.length+' 則，含重疊）':b.sample?Math.min(b.sample,b.rows.length)+' / '+b.sample:b.rows.length;
-    b.info.textContent=msg+'\n已保全 '+count+' 則；不會上傳 Firebase。';
-    if(b.summary)b.summary.textContent='已保全 '+count+' 則｜'+(b.download.hidden?(b.cancelled?'停止中':'掃描中'):'已結束，詳情可展開');
+    const compositeCount=b.rows.filter(r=>r.identityBasis==='unresolved-native-composite').length;
+    const unit=compositeCount?' 個顯示單元（'+compositeCount+' 個複合待核對，非原生則數）':' 則';
+    b.info.textContent=msg+'\n已保全 '+count+unit+'；不會上傳 Firebase。';
+    if(b.summary)b.summary.textContent='已保全 '+count+unit+'｜'+(b.download.hidden?(b.cancelled?'停止中':'掃描中'):'已結束，詳情可展開');
     if(b.action)b.action.textContent='目前動作：'+msg;
   }
   function historyAtBottom(host){return host.scrollHeight-host.clientHeight-host.scrollTop<=6}
@@ -2093,6 +2113,9 @@
   }
   function historyPayload(b,status,error){
     const rows=(b.isolated?b.isolated.originalRows:b.sample?pc.sampleRows(b.rows,b.sample):b.rows).map((r,index)=>({...r,index})),warnings=[];
+    const compositeCount=rows.filter(r=>r.identityBasis==='unresolved-native-composite').length+(b.isolated?b.rows.filter(r=>r.identityBasis==='unresolved-native-composite').length:0);
+    if(compositeCount&&status==='completed'){status='failed';error='已抵達觀測頂端；複合原生訊息分界待核對，非正式完整聊天'}
+    if(compositeCount)warnings.push('含 '+compositeCount+' 個複合原生單元，count 是顯示單元數而非原生訊息數；分界未核對，不得正式匯入或分類。僅供取證與手動指定保全續掃。');
     if(b.isolated)warnings.push('前沿圖片參照仍有未解衝突；正式 rows 保留原有則數，不合併隔離取證。獨立原文段見 evidence.isolatedSegment，禁止當完整聊天或正式續掃斷點。');
     warnings.push('前輩聊天為文字保全：圖片內容、網址、數量與一致性不在收錄／驗收範圍；純非文字回合只保留原生ID與角色。');
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
@@ -2109,16 +2132,16 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:b.sample?pc.SAMPLE:pc.FORMAT,...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed',firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images; not checked',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,unjoinedWindows:b.unjoinedWindows||[],unjoinedOverflow:b.unjoinedOverflow||0,identityRejoinTrace:b.identityRejoinTrace||[],identityRejoinTraceOverflow:b.identityRejoinTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
+    return {format:compositeCount?pc.COMPOSITE:b.sample?pc.SAMPLE:pc.FORMAT,...(compositeCount?{importable:false}:{}),...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed'&&!compositeCount,...(compositeCount?{unresolvedCompositeCount:compositeCount,displayUnitContinuityOnly:true}:{}),firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images; not checked',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,unjoinedWindows:b.unjoinedWindows||[],unjoinedOverflow:b.unjoinedOverflow||0,identityRejoinTrace:b.identityRejoinTrace||[],identityRejoinTraceOverflow:b.identityRejoinTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+(data.evidence.isolatedSegment?.count??data.count):'')+'.json';
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=url;a.download=(data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    a.href=url;a.download=(data.format===pc.COMPOSITE?'前輩複合待核對_':data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
     return a.download;
   }
   async function historyRemember(b,data){
-    if(b.sample||b.isolated||data.status==='completed'||(b.resume&&(!b.resume.frontierVerified||data.count<=b.resume.baseCount)))return;
+    if(b.sample||b.isolated||data.format===pc.COMPOSITE||data.status==='completed'||(b.resume&&(!b.resume.frontierVerified||data.count<=b.resume.baseCount)))return;
     try{
       const source=location.origin+b.chat;
       pc.validateCheckpoint(data,source);
@@ -2415,7 +2438,7 @@
           nextCheckpoint=Math.floor(b.rows.length/100)*100+100;
           try{
             const snapshot=historyPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔');
-            snapshot.evidence.checkpoint=true;pc.validateRaw(snapshot);
+            snapshot.evidence.checkpoint=true;(snapshot.format===pc.COMPOSITE?pc.validateCompositeEvidence:pc.validateRaw)(snapshot);
             try{await historyRemember(b,snapshot)}catch(_){}
             const file=historyDownload(snapshot);(b.checkpointExports||(b.checkpointExports=[])).push({count:b.rows.length,file,triggered:true});
             historyTrace(b,'checkpoint-download',{count:b.rows.length,file});
@@ -2425,10 +2448,11 @@
         await sleep(150);
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
+    if(status==='completed'&&b.rows.some(r=>r.identityBasis==='unresolved-native-composite')){status='failed';error='已抵達觀測頂端；複合原生訊息分界待核對，非正式完整聊天'}
     const data=historyPayload(b,status,error);
     // Counts are only a local lower bound; never mix previous rows into this run.
-    if(b.bottomReached&&!b.sample&&!b.isolated&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
-    try{(b.sample?pc.validateSample:pc.validateRaw)(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false}
+    if(b.bottomReached&&!b.sample&&!b.isolated&&data.format!==pc.COMPOSITE&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
+    try{(data.format===pc.COMPOSITE?pc.validateCompositeEvidence:b.sample?pc.validateSample:pc.validateRaw)(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false}
     if(!b.sample&&!b.isolated&&data.status!=='completed'&&(!b.resume||data.count>b.resume.baseCount)){
       try{await historyRemember(b,data)}catch(_){}
     }
@@ -2675,14 +2699,14 @@
     button.textContent='📚 前輩聊天掃描 V'+chrome.runtime.getManifest().version;
     button.setAttribute('aria-label','開啟前輩聊天掃描助手');
     button.title='獨立 ChatGPT 完整聊天 JSON 掃描（此安裝版本）';
-    button.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
+    button.style.cssText='position:fixed!important;right:18px!important;left:auto!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
     button.onclick=()=>{
       const active=document.getElementById(HISTORY_PANEL);
       if(active){if(active.dataset?.gaExtensionId===chrome.runtime.id)active.gaShowHistoryDetails?.();else button.title='此頁已有其他版本掃描或保全面板，請勿同頁重複掃描';return}
       if(document.getElementById(HISTORY_CONFIG)){document.getElementById(HISTORY_CONFIG).remove();return}
       const pane=document.createElement('section');pane.id=HISTORY_CONFIG;pane.dataset.chat=path();
       pane.setAttribute('role','dialog');pane.setAttribute('aria-label','前輩完整聊天掃描設定');
-      pane.style.cssText='position:fixed!important;left:18px!important;right:auto!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
+      pane.style.cssText='position:fixed!important;right:18px!important;left:auto!important;bottom:160px!important;z-index:2147483646!important;width:min(360px,calc(100vw - 36px))!important;max-height:calc(100vh - 180px)!important;overflow:auto!important;box-sizing:border-box!important;background:#202840!important;color:white!important;border:1px solid #9ba9cb!important;padding:14px!important;border-radius:12px!important;font:14px system-ui,sans-serif!important;box-shadow:0 3px 20px #0006!important';
       const heading=document.createElement('strong');heading.textContent='前輩聊天掃描助手';
       const version=document.createElement('p');version.textContent='V'+chrome.runtime.getManifest().version+'｜獨立 JSON，不上傳正史';
       const mode=document.createElement('div');mode.id=historyPageId('mode');mode.setAttribute('role','status');mode.style.cssText='position:sticky;top:0;z-index:2;padding:10px;margin:6px 0 12px;background:#111827;border:1px solid #8edcd3;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere';mode.textContent='目前模式：尚未開始｜請選擇原文搜尋、完整掃描或保全續掃';
