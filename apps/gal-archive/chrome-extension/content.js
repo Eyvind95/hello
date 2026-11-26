@@ -2209,30 +2209,55 @@
       state.enabled=false;state.watchedPath=null;candidates.clear();guard();
       attempted=true;
       const expected=checkpoint.data.rows[targetIndex],uniqueText=!!expected.text&&checkpoint.data.rows.filter(r=>r.role==='user'&&r.text===expected.text).length===1;
-      evidence.search={method:'original-text-sequential',expectedText:expected.text,uniqueText,identityRequired:true};
+      evidence.search={method:'original-text-live-recovery',expectedText:expected.text,uniqueText,identityRequired:true,positionBasis:'current-session-only; no saved scan coordinates'};
       const budget=pc.anchorBudget(captureOnly),began=Date.now(),deadline=began+budget.hardMs;
-      let lastProgress=began,direction=-1,previousDirection=-1,previousHost=null,lastWindow=null,stalls=0,edgeSince=null,previousBottom=false;
+      let lastProgress=began,previousHost=null,lastWindow=null,stalls=0,previousBottom=false,pending=null,policy={},settleFailures=0;
       const seen=new Set();
-      evidence.navigation={idleMs:budget.idleMs,hardMs:budget.hardMs,traceLimit:budget.traceLimit,hostWaitPolls:0,loadingPolls:0,readIssuePolls:0,observedWindows:0,traceOverflow:0,stallPolls:0,interWindowBottomReturns:0,uniqueObserved:0,relativeSteps:0,bestIndex:null,bestDistance:null,directionChanges:0};
+      evidence.navigation={idleMs:budget.idleMs,hardMs:budget.hardMs,traceLimit:budget.traceLimit,hostWaitPolls:0,loadingPolls:0,readIssuePolls:0,observedWindows:0,traceOverflow:0,stallPolls:0,interWindowBottomReturns:0,uniqueObserved:0,relativeSteps:0,bestIndex:null,bestDistance:null,directionChanges:0,settleFailures:0,liveRecoveryAttempts:0,firstMatchAt:null};
       const elapsed=()=>Math.floor((Date.now()-began)/1000);
       const progress=message=>report(message+'｜'+elapsed()+' 秒｜無新ID '+Math.floor((Date.now()-lastProgress)/1000)+'/'+Math.round(budget.idleMs/1000)+'秒');
       b.anchorProgress=progress;
       const appendTrace=entry=>{if(evidence.trace.length>=budget.traceLimit){evidence.trace.shift();evidence.navigation.traceOverflow++}evidence.trace.push(entry)};
       while(Date.now()<deadline&&Date.now()-lastProgress<budget.idleMs){
         guard();const host=historyHost();if(!host){evidence.navigation.hostWaitPolls++;progress('等待聊天捲動容器');await sleep(budget.pollMs);continue}
-        if(previousHost&&previousHost!==host){lastWindow=null;edgeSince=null;previousBottom=false}
+        if(previousHost&&previousHost!==host){lastWindow=null;previousBottom=false;pending=null;policy={};settleFailures=0;b.breakthrough={resets:0,attempts:0,frontier:null}}
         previousHost=host;b.host=host;
-        if(!captureOnly&&historyNativeFailure(host)){await historyNativeRetry(b,Math.min(deadline,lastProgress+budget.idleMs));continue}
-        if(historyLoading(host)){evidence.navigation.loadingPolls++;progress('等待原生歷史載入，不捲動');await sleep(budget.pollMs);continue}
         let rows,folds=[];
-        try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300);evidence.navigation.readIssuePolls++;progress('等待可辨識的聊天視窗');await sleep(budget.pollMs);continue}
+        if(!captureOnly){
+          // Check the currently mounted window before any recovery can move it.
+          // Only use the proven live navigation to reach more history, never
+          // as proof of matching a target. Old checkpoint geometry is unused.
+          if(!historyLoading(host)){
+            try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300)}
+          }
+          if(!rows||!pc.anchorTextMatch(expected,rows,uniqueText)){
+            try{
+              const stable=await historySettled(b,{deadline:Math.min(deadline,lastProgress+budget.idleMs),upward:true,target:pending?.top??null,targetHeight:pending?.height??null,allowBoost:true});
+              guard();folds=[];rows=historyRead(host,x=>folds.push(x));
+              // A matching live row must not be discarded because a neighbor
+              // changed during hydration. Otherwise require stable fingerprint.
+              if(!pc.anchorTextMatch(expected,rows,uniqueText)&&pc.fingerprint(stable)!==pc.fingerprint(rows)){evidence.navigation.readIssuePolls++;await sleep(350);continue}
+              pending=null;
+            }catch(e){
+              guard();const reason=String(e.message||e);
+              if(e.code!=='HISTORY_RECOVERY_RETRY'&&!reason.startsWith('等待逾時：'))throw e;
+              evidence.navigation.settleFailures++;settleFailures++;
+              historyTrace(b,'anchor-settle-failed',{reason,attempt:settleFailures});
+              pc.alternateRecoveryPolicy(b.breakthrough);pending=null;await sleep(350);continue;
+            }
+          }
+        }else{
+          // Capture-only is strictly passive: no scrolling or retry click.
+          if(historyLoading(host)){evidence.navigation.loadingPolls++;progress('等待目前畫面載入，不捲動');await sleep(budget.pollMs);continue}
+          try{rows=historyRead(host,x=>folds.push(x))}catch(e){evidence.lastReadIssue=String(e.message||e).slice(0,300);evidence.navigation.readIssuePolls++;await sleep(budget.pollMs);continue}
+        }
         const indices=rows.map(r=>rank.get(r.id)).filter(Number.isInteger),newIds=rows.filter(r=>!seen.has(r.id));
         for(const r of newIds)seen.add(r.id);
         if(newIds.length){lastProgress=Date.now();historyNativeProgress(b,'anchor-new-live-id')}
         evidence.navigation.uniqueObserved=seen.size;
         for(const i of indices){const d=Math.abs(i-targetIndex);if(evidence.navigation.bestDistance===null||d<evidence.navigation.bestDistance){evidence.navigation.bestDistance=d;evidence.navigation.bestIndex=i}}
         const atBottom=historyAtBottom(host);
-        if(lastWindow!==null&&!previousBottom&&atBottom&&previousDirection===-1)evidence.navigation.interWindowBottomReturns++;
+        if(lastWindow!==null&&!previousBottom&&atBottom)evidence.navigation.interWindowBottomReturns++;
         previousBottom=atBottom;
         const hit=pc.anchorTextMatch(expected,rows,uniqueText);
         evidence.navigation.observedWindows++;
@@ -2243,11 +2268,12 @@
           // Stop moving on the first match. Preserve even a single
           // observation if virtualization removes it before the second read.
           evidence.match={kind:hit.kind,actualId:hit.row.id,identityVerified:hit.identityVerified,textExact:hit.textExact};
-          evidence.status='matched-unconfirmed';evidence.matchedRow=hit.row;
-          const found=capture(host,rows,folds,hit.row.id);
-          if(!found)throw Error('原文命中但無法擷取唯一玩家容器');
+          evidence.status='matched-unconfirmed';evidence.matchedRow=hit.row;evidence.navigation.firstMatchAt=Date.now()-began;pending=null;
+          let found=null;
+          try{found=capture(host,rows,folds,hit.row.id)}catch(e){evidence.firstCaptureIssue=String(e.message||e).slice(0,300)}
+          if(!found){evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);return {ok:true,message:'已命中並停止；原文列已保存，玩家容器細節待核對。'}}
           const {element:ignored,...first}=found;evidence.observations=[first];
-          progress('已命中原文或指定ID，停止捲動並再次核對');
+          progress('已命中原文或指定ID，停止捲動並再次核對（不重新置中）');
           await sleep(650);guard();
           try{
             const currentHost=historyHost(),currentFolds=[];
@@ -2260,30 +2286,28 @@
           const confirmed=evidence.observations.length===2&&hit.identityVerified;
           evidence.status=confirmed?'located':'matched-unconfirmed';
           evidence.finishedAt=new Date().toISOString();recoveryEvidence();historyDownload(evidence);
-          return {ok:true,message:confirmed?'已停止捲動並保存指定ID雙次證據（原文差異另記錄）。':'已停止捲動並保存候選證據，ID或第二次觀測待核對。'};
+          return {ok:true,message:confirmed?'已停止捲動並保存指定ID雙次證據（原文差異另記錄）。':'已停止捲動並保存首次命中證據，ID或第二次觀測待核對；不會重新搜尋。'};
         }
         if(captureOnly)throw Error('目前掛載範圍未命中原文或指定ID；未捲動');
-        const nextDirection=pc.anchorTextDirection(targetIndex,indices,direction);
-        if(nextDirection!==direction){evidence.navigation.directionChanges++;edgeSince=null;direction=nextDirection}
-        const signature=JSON.stringify(rows.map(r=>r.id));
-        stalls=signature===lastWindow?stalls+1:0;lastWindow=signature;
-        // Current edge is merely a loading cue, not the location of any
-        // saved message. No old top/height or absolute destination is used.
-        const atEdge=direction===-1?host.scrollTop<=2:atBottom;
-        if(atEdge){
-          if(edgeSince===null)edgeSince=Date.now();
-          evidence.navigation.stallPolls++;progress('等待目前邊界載入，不判定目標不存在');
-          // When no baseline identity is mounted at the earlier edge,
-          // inspect forward rather than remain stuck there indefinitely.
-          if(!indices.length&&direction===-1&&Date.now()-edgeSince>=8000){direction=1;edgeSince=null;evidence.navigation.directionChanges++}
-          else{await sleep(budget.pollMs);continue}
-        }else edgeSince=null;
-        const delta=pc.anchorRelativeDelta(host.clientHeight,direction);
-        record.delta=delta;previousDirection=direction;
-        host.scrollBy({top:delta,behavior:'instant'});evidence.navigation.relativeSteps++;
-        // Even when a long message spans several viewports, keep reading
-        // sequentially; equal IDs do not justify skipping a large distance.
-        await sleep(stalls>=8?600:budget.stepMs);
+        // Reuse V0.10.44's live rank-guided recovery only to reach a
+        // candidate viewport. Its state belongs to this run/current host.
+        const geo={top:host.scrollTop,height:host.scrollHeight,client:host.clientHeight};
+        const hint=pc.anchorLiveRecoveryHint(targetIndex,indices,geo,policy,settleFailures%2===1);
+        if(hint.improved){
+          b.breakthrough.resets=0;b.breakthrough.attempts=0;pc.clearRecoveryPolicy(b.breakthrough);settleFailures=0;
+          b.breakthrough.frontier={top:hint.best.top,height:hint.best.height,id:checkpoint.data.rows[hint.best.index].id};
+          historyTrace(b,'anchor-rank-progress',{index:hint.best.index,distance:hint.best.distance});
+        }
+        if(hint.restore){evidence.navigation.liveRecoveryAttempts++;historyTrace(b,'anchor-live-recovery',{bestIndex:hint.best.index,target:hint.top})}
+        // A missing ID inside a rank interval is not a match. Probe locally
+        // instead of declaring absence or treating the interval as proof.
+        if(hint.stop){hint.top=Math.max(0,geo.top-Math.max(1,Math.floor(geo.client*.6)));hint.bounds={}}
+        const signature=JSON.stringify([geo.top,geo.height,rows[0]?.id,rows.at(-1)?.id,hint.top]);
+        stalls=signature===lastWindow?stalls+1:0;lastWindow=signature;policy=hint;
+        Object.assign(record,{...geo,destination:hint.top??null,bestIndex:evidence.navigation.bestIndex,restoring:hint.restore});
+        if(stalls>=8&&!hint.restore){evidence.navigation.stallPolls++;progress('等待目前視窗穩定');await sleep(2000);continue}
+        if(Math.abs(hint.top-geo.top)>2){pending={top:hint.top,height:geo.height};historyScroll(host,hint.top);evidence.navigation.relativeSteps++;await sleep(180)}
+        else await sleep(budget.stepMs);
       }
       throw Error(captureOnly?'目前錨點擷取逾時，未證明目標不存在':Date.now()>=deadline?'原文搜尋達60分鐘安全上限，未證明目標不存在':'原文搜尋10分鐘未觀測新ID，未證明目標不存在');
     }catch(e){
