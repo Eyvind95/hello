@@ -6,15 +6,40 @@ const str=(x)=>typeof x==='string'&&x.trim().length>0;
 const obj=x=>x&&typeof x==='object'&&!Array.isArray(x);
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function binding(r){return {worldKey:r.world,cycleId:r.id,cycleTitle:r.title}}
+const JOINED='gal-predecessor-prefix-supplement-evidence';
+function validateRows(rows,strict=false){
+ const map=new Map();
+ rows.forEach((row,i)=>{
+  if(!obj(row)||!str(row.id)||map.has(row.id)||row.index!==i||!['user','assistant'].includes(row.role)||typeof row.text!=='string'||!Array.isArray(row.attachments)||(strict&&!Array.isArray(row.structure)))fail('原始來源索引、ID 或欄位異常：'+i);
+  map.set(row.id,row);
+ });
+ return map;
+}
+function sourceView(source){
+ if(!obj(source)||source.version!==1||!str(source.chatId)||!Array.isArray(source.rows)||!Number.isSafeInteger(source.count)||source.rows.length!==source.count||!source.count)fail('原始聊天資料結構錯誤');
+ if(source.format!==JOINED){
+  if(source.format!=='gal-predecessor-offline-reconciliation-candidate'&&!(source.format==='gal-predecessor-chat'&&source.status==='completed'))fail('請使用離線整合候選、成功頂端補掃證據或正式完成聊天');
+  return {rows:source.rows,joined:false,localCount:source.count};
+ }
+ const e=source.evidence,b=source.base,c=source.candidateRows;
+ // A joined display snapshot is evidence, never a canonical native transcript.
+ if(source.status!=='joined-evidence'||source.canonical!==false||source.importable!==false||source.continuity!==false||source.fidelity!=='rendered-dom'||source.error!==null||!str(source.runId)||!obj(e)||!obj(b)||!Array.isArray(c))fail('頂端補掃尚未成功或證據格式不符');
+ if(e.openingVerified!==true||e.originalCheckpointUnchanged!==true||e.lastConflict!==null||!str(e.expectedId)||!str(b.firstId)||!str(b.runId)||!/^[0-9a-f]{64}$/.test(b.sha256)||!Number.isSafeInteger(b.count)||!Number.isSafeInteger(e.added)||!Number.isSafeInteger(e.matched)||e.added<1||e.matched<2||b.count<e.matched||source.count!==e.added+e.matched||c.length!==b.count+e.added||e.joinedCandidateCount!==c.length)fail('頂端補掃拼接證據不一致');
+ validateRows(source.rows,true);validateRows(c,true);
+ if(c[0].id!==e.expectedId||c[0].role!=='user'||c[e.added].id!==b.firstId||!source.rows.every((row,i)=>equal(row,c[i])))fail('頂端補掃開頭、重疊或前綴內容不符');
+ return {rows:c,joined:true,localCount:source.count};
+}
+const unresolved=row=>row.identityBasis==='unresolved-native-composite'||row.id.startsWith('assistant|composite:')||row.compositeNative!==undefined||row.compositeHtml!==undefined;
 function plan(r,source,pack,sha){
  if(!obj(r)||!str(r.world)||!str(r.id)||!str(r.title))fail('缺少目前輪迴');
  if(!obj(pack)||pack.format!==FORMAT||pack.version!==1)fail('不是副駕駛三分頁覆蓋 JSON V1');
  if(!obj(pack.target)||!Object.entries(binding(r)).every(([k,v])=>pack.target[k]===v))fail('世界觀／輪迴 ID／輪迴名稱不符');
- if(!obj(source)||source.version!==1||!str(source.chatId)||!Array.isArray(source.rows)||source.rows.length!==source.count||!source.count)fail('原始聊天資料結構錯誤');
- if(source.format!=='gal-predecessor-offline-reconciliation-candidate'&&!(source.format==='gal-predecessor-chat'&&source.status==='completed'))fail('請使用離線整合候選或正式完成聊天');
+ const view=sourceView(source);
  if(!/^[0-9a-f]{64}$/.test(sha)||pack.sourceSha256!==sha||pack.chatId!==source.chatId)fail('來源聊天 ID 或 SHA-256 不符');
  if(!str(pack.manager)||pack.manager.length>180)fail('缺少副駕駛名稱');
- const map=new Map();source.rows.forEach((row,i)=>{if(!obj(row)||!str(row.id)||map.has(row.id)||row.index!==i||!['user','assistant'].includes(row.role)||typeof row.text!=='string'||!Array.isArray(row.attachments))fail('原始來源索引、ID 或欄位異常：'+i);map.set(row.id,row)});
+ const map=validateRows(view.rows,view.joined);
+ const isolated=view.rows.filter(unresolved).length;
+ for(const row of view.rows)if(unresolved(row))map.delete(row.id);
  const existingIds=new Set(),oldOther=['messages','events','changeLogs'].flatMap(k=>r[k]||[]);for(const m of oldOther)if(m?.id)existingIds.add(m.id);
  function logs(key){
   if(!Array.isArray(pack[key])||(key==='pilotMessages'&&!pack[key].length))fail(key+' 空白或格式錯誤');
@@ -29,7 +54,7 @@ function plan(r,source,pack,sha){
    const id='predecessor:'+key+':'+source.chatId+':'+row.id;
    if(existingIds.has(id))fail('訊息 ID 與其他分頁衝突');
    const time=typeof row.sourceCreatedAt==='string'&&Number.isFinite(Date.parse(row.sourceCreatedAt))?row.sourceCreatedAt:null;
-   return {id,role:row.role==='user'?'me':'ai',manager:row.role==='assistant'?pack.manager:'',text:entry.text,images:[],sourceCreatedAt:time,predecessorSource:{chatId:source.chatId,sha256:sha,id:row.id,index:row.index,attachments:structuredClone(row.attachments)}};
+   return {id,role:row.role==='user'?'me':'ai',manager:row.role==='assistant'?pack.manager:'',text:entry.text,images:[],sourceCreatedAt:time,predecessorSource:{chatId:source.chatId,sha256:sha,id:row.id,index:row.index,attachments:structuredClone(row.attachments),...(view.joined?{sourceFormat:JOINED,sourceStatus:source.status,canonical:false,structure:structuredClone(row.structure)}:{})}};
   });
  }
  const incomingPilot=logs('pilotMessages'),incomingQuiz=logs('quizLogs');
@@ -65,7 +90,7 @@ function plan(r,source,pack,sha){
  const easterEggs=!eggText||oldEggs.includes(block)?oldEggs:oldEggs+(oldEggs?'\n\n':'')+block;
  const updated={...structuredClone(r),pilotMessages,quizLogs,easterEggs};
  const counts={pilotBefore:(r.pilotMessages||[]).length,pilotAfter:pilotMessages.length,quizBefore:(r.quizLogs||[]).length,quizAfter:quizLogs.length,eggsBefore:(r.easterEggs||'').length,eggsAfter:easterEggs.length,eggCount:pack.easterEggs.length};
- return {updated,counts,sourceCount:source.count,sourceStatus:source.status,merge:{pilot:{added:pilot.added,replaced:pilot.replaced,preserved:pilot.preserved},quiz:{added:quiz.added,replaced:quiz.replaced,preserved:quiz.preserved},quizMissing:incomingQuiz.length===0,quizPartial:incomingQuiz.length>0&&(!incomingQuiz.some(m=>m.role==='me')||!incomingQuiz.some(m=>m.role==='ai'))},attachments:incomingPilot.concat(incomingQuiz).reduce((n,m)=>n+m.predecessorSource.attachments.length,0)};
+ return {updated,counts,sourceCount:view.rows.length,sourceStatus:source.status,sourceEvidence:{joined:view.joined,localCount:view.localCount,isolated,canonical:source.canonical===true},merge:{pilot:{added:pilot.added,replaced:pilot.replaced,preserved:pilot.preserved},quiz:{added:quiz.added,replaced:quiz.replaced,preserved:quiz.preserved},quizMissing:incomingQuiz.length===0,quizPartial:incomingQuiz.length>0&&(!incomingQuiz.some(m=>m.role==='me')||!incomingQuiz.some(m=>m.role==='ai'))},attachments:incomingPilot.concat(incomingQuiz).reduce((n,m)=>n+m.predecessorSource.attachments.length,0)};
 }
 function sameUnchanged(before,after){return equal(Object.fromEntries(Object.entries(before).filter(([k])=>!FIELDS.includes(k)&&k!=='updatedAt')),Object.fromEntries(Object.entries(after).filter(([k])=>!FIELDS.includes(k)&&k!=='updatedAt')))}
 return {FORMAT,binding,plan,sameUnchanged};
