@@ -77,6 +77,21 @@ function assertNoForeignChange(before,after,allowed){
   if(!Object.hasOwn(before,key)||!Object.hasOwn(after,key)||!same(before[key],after[key]))fail('非目標欄位變更：'+key);
  }
 }
+// Insert only newly authorized rows. Existing records keep relative order,
+// including other chats and unbound manual rows. Never globally sort.
+function insertOwned(result,w,wantedMap,rank){
+ const n=rank.get(w.id);let last=-1;
+ for(let i=0;i<result.length;i++){
+  const id=result[i].id;if(!wantedMap.has(id))continue;
+  if(rank.get(id)>n){result.splice(i,0,structuredClone(w));return}
+  last=i;
+ }
+ result.splice(last<0?result.length:last+1,0,structuredClone(w));
+}
+function verifyProjection(result,wanted){
+ const ids=new Set(wanted.map(x=>x.id)),actual=result.filter(x=>ids.has(x.id)).map(x=>x.id);
+ if(!same(actual,wanted.map(x=>x.id)))fail('目標來源順序衝突，不可重排既有紀錄');
+}
 async function inspect(records,bundle,receipt=null){
  if(!Array.isArray(records)||!object(bundle)||bundle.format!==FORMAT||bundle.version!==VERSION||!str(bundle.revisionId)||
  !Array.isArray(bundle.targets)||!bundle.targets.length)fail('修正版格式錯誤');
@@ -134,13 +149,18 @@ async function inspect(records,bundle,receipt=null){
     local.push({field,sourceId:ref.id,index:ref.index,action:op.action,before:structuredClone(row),after:structuredClone(changed.get(row.id))});
    }
    const result=old.filter(x=>changed.get(x.id)!==null).map(x=>changed.has(x.id)?changed.get(x.id):structuredClone(x));
+   const rank=new Map(wanted.map((w,i)=>[w.id,i]));
+   const survivors=result.filter(x=>wantedMap.has(x.id));
+   if(survivors.some((x,i)=>i>0&&rank.get(survivors[i-1].id)>=rank.get(x.id)))fail('既有來源順序異常，不可重排');
    for(const w of wanted){
     if(oldMap.has(w.id))continue;
     const k=keyOf(field,w.predecessorSource.id),op=ops.get(k);
     if(!op||op.action!=='add'||op.old!==null)fail('新增缺少明確清冊或舊值不是 null：'+w.id);
-    ops.delete(k);result.push(structuredClone(w));
+    ops.delete(k);insertOwned(result,w,wantedMap,rank);
     local.push({field,sourceId:w.predecessorSource.id,index:w.predecessorSource.index,action:'add',before:null,after:structuredClone(w)});
    }
+   verifyProjection(result,wanted);
+   // Equal-size replacement of membership must also be persisted.
    if(changed.size||result.length!==old.length)next[field]=result;
   }
   if(ops.size)fail('清冊有未找到的操作，不可猜測');

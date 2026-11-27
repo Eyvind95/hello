@@ -101,3 +101,25 @@ test('multi-cycle failure prevents every write; duplicate target blocked',async(
  await a.rejects(api.inspect(await s.read(),bundle));a.equal(s.writes,0);
  bundle.targets[1]=structuredClone(bundle.targets[0]);await a.rejects(api.inspect(await s.read(),bundle),/同一輪迴/);
 });
+
+test('historical middle insertion retains all existing row order and rejects pre-existing inversion',async()=>{
+ const {before,bundle,source,hash,pack}=await fixture();
+ // Build generic full sequence with a missing middle source; actual R3 is tested privately.
+ const source2={...source,rows:[
+  {id:'a0',index:0,role:'assistant',text:'first',attachments:[]},
+  {id:'a1',index:1,role:'assistant',text:'middle',attachments:[]},
+  {id:'a2',index:2,role:'assistant',text:'last',attachments:[]},
+  {id:'a3',index:3,role:'assistant',text:'end',attachments:[]}],count:4};
+ const sourceText=JSON.stringify(source2),sha=await api.sha(sourceText);
+ const base={id:before.id,world:before.world,title:before.title,pilotMessages:[],quizLogs:[],casinoLogs:[],realChatLogs:[],rejectedEvents:[],easterEggs:''};
+ const p={...pack,sourceSha256:sha,pilotMessages:[{sourceId:'a0',text:'first'},{sourceId:'a2',text:'last'}],quizLogs:[],casinoLogs:[],realChatLogs:[],rejectedEvents:[],easterEggs:[]};
+ const old=normal.plan(base,source2,p,sha).updated,foreign={id:'manual-note',text:'manual',images:[{id:'image'}]};
+ old.pilotMessages.splice(1,0,foreign);
+ const candidate={...p,pilotMessages:source2.rows.map(x=>({sourceId:x.id,text:x.text}))};
+ const b={...bundle,sources:[{sha256:sha,sourceText}],targets:[{beforeSha256:await api.digest(old),candidate,operations:[{field:'pilotMessages',sourceId:'a1',action:'add',old:null},{field:'pilotMessages',sourceId:'a3',action:'add',old:null}]}]};
+ const planned=await api.inspect([old],b),result=planned.targets[0].after.pilotMessages;
+ a.deepEqual(result.map(x=>x.predecessorSource?.id||x.id),['a0','manual-note','a1','a2','a3']);
+ a.deepEqual(result.filter(x=>old.pilotMessages.some(y=>y.id===x.id)),old.pilotMessages);
+ old.pilotMessages.reverse();b.targets[0].beforeSha256=await api.digest(old);
+ await a.rejects(api.inspect([old],b),/既有來源順序異常/);
+});
