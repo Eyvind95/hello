@@ -117,14 +117,15 @@ function inlineFoldEvidence(previous,current,fields,context){
   x.collapsed===collapsed(x.label)&&x.fullTextVerified===false&&x.removedSuffix===''&&x.rawLength===row.text.length;
  const unique=(row,label,at)=>Number.isInteger(at)&&at>0&&row.text.indexOf(label)===at&&
   row.text.indexOf(label,at+label.length)===-1&&row.text[at-1]==='\n'&&row.text[at+label.length]==='\n';
+ const proven=x=>x.inlineBasis==='interactive-dom-range'||(x.inlineBasis==='writing-block-aria-surface'&&Number.isInteger(x.inlineSurfaceOffset)&&x.inlineSurfaceOffset>=0&&Number.isInteger(x.inlineSurfaceLength)&&x.inlineSurfaceLength>x.label.length&&x.inlineSurfaceOffset+x.inlineSurfaceLength<=x.rawLength&&x.inlineSurfaceOffset+x.inlineSurfaceLength-x.label.length===x.inlineOffset&&typeof x.inlineControlTarget==='string'&&!!x.inlineControlTarget&&!/\s/.test(x.inlineControlTarget)&&x.inlineExpanded===!x.collapsed);
  const inherited=Array.isArray(context.source)&&/^[a-f0-9]{64}$/.test(context.sourceSha256||'')?context.source:[];
  for(const now of live){
-  if(!matches(now,current)||now.inlineBasis!=='interactive-dom-range'||!unique(current,now.label,now.inlineOffset))continue;
+  if(!matches(now,current)||!proven(now)||!unique(current,now.label,now.inlineOffset))continue;
   const at=now.inlineOffset;
   for(const old of [...inherited,...live]){
    if(!matches(old,previous)||old.collapsed===now.collapsed||!unique(previous,old.label,at))continue;
    const fromCheckpoint=inherited.includes(old);
-   if(old.inlineBasis!=='interactive-dom-range'&&!fromCheckpoint)continue;
+   if(!proven(old)&&(!fromCheckpoint||old.inlineBasis!==undefined))continue;
    if(old.inlineOffset!==undefined&&old.inlineOffset!==at)continue;
    if(previous.text.slice(0,at)+now.label+previous.text.slice(at+old.label.length)!==current.text)continue;
    return {type:'folded-assistant-inline-control-variant',messageId:previous.id,fields:['text'],previous,current,
