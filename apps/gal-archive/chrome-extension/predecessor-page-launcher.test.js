@@ -108,7 +108,7 @@ test('new toolbar and right launcher ignore old-version launcher and configurati
  f.nodes.set(oldButton.id,oldButton);f.nodes.set(oldPane.id,oldPane);
  await f.popup({type:'predecessor-popup-config',chat:'/c/first'});
  const launcher=f.nodes.get('ga-predecessor-page-launcher--testextension'),pane=f.nodes.get('ga-predecessor-page-config--testextension');
- assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/right:18px!important;left:auto!important/);assert.match(pane.style.cssText,/right:18px!important;left:auto!important/);
+ assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/left:50%!important;right:auto!important;transform:translateX\(-50%\)!important/);assert.match(pane.style.cssText,/left:50%!important;right:auto!important;transform:translateX\(-50%\)!important/);
  assert.match(launcher.textContent,/V0\.10\.48/);assert.equal(legacyClicks,0);
  assert.equal(f.nodes.get(oldButton.id),oldButton);assert.equal(f.nodes.get(oldPane.id),oldPane);
  f.route('/c/second');f.launch();assert.equal(f.nodes.has(pane.id),false);assert.equal(f.nodes.get(oldPane.id),oldPane);
@@ -236,7 +236,7 @@ test('navigation and supplement move to compact right-bottom panel during work, 
  const original=pane.style.cssText,originalFile=file.style.cssText;
  let seen=[];
  f.localHook(kind=>{
-  seen.push(kind);assert.match(pane.style.cssText,/right:12px!important;left:auto!important;bottom:156px/);
+  seen.push(kind);assert.match(pane.style.cssText,/left:50%!important;right:auto!important;transform:translateX\(-50%\)!important;bottom:156px/);
   assert.equal(mode.hidden,false);assert.equal(id.hidden,true);assert.match(file.style.cssText,/display:none!important/);
   assert.equal(get(kind==='rush'?'rush-stop':'prefix-stop').hidden,false);
   assert.equal(get(kind==='rush'?'prefix-stop':'rush-stop').hidden,true);

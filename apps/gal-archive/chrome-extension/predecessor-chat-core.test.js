@@ -1213,3 +1213,41 @@ test('actual current-position historyRun never jumps to bottom before extending 
   if(badTail)a.match(output.error,/內容或格式改變/);else a.ok(trace.includes('resume-deferred-tail-verified'));
  }
 });
+
+// WIND-001: numeric trace only, no private conversation data.
+test('midrange exact bottom reset replay and bounded attempts',()=>{
+ const state={resets:72,attempts:3};
+ const observed=[[13464,78675,79587,76241],[16810,85165,86077,79587],[14180,78662,79574,76241]];
+ for(let pass=0;pass<3;pass++){
+  const got=observed.map(v=>c.midrangeBottomEscape(state,...v,912));
+  a.deepEqual(got,[null,null,pass<2?78206:null]);
+ }
+ a.equal(state.midrangeEscapeAttempts,2);
+ c.clearRecoveryPolicy(state);a.equal(state.midrangeEscapeAttempts,undefined);a.equal(state.midrangeEscapeHits,undefined);
+});
+test('midrange fallback rejects normal reflow, partial jumps, premature breakthrough and other ranges',()=>{
+ for(const [state,args] of [
+  [{resets:80,attempts:2},[13464,78675,79587,76241,912]],
+  [{resets:4,attempts:3},[13464,78675,79587,76241,912]],
+  [{resets:80,attempts:3},[13464,16810,79587,76241,912]],
+  [{resets:80,attempts:3},[13464,78660,79587,76241,912]],
+  [{resets:80,attempts:3},[13464,78675,79587,14376,912]],
+  [{resets:80,attempts:3},[100,78675,79587,76241,912]],
+  [{resets:80,attempts:3},[13464,199088,200000,196000,912]]
+ ])for(let i=0;i<4;i++)a.equal(c.midrangeBottomEscape(state,...args),null);
+});
+for(const variant of ['held','snap','wrong-frontier','sample'])test('actual settle midrange staged recovery: '+variant,async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyRecoverScroll('),src.indexOf('  function historyGuard('));
+ let now=1000,reads=0;const trace=[],moves=[],rows=[r('anchor')],host={scrollTop:78675,scrollHeight:79587,clientHeight:912};
+ const b={mode:'predecessor-history',sample:variant==='sample'?10:0,host,rows,scrollStats:{scrollResets:0},stabilityIssues:[],breakthrough:{resets:72,attempts:3,midrangeEscapeHits:2,frontier:{id:variant==='wrong-frontier'?'other':'anchor',top:11364,height:73418}}};
+ const ctx={Date:{now:()=>now},pc:c,historyGuard:()=>{},historyStatus:()=>{},historyLoading:()=>false,historyRead:()=>{reads++;return rows},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>{moves.push(to);h.scrollTop=variant==='snap'&&moves.length===2?78675:to},sleep:async ms=>{now+=ms}};
+ vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+ const run=ctx.settle(b,{upward:true,target:13464,targetHeight:76241,allowBoost:false});
+ if(variant==='snap'){await a.rejects(run,e=>e.code==='HISTORY_RECOVERY_RETRY');a.equal(reads,0);a.equal(b.scrollStats.stagedReturnArrivals,undefined)}
+ else{a.deepEqual(await run,rows);a.ok(reads>0)}
+ if(variant==='held'||variant==='snap'){a.equal(moves[0],78219);a.equal(trace.find(x=>x.event==='bottom-escape-start').basis,'stalled-midrange-frontier');a.equal(trace.find(x=>x.event==='bottom-escape-return').stages,2)}
+ else a.equal(b.scrollStats.bottomEscapeAttempts,undefined);
+ if(variant==='held'){a.equal(b.scrollStats.stagedReturnArrivals,1);a.equal(b.scrollStats.stagedReturnLandings,2)}
+ a.equal(b.rows.length,1);a.ok(now<61000);
+});
