@@ -362,7 +362,7 @@ function recoveryPolicy(state){
  p.currentWindow++;
  return p;
 }
-function clearRecoveryPolicy(state){delete state.recoveryPolicy;delete state.recoveryAvoidFrontier;delete state.bottomEscapeHits;delete state.bottomEscapeAttempts;delete state.stagedEscapeBackoff}
+function clearRecoveryPolicy(state){delete state.recoveryPolicy;delete state.recoveryAvoidFrontier;delete state.bottomEscapeHits;delete state.bottomEscapeAttempts;delete state.stagedEscapeBackoff;delete state.midrangeEscapeHits;delete state.midrangeEscapeAttempts}
 function alternateRecoveryPolicy(state){delete state.recoveryPolicy;state.recoveryAvoidFrontier=true}
 // Only actual bottom landings after near-top targets count. The maneuver
 // is bounded per accepted progress interval and never proves continuity.
@@ -373,6 +373,20 @@ function bottomEscape(state,target,actual,height,viewport){
  state.bottomEscapeHits=(state.bottomEscapeHits||0)+1;
  if(state.bottomEscapeHits<3||state.resets<5||(state.bottomEscapeAttempts||0)>=(extended?4:2))return null;
  state.bottomEscapeHits=0;state.bottomEscapeAttempts=(state.bottomEscapeAttempts||0)+1;
+ return Math.max(0,max-Math.max(24,Math.floor(viewport*.5)));
+}
+// Only unexplained exact bottom landings after the ordinary breakthrough
+// budget is exhausted. The caller requires the verified full-scan frontier.
+function midrangeBottomEscape(state,target,actual,height,expectedHeight,viewport){
+ const max=scrollRange(height,viewport);
+ const predicted=rejoinTarget({top:target,height:expectedHeight},height,viewport);
+ const gap=max-Math.max(target,predicted??max);
+ if(![target,actual,height,expectedHeight,viewport].every(Number.isFinite)||viewport<=0||!(state.attempts>=3)||!(state.resets>=5)||target<=viewport*2||Math.abs(actual-max)>6||gap<=viewport*4||max-target>viewport*100){
+  state.midrangeEscapeHits=0;return null;
+ }
+ state.midrangeEscapeHits=(state.midrangeEscapeHits||0)+1;
+ if(state.midrangeEscapeHits<3||(state.midrangeEscapeAttempts||0)>=2)return null;
+ state.midrangeEscapeHits=0;state.midrangeEscapeAttempts=(state.midrangeEscapeAttempts||0)+1;
  return Math.max(0,max-Math.max(24,Math.floor(viewport*.5)));
 }
 // Very long instant returns may snap back to the bottom. Divide only
@@ -542,5 +556,5 @@ function anchorDiagnosticHint(target,indices,geo,previous={},maxScreens=24,repea
  return {top:clamp(destination),height,mode,direction,best,improved,restored,restore:mode==='restore-live-best',low,high};
 }
 
-return {anchorDiagnosticHint,anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,pendingTailProof,resumeWindow,resumeSeed,resumeFrontierSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {anchorDiagnosticHint,anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,pendingTailProof,resumeWindow,resumeSeed,resumeFrontierSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,midrangeBottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });
