@@ -87,6 +87,53 @@ function foldedTailEvidence(previous,current,fields,context){
   sourceFoldObservation:source||local,sourceSha256:source?context.sourceSha256:null,
   foldBasis:source?'checkpoint':'same-run',currentFoldObservation:expanded||null,fullTextVerified:false};
 }
+// Preserve old raw rows; require exact current DOM evidence and matching
+// prior observation. Never declare folded full text verified.
+function reverseFoldedTailEvidence(previous,current,fields,context){
+ if(!context||context.currentOverflow||!context.current||
+    previous.role!=='user'||current.role!=='user'||previous.id!==current.id||
+    fields.length!==1||fields[0]!=='text'||!same(previous.attachments,current.attachments)||
+    !previous.text.trim()||current.text!==previous.text+'\n…')return null;
+ const live=[...context.current.values()];
+ const matches=(x,row,collapsed)=>x.messageId===row.id&&x.collapsed===collapsed&&x.fullTextVerified===false&&
+  (collapsed?/^(?:顯示較多|顯示更多|顯示全部|展開全文|Show more|Read more)$/i:/^(?:顯示較少|Show less)$/i).test(x.label||'')&&
+  x.removedSuffix==='\n'+x.label&&x.rawLength===row.text.length+x.removedSuffix.length;
+ const source=Array.isArray(context.source)&&/^[a-f0-9]{64}$/.test(context.sourceSha256||'')?
+  context.source.find(x=>matches(x,previous,false)):null;
+ const old=source||live.find(x=>matches(x,previous,false)),now=live.find(x=>matches(x,current,true));
+ if(!old||!now)return null;
+ return {type:'folded-user-tail-variant',messageId:previous.id,fields:['text'],previous,current,
+  sourceFoldObservation:old,sourceSha256:source?context.sourceSha256:null,
+  foldBasis:source?'checkpoint':'same-run',currentFoldObservation:now,fullTextVerified:false,direction:'expanded-to-collapsed'};
+}
+function inlineFoldEvidence(previous,current,fields,context){
+ if(!context||context.currentOverflow||!context.current||
+    previous.role!=='assistant'||current.role!=='assistant'||previous.id!==current.id||
+    fields.length!==1||fields[0]!=='text'||!same(previous.attachments,current.attachments))return null;
+ const labels=/^(?:顯示較少|顯示較多|顯示更多|顯示全部|展開全文|Show less|Show more|Read more)$/i;
+ const collapsed=x=>/^(?:顯示較多|顯示更多|顯示全部|展開全文|Show more|Read more)$/i.test(x);
+ const live=[...context.current.values()];
+ const matches=(x,row)=>x.messageId===row.id&&labels.test(x.label||'')&&
+  x.collapsed===collapsed(x.label)&&x.fullTextVerified===false&&x.removedSuffix===''&&x.rawLength===row.text.length;
+ const unique=(row,label,at)=>Number.isInteger(at)&&at>0&&row.text.indexOf(label)===at&&
+  row.text.indexOf(label,at+label.length)===-1&&row.text[at-1]==='\n'&&row.text[at+label.length]==='\n';
+ const inherited=Array.isArray(context.source)&&/^[a-f0-9]{64}$/.test(context.sourceSha256||'')?context.source:[];
+ for(const now of live){
+  if(!matches(now,current)||now.inlineBasis!=='interactive-dom-range'||!unique(current,now.label,now.inlineOffset))continue;
+  const at=now.inlineOffset;
+  for(const old of [...inherited,...live]){
+   if(!matches(old,previous)||old.collapsed===now.collapsed||!unique(previous,old.label,at))continue;
+   const fromCheckpoint=inherited.includes(old);
+   if(old.inlineBasis!=='interactive-dom-range'&&!fromCheckpoint)continue;
+   if(old.inlineOffset!==undefined&&old.inlineOffset!==at)continue;
+   if(previous.text.slice(0,at)+now.label+previous.text.slice(at+old.label.length)!==current.text)continue;
+   return {type:'folded-assistant-inline-control-variant',messageId:previous.id,fields:['text'],previous,current,
+    sourceFoldObservation:old,sourceSha256:fromCheckpoint?context.sourceSha256:null,foldBasis:fromCheckpoint?'checkpoint':'same-run',
+    currentFoldObservation:now,inlineOffset:at,fullTextVerified:false};
+  }
+ }
+ return null;
+}
 // Only accepted windows in this run can bridge a temporary image URL change.
 const genericUserImages=a=>a.length>0&&a.every(x=>transientImage(x)&&x.label==='使用者附件')&&new Set(a.map(x=>x.url)).size===a.length;
 function rememberAttachmentObservations(map,saved,live){
@@ -101,7 +148,7 @@ function rememberAttachmentObservations(map,saved,live){
 function reconcileOverlap(previous,current,foldContext){
  const comparison=compareRow(previous,current);
  if(comparison.equal)return {...comparison,row:previous};
- const fold=foldedTailEvidence(previous,current,comparison.fields,foldContext);
+ const fold=foldedTailEvidence(previous,current,comparison.fields,foldContext)||reverseFoldedTailEvidence(previous,current,comparison.fields,foldContext)||inlineFoldEvidence(previous,current,comparison.fields,foldContext);
  if(fold)return {equal:true,fields:[],row:previous,changes:[fold]};
  if(codeRenderEquivalent(previous,current,comparison.fields))return {equal:true,fields:[],row:previous,changes:[{type:'code-render-label-variant',messageId:previous.id,fields:comparison.fields,previous,current}]};
  if(comparison.fields.length!==1||comparison.fields[0]!=='attachments'||previous.role!=='user'||!previous.text.trim())return comparison;

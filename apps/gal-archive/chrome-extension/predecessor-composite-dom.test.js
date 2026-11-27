@@ -424,3 +424,20 @@ test('generated image byte preservation keeps actual blob bytes, hash, and ignor
  const bad={};await api.inherit(bad,{rows:[row],evidence:{generatedImageAssets:[{...result[0],sha256:'0'.repeat(64)}]}});assert.equal(api.export(bad,[row]).length,0);
  assert.equal(api.export(b,[]).length,0);
 });
+
+test('interior fold offset needs real control and matching DOM anchors; literal/ambiguous labels are preserved',()=>{
+ const source=s.slice(s.indexOf('  function historyInlineFoldOffset('),s.indexOf('  function historyReadText('));
+ const raw='第一段正文。\n\n顯示更多\n\n第二段正文。',label='顯示更多';
+ let semantic=true,quoted=false,inside=true,left='第一段正文。',right='第二段正文。',count=0;
+ const control={matches:()=>semantic,closest:()=>quoted?{}:null};
+ const body={contains:()=>inside,childNodes:[{},control,{}]};
+ const document={createRange(){const value=count++%2===0?left:right;return {setStart(){},setEndBefore(){},setStartAfter(){},setEnd(){},toString:()=>value}}};
+ const f=vm.runInNewContext(source+';historyInlineFoldOffset',{document});
+ assert.equal(f(body,control,raw,label),raw.indexOf(label));
+ semantic=false;assert.equal(f(body,control,raw,label),null);semantic=true;
+ quoted=true;assert.equal(f(body,control,raw,label),null);quoted=false;
+ inside=false;assert.equal(f(body,control,raw,label),null);inside=true;
+ assert.equal(f(body,control,raw+'\n'+label,label),null);
+ assert.equal(f(body,control,'正文'+label+'後文',label),null);
+ left='錯誤前文';assert.equal(f(body,control,raw,label),null);
+});

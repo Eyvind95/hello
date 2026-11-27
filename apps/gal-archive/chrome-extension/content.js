@@ -1519,6 +1519,24 @@
 
   // The predecessor scanner is read-only except for scrolling. A collapsed
   // preview is often a CSS clip; never click it to change the live layout.
+  function historyInlineFoldOffset(body,control,raw,label){
+    if(body===control||!body.contains(control)||
+       !control.matches('button,[role="button"],[aria-expanded][tabindex]')||
+       control.closest('pre,code,blockquote'))return null;
+    const at=raw.indexOf(label);
+    if(at<=0||raw.indexOf(label,at+label.length)!==-1||
+       raw[at-1]!=='\n'||raw[at+label.length]!=='\n')return null;
+    const compact=x=>String(x).replace(/\s+/g,' ').trim();
+    try{
+      const before=document.createRange(),after=document.createRange();
+      before.setStart(body,0);before.setEndBefore(control);
+      after.setStartAfter(control);after.setEnd(body,body.childNodes.length);
+      const left=compact(before.toString()),right=compact(after.toString());
+      if(!left||!right||!compact(raw.slice(0,at)).endsWith(left.slice(-32))||
+         !compact(raw.slice(at+label.length)).startsWith(right.slice(0,32)))return null;
+      return at;
+    }catch(_){return null}
+  }
   function historyReadText(body,owner,id,onFold){
     const raw=body.innerText||'';
     const controls=[...new Set([...expandButtons(owner),...owner.querySelectorAll('button,[role="button"],a,[tabindex],[class*="cursor-pointer"],[class*="cursor-interaction"]')].filter(c=>historyVisible(c)&&/^(?:顯示較少|顯示較多|顯示更多|顯示全部|展開全文|Show less|Show more|Read more)$/i.test(String(c.innerText||c.textContent||c.getAttribute('aria-label')||'').trim())))];
@@ -1535,7 +1553,8 @@
           removedSuffix='\n'+label;text=text.slice(0,-removedSuffix.length);removed=true;
         }
       }
-      onFold({messageId:id,label,collapsed:EXPAND_LABEL.test(label),rawLength:raw.length,removedSuffix,fullTextVerified:false});
+      const inlineOffset=!removedSuffix&&id.startsWith('assistant|')?historyInlineFoldOffset(body,control,raw,label):null;
+      onFold({messageId:id,label,collapsed:EXPAND_LABEL.test(label),rawLength:raw.length,removedSuffix,fullTextVerified:false,...(inlineOffset!==null?{inlineOffset,inlineBasis:'interactive-dom-range'}:{})});
     }
     return text;
   }
@@ -2337,7 +2356,7 @@
   function historyAttachmentChange(b,change){
     if(b.mode==='predecessor-anchor'&&change.messageId!==b.anchorId)return;
     const key=JSON.stringify(change);
-    if(change.type==='folded-user-tail-variant'){
+    if(change.type==='folded-user-tail-variant'||change.type==='folded-assistant-inline-control-variant'){
       const list=b.foldTailVariants||(b.foldTailVariants=[]);
       if(list.some(x=>JSON.stringify(x)===key))return;
       if(list.length>=1000)throw Error('折疊尾端差異證據達容量上限，保全退出');
@@ -2368,7 +2387,7 @@
     if(b.attachmentChanges.some(x=>x.type==='image-reference-accepted-window-bridge-enriched'))warnings.push('圖片參照透過同批已核對視窗的暫時網址補接；保留三份參照，未驗證圖片位元組或原始附件數量。');
     if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
     if(b.renderChanges?.length)warnings.push('程式碼框介面標籤與文字節點拆分經逐字核對等價；原先收錄不改寫，兩份觀測保存在 codeRenderVariants，非伺服器原始格式。');
-    if(b.foldTailVariants?.length)warnings.push('玩家折疊尾端差異僅核對同ID及其他原文欄位；保留舊正文、兩份觀測及折疊證據，完整原文尚未驗證，請見 foldTailVariants。');
+    if(b.foldTailVariants?.length)warnings.push('玩家折疊尾端或 GPT 內嵌介面切換差異僅核對同ID及其他原文欄位；保留舊正文、兩份觀測及折疊證據，完整原文尚未驗證，請見 foldTailVariants。');
     if(b.resume)warnings.push('續掃沿用先前保全 '+b.resume.baseCount+' 則；本次僅驗證已重新經過的視窗，不代表舊正文全部重新收錄。'+(b.resume.currentPosition&&!b.resume.tailVerified?'本次尾端尚未重新核對，僅沿用舊底端證據；候選不可作完成檔。':'來源 SHA-256 及驗證狀態見 evidence.resume。'));
     for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
