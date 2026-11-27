@@ -1251,3 +1251,26 @@ for(const variant of ['held','snap','wrong-frontier','sample'])test('actual sett
  if(variant==='held'){a.equal(b.scrollStats.stagedReturnArrivals,1);a.equal(b.scrollStats.stagedReturnLandings,2)}
  a.equal(b.rows.length,1);a.ok(now<61000);
 });
+
+test('expanded user can fold again only with both exact observations',()=>{
+ const old=r('u','user','原文。'),live=r('u','user','原文。\n…');
+ const obs=(row,label,collapsed)=>({messageId:row.id,label,collapsed,rawLength:row.text.length+label.length+1,removedSuffix:'\n'+label,fullTextVerified:false});
+ const e=obs(old,'顯示較少',false),f=obs(live,'顯示較多',true),changes=[];
+ a.deepEqual(c.mergeUp([old],[live],x=>changes.push(x),{current:new Map([['e',e],['f',f]])}),[old]);
+ a.equal(changes[0].direction,'expanded-to-collapsed');
+ a.deepEqual(c.mergeUp([old],[live],null,{source:[e],sourceSha256:'a'.repeat(64),current:new Map([['f',f]])}),[old]);
+ a.throws(()=>c.mergeUp([old],[live],null,{current:new Map([['f',f]])}));
+ a.throws(()=>c.mergeUp([old],[{...live,text:live.text+'新文'}],null,{current:new Map([['e',e],['f',f]])}));
+});
+test('assistant interior control toggle is bound to observed offset, not global replacement',()=>{
+ const old=r('a','assistant','第一段原文。\n\n顯示更多\n\n第二段原文。'),live={...old,text:old.text.replace('顯示更多','顯示較少')};
+ const at=old.text.indexOf('顯示更多'),obs=(row,label,collapsed)=>({messageId:row.id,label,collapsed,rawLength:row.text.length,removedSuffix:'',fullTextVerified:false,inlineOffset:at,inlineBasis:'interactive-dom-range'});
+ const e=obs(old,'顯示更多',true),f=obs(live,'顯示較少',false),changes=[],current=new Map([['e',e],['f',f]]);
+ a.deepEqual(c.mergeUp([old],[live],x=>changes.push(x),{current}),[old]);
+ a.equal(changes[0].type,'folded-assistant-inline-control-variant');a.equal(changes[0].fullTextVerified,false);
+ const legacy={...e};delete legacy.inlineOffset;delete legacy.inlineBasis;
+ a.deepEqual(c.mergeUp([old],[live],null,{source:[legacy],sourceSha256:'b'.repeat(64),current:new Map([['f',f]])}),[old]);
+ a.deepEqual(c.mergeUp([live],[old],null,{current}),[live]);
+ for(const ctx of [{current:new Map([['f',f]])},{current:new Map([['e',e],['f',{...f,inlineOffset:at+1}]])},{current:new Map([['e',e],['f',{...f,inlineBasis:null}]])},{current,currentOverflow:1},{source:[legacy],current:new Map([['f',f]])}])a.throws(()=>c.mergeUp([old],[live],null,ctx));
+ for(const row of [{...live,text:live.text+'額外正文'},{...live,structure:[{tag:'strong',text:'第二段'}]},{...live,text:live.text.replace('第一段','另一段')},{...live,attachments:[{kind:'link',label:'x',url:'https://example.com'}]}])a.throws(()=>c.mergeUp([old],[row],null,{current}));
+});
