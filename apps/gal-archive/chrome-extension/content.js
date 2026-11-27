@@ -2666,11 +2666,13 @@
     // A long mounted reply may span many viewports. Only an exact overlapping
     // accepted window, a bounded forward landing and a NEW high-water mark
     // can extend the idle deadline. Geometry never proves row completeness.
-    // Keep a separate hard cap per unchanged row frontier; no endless retry.
-    const idleLimit=180000,frontierLimit=900000;
-    const progress=b.branchDownProgress={idleLimitMs:idleLimit,frontierLimitMs:frontierLimit,verifiedForwardWindows:0,verifiedForwardPixels:0,uncreditedWindows:0,highWaterTop:anchorTop,lastGrowthAt:new Date(lastGrowth).toISOString(),lastProgressAt:new Date(lastProgress).toISOString()};
-    const deadline=()=>Math.min(lastProgress+idleLimit,lastGrowth+frontierLimit);
-    const guardProgress=()=>{const now=Date.now();if(now-lastGrowth>=frontierLimit)throw Error('同一尾端15分鐘無新增連續訊息');if(now-lastProgress>=idleLimit)throw Error('180秒無新增連續訊息、已驗證向下位移或底端穩定證據')};
+    // Bound an unchanged frontier by the physical range observed when it
+    // was first accepted, not elapsed wall time. A 5000-line reply can take
+    // longer than 15 minutes to traverse. Height growth cannot mint credit.
+    const idleLimit=180000,rangeEnd=()=>Math.max(0,host.scrollHeight-host.clientHeight);
+    const progress=b.branchDownProgress={idleLimitMs:idleLimit,budgetBasis:'fixed-range-at-verified-row-growth',frontierStartTop:anchorTop,frontierRangeEnd:rangeEnd(),verifiedForwardWindows:0,verifiedForwardPixels:0,uncreditedWindows:0,budgetRejectedWindows:0,highWaterTop:anchorTop,lastGrowthAt:new Date(lastGrowth).toISOString(),lastProgressAt:new Date(lastProgress).toISOString()};
+    const deadline=()=>lastProgress+idleLimit;
+    const guardProgress=()=>{if(Date.now()-lastProgress>=idleLimit)throw Error('180秒無新增連續訊息、已驗證向下位移或底端穩定證據')};
     const move=(target,kind)=>{b.scrollStats.attempts=(b.scrollStats.attempts||0)+1;historyTrace(b,'branch-down-scroll',{kind,target,from:host.scrollTop});historyScroll(host,target)};
     const accept=async (current,movement=null)=>{
       historyGuard(b);
@@ -2683,16 +2685,19 @@
       const rows=historyPrefixMerge(b.rows,next);
       if(rows.some(pc.isComposite))throw Error('分支含未核對複合訊息');
       const grew=rows.length>b.rows.length,actual=host.scrollTop,actualHeight=host.scrollHeight,tail=b.rows.at(-1)?.id;
-      if(grew){lastGrowth=lastProgress=Date.now();progress.highWaterTop=actual;progress.lastGrowthAt=new Date(lastGrowth).toISOString();progress.lastProgressAt=progress.lastGrowthAt}
+      if(grew){lastGrowth=lastProgress=Date.now();progress.highWaterTop=actual;progress.frontierStartTop=actual;progress.frontierRangeEnd=rangeEnd();progress.lastGrowthAt=new Date(lastGrowth).toISOString();progress.lastProgressAt=progress.lastGrowthAt}
       else if(movement){
         b.scrollStats.noGrowthWindows=(b.scrollStats.noGrowthWindows||0)+1;
         const {from,pre,oldHeight,target,viewport,previousTail}=movement;
         // A stale/older window, jump, resize/reflow, restore, or oscillation
         // is not evidence of traversing a long reply. Exact merge above is mandatory.
-        const credited=previousTail===tail&&next.at(-1)?.id===tail&&Math.abs(pre-from)<=2&&actualHeight===oldHeight&&host.clientHeight===viewport&&from>=progress.highWaterTop-2&&actual>progress.highWaterTop+2&&actual<=target+8&&actual-from<=viewport*.9+8;
+        const withinBudget=actual<=progress.frontierRangeEnd+2;
+        const eligible=previousTail===tail&&next.at(-1)?.id===tail&&Math.abs(pre-from)<=2&&actualHeight===oldHeight&&host.clientHeight===viewport&&from>=progress.highWaterTop-2&&actual>progress.highWaterTop+2&&actual<=target+8&&actual-from<=viewport*.9+8;
+        const credited=eligible&&withinBudget;
+        if(eligible&&!withinBudget)progress.budgetRejectedWindows++;
         if(credited){progress.verifiedForwardWindows++;progress.verifiedForwardPixels+=actual-progress.highWaterTop;progress.highWaterTop=actual;lastProgress=Date.now();progress.lastProgressAt=new Date(lastProgress).toISOString()}
         else progress.uncreditedWindows++;
-        historyTrace(b,'branch-down-no-new-rows',{from,target,actual,oldHeight,actualHeight,tail,credited,highWaterTop:progress.highWaterTop,msSinceGrowth:Date.now()-lastGrowth,msSinceProgress:Date.now()-lastProgress});
+        historyTrace(b,'branch-down-no-new-rows',{from,target,actual,oldHeight,actualHeight,tail,credited,withinBudget,frontierRangeEnd:progress.frontierRangeEnd,highWaterTop:progress.highWaterTop,msSinceGrowth:Date.now()-lastGrowth,msSinceProgress:Date.now()-lastProgress});
       }
       b.rows=rows;acceptedLive=next;anchorTop=actual;anchorHeight=actualHeight;b.windows++;
       historyHostObservation(b);
