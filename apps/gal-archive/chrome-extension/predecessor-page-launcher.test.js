@@ -214,6 +214,19 @@ test('prefix supplement current-top guard and evidence-only export, no scanning 
  assert.equal(reads,0);assert.equal(moves.length,0);assert.equal(downloads.at(-1).evidence.openingVerified,false);
 });
 
+test('prefix evidence survives runtime invalidation with cached manifest and periodic partial exports',async()=>{
+ const pc0=require('./predecessor-chat-core'),r=id=>({id,role:'user',text:id,identityBasis:'turn-key',sourceCreatedAt:null,structure:[],attachments:[]});
+ const initial=Array.from({length:52},(_,i)=>r('user|turn:p'+i)),saved=[r('user|turn:base'),r('user|turn:tail')];
+ let now=0,invalid=false,manifestCalls=0,downloads=[],host={scrollTop:0,scrollHeight:3000,clientHeight:600,isConnected:true};
+ const ctx={pc:{...pc0,validateCheckpoint:()=>saved,sourceId:()=> 'test'},state:{},location:{origin:'https://chatgpt.com'},document:{title:'test',getElementById:()=>null,createElement:()=>({dataset:{},isConnected:true,remove(){}}),body:{append(){}}},chrome:{runtime:{id:'test',getManifest:()=>{manifestCalls++;if(invalid)throw Error('Extension context invalidated.');return {version:'0.10.73'}}}},crypto:{randomUUID:()=> 'run'},valid:()=>{if(invalid)throw Error('Extension context invalidated.');return true},path:()=>'/c/test',isGenerating:()=>false,HISTORY_PANEL:'scan',historyHost:()=>host,historyTopNavigationSnapshot:()=>({match:true,firstId:initial[0].id,found:0}),historyLoading:()=>false,historyNativeFailure:()=>false,historyRead:()=>initial,historyScroll:(h,to)=>{h.scrollTop=to;invalid=true},historyAtBottom:()=>false,sleep:async ms=>{now+=ms},Date:class extends Date{static now(){return now}},historyDownload:x=>{downloads.push(JSON.parse(JSON.stringify(x)));return 'evidence-'+x.status+'.json'}};
+ const block=source.slice(source.indexOf('  function historyPrefixMerge'),source.indexOf('  async function historyAnchorCapture'));vm.createContext(ctx);vm.runInContext(block+';globalThis.supplement=historyPrefixSupplement',ctx);
+ const result=await ctx.supplement('','','test', {hash:'a'.repeat(64),data:{runId:'base'}},()=>{},()=>false,true);
+ assert.equal(result.ok,false);assert.equal(manifestCalls,1);assert.equal(downloads.length,2);
+ const [partial,failed]=downloads;assert.equal(partial.status,'partial');assert.equal(partial.evidence.checkpoint,true);assert.equal(failed.status,'failed');assert.match(failed.error,/Extension context invalidated/);
+ for(const out of downloads){assert.equal(out.count,52);assert.equal(out.scannerVersion,'0.10.73');assert.equal(out.canonical,false);assert.equal(out.importable,false);assert.equal(out.continuity,false);assert.equal(out.evidence.openingVerified,false);assert.equal(out.candidateRows,null);assert.equal(out.base.count,2);}
+ assert.equal(failed.evidence.checkpointExports[0].count,52);assert.equal(failed.evidence.checkpointExports[0].triggered,true);assert.equal(ctx.state.bulk,null);
+});
+
 test('navigation and supplement move to compact left-bottom panel during work, then restore right-side settings and inputs',async()=>{
  const f=fixture();f.launch();f.nodes.get('ga-predecessor-page-launcher--testextension').onclick();
  const get=n=>f.nodes.get('ga-predecessor-page-'+n+'--testextension'),pane=get('config'),mode=get('mode'),id=get('top-id'),file=get('prefix-file');
