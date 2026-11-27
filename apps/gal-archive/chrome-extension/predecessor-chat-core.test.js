@@ -1052,6 +1052,30 @@ test('native quoted code UI label is repaired in text and structure, never seman
  for(const options of [{markers:false},{copy:false},{extra:true},{repeat:true},{gap:'純文字\n'+blank+'\nreal prose'},{codeValue:''}]){
   const f=blankBlock(options);a.equal(ctx.fix(f.body,{},'id',f.body.innerText),f.body.innerText);
  }
+ // Actual fallback topology, reduced to non-private generic text:
+ // response body > selection wrapper > multi-child Markdown root >
+ // single-child DIV > native code block > source > code > span.
+ function nestedBlank({rendered=true,rootMarker=true,identity=true,extraSelection=false,extraBody=false,quoted=false,actualProse=false}={}){
+  const code=el('code',{},[el('span',{},[text(blank)])],rendered?blank:'');
+  const header=el('div',{'data-markdown-copy':'exclude',contenteditable:'false'},[el('div',{},[text('純文字')]),el('div',{},[el('div',{'data-code-block-controls':'true'},[el('button',{'aria-label':'複製代碼'},[])])])],rendered?'純文字':'');
+  const source=el('div',{'data-code-block-source':'true'},[code]);
+  const wrapper=el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,source]);
+  const group=el('div',{},[wrapper]),middle=quoted?el('blockquote',{},[group]):group;
+  const gap=actualProse?'純文字\n'+blank+'\nreal prose':rendered?'純文字\n'+blank:'';
+  const raw='intro\n\nbefore\n\n'+(gap?gap+'\n\n':'')+'after\n\nend';
+  const root=el('div',rootMarker?{'data-markdown-text-style':'assistant-message'}:{},[el('p',{},[text('intro')]),el('p',{},[text('before')]),middle,el('p',{},[text('after')]),el('p',{},[text('end')])]);
+  const selection=el('div',{'data-chatgpt-selection-message-id':identity?'native-test':'wrong-id'},[root,...(extraSelection?[el('p',{},[text('extra')])]:[])]);
+  const body=el('div',{'data-response-body':'native-test'},[selection,...(extraBody?[el('p',{},[text('extra')])]:[])],raw);
+  return {body,code};
+ }
+ for(const rendered of [true,false]){
+  const f=nestedBlank({rendered}),proofs=[];
+  a.equal(ctx.fix(f.body,{},'native-test',f.body.innerText,x=>proofs.push(x)),'intro\n\nbefore\n\nafter\n\nend');
+  a.equal(ctx.structure(f.code,f.body),blank);a.equal(proofs.length,rendered?1:0);
+ }
+ for(const options of [{rootMarker:false},{identity:false},{extraSelection:true},{extraBody:true},{quoted:true},{actualProse:true}]){
+  const f=nestedBlank(options);a.equal(ctx.fix(f.body,{},'native-test',f.body.innerText),f.body.innerText);
+ }
  // The comparator itself is unchanged; a row-only difference remains fatal.
  const normal={...r('anchor','assistant',expected),identityBasis:'native-dom-id',structure:[{tag:'blockquote',text:value},{tag:'code',text:value}]};
  const changed={...normal,text:f.body.innerText,structure:[{tag:'blockquote',text:label+'\n'+value},{tag:'code',text:value}]};

@@ -1660,11 +1660,21 @@
     if(copies.length!==1)return null;
     let group=wrapper;
     while(group.parentElement!==body&&group.parentElement?.tagName==='DIV'&&only(group.parentElement,[group]))group=group.parentElement;
+    // Native fallback body contains a selection wrapper and a Markdown root.
+    // Accept that exact, identity-bound sole-child path, not arbitrary DIVs.
+    const root=group.parentElement;
+    if(root!==body){
+      const selection=root?.parentElement,nativeId=body.getAttribute('data-response-body');
+      if(!nativeId||root?.getAttribute('data-markdown-text-style')!=='assistant-message'||
+         root.tagName!=='DIV'||selection?.tagName!=='DIV'||selection.parentElement!==body||
+         selection.getAttribute('data-chatgpt-selection-message-id')!==nativeId||
+         !only(selection,[root])||!only(body,[selection])||!historyVisible(root)||!historyVisible(selection))return null;
+    }
     // No inline, quoted, hidden, or ambiguous semantic ancestor.
-    if(group.parentElement!==body||!historyVisible(group))return null;
+    if(!historyVisible(group))return null;
     const before=group.previousElementSibling,after=group.nextElementSibling;
     if(!before||!after||!before.matches('p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table,pre')||!after.matches('p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table,pre')||!historyVisible(before)||!historyVisible(after))return null;
-    const children=[...body.childNodes],at=children.indexOf(group),left=children.indexOf(before),right=children.indexOf(after);
+    const children=[...root.childNodes],at=children.indexOf(group),left=children.indexOf(before),right=children.indexOf(after);
     if(left<0||at<=left||right<=at||children.slice(left+1,at).some(n=>!whitespace(n))||children.slice(at+1,right).some(n=>!whitespace(n)))return null;
     return {before,after,label,value};
   }
