@@ -2062,7 +2062,7 @@
     if(state.recoveryAvoidFrontier)destination=target; // preserve the alternative probe's coordinate; overlap remains mandatory
     const originalDestination=destination;
     let escape=policy?pc.bottomEscape(state,target,actual,currentHeight,b.host.clientHeight):null;
-    const verifiedId=b.resume&&!b.resume.frontierVerified?b.resumeRows?.[b.resume.minIndex]?.id:b.rows[0]?.id;
+    const verifiedId=b.resume&&!b.resume.frontierVerified?b.resumeRows?.[b.resume.minIndex]?.id:b.rows?.[0]?.id;
     const midrange=escape===null&&policy&&b.mode==='predecessor-history'&&!b.sample&&!b.isolated&&verifiedId&&state.frontier?.id===verifiedId;
     let midrangeEscape=false;
     if(midrange){
