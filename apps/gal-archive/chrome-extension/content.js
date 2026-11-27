@@ -1641,7 +1641,34 @@
     return proof&&proof.quote===node&&raw===proof.label+'\n'+proof.value?proof.value:raw;
   }
 
-  function historyAssistantCodeText(body,owner,id,raw){
+  // Whitespace-only fenced code is sometimes omitted from body.innerText,
+  // sometimes rendered with its native action-bar label. Keep the exact
+  // whitespace in structure.code; normalize only a proven native block gap.
+  function historyNativeBlankCodeBlock(code,body,value){
+    if(!value||! /^[ \t\r\n\u3000]+$/.test(value)||String(code.textContent||'')!==value)return null;
+    const source=code.parentElement,wrapper=source?.parentElement;
+    if(source?.getAttribute?.('data-code-block-source')!=='true'||wrapper?.getAttribute?.('data-code-block')!=='true'||
+       wrapper.getAttribute('data-markdown-copy')!=='code-block'||!body.contains(wrapper))return null;
+    const whitespace=n=>n.nodeType===8||(n.nodeType===3&&!String(n.nodeValue||'').trim());
+    const only=(parent,children)=>{const actual=[...parent.childNodes].filter(n=>!whitespace(n));return actual.length===children.length&&actual.every((n,i)=>n===children[i])};
+    if(!only(source,[code])||wrapper.querySelectorAll('code').length!==1)return null;
+    const headers=[...wrapper.children].filter(n=>n.getAttribute('data-markdown-copy')==='exclude'&&n.getAttribute('contenteditable')==='false');
+    if(headers.length!==1||!only(wrapper,[headers[0],source]))return null;
+    const header=headers[0],label=String(header.textContent||'').trim();
+    if(!/^(純文字|程式碼)$/.test(label)||header.querySelectorAll('code,pre,p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table').length)return null;
+    const copies=[...header.querySelectorAll('button,[role="button"]')].filter(n=>/複製|copy/i.test([n.getAttribute('aria-label'),n.getAttribute('title'),n.getAttribute('data-testid')].filter(Boolean).join(' ')));
+    if(copies.length!==1)return null;
+    let group=wrapper;
+    while(group.parentElement!==body&&group.parentElement?.tagName==='DIV'&&only(group.parentElement,[group]))group=group.parentElement;
+    // No inline, quoted, hidden, or ambiguous semantic ancestor.
+    if(group.parentElement!==body||!historyVisible(group))return null;
+    const before=group.previousElementSibling,after=group.nextElementSibling;
+    if(!before||!after||!before.matches('p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table,pre')||!after.matches('p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table,pre')||!historyVisible(before)||!historyVisible(after))return null;
+    const children=[...body.childNodes],at=children.indexOf(group),left=children.indexOf(before),right=children.indexOf(after);
+    if(left<0||at<=left||right<=at||children.slice(left+1,at).some(n=>!whitespace(n))||children.slice(at+1,right).some(n=>!whitespace(n)))return null;
+    return {before,after,label,value};
+  }
+  function historyAssistantCodeText(body,owner,id,raw,onBlank=()=>{}){
     const codes=[...body.querySelectorAll('code')].filter(historyVisible);
     let text=raw;
     // Match an entire line-delimited semantic anchor, not an incidental
@@ -1693,7 +1720,22 @@
     const evidence=[];
     for(const code of codes){
       const value=code.innerText||code.textContent||'';
-      if(!value.trim())continue;
+      if(!value.trim()){
+        const proof=historyNativeBlankCodeBlock(code,body,value);
+        if(proof){
+          const a=proof.before.innerText||'',b=proof.after.innerText||'';
+          const left=a.trim()?positions(text,a):null,right=b.trim()?positions(text,b):null;
+          if(left?.length===1&&right?.length===1){
+            const start=left[0]+a.length,end=right[0],gap=text.slice(start,end);
+            const allowed=['\n\n','\n\n'+proof.label+'\n'+value+'\n\n','\n\n'+value+'\n\n'];
+            if(end>=start&&allowed.includes(gap)&&gap!=='\n\n'){
+              onBlank({offset:start,previousGap:gap,normalizedGap:'\n\n',codeText:value,label:proof.label,before:a,after:b});
+              text=text.slice(0,start)+'\n\n'+text.slice(end);
+            }
+          }
+        }
+        continue;
+      }
       let repaired=false,conflicting=false;
       for(let group=code.parentElement;group&&group!==body;group=group.parentElement){
         if(group.querySelectorAll('code').length!==1)break;
@@ -1780,14 +1822,15 @@
       if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
       const stable=composite?pc.compositeId(composite.compositeNative.turnId,composite.compositeNative.ids):role+'|'+(native?'message:'+native:'turn:'+turn);
       let text=historyReadText(body,identityHint?body:owner,stable,onFold);
-      if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text);
+      const blankCodeNormalizations=[];
+      if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text,x=>{if(blankCodeNormalizations.length<8)blankCodeNormalizations.push(x)});
       const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:role==='assistant'?historyAssistantStructureText(n,body):n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
       const row={id:stable,role,text,identityBasis:composite?'unresolved-native-composite':native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments,...(composite||{})};
       const sameOwner=owners.get(owner)||[];
       if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
-      const item={row,el,owner,body};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
+      const item={row,el,owner,body,blankCodeNormalizations};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
     };
     // Read the entire marked response before the legacy selector can pick
     // a nested PDF citation. Keep native message identity, not the user turn ID.
@@ -2546,16 +2589,17 @@
     const match=!!first&&isUser&&(!expectedId||firstId===expectedId)&&names.every(n=>labels.has(n));
     return {firstId,isUser,match,found:names.filter(n=>labels.has(n)).length,owner:first};
   }
-  async function historyRushTop(expectedId,files,report,cancel=()=>false){
+  async function historyRushTop(expectedId,files,report,cancel=()=>false,borrowed=null){
     expectedId=String(expectedId||'').trim();
     const names=[...new Set(String(files||'').split(/[,，;；\n]/).map(x=>x.trim()).filter(Boolean))];
     if(expectedId&&!/^user\|turn:[a-zA-Z0-9_-]+$/.test(expectedId))return {ok:false,error:'開頭 ID 必須是 user|turn:…'};
     if(names.length>20||names.some(n=>n.length>200))return {ok:false,error:'附件條件過多或過長'};
-    if(!valid()||state.bulk||state.scanning||state.activeSends||state.timeBusy||state.enabled||isGenerating()||document.getElementById(HISTORY_PANEL))return {ok:false,error:'請先停止本聊天的監看、生成或其他操作，並關閉前一批已保全面板'};
-    const b={mode:'predecessor-top-navigation',chat:path(),rows:[]};
+    if(!valid()||state.scanning||state.activeSends||state.timeBusy||state.enabled||isGenerating()||
+       (borrowed?(state.bulk!==borrowed.b||!borrowed.lock?.isConnected||borrowed.b.chat!==path()):(state.bulk||document.getElementById(HISTORY_PANEL))))return {ok:false,error:'請先停止本聊天的監看、生成或其他操作，並關閉前一批已保全面板'};
+    const b=borrowed?.b||{mode:'predecessor-top-navigation',chat:path(),rows:[]};
     // Shared panel ID prevents another installed version starting a scan on this page.
-    const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
-    state.bulk=b;document.body.append(lock);
+    const lock=borrowed?.lock||document.createElement('section');
+    if(!borrowed){lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;state.bulk=b;document.body.append(lock)}
     let stableSince=null,lastSignature='',lastProgress=Date.now(),best=Infinity,lastHost=null,lastFirst='',lastHeight=0;
     const known=!!expectedId||names.length>0;
     const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==b.chat||isGenerating()||!lock.isConnected)throw Error('導航已停止或聊天狀態已變更');};
@@ -2591,7 +2635,7 @@
         if(!loading&&(!eligible||top>6))historyScroll(h,0);
         await sleep(600);
       }
-    }finally{if(state.bulk===b)state.bulk=null;lock.remove()}
+    }finally{if(!borrowed){if(state.bulk===b)state.bulk=null;lock.remove()}}
   }
 
   async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null){
@@ -2725,12 +2769,13 @@
     for(const entry of entries){
       const row=entry.row,old=known.get(row.id);
       if(!old||row.role!=='assistant'||row.identityBasis!=='native-dom-id')continue;
-      const cmp=pc.compareRow(old,row),kind=cmp.equal?'matching':'conflicting';
-      if(cmp.equal&&!observations.some(x=>x.messageId===row.id&&x.kind==='conflicting'))continue;
+      const cmp=pc.compareRow(old,row),normalizations=entry.blankCodeNormalizations||[];
+      const kind=!cmp.equal?'conflicting':normalizations.length?'blank-code-normalized':'matching';
+      if(kind==='matching'&&!observations.some(x=>x.messageId===row.id&&x.kind==='conflicting'))continue;
       if(observations.length>=4||observations.some(x=>x.messageId===row.id&&x.kind===kind))continue;
       let rawDom;
       try{rawDom=historyAnchorDomSnapshot(entry)}catch(e){rawDom={status:'unavailable',reason:String(e.message||e).slice(0,300)}}
-      observations.push({messageId:row.id,kind,fields:cmp.fields,row,rawDom});
+      observations.push({messageId:row.id,kind,fields:cmp.fields,row,rawDom,...(normalizations.length?{blankCodeNormalizations:normalizations}:{})});
     }
   }
   async function historyPrefixSupplement(expectedId,files,requestedTitle,checkpoint,report,cancel=()=>false,observedOnly=false,prior=null){
@@ -2745,11 +2790,11 @@
     const saved=pc.validateCheckpoint(checkpoint.data,source,true);
     if(prior&&!observedOnly)throw Error('頂端取證續掃僅允許候選模式');
     const previous=prior?historyPrefixResumeRows(prior,checkpoint,saved,source):null;
-    const b={mode:'predecessor-prefix-supplement',chat};
+    const b={mode:'predecessor-prefix-supplement',chat,rows:[]};
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
     const startedAt=new Date().toISOString(),runId=crypto.randomUUID();
-    let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],openingTrace=[],recoveryTrace=[],conflictDom=[],resumeNavigation=[],lastConflict=null,host=null,anchorRows=null;
+    let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],openingTrace=[],recoveryTrace=[],conflictDom=[],resumeNavigation=[],lastConflict=null,host=null,anchorRows=null,replay=false,replayMax=-1;
     const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==chat||isGenerating()||!lock.isConnected)throw Error('補掃已停止或聊天狀態變更');};
     const readStable=async(timeout=60000)=>{
       const known=new Map([...saved,...rows].map(r=>[r.id,r]));
@@ -2794,7 +2839,30 @@
           await attempt('saved-geometry-hint',target);
           if(current)break;
         }
-        if(!current)throw Error('頂端取證快速復原未核對尾端，已保全，未進行長距離搜尋：'+why);
+        if(!current){
+          // Reloaded pages no longer contain the old history. Load it using
+          // the native top navigation, under this same cancellation/scan lock.
+          b.rows=rows;
+          report('舊位置未掛載；自動重新載入已知頂端，不重建原保全');
+          const nav=await historyRushTop(observedFirstId,'',report,cancel,{b,lock});
+          if(!nav.ok||!nav.verified)throw Error(nav.error||'未確認原取證開頭');
+          guard();host=historyHost();if(!host)throw Error('找不到捲動容器');
+          resumeNavigation.push({kind:'native-rehydrate-top',verified:true,top:host.scrollTop,height:host.scrollHeight,firstId:observedFirstId});
+          for(const target of historyPrefixRestoreHints(prior,previous,host)){
+            await attempt('rehydrated-geometry-hint',target);if(current)break;
+          }
+          if(!current){
+            // Return to known top and walk only the already-preserved prefix.
+            // It is not new evidence or a new candidate until the tail matches.
+            historyScroll(host,0);await sleep(600);guard();
+            const initial=await readStable();
+            if(host.scrollTop>6||initial[0]?.id!==observedFirstId)throw Error('重載後原取證開頭未核對');
+            historyPrefixMerge(previous,initial);
+            if(initial.some(r=>!previous.some(old=>old.id===r.id)))throw Error('重載開頭視窗超出原取證，未核對續掃尾端');
+            current=initial;replay=true;replayMax=previous.findIndex(r=>r.id===initial.at(-1)?.id);
+            resumeNavigation.push({kind:'replay-known-prefix',verified:true,knownIndex:replayMax,top:host.scrollTop,height:host.scrollHeight});
+          }
+        }
         anchorRows=current;windows++;
       }else{
       if(host.scrollTop>6)throw Error('請先使用直衝到頂，或手動抵達真正開頭');
@@ -2819,6 +2887,14 @@
       let lastProgress=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0;
       const recordRecovery=(event,details={})=>{recoveryTrace.push({event,at:new Date().toISOString(),top:host.scrollTop,height:host.scrollHeight,count:rows.length,...details});if(recoveryTrace.length>200)recoveryTrace.shift()};
       const acceptWindow=(live,next)=>{
+        if(replay){
+          const tail=previous.slice(-2),at=live.findIndex(r=>r.id===tail[0].id);
+          const verified=at>=0&&live[at+1]?.id===tail[1].id&&tail.every((r,i)=>pc.compareRow(r,live[at+i]).equal);
+          if(next.length>rows.length&&!verified)throw Error('重載續掃未核對原取證最後兩則，禁止新增');
+          const max=Math.max(-1,...live.map(r=>previous.findIndex(p=>p.id===r.id)));
+          if(max>replayMax){lastProgress=Date.now();replayMax=max}
+          if(verified){replay=false;lastProgress=Date.now();resumeNavigation.push({kind:'replay-tail-verified',verified:true,tailIds:tail.map(r=>r.id),top:host.scrollTop,height:host.scrollHeight})}
+        }
         if(next.length>rows.length){lastProgress=Date.now();rows=next}
         anchorTop=host.scrollTop;anchorHeight=host.scrollHeight;anchorRows=live;windows++;
         if(trace.length<500)trace.push({top:anchorTop,height:anchorHeight,count:rows.length});
@@ -2859,7 +2935,7 @@
         if(Date.now()-lastProgress>=180000)throw Error('180秒無新增連續訊息');
         if(rows.length>5000)throw Error('局部補掃超過5000則安全上限');
         const target=Math.min(Math.max(0,host.scrollHeight-host.clientHeight),anchorTop+step);
-        report('已保全 '+rows.length+' 個顯示單元｜原保全 '+saved.length+'｜向下尋找連續重疊');
+        report(replay?'重載已保全前綴｜核對 '+(replayMax+1)+'/'+previous.length+'｜不重複新增':'已保全 '+rows.length+' 個顯示單元｜原保全 '+saved.length+'｜向下尋找連續重疊');
         historyScroll(host,target);await sleep(350);
         let live=null;
         try{
@@ -2877,7 +2953,7 @@
     }catch(e){error=String(e.message||e);status=cancel()?'cancelled':'failed'}
     finally{if(state.bulk===b)state.bulk=null;lock.remove()}
     const candidateRows=join?join.candidate.map((r,index)=>({...r,index})):null;
-    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,openingTrace,recoveryTrace,conflictDom,resumeNavigation,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
+    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,openingTrace,recoveryTrace,conflictDom,resumeNavigation,nativeHistoryRetry:b.nativeHistoryRetry||null,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
     const filename=historyDownload(data);
     return {ok:!!join,message:join?(observedOnly?'候選頂端重疊核對成功（真開頭未驗證）｜新增 ':'局部重疊核對成功｜新增 ')+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
   }
@@ -3210,7 +3286,7 @@
       for(const [value,label] of [['file','選擇原保全 JSON（建議）'],['pinned','已記住的原保全'],['candidate','已記住的候選保全']]){const option=document.createElement('option');option.value=value;option.textContent=label;prefixSlot.append(option)}
       prefixSlot.value='file';
       const prefixFile=document.createElement('input');prefixFile.id=historyPageId('prefix-file');prefixFile.type='file';prefixFile.accept='.json,application/json';prefixFile.style.cssText=input.style.cssText;
-      const prefixPriorLabel=document.createElement('label');prefixPriorLabel.textContent='續掃已保存的頂端取證（選填；先定位原取證最後兩則）';
+      const prefixPriorLabel=document.createElement('label');prefixPriorLabel.textContent='續掃已保存的頂端取證（選填；自動核對尾端，必要時重新載入歷史）';
       const prefixPrior=document.createElement('input');prefixPrior.id=historyPageId('prefix-prior');prefixPrior.type='file';prefixPrior.accept='.json,application/json';prefixPrior.style.cssText=input.style.cssText;
       const prefixPriorHash=document.createElement('input');prefixPriorHash.id=historyPageId('prefix-prior-hash');prefixPriorHash.type='text';prefixPriorHash.maxLength=64;prefixPriorHash.placeholder='頂端取證原件 SHA-256（續掃必填）';prefixPriorHash.style.cssText=input.style.cssText;
       let prefixObservedMode=false;

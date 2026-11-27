@@ -148,6 +148,10 @@ test('navigation loop refuses a false top with wrong anchor, can cancel, and nev
  assert.equal(unknown.verified,false);assert.match(unknown.message,/尚未確認/);
  now=0;stop=true;await assert.rejects(ctx.rush('','',()=>{},()=>stop),/導航已停止/);
  assert.equal(state.bulk,null);
+ const shared={chat:'/c/test',rows:[]},lock={isConnected:true,remove(){throw Error('borrowed lock must not be removed')}};state.bulk=shared;now=0;stop=false;
+ const borrowed=await ctx.rush('user|turn:abc','a.pdf',()=>{},()=>stop,{b:shared,lock});assert.equal(borrowed.verified,true);assert.equal(state.bulk,shared);
+ now=0;stop=true;await assert.rejects(ctx.rush('user|turn:abc','',()=>{},()=>stop,{b:shared,lock}),/導航已停止/);assert.equal(state.bulk,shared);
+ state.bulk=null;
  assert.doesNotMatch(block,/\b(?:historyRead|historyDownload|historyRemember|historyPayload)\s*\(/);
 });
 test('rush handles native history retry before accepting top, never scrolls while retrying, and rejects invalid observed first',async()=>{
@@ -379,4 +383,19 @@ test('prefix bottom snap restores a verified original window before advancing, r
  assert.equal((await run()).ok,true);let d=downloads.at(-1);assert.equal(d.evidence.added,3);assert.equal(d.evidence.matched,2);assert.equal(d.rows.length,5);assert.equal(moves[1],0);assert.ok(moves[2]<moves[0]);assert.ok(d.evidence.recoveryTrace.some(x=>x.event==='restore-verified'));assert.ok(d.evidence.recoveryTrace.some(x=>x.event==='forward-conflict'&&x.top===4080275));assert.equal(d.importable,false);
  for(const m of ['persistent','wrong']){reset(m);assert.equal((await run()).ok,false);d=downloads.at(-1);assert.match(d.error,/無法復原已核對向下視窗/);assert.equal(d.count,2);assert.equal(d.candidateRows,null);assert.equal(d.evidence.recoveryTrace.filter(x=>x.event==='restore-rejected').length,3);assert.equal(d.evidence.recoveryTrace.some(x=>x.event==='restore-verified'),false);assert.equal(ctx.state.bulk,null)}
  reset('cancel');assert.equal((await run()).ok,false);assert.equal(downloads.at(-1).status,'cancelled');assert.equal(downloads.at(-1).count,2);assert.equal(ctx.state.bulk,null);
+});
+
+test('prefix resume after reload automatically rehydrates native history and verifies old tail before extending',async()=>{
+ const pc0=require('./predecessor-chat-core'),row=i=>({id:'user|turn:test-'+i,role:'user',text:'row '+i,identityBasis:'turn-key',sourceCreatedAt:null,structure:[],attachments:[]});
+ const all=Array.from({length:10},(_,i)=>row(i)),saved=all.slice(6,9),previous=all.slice(0,4),downloads=[];
+ let now=0,at=8,stop=false,reloaded=0,mode='ok',moves=0;
+ const host={scrollTop:900,scrollHeight:1500,clientHeight:600,isConnected:true};
+ const ctx={pc:{...pc0,validateCheckpoint:()=>saved,sourceId:()=> 'test'},state:{},location:{origin:'https://chatgpt.com'},document:{title:'測試前輩',getElementById:()=>null,createElement:()=>({dataset:{},isConnected:true,remove(){}}),body:{append(){}}},chrome:{runtime:{id:'test',getManifest:()=>({version:'0.10.82'})}},crypto:{randomUUID:()=> 'test-run'},valid:()=>true,path:()=>'/c/test',isGenerating:()=>false,HISTORY_PANEL:'scan',historyHost:()=>host,historyTopNavigationSnapshot:()=>({match:true,firstId:all[0].id,found:0}),historyLoading:()=>false,historyNativeFailure:()=>false,historyRead:()=>all.slice(at,at+2),historyScroll:(h,to)=>{moves++;h.scrollTop=to;at=to===0?0:Math.min(8,at+1)},historyAtBottom:()=>false,sleep:async ms=>{now+=ms},Date:class extends Date{static now(){return now}},historyDownload:x=>{downloads.push(x);return 'evidence.json'},historyRushTop:async(id,files,report,cancel,borrowed)=>{reloaded++;assert.equal(id,previous[0].id);assert.equal(borrowed.b,ctx.state.bulk);if(mode==='fail')return {ok:false,error:'native blocked'};host.scrollHeight=100000;host.scrollTop=0;at=0;return {ok:true,verified:true}}};
+ const block=source.slice(source.indexOf('  function historyPrefixMerge'),source.indexOf('  async function historyAnchorCapture'));vm.createContext(ctx);vm.runInContext(block+';globalThis.supplement=historyPrefixSupplement',ctx);
+ const cp={hash:'a'.repeat(64),data:{runId:'base'}},sourceUrl='https://chatgpt.com/c/test';
+ const prior={hash:'b'.repeat(64),data:{format:'gal-predecessor-prefix-supplement-evidence',version:1,status:'failed',canonical:false,importable:false,continuity:false,chatId:'test',sourceUrl,runId:'prefix',candidateRows:null,count:4,rows:previous.map((r,index)=>({...r,index})),base:{runId:'base',sha256:cp.hash,count:saved.length,firstId:saved[0].id},evidence:{observedTopVerified:true,originalCheckpointUnchanged:true,observedFirstId:previous[0].id,trace:[]}}};
+ const run=()=>ctx.supplement('','','測試前輩',cp,()=>{},()=>stop,true,prior);
+ const original=JSON.stringify(prior);
+ assert.equal((await run()).ok,true);let d=downloads.at(-1);assert.equal(reloaded,1);assert.equal(d.evidence.matched,2);assert.equal(d.evidence.added,6);assert.ok(d.evidence.resumeNavigation.some(x=>x.kind==='replay-tail-verified'));assert.equal(JSON.stringify(prior),original);
+ now=0;at=8;host.scrollTop=900;host.scrollHeight=1500;mode='fail';assert.equal((await run()).ok,false);d=downloads.at(-1);assert.equal(d.count,4);assert.equal(d.candidateRows,null);assert.match(d.error,/native blocked/);assert.equal(ctx.state.bulk,null);
 });
