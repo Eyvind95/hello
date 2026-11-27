@@ -21,7 +21,7 @@ class HTTPTests(unittest.TestCase):
                       "role":"user","text":"exact test text", "attachments":[]}]}
             raw = g.encode(source)
             Path(tmp, "source.json").write_bytes(raw)
-            with TestClient(g.http_app(), base_url="http://127.0.0.1:18766") as c:
+            with TestClient(g.http_app(), base_url="http://127.0.0.1:18767") as c:
                 def rpc(method, params, headers=HEAD, ident=1):
                     return c.post("/mcp", headers=headers, json={
                         "jsonrpc":"2.0","id":ident,"method":method,"params":params})
