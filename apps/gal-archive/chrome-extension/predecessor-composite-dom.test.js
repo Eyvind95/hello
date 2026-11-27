@@ -298,7 +298,11 @@ test('formal scan uses the entire V0.10.41 geometric sequence without identity d
  const run=s.slice(s.indexOf('  async function historyRun(b){'),s.indexOf('  async function historyBegin('));
  assert.ok(run.includes('const plans=[{ratio:1},{ratio:1,rebase:false,alternate:true},{ratio:.5},{ratio:.25},{ratio:.125},{ratio:0}'));
  assert.ok(run.includes('...[1,-1,2,-2,4,-4].map'));
- assert.ok(!/historyRejoinByIdentity|identityGraceUntil|identityRejoinAttempted/.test(run));
+ // The explicitly selected current-position bootstrap is separate; all ordinary geometric probes remain unchanged.
+ const normal=run.slice(run.indexOf("historyStatus(b,'定位聊天最底端')"));
+ assert.ok(!/historyRejoinByIdentity|identityGraceUntil|identityRejoinAttempted/.test(normal));
+ assert.equal((run.match(/historyRejoinByIdentity\(b,deadline\)/g)||[]).length,1);
+ assert.match(run,/if\(b\.resume\?\.currentPosition\)\{[\s\S]*?historyRejoinByIdentity\(b,deadline\)[\s\S]*?\}else\{/);
  assert.ok(run.includes('pc.mergeUp(b.rows,rows'));
  assert.ok(run.includes('pc.resumeWindow(b.resumeRows,rows)'));
  assert.ok(run.includes('pc.fullCoverageGate'));

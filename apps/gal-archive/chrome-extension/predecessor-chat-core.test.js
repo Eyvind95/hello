@@ -1140,3 +1140,51 @@ test('prefix overlap captures conflict DOM immediately, retains matching variant
  a.equal(calls.length,3);a.equal(observations[0].kind,'conflicting');a.equal(observations[1].kind,'matching');a.equal(observations[0].rawDom.status,'captured');
  a.throws(()=>ctx.merge([old],[changed]));a.equal(old.text,'before\n\nafter');
 });
+
+test('current position seed strictly checks contiguous first pair and all overlap',()=>{
+ const saved=[r('3'),r('4','assistant'),r('5'),r('6','assistant')];
+ a.deepEqual(c.resumeFrontierSeed(saved,[r('1'),r('2','assistant'),...saved.slice(0,2)]).rows.map(x=>x.id),['1','2','3','4','5','6']);
+ for(const x of [[r('1'),saved[0]],[saved[0],saved[2]],[saved[1],saved[2]],[saved[0],{...saved[1],text:'changed'}],[saved[0],saved[1],r('other')]])a.throws(()=>c.resumeFrontierSeed(saved,x));
+});
+test('deferred-tail checkpoint can be resumed but never classified or marked complete before actual tail read',()=>{
+ const rows=[r('1'),r('2','assistant'),r('3'),r('4','assistant')].map((x,index)=>({...x,index}));
+ const cp={...raw,status:'failed',scannerVersion:'0.10.84',count:4,rows,error:'pending tail',evidence:{...raw.evidence,bottomReached:false,bottomStableMs:0,continuity:false,firstId:'1',lastId:'4',windows:4,knownMinimum:2,hostProof:{maxRange:500,observedMovement:true},resume:{currentPosition:true,baseCount:2,sourceRunId:'old',sourceSha256:'a'.repeat(64),sourceFirstId:'3',sourceLastId:'4',frontierVerified:true,tailVerified:false,minIndex:0,checkedWindows:1,frontierPair:['3','4'],inheritedBottom:{runId:'root',sha256:'b'.repeat(64),lastId:'4',bottomStableMs:3100,maxRange:500,observedMovement:true}}}};
+ a.equal(c.validateCheckpoint(cp,raw.sourceUrl).length,4);a.equal(c.pendingTailProof(cp),true);
+ a.throws(()=>c.validateRaw({...cp,status:'completed',error:null,evidence:{...cp.evidence,continuity:true}}));
+ for(const patch of [{frontierPair:['2','3']},{sourceLastId:'wrong'},{frontierVerified:false},{inheritedBottom:{...cp.evidence.resume.inheritedBottom,bottomStableMs:100}},{sourceSha256:'bad'}])a.throws(()=>c.validateCheckpoint({...cp,evidence:{...cp.evidence,resume:{...cp.evidence.resume,...patch}}},raw.sourceUrl));
+ a.throws(()=>c.validateCheckpoint({...cp,evidence:{...cp.evidence,hostProof:{maxRange:0,observedMovement:false}}},raw.sourceUrl));
+ a.throws(()=>c.validateCheckpoint(cp,'https://chatgpt.com/c/other'));
+});
+test('current-position resume is explicit, before first bottom scroll, and completion awaits fresh tail',()=>{
+ const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'content.js'),'utf8');
+ const run=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  // Navigation only:'));
+ a.ok(run.indexOf("if(b.resume?.currentPosition)")<run.indexOf('historyScroll(b.host,b.host.scrollHeight)'));
+ a.match(run,/pc\.resumeFrontierSeed\(b\.resumeRows,live/);
+ a.match(run,/if\(b\.resume\?\.currentPosition\)await historyVerifyDeferredTail\(b\);\s*status='completed'/);
+ const verify=src.slice(src.indexOf('  async function historyVerifyDeferredTail'),src.indexOf('  async function historyRun(b)'));
+ a.match(verify,/pc\.edgeProof\(rows,b\.rows/);a.match(verify,/pc\.resumeSeed\(b\.rows,rows/);
+ a.ok(verify.indexOf('b.resume.tailVerified=true')>verify.indexOf('seed.rows.length!==b.rows.length'));
+});
+
+test('actual current-position historyRun never jumps to bottom before extending and proving top; changed tail stays pending',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  function historyIdentityWindow('),src.indexOf('  async function historyRejoinByIdentity('))+src.slice(src.indexOf('  async function historyVerifyDeferredTail('),src.indexOf('  async function historyBegin('));
+ for(const badTail of [false,true]){
+  const saved=[r('3'),r('4','assistant'),r('5'),r('6','assistant')],prefix=[r('1'),r('2','assistant')];
+  let now=1000,output,firstRead=true;const trace=[],positions=[];
+  const host={scrollTop:500,scrollHeight:2100,clientHeight:100};
+  const b={host,rows:[],sample:0,knownMinimum:4,resumeRows:saved,resume:{currentPosition:true,baseCount:4,tailVerified:false,frontierVerified:false,minIndex:4,checkedWindows:0,sourceSha256:'a'.repeat(64)},hostProof:{maxRange:2000,observedMovement:true},bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{},chat:'/c/abc'};
+  const ctx={Date:class extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}},pc:{...c,validateRaw:()=>{}},state:{bulk:b},chrome:{storage:{local:{set:async()=>{}}}},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>{h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to));positions.push({top:h.scrollTop,topVerified:b.topReached})},historySettled:async(b,o)=>{
+   now+=1000;if(firstRead){firstRead=false;a.equal(host.scrollTop,500);return [...prefix,...saved.slice(0,2)]}
+   if(o.upward){host.scrollTop=0;return [...prefix,...saved.slice(0,2)]}
+   return badTail?[saved[2],{...saved[3],text:'changed tail'}]:saved.slice(-2);
+  },historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:(b,event)=>trace.push(event),sleep:async ms=>{now+=ms},historyRemember:async()=>{},historyPayload:(b,status,error)=>({status,error,count:b.rows.length,rows:b.rows,evidence:{resume:b.resume,bottomReached:b.bottomReached,topReached:b.topReached}}),historyDownload:d=>{output=d;return 'resume.json'}};
+  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+  a.equal(output.count,6);a.deepEqual(Array.from(output.rows,x=>x.id),['1','2','3','4','5','6']);
+  a.ok(positions.length&&positions.every(x=>x.top!==2000||x.topVerified));
+  a.ok(trace.includes('resume-current-frontier-verified'));a.equal(output.evidence.resume.frontierVerified,true);
+  a.equal(output.status,badTail?'failed':'completed',output.error);a.equal(output.evidence.resume.tailVerified,!badTail);a.equal(output.evidence.bottomReached,!badTail);
+  if(badTail)a.match(output.error,/內容或格式改變/);else a.ok(trace.includes('resume-deferred-tail-verified'));
+ }
+});
