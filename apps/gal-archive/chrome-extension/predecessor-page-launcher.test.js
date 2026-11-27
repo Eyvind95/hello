@@ -108,7 +108,7 @@ test('new toolbar and right launcher ignore old-version launcher and configurati
  f.nodes.set(oldButton.id,oldButton);f.nodes.set(oldPane.id,oldPane);
  await f.popup({type:'predecessor-popup-config',chat:'/c/first'});
  const launcher=f.nodes.get('ga-predecessor-page-launcher--testextension'),pane=f.nodes.get('ga-predecessor-page-config--testextension');
- assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/left:18px/);assert.match(pane.style.cssText,/left:18px/);
+ assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/left:auto!important;right:18px!important/);assert.match(pane.style.cssText,/left:auto!important;right:18px!important/);
  assert.match(launcher.textContent,/V0\.10\.48/);assert.equal(legacyClicks,0);
  assert.equal(f.nodes.get(oldButton.id),oldButton);assert.equal(f.nodes.get(oldPane.id),oldPane);
  f.route('/c/second');f.launch();assert.equal(f.nodes.has(pane.id),false);assert.equal(f.nodes.get(oldPane.id),oldPane);
@@ -214,14 +214,14 @@ test('prefix supplement current-top guard and evidence-only export, no scanning 
  assert.equal(reads,0);assert.equal(moves.length,0);assert.equal(downloads.at(-1).evidence.openingVerified,false);
 });
 
-test('navigation and supplement move to compact left-bottom panel during work, then restore right-side settings and inputs',async()=>{
+test('navigation and supplement move to compact right-bottom panel during work, then restore right-side settings and inputs',async()=>{
  const f=fixture();f.launch();f.nodes.get('ga-predecessor-page-launcher--testextension').onclick();
  const get=n=>f.nodes.get('ga-predecessor-page-'+n+'--testextension'),pane=get('config'),mode=get('mode'),id=get('top-id'),file=get('prefix-file');
  pane.isConnected=true;id.value='user|turn:abc';f.saved({data:{count:987},hash:'a'.repeat(64)});get('prefix-slot').value='candidate';
  const original=pane.style.cssText,originalFile=file.style.cssText;
  let seen=[];
  f.localHook(kind=>{
-  seen.push(kind);assert.match(pane.style.cssText,/left:12px!important;right:auto!important;bottom:156px/);
+  seen.push(kind);assert.match(pane.style.cssText,/left:auto!important;right:12px!important;bottom:156px/);
   assert.equal(mode.hidden,false);assert.equal(id.hidden,true);assert.match(file.style.cssText,/display:none!important/);
   assert.equal(get(kind==='rush'?'rush-stop':'prefix-stop').hidden,false);
   assert.equal(get(kind==='rush'?'prefix-stop':'rush-stop').hidden,true);
