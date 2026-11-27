@@ -1922,7 +1922,7 @@
     stats.trace.push({at:new Date().toISOString(),event:'verified-progress-reset',kind,count:b.rows.length,minIndex:b.resume?.minIndex??null,previousAttempts:stats.sinceProgress,totalAttempts:stats.attempts});
     stats.sinceProgress=0;stats.progressResets++;
   }
-  async function historyNativeRetry(b,until,{guard=()=>historyGuard(b),report=msg=>historyStatus(b,msg)}={}){
+  async function historyNativeRetry(b,until,{guard=()=>historyGuard(b),report=msg=>historyStatus(b,msg),maxAttempts=3}={}){
     let detected=historyNativeFailure(b.host);
     if(!detected)return false;
     const stats=b.nativeHistoryRetry||(b.nativeHistoryRetry={attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]});
@@ -1931,12 +1931,13 @@
       guard();
       if(Date.now()>=until){record('deadline');throw Error('原生歷史載入失敗：已達無進展期限')}
       if(!detected.button){record('blocked',{reason:detected.reason});throw Error('原生歷史載入失敗：無法唯一確認可用重試按鈕')}
-      if(stats.sinceProgress>=3){record('exhausted');throw Error('原生歷史載入失敗：未取得核對進展，已達3次重試上限')}
+      if(stats.sinceProgress>=maxAttempts){record('exhausted');throw Error('原生歷史載入失敗：未取得核對進展，已達'+maxAttempts+'次重試上限')}
       const attempt=++stats.attempts,localAttempt=++stats.sinceProgress;
-      report('原生歷史載入失敗，重試 '+localAttempt+'/3（累計 '+attempt+'次）');
+      report('原生歷史載入失敗，重試 '+localAttempt+(Number.isFinite(maxAttempts)?'/'+maxAttempts:'（不限次數，受無進展期限保護）')+'（累計 '+attempt+'次）');
       // Give native loading more time on repeated failure; preserve the
-      // original three-click local cap and the absolute progress deadline.
-      const observationMs=[2000,5000,10000][localAttempt-1],clickedAt=Date.now();
+      // caller's retry policy and the absolute progress deadline. Later
+      // attempts retain a ten-second observation window, never a busy loop.
+      const observationMs=[2000,5000,10000][Math.min(2,localAttempt-1)],clickedAt=Date.now();
       record('click',{attempt,localAttempt,observationMs,...historyNativeGeometry(b.host,detected)});
       detected.button.click();
       // No scroll during observation. Absence must hold for 500ms; a
@@ -2576,7 +2577,7 @@
         b.host=h;
         if(historyNativeFailure(h)){
           stableSince=null;lastSignature='';
-          await historyNativeRetry(b,lastProgress+180000,{guard:()=>{guard();if(!h.isConnected||historyHost()!==h)throw Error('導航捲動容器已變更');},report});
+          await historyNativeRetry(b,lastProgress+180000,{guard:()=>{guard();if(!h.isConnected||historyHost()!==h)throw Error('導航捲動容器已變更');},report,maxAttempts:Infinity});
           continue;
         }
         const signature=[top<=6,height,x.firstId,x.isUser,x.match,x.found].join('|');
