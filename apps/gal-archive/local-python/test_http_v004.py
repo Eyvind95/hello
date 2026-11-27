@@ -17,7 +17,7 @@ class HTTPTests(unittest.TestCase):
             "GALARCHIVE_ROOT": tmp, "GALARCHIVE_HTTP_KEY": KEY
         }):
             source = {"format":"gal-predecessor-chat", "version":1, "status":"completed",
-                      "chatId":"test-http", "count":1, "rows":[{"id":"u0","index":0,
+                      "chatId":"test-http", "runId":"test-http-run", "count":1, "rows":[{"id":"u0","index":0,
                       "role":"user","text":"exact test text", "attachments":[]}]}
             raw = g.encode(source)
             Path(tmp, "source.json").write_bytes(raw)
