@@ -1,0 +1,15 @@
+name: Gal Archive Read-only Snapshot Tests
+on:
+  pull_request:
+    paths:
+      - 'apps/gal-archive-readonly/**'
+      - '.github/workflows/gal-archive-readonly.yml'
+jobs:
+  readonly:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test apps/gal-archive-readonly/snapshot.test.js
