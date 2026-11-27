@@ -179,3 +179,59 @@ test('full coverage flags omitted approved target, unknown/duplicate ledger and 
 test('full coverage requires independent ledger, cannot infer from the candidate',()=>{
  const {input}=fullFixture();delete input.review.coverage;assert.throws(()=>api.preview(input),/獨立逐來源清冊/);
 });
+
+test('FLARE-FINAL-003 005: cycle identity is worldKey plus cycleId, title is independently checked',()=>{
+ const {input,t}=fixture(),alias={...target,cycleTitle:'另一標題'};
+ input.review.targets.push(alias);assert.throws(()=>api.preview(input),/輪迴核定重複或標題衝突/);
+ input.review.targets.pop();input.review.targets.push({...target});assert.throws(()=>api.preview(input),/輪迴核定重複/);
+ input.review.targets.pop();t.target=alias;assert.throws(()=>api.preview(input),/輪迴標題/);
+ t.target=target;input.candidate.targets.push({...t,target:alias});assert.throws(()=>api.preview(input),/重複輪迴/);
+ input.candidate.targets.pop();const other={...target,worldKey:'different-world'};
+ input.review.targets.push(other);input.candidate.targets.push({...t,target:other});
+ assert.equal(api.preview(input).targets.length,2);
+});
+function placeSemantic(section,kind,which,context,approved){
+ const {u,a,t,input,entry,frag,approve}=fixture();
+ const r=which==='assistant'?a:u;
+ const phrase=which==='assistant'?'前段。':which==='ai'?'AI劇情':which==='prefix'?'前置😀':which==='cross'?'玩家劇情\n他：\nAI劇情':'！BUG 設定修正';
+ const f=frag(r,phrase,kind),e=entry(r,[f]);t[section]=[e];
+ if(section==='rejectedEvents'){e.decision={...entry(u,[]),...frag(u,'前置😀','event-evidence')};delete e.decision.fragments;}
+ if(section==='easterEggs'){e.title='測試彩蛋';e.status='uncertain';}
+ if(['rejectedEvents','easterEggs'].includes(section))input.review.fragments.push(approvalKey(api.entryReviewKey(target,manager,section,e)));
+ if(approved)approve(section,e,f,context);
+ return {input,t,e,f};
+}
+for(const section of api.SECTIONS){
+ test('FLARE-FINAL-003 006: '+section+' enforces both player semantic kinds independently of tab',()=>{
+  for(const kind of ['player-correction','player-annotation']){
+   for(const [which,context,pattern] of [['ai','gal-ai-output',/Gal AI/],['assistant','source',/非玩家來源/],['cross','gal-player-input',/跨越劇情標記/]]){
+    const {input}=placeSemantic(section,kind,which,context,true);assert.throws(()=>api.preview(input),pattern);
+   }
+   for(const [which,context] of [['player','gal-player-input'],['prefix','prefix']]){
+    const {input,e,f}=placeSemantic(section,kind,which,context,false);
+    assert.throws(()=>api.preview(input),/逐片段語義核定/);
+    input.review.fragments.push(approvalKey(api.reviewKey(target,manager,section,e,f,context)));
+    assert.equal(api.preview(input).targets[0][section][0].fragments[0].context,context);
+   }
+  }
+ });
+ test('FLARE-FINAL-003 006: '+section+' post-marker player commentary requires scoped review',()=>{
+  const {input,e,f}=placeSemantic(section,'commentary','player','reviewed-outside-story',false);
+  assert.throws(()=>api.preview(input),/逐片段語義核定/);
+  input.review.fragments.push(approvalKey(api.reviewKey(target,manager,section,e,f,'reviewed-outside-story')));
+  assert.equal(api.preview(input).targets[0][section][0].fragments[0].context,'reviewed-outside-story');
+ });
+}
+test('player semantic approval cannot transfer between tabs, and raw quotation remains distinct',()=>{
+ const {input,t,e,f}=placeSemantic('realChatLogs','player-correction','player','gal-player-input',true);
+ assert.equal(api.preview(input).counts.fragments,1);
+ t.realChatLogs=[];t.quizLogs=[e];assert.throws(()=>api.preview(input),/逐片段語義核定/);
+ const q=placeSemantic('realChatLogs','quotation','ai','source',false);
+ assert.equal(api.preview(q.input).targets[0].realChatLogs[0].fragments[0].kind,'quotation');
+});
+test('embedded Gal AI text cannot masquerade as player rejection decision',()=>{
+ const {u,a,t,input,entry,frag}=fixture(),e=entry(a,[frag(a,'前段。','event-evidence')]);
+ e.decision={...entry(u,[]),...frag(u,'AI劇情','event-evidence')};delete e.decision.fragments;t.rejectedEvents=[e];
+ input.review.fragments.push(approvalKey(api.entryReviewKey(target,manager,'rejectedEvents',e)));
+ assert.throws(()=>api.preview(input),/Gal AI.*拒絕決定/);
+});
