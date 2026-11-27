@@ -2305,16 +2305,18 @@
     const bar=document.createElement('div');bar.style.cssText='display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0';
     const compact=document.createElement('button'),move=document.createElement('button');
     historyPanelButton(compact,'#33435f');historyPanelButton(move,'#33435f');
-    let small=window.innerWidth<=640,side='left';
+    let small=window.innerWidth<=640,side='center';
     const render=()=>{
-      pane.style.left=side==='left'?'12px':'auto';pane.style.right=side==='right'?'12px':'auto';
-      pane.style.width=small?'max-content':'min(320px,calc(100vw - 24px))';
+      pane.style.left=side==='center'?'50%':side==='left'?'12px':'auto';
+      pane.style.right=side==='right'?'12px':'auto';
+      pane.style.transform=side==='center'?'translateX(-50%)':'none';
+      pane.style.width=small?'min(280px,calc(100vw - 24px))':'min(320px,calc(100vw - 24px))';
       b.info.hidden=small;compact.textContent=small?'展開詳情':'縮小面板';
       compact.setAttribute('aria-expanded',String(!small));
-      move.textContent=side==='left'?'移到右下':'移到左下';
+      move.textContent=side==='center'?'移到右下':side==='right'?'移到左下':'移到中間';
     };
     compact.onclick=()=>{small=!small;render()};
-    move.onclick=()=>{side=side==='left'?'right':'left';render()};
+    move.onclick=()=>{side=side==='center'?'right':side==='right'?'left':'center';render()};
     b.showPanelDetails=()=>{small=false;render()};
     bar.append(compact,move);render();return bar;
   }
