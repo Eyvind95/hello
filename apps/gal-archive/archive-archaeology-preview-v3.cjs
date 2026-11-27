@@ -70,6 +70,7 @@ function binding(target){
  check(obj(target)&&['worldKey','cycleId','cycleTitle'].every(k=>str(target[k])),'缺少完整輪迴綁定');
  return [target.worldKey,target.cycleId,target.cycleTitle];
 }
+function cycleKey(target){return key(...binding(target).slice(0,2))}
 function reviewKey(target,manager,section,ref,f,context){
  return key(...binding(target),manager,section,ref.sha256,ref.chatId,ref.sourceId,ref.sourceIndex,f.start,f.end,f.kind,context);
 }
@@ -107,8 +108,12 @@ function preview({originals,review,candidate,requireFullCoverage=false}){
  }
  check(approved.size>0,'未核定任何來源');
  const sourceOrder=new Map(review.sources.map((a,i)=>[a.sha256,i]));
- const targets=new Set(review.targets.map(t=>key(...binding(t))));
- check(targets.size===review.targets.length,'輪迴核定重複');
+ const targets=new Map();
+ for(const t of review.targets){
+  const tk=cycleKey(t);
+  check(!targets.has(tk),'輪迴核定重複或標題衝突（worldKey + cycleId）');
+  targets.set(tk,t.cycleTitle);
+ }
  const reviews=new Map();
  for(const a of review.fragments){
   check(obj(a)&&str(a.key)&&str(a.reviewId)&&str(a.reason)&&!reviews.has(a.key),'片段審查清冊異常');reviews.set(a.key,a);
@@ -142,7 +147,9 @@ function preview({originals,review,candidate,requireFullCoverage=false}){
  }
  const seenTargets=new Set(),out=[];
  for(const t of candidate.targets){
-  const tk=key(...binding(t.target));check(targets.has(tk)&&!seenTargets.has(tk),'未核定或重複輪迴');seenTargets.add(tk);
+  const tk=cycleKey(t.target);
+  check(targets.has(tk)&&!seenTargets.has(tk),'未核定或重複輪迴');
+  check(targets.get(tk)===t.target.cycleTitle,'輪迴標題與核定不符');seenTargets.add(tk);
   check(SECTIONS.every(s=>Array.isArray(t[s])),'必須提供六分頁');
   const result={target:t.target};
   for(const section of SECTIONS){
@@ -158,15 +165,19 @@ function preview({originals,review,candidate,requireFullCoverage=false}){
      check(span.start>=end,'片段重疊或逆序');end=span.end;
      check(['commentary','player-correction','player-annotation','quotation','event-evidence','quiz-evidence','casino-evidence','real-chat','egg-evidence'].includes(f.kind),'不允許的片段類型');
      let context='source';
-     if(section==='pilotMessages'&&r.role==='user'){
-      const block=roleBlock(r,f);
-      check(['commentary','player-correction','player-annotation'].includes(f.kind),'玩家劇情不得匯入副駕駛');
-      if(f.kind==='player-correction'||f.kind==='player-annotation'){
-       check(block!=='gal-ai-output','Gal AI 輸出不可冒充玩家修正');context=block;
-      }else context=block==='prefix'?'prefix':'reviewed-outside-story';
-     }else if(f.kind==='player-correction'||f.kind==='player-annotation')check(r.role==='user','非玩家來源不能標為玩家修正');
-     if(section==='pilotMessages'&&r.role==='user'&&(context!=='prefix'||f.kind!=='commentary')){
+     const playerKind=f.kind==='player-correction'||f.kind==='player-annotation';
+     if(section==='pilotMessages'&&r.role==='user')check(['commentary','player-correction','player-annotation'].includes(f.kind),'玩家劇情不得匯入副駕駛');
+     // Semantic claims are governed by their kind and original speaker, not destination tab.
+     // Evidence-only kinds may quote story text; they do not assert player authorship.
+     if(playerKind){
+      check(r.role==='user','非玩家來源不能標為玩家修正或註記');
+      context=roleBlock(r,f);
+      check(context!=='gal-ai-output','Gal AI 輸出不可冒充玩家修正或註記');
       requireReview(reviewKey(t.target,candidate.manager,section,entry,f,context),'需要獨立逐片段語義核定');
+     }else if(f.kind==='commentary'&&r.role==='user'){
+      const block=roleBlock(r,f);
+      context=block==='prefix'?'prefix':'reviewed-outside-story';
+      if(context!=='prefix')requireReview(reviewKey(t.target,candidate.manager,section,entry,f,context),'需要獨立逐片段語義核定');
      }
      return {...span,kind:f.kind,context};
     });
@@ -174,6 +185,7 @@ function preview({originals,review,candidate,requireFullCoverage=false}){
     if(section==='rejectedEvents'){
      const d=entry.decision,{r:dr}=locate(d);check(dr.role==='user','拒絕決定不是玩家原文');
      const ds=exactSpan(dr,d);
+     check(roleBlock(dr,ds)!=='gal-ai-output','Gal AI 輸出不可冒充玩家拒絕決定');
      check(entry.title===undefined||(str(entry.title)&&r.text.includes(entry.title)),'拒絕事件標題不在原文');
      requireReview(entryReviewKey(t.target,candidate.manager,section,entry),'缺少獨立拒絕關聯核定（正文與決定必須完全相符）');
      decision={sha256:d.sha256,chatId:d.chatId,sourceId:d.sourceId,sourceIndex:d.sourceIndex,...ds};
@@ -205,7 +217,7 @@ function preview({originals,review,candidate,requireFullCoverage=false}){
    ledger.set(rk,e);
   }
   const missingSources=[],missingFragments=[],unexpectedFragments=[],missingTargets=[];
-  for(const tk of targets)if(!seenTargets.has(tk))missingTargets.push(tk);
+  for(const tk of targets.keys())if(!seenTargets.has(tk))missingTargets.push(tk);
   for(const [sha256,v] of views)for(const r of v.rows){
    const rk=refKey({sha256,chatId:v.raw.chatId,sourceId:r.id,sourceIndex:r.index}),e=ledger.get(rk),got=actual.get(rk)||new Set();
    if(!e){missingSources.push(rk);continue}
