@@ -1035,6 +1035,22 @@ test('native quoted code UI label is repaired in text and structure, never seman
  a.equal(ctx.fix(genuine.body,{},'id',genuine.body.innerText),genuine.body.innerText);
  a.equal(ctx.structure(genuine.quote,genuine.body),label+'\n'+value);
  const missing=build({bodyGap:label});a.equal(ctx.fix(missing.body,{},'id',missing.body.innerText),expected);
+ // Synthetic native DOM based on the observed 15-character rendering delta.
+ const blank='\u3000\n\u3000\n\u3000\n\u3000\n\u3000';
+ function blankBlock({gap='純文字\n'+blank,markers=true,copy=true,extra=false,repeat=false,codeValue=blank}={}){
+  const code=el('code',{},[text(codeValue)]);
+  const header=el('div',{'data-markdown-copy':'exclude',contenteditable:'false'},[el('div',{},[text('純文字')]),el('button',{'aria-label':copy?'複製代碼':'其他'},[])]);
+  const source=el('div',markers?{'data-code-block-source':'true'}:{},[code]);
+  const wrapper=el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,source,...(extra?[el('p',{},[text('純文字')])]:[])]);
+  const body=el('div',{},[el('p',{},[text('before')]),wrapper,el('p',{},[text('after')]),...(repeat?[el('p',{},[text('before')])]:[])],'before\n\n'+(gap?gap+'\n\n':'')+'after'+(repeat?'\n\nbefore':''));
+  return {body,code};
+ }
+ for(const gap of ['',blank,'純文字\n'+blank]){
+  const f=blankBlock({gap});a.equal(ctx.fix(f.body,{},'id',f.body.innerText),'before\n\nafter');a.equal(ctx.structure(f.code,f.body),blank);
+ }
+ for(const options of [{markers:false},{copy:false},{extra:true},{repeat:true},{gap:'純文字\n'+blank+'\nreal prose'},{codeValue:''}]){
+  const f=blankBlock(options);a.equal(ctx.fix(f.body,{},'id',f.body.innerText),f.body.innerText);
+ }
  // The comparator itself is unchanged; a row-only difference remains fatal.
  const normal={...r('anchor','assistant',expected),identityBasis:'native-dom-id',structure:[{tag:'blockquote',text:value},{tag:'code',text:value}]};
  const changed={...normal,text:f.body.innerText,structure:[{tag:'blockquote',text:label+'\n'+value},{tag:'code',text:value}]};
