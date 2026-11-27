@@ -23,7 +23,7 @@ FORMAT = "gal-predecessor-cycle-overwrite"
 BUNDLE = "gal-predecessor-import-bundle"
 JOINED = "gal-predecessor-prefix-supplement-evidence"
 MARKER = re.compile(r"(?:^|\n)[ \t]*(?:[\uFF08(][ \t]*)?(?:\u6211|\u4ed6)[ \t]*[\uFF1A:][ \t]*(?:[\uFF09)])?")
-mcp = FastMCP("GalArchive-Python", stateless_http=True, json_response=True)
+mcp = FastMCP("GalArchive-Python", stateless_http=True, json_response=True, host="127.0.0.1", port=18766)
 
 
 def require(ok, message):
@@ -258,7 +258,8 @@ def sha256_text(text: str) -> str:
 def archive_status() -> dict:
     """Report tool version and archive access, without revealing secrets."""
     return {"version": VERSION, "python": sys.version.split()[0],
-            "archive": root().name, "output": OUTPUT, "overwrite": False}
+            "archive": root().name, "output": OUTPUT, "overwrite": False,
+            "transport": "stateless-http" if sys.argv[1:] == ["--http"] else "stdio"}
 
 
 @mcp.tool()
