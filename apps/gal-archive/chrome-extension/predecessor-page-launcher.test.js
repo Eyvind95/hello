@@ -136,7 +136,7 @@ test('navigation loop refuses a false top with wrong anchor, can cancel, and nev
  const block=source.slice(source.indexOf('  function historyTopNavigationSnapshot'),source.indexOf('  async function historyBegin'));
  let now=0,scrolls=0,snap={firstId:'user|turn:wrong',isUser:true,match:false,found:0,owner:{}},removed=0,loading=false,stop=false;
  const host={scrollTop:100,scrollHeight:2000},state={};
- const ctx={state,document:{getElementById:()=>null,createElement:()=>({dataset:{},isConnected:true,remove(){removed++}}),body:{append(){}}},chrome:{runtime:{id:'test'}},valid:()=>true,path:()=>'/c/test',isGenerating:()=>false,HISTORY_PANEL:'scan',historyHost:()=>host,historyLoading:()=>loading,historyScroll(h,to){assert.equal(to,0);scrolls++;h.scrollTop=to},sleep:async ms=>{now+=ms},Date:{now:()=>now}};
+ const ctx={state,document:{getElementById:()=>null,createElement:()=>({dataset:{},isConnected:true,remove(){removed++}}),body:{append(){}}},chrome:{runtime:{id:'test'}},valid:()=>true,path:()=>'/c/test',isGenerating:()=>false,HISTORY_PANEL:'scan',historyHost:()=>host,historyLoading:()=>loading,historyNativeFailure:()=>null,historyScroll(h,to){assert.equal(to,0);scrolls++;h.scrollTop=to},sleep:async ms=>{now+=ms},Date:{now:()=>now}};
  vm.createContext(ctx);vm.runInContext(block+';historyTopNavigationSnapshot=()=>globalThis.snapshot();globalThis.rush=historyRushTop',ctx);ctx.snapshot=()=>snap;
  await assert.rejects(ctx.rush('user|turn:abc','a.pdf',()=>{},()=>stop),/未找到指定開頭/);
  assert.ok(scrolls>1);assert.equal(removed,1);assert.equal(state.bulk,null);
@@ -149,6 +149,17 @@ test('navigation loop refuses a false top with wrong anchor, can cancel, and nev
  now=0;stop=true;await assert.rejects(ctx.rush('','',()=>{},()=>stop),/導航已停止/);
  assert.equal(state.bulk,null);
  assert.doesNotMatch(block,/\b(?:historyRead|historyDownload|historyRemember|historyPayload)\s*\(/);
+});
+test('rush handles native history retry before accepting top, never scrolls while retrying, and rejects invalid observed first',async()=>{
+ const block=source.slice(source.indexOf('  function historyTopNavigationSnapshot'),source.indexOf('  async function historyBegin'));
+ let now=0,failed=true,clicks=0,scrolls=0,removed=0,stop=false,first='user|turn:abc';
+ const host={isConnected:true,scrollTop:0,scrollHeight:2000},state={};
+ const ctx={state,document:{getElementById:()=>null,createElement:()=>({dataset:{},isConnected:true,remove(){removed++}}),body:{append(){}}},chrome:{runtime:{id:'test'}},valid:()=>true,path:()=>'/c/test',isGenerating:()=>false,HISTORY_PANEL:'scan',historyHost:()=>host,historyLoading:()=>false,historyNativeFailure:()=>failed?{button:{}}:null,historyNativeRetry:async(b,until,{guard,report})=>{guard();assert.equal(b.host,host);assert.equal(b.rows.length,0);assert.ok(until>now);clicks++;report('retry');now+=2000;failed=false;guard();return true},historyScroll(){assert.equal(failed,false);scrolls++},sleep:async ms=>{now+=ms},Date:{now:()=>now}};
+ vm.createContext(ctx);vm.runInContext(block+';historyTopNavigationSnapshot=()=>globalThis.snapshot();globalThis.rush=historyRushTop',ctx);ctx.snapshot=()=>({firstId:first,isUser:true,match:true,found:0,owner:{}});
+ const ok=await ctx.rush('','',()=>{});assert.equal(ok.verified,false);assert.equal(clicks,1);assert.equal(scrolls,0);assert.ok(now>=10000);
+ now=0;failed=true;ctx.historyNativeRetry=async()=>{throw Error('原生歷史載入失敗')};await assert.rejects(ctx.rush('','',()=>{}),/原生歷史載入失敗/);assert.equal(state.bulk,null);
+ now=0;failed=false;first='';await assert.rejects(ctx.rush('','',()=>{}),/未確認抵頂/);assert.equal(state.bulk,null);
+ now=0;failed=true;first='user|turn:abc';ctx.historyNativeRetry=async(b,until,{guard})=>{stop=true;guard()};await assert.rejects(ctx.rush('','',()=>{},()=>stop),/導航已停止/);assert.equal(state.bulk,null);
 });
 test('attachment anchor must match the first user owner, not later turns or arbitrary prose',()=>{
  const block=source.slice(source.indexOf('  function historyTopNavigationSnapshot'),source.indexOf('  async function historyRushTop'));
