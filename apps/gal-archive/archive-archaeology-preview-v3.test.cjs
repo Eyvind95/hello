@@ -98,10 +98,84 @@ test('rejected event decision uses exact separate player span and independent re
  const {a,u,t,input,entry,frag,approve}=fixture(),e=entry(a,[frag(a,'前段。','event-evidence')]);
  const d={...entry(u,[]),...frag(u,'前置😀','event-evidence')};delete d.fragments;e.decision=d;t.rejectedEvents=[e];
  assert.throws(()=>api.preview(input),/拒絕關聯/);
- approve('rejectedEvents',d,d,'declined:'+JSON.stringify([e.chatId,e.sourceId]));
+ input.review.fragments.push({key:api.entryReviewKey(target,manager,'rejectedEvents',e),reviewId:'independent-fixture',reason:'事件與拒絕已核定'});
  assert.equal(api.preview(input).targets[0].rejectedEvents[0].decision.text,'前置😀');
 });
 test('six sections required and source ID/index binding strict',()=>{
  const {a,t,input,entry,frag}=fixture();const e=entry(a,[frag(a,'前段。')]);t.pilotMessages=[e];e.sourceIndex=99;
  assert.throws(()=>api.preview(input),/索引/);e.sourceIndex=1;delete t.quizLogs;assert.throws(()=>api.preview(input),/六分頁/);
+});
+
+const approvalKey=k=>({key:k,reviewId:'independent-fixture',reason:'獨立合成核定'});
+test('FLARE-FINAL-002 001: event body, title and decision changes invalidate approval',()=>{
+ const {a,u,t,input,entry,frag}=fixture(),e=entry(a,[frag(a,'前段。','event-evidence')]);
+ e.decision={...entry(u,[]),...frag(u,'前置😀','event-evidence')};delete e.decision.fragments;
+ t.rejectedEvents=[e];input.review.fragments.push(approvalKey(api.entryReviewKey(target,manager,'rejectedEvents',e)));
+ assert.equal(api.preview(input).counts.fragments,1);
+ const previous=e.fragments;e.fragments=[frag(a,'末段。','event-evidence')];
+ assert.throws(()=>api.preview(input),/拒絕關聯核定/);
+ e.fragments=previous;e.fragments.push(frag(a,'末段。','event-evidence'));
+ assert.throws(()=>api.preview(input),/拒絕關聯核定/);
+ e.fragments.pop();e.title='前段。';assert.throws(()=>api.preview(input),/拒絕關聯核定/);
+ delete e.title;e.decision={...e.decision,...frag(u,'玩家劇情','event-evidence')};
+ assert.throws(()=>api.preview(input),/拒絕關聯核定/);
+});
+test('FLARE-FINAL-002 002: an uncertain egg cannot be upgraded or have title/evidence replaced',()=>{
+ const {a,t,input,entry,frag}=fixture(),e={...entry(a,[frag(a,'前段。','egg-evidence')]),title:'合成彩蛋',status:'uncertain'};
+ t.easterEggs=[e];assert.throws(()=>api.preview(input),/彩蛋.*核定/);
+ input.review.fragments.push(approvalKey(api.entryReviewKey(target,manager,'easterEggs',e)));
+ assert.equal(api.preview(input).targets[0].easterEggs[0].status,'uncertain');
+ e.status='confirmed';assert.throws(()=>api.preview(input),/彩蛋.*核定/);
+ e.status='uncertain';e.title='另一彩蛋';assert.throws(()=>api.preview(input),/彩蛋.*核定/);
+ e.title='合成彩蛋';e.fragments=[frag(a,'末段。','egg-evidence')];assert.throws(()=>api.preview(input),/彩蛋.*核定/);
+ e.status='confirmed';input.review.fragments.push(approvalKey(api.entryReviewKey(target,manager,'easterEggs',e)));
+ assert.equal(api.preview(input).targets[0].easterEggs[0].status,'confirmed');
+});
+test('FLARE-FINAL-002 003: same or overlapping fragment across cycles and tabs needs exact independent approval',()=>{
+ const {a,t,input,entry,frag}=fixture(),other={...target,cycleId:'other-cycle',cycleTitle:'另一輪迴'};
+ const f=frag(a,'前段。'),e=entry(a,[f]);t.pilotMessages=[e];
+ const e2=structuredClone(e),t2={target:other,...Object.fromEntries(api.SECTIONS.map(k=>[k,[]]))};t2.realChatLogs=[e2];
+ input.review.targets.push(other);input.candidate.targets.push(t2);
+ assert.throws(()=>api.preview(input),/跨輪迴片段歸屬衝突/);
+ const k1=api.coverageKey(target,manager,'pilotMessages',e,f,'source'),k2=api.coverageKey(other,manager,'realChatLogs',e2,e2.fragments[0],'source');
+ input.review.crossCycle=[approvalKey(api.crossCycleKey(manager,k1,k2))];
+ assert.equal(api.preview(input).counts.entries,2);
+ e2.fragments=[frag(a,'前段')];assert.throws(()=>api.preview(input),/跨輪迴片段歸屬衝突/);
+ e2.fragments=[frag(a,'末段。')];assert.equal(api.preview(input).counts.fragments,2);
+});
+test('same fragment in different tabs of the same cycle remains allowed',()=>{
+ const {a,t,input,entry,frag}=fixture(),e=entry(a,[frag(a,'前段。')]);
+ t.pilotMessages=[e];t.realChatLogs=[structuredClone(e)];assert.equal(api.preview(input).counts.entries,2);
+});
+function fullFixture(){
+ const {u,a,t,input,entry,frag,approve}=fixture();
+ const p=frag(u,'前置😀'),c=frag(u,'！BUG 設定修正','player-correction');
+ const ue=entry(u,[p,c]),af=frag(a,'前段。'),ae=entry(a,[af]);
+ t.pilotMessages=[ue,ae];approve('pilotMessages',ue,c,'gal-player-input');
+ const cov=(e,keys,disposition='selected')=>({sha256:e.sha256,chatId:e.chatId,sourceId:e.sourceId,sourceIndex:e.sourceIndex,keys,disposition,reviewId:'independent-fixture',reason:'逐來源核定'});
+ const ck=(e,f,context)=>api.coverageKey(target,manager,'pilotMessages',e,f,context);
+ input.review.coverage=[cov(ue,[ck(ue,p,'prefix'),ck(ue,c,'gal-player-input')]),cov(ae,[ck(ae,af,'source')])];
+ input.requireFullCoverage=true;
+ return {u,a,t,input,entry,frag,ue,ae};
+}
+test('FLARE-FINAL-002 004: complete coverage checks independent selected/excluded row and exact fragment manifest',()=>{
+ const {input,t,ue,ae,a,frag}=fullFixture();
+ const p=api.preview(input);assert.equal(p.coverage.status,'complete-against-independent-ledger');assert.equal(p.importable,false);
+ t.pilotMessages=[ue];let c=api.preview(input).coverage;assert.equal(c.status,'incomplete');assert.equal(c.missingSources.length,1);assert.equal(c.missingFragments.length,1);
+ t.pilotMessages=[ue,ae];ue.fragments.pop();c=api.preview(input).coverage;assert.equal(c.missingFragments.length,1);assert.equal(c.unusedReviews.length,1);
+ ae.fragments.push(frag(a,'末段。'));c=api.preview(input).coverage;assert.equal(c.unexpectedFragments.length,1);
+ input.review.coverage.pop();c=api.preview(input).coverage;assert.equal(c.missingSources.length,1);
+ input.requireFullCoverage=false;assert.equal(api.preview(input).coverage.status,'not-requested');
+});
+test('full coverage flags omitted approved target, unknown/duplicate ledger and exclusions',()=>{
+ const {input,t,ue}=fullFixture();
+ input.review.targets.push({...target,cycleId:'missing'});assert.equal(api.preview(input).coverage.missingTargets.length,1);input.review.targets.pop();
+ const original=input.review.coverage[1];input.review.coverage[1]={...original,sourceIndex:99};assert.throws(()=>api.preview(input),/覆蓋清冊來源/);
+ input.review.coverage[1]=original;input.review.coverage.push(original);assert.throws(()=>api.preview(input),/覆蓋清冊來源/);input.review.coverage.pop();
+ t.pilotMessages=[ue];input.review.coverage[1]={...original,disposition:'excluded',keys:[]};
+ assert.equal(api.preview(input).coverage.status,'complete-against-independent-ledger');
+ input.review.coverage[1]={...original,disposition:'excluded'};assert.throws(()=>api.preview(input),/選取狀態/);
+});
+test('full coverage requires independent ledger, cannot infer from the candidate',()=>{
+ const {input}=fullFixture();delete input.review.coverage;assert.throws(()=>api.preview(input),/獨立逐來源清冊/);
 });
