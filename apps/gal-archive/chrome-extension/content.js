@@ -3083,8 +3083,16 @@
       for(const [value,label] of [['file','選擇原保全 JSON（建議）'],['pinned','已記住的原保全'],['candidate','已記住的候選保全']]){const option=document.createElement('option');option.value=value;option.textContent=label;prefixSlot.append(option)}
       prefixSlot.value='file';
       const prefixFile=document.createElement('input');prefixFile.id=historyPageId('prefix-file');prefixFile.type='file';prefixFile.accept='.json,application/json';prefixFile.style.cssText=input.style.cssText;
-      const prefixObservedLabel=document.createElement('label');prefixObservedLabel.textContent='候選頂端補掃（未驗證真開頭，僅取證；清空開頭ID與附件）';
-      const prefixObserved=document.createElement('input');prefixObserved.id=historyPageId('prefix-observed');prefixObserved.type='checkbox';prefixObserved.checked=false;prefixObservedLabel.append(prefixObserved);
+      let prefixObservedMode=false;
+      const prefixObserved=document.createElement('button');prefixObserved.id=historyPageId('prefix-observed');
+      historyPanelButton(prefixObserved,'#334155');
+      prefixObserved.style.cssText+=';display:block!important;width:100%!important;min-width:44px!important;min-height:44px!important;margin:8px 0!important';
+      const renderPrefixMode=()=>{
+        prefixObserved.setAttribute('aria-pressed',String(prefixObservedMode));
+        prefixObserved.textContent=(prefixObservedMode?'已選擇：':'未選擇：')+'候選頂端補掃（未驗證真開頭，僅取證；清空開頭ID與附件）';
+      };
+      renderPrefixMode();
+      prefixObserved.onclick=()=>{if(prefixObserved.disabled||pane.dataset.chat!==path())return;prefixObservedMode=!prefixObservedMode;renderPrefixMode()};
       const prefixStart=document.createElement('button');prefixStart.id=historyPageId('prefix-start');prefixStart.type='button';prefixStart.textContent='↓ 從頂端向下補掃（到保全前沿停止）';
       const prefixStop=document.createElement('button');prefixStop.id=historyPageId('prefix-stop');prefixStop.type='button';prefixStop.textContent='停止並下載局部取證';prefixStop.hidden=true;
       let prefixCancelled=false;
@@ -3104,7 +3112,7 @@
           if(!checkpoint)throw Error('找不到指定保全');
           if(prefixCancelled||pane.dataset.chat!==path()||!pane.isConnected)throw Error('補掃已停止或聊天切換');
           status('核對原保全 '+checkpoint.data.count+' 個顯示單元');
-          const r=await historyPrefixSupplement(topId.value,topFiles.value,input.value.trim(),checkpoint,status,()=>prefixCancelled||!pane.isConnected,!!prefixObserved.checked);
+          const r=await historyPrefixSupplement(topId.value,topFiles.value,input.value.trim(),checkpoint,status,()=>prefixCancelled||!pane.isConnected,prefixObservedMode);
           status(r.ok?r.message:'⛔ '+r.error);
         }catch(e){status('⛔ '+String(e.message||e))}
         finally{restore();controls.forEach(n=>n.disabled=false);prefixStop.hidden=true}
@@ -3177,7 +3185,7 @@
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObservedLabel,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
+      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }
