@@ -603,7 +603,7 @@ test('native retry is bounded, deadline-preserving, and never certifies rows',as
   vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;',ctx);
   const run=ctx.retry(b,mode==='deadline'?1500:61000);
   if(mode==='clear'){a.equal(await run,true);a.equal(clicks,1);a.equal(b.nativeHistoryRetry.cleared,1)}
-  else{await a.rejects(run,/原生歷史載入失敗/);a.equal(clicks,mode==='persistent'?3:mode==='deadline'?1:0);a.equal(b.nativeHistoryRetry.cleared,0)}
+  else{await a.rejects(run,/原生歷史載入失敗/);a.equal(clicks,mode==='persistent'?8:mode==='deadline'?1:0);a.equal(b.nativeHistoryRetry.cleared,0)}
   a.equal(b.rows.length,1);a.equal(host.scrollTop,0);a.equal(b.resume,undefined);
   if(mode==='deadline')a.equal(now,1500);
  }
@@ -623,7 +623,7 @@ test('native error cannot certify top while visible',()=>{
  a.ok(src.includes("stableMs:Date.now()-topSince,loading:historyLoading(b.host)||!!historyNativeFailure(b.host)"));
 });
 
-test('native retry budget resets only on verified progress, without absolute batch cap',async()=>{
+test('native retry counter resets only on verified progress, without a fixed click cap',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('));
  let now=1000,clicks=0,present=true;
@@ -632,15 +632,16 @@ test('native retry budget resets only on verified progress, without absolute bat
  const b={host,rows:[r('anchor')],resume:{minIndex:100}};class Clock extends Date{constructor(){super(now)}static now(){return now}}
  const ctx={Date:Clock,historyVisible:()=>true,historyGuard:()=>{},historyStatus:()=>{},sleep:async ms=>{now+=ms}};
  vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;globalThis.progress=historyNativeProgress;',ctx);
- for(let i=0;i<3;i++){present=true;a.equal(await ctx.retry(b,61000),true)}
- present=true;await a.rejects(ctx.retry(b,61000),/3次重試上限/);a.equal(clicks,3);
- for(let i=3;i<24;i++){b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;a.equal(await ctx.retry(b,now+60000),true)}
- a.equal(clicks,24);a.equal(b.nativeHistoryRetry.progressResets,21);
- for(let i=0;i<2;i++){present=true;a.equal(await ctx.retry(b,now+60000),true)}
- present=true;await a.rejects(ctx.retry(b,now+60000),/3次重試上限/);
- a.equal(clicks,26);a.equal(b.rows.length,1);a.equal(b.nativeHistoryRetry.trace.at(-1).event,'exhausted');
+ const deadline=61000;
+ for(let i=0;i<6;i++){present=true;a.equal(await ctx.retry(b,deadline),true)}
+ a.equal(clicks,6);a.equal(b.nativeHistoryRetry.sinceProgress,6);a.equal(b.nativeHistoryRetry.progressResets,0);
+ for(let i=0;i<21;i++){b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;a.equal(await ctx.retry(b,now+60000),true)}
+ a.equal(clicks,27);a.equal(b.nativeHistoryRetry.progressResets,21);a.equal(b.nativeHistoryRetry.sinceProgress,1);
+ const sameDeadline=now+60000;
+ for(let i=0;i<5;i++){present=true;a.equal(await ctx.retry(b,sameDeadline),true)}
+ a.equal(clicks,32);a.equal(b.rows.length,1);a.equal(b.nativeHistoryRetry.sinceProgress,6);a.equal(b.nativeHistoryRetry.progressResets,21);
  b.resume.minIndex--;ctx.progress(b,'resume-earlier-index');present=true;
- await a.rejects(ctx.retry(b,now+500),/重試等待逾時/);a.equal(clicks,27);a.equal(b.nativeHistoryRetry.trace.at(-1).event,'deadline');
+ await a.rejects(ctx.retry(b,now+500),/重試等待逾時/);a.equal(clicks,33);a.equal(b.nativeHistoryRetry.trace.at(-1).event,'deadline');
  const run=src.slice(src.indexOf('  async function historyRun('),src.indexOf('  async function historyBegin('));
  a.equal((run.match(/historyNativeProgress\(b,/g)||[]).length,2);
  a.match(run,/if\(q.minIndex<b.resume.minIndex\)\{[\s\S]*?historyNativeProgress\(b,'resume-earlier-index'\)/);
@@ -704,7 +705,7 @@ test('native retries use increasing observation windows, reject flicker, and rec
   const ctx={Date:Clock,historyVisible:()=>true,historyGuard:()=>{},historyStatus:()=>{},sleep:async ms=>{now+=ms}};
   vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;',ctx);
   if(mode==='delayed'){a.equal(await ctx.retry(b,61000),true);a.deepEqual(clicks,[1000,3000]);a.equal(now,7000);a.equal(b.nativeHistoryRetry.cleared,1)}
-  else{await a.rejects(ctx.retry(b,mode==='deadline'?4500:61000),/原生歷史載入失敗/);a.deepEqual(clicks,mode==='deadline'?[1000,3000]:[1000,3000,8000]);a.equal(now,mode==='deadline'?4500:18000);a.equal(b.nativeHistoryRetry.cleared,0)}
+  else{await a.rejects(ctx.retry(b,mode==='deadline'?4500:61000),/原生歷史載入失敗/);a.deepEqual(clicks,mode==='deadline'?[1000,3000]:[1000,3000,8000,18000,28000,38000,48000,58000]);a.equal(now,mode==='deadline'?4500:61000);a.equal(b.nativeHistoryRetry.cleared,0)}
   a.equal(b.nativeHistoryRetry.trace[0].buttonInHostViewport,false);a.equal(b.nativeHistoryRetry.trace[0].observationMs,2000);a.equal(b.rows.length,1);a.equal(host.scrollTop,99900);
  }
 });
@@ -1041,7 +1042,7 @@ test('native quoted code UI label is repaired in text and structure, never seman
 });
 
 
-test('rush native retry has no click-count cap, retains backoff, deadline and cancellation',async()=>{
+test('shared native retry defaults to no click-count cap, retains backoff, deadline and cancellation',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('));
  for(const mode of ['sixth-clears','deadline','cancel']){
@@ -1051,10 +1052,19 @@ test('rush native retry has no click-count cap, retains backoff, deadline and ca
   const b={host,rows:[]};class Clock extends Date{constructor(){super(now)}static now(){return now}}
   const ctx={Date:Clock,historyVisible:()=>true,historyGuard:()=>{},historyStatus:()=>{},sleep:async ms=>{now+=ms}};
   vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;',ctx);
-  const run=ctx.retry(b,61000,{maxAttempts:Infinity,guard:()=>{if(mode==='cancel'&&clicks>=4)throw Error('cancelled')}});
+  const run=ctx.retry(b,61000,{guard:()=>{if(mode==='cancel'&&clicks>=4)throw Error('cancelled')}});
   if(mode==='sixth-clears'){a.equal(await run,true);a.equal(clicks,6);a.equal(b.nativeHistoryRetry.cleared,1);a.deepEqual(times,[1000,3000,8000,18000,28000,38000]);}
   else if(mode==='deadline'){await a.rejects(run,/重試等待逾時/);a.equal(now,61000);a.ok(clicks>3);}
   else{await a.rejects(run,/cancelled/);a.equal(clicks,4);}
   a.equal(b.rows.length,0);a.equal(host.scrollTop,0);
  }
 });
+
+ test('every upward native retry caller inherits the unlimited click policy',()=>{
+ const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ a.match(src,/async function historyNativeRetry\(b,until,\{[^\n]*maxAttempts=Infinity/);
+ a.match(src,/if\(upward&&await historyNativeRetry\(b,until\)\)/);
+ a.match(src,/if\(await historyNativeRetry\(b,deadline\)\)continue/);
+ a.match(src,/const nativeRetried=await historyNativeRetry\(b,deadline\)/);
+ a.doesNotMatch(src,/maxAttempts\s*:\s*3\b/);
+ });
