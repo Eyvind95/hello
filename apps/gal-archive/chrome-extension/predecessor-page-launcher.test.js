@@ -401,3 +401,17 @@ test('prefix resume after reload automatically rehydrates native history and ver
 });
 
 test('current position resume is explicit and dispatches only with a selected checkpoint',async()=>{const f=fixture();f.saved({data:{},hash:'a'.repeat(64)});f.launch();f.nodes.get('ga-predecessor-page-launcher--testextension').onclick();const check=f.nodes.get('ga-predecessor-page-resume-current-position--testextension');assert.equal(check.type,'checkbox');assert.ok(!check.checked);check.checked=true;await f.nodes.get('ga-predecessor-page-resume--testextension').onclick();assert.deepEqual(f.calls,[['測試前輩','a'.repeat(64),true]])});
+
+test('active scan panel defaults centered and stays inside viewport in compact, expanded and side modes',()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'content.js'),'utf8');
+ const block=source.slice(source.indexOf('  function historyPanelControls('),source.indexOf('  function historyStatus('));
+ const vm=require('node:vm');
+ for(const width of [320,480,640,641,1200]){
+  const make=()=>({style:{},children:[],setAttribute(){},append(...x){this.children.push(...x)}});
+  const pane=make(),b={info:make()};
+  const render=vm.runInNewContext(block+';historyPanelControls',{document:{createElement:make},window:{innerWidth:width},historyPanelButton(){}});
+  const [compact,move]=render(pane,b).children;
+  const verify=(side)=>{assert.equal(pane.style.left,side==='center'?'50%':side==='left'?'12px':'auto');assert.equal(pane.style.right,side==='right'?'12px':'auto');assert.equal(pane.style.transform,side==='center'?'translateX(-50%)':'none');assert.match(pane.style.width,/^min\((280|320)px,calc\(100vw - 24px\)\)$/);const w=Math.min(Number(pane.style.width.match(/\d+/)[0]),width-24),x=side==='center'?(width-w)/2:side==='left'?12:width-12-w;assert.ok(x>=12&&x+w<=width-12)};
+  verify('center');assert.equal(b.info.hidden,width<=640);compact.onclick();verify('center');move.onclick();verify('right');compact.onclick();verify('right');move.onclick();verify('left');b.showPanelDetails();verify('left');assert.equal(b.info.hidden,false);move.onclick();verify('center');
+ }
+});

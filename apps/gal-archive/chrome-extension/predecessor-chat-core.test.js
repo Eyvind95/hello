@@ -569,10 +569,11 @@ test('predecessor status panel stays at bottom, supports compact view and moves 
  const element=()=>({style:{},children:[],hidden:false,setAttribute(k,v){this[k]=v},append(...nodes){this.children.push(...nodes)}});
  const ctx={document:{createElement:element},window:{innerWidth:450}};vm.runInNewContext(block+';globalThis.controls=historyPanelControls;globalThis.status=historyStatus;',ctx);
  const pane=element(),b={info:element(),summary:element(),download:{hidden:true},rows:[r('anchor')]};
- const bar=ctx.controls(pane,b);a.equal(pane.style.left,'12px');a.equal(pane.style.right,'auto');a.equal(b.info.hidden,true);a.equal(bar.children[1].textContent,'移到右下');
+ const bar=ctx.controls(pane,b);a.equal(pane.style.left,'50%');a.equal(pane.style.right,'auto');a.equal(pane.style.transform,'translateX(-50%)');a.equal(b.info.hidden,true);a.equal(bar.children[1].textContent,'移到右下');
  ctx.status(b,'測試');a.match(b.summary.textContent,/已保全 1 則/);a.match(b.info.textContent,/測試/);
- bar.children[1].onclick();a.equal(pane.style.right,'12px');a.equal(pane.style.left,'auto');a.equal(bar.children[1].textContent,'移到左下');
- bar.children[1].onclick();a.equal(pane.style.right,'auto');a.equal(pane.style.left,'12px');
+ bar.children[1].onclick();a.equal(pane.style.right,'12px');a.equal(pane.style.left,'auto');a.equal(pane.style.transform,'none');a.equal(bar.children[1].textContent,'移到左下');
+ bar.children[1].onclick();a.equal(pane.style.right,'auto');a.equal(pane.style.left,'12px');a.equal(pane.style.transform,'none');
+ bar.children[1].onclick();a.equal(pane.style.left,'50%');a.equal(pane.style.transform,'translateX(-50%)');
  bar.children[0].onclick();a.equal(b.info.hidden,false);bar.children[0].onclick();a.equal(b.info.hidden,true);
  b.showPanelDetails();a.equal(b.info.hidden,false);b.download.hidden=false;ctx.status(b,'已下載');a.match(b.summary.textContent,/已結束/);
  a.equal(b.rows.length,1);a.equal(src.includes("top:auto;box-sizing:border-box;max-width:calc(100vw - 24px)"),true);
