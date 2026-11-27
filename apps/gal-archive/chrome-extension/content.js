@@ -2815,7 +2815,7 @@
         if(!b.sample&&b.rows.length>=nextCheckpoint&&(b.isolated||!b.resume||b.resume.frontierVerified)){
           nextCheckpoint=Math.floor(b.rows.length/100)*100+100;
           try{
-            const snapshot=historyScanPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔');
+            const snapshot=b.branch?historyScanPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔'):historyPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔');
             snapshot.evidence.checkpoint=true;(b.branch?pc.validateBranch:snapshot.format===pc.COMPOSITE?pc.validateCompositeEvidence:pc.validateRaw)(snapshot);
             if(!b.branch)try{await historyRemember(b,snapshot)}catch(_){}
             const file=historyDownload(snapshot);(b.checkpointExports||(b.checkpointExports=[])).push({count:b.rows.length,file,triggered:true});
@@ -2827,7 +2827,7 @@
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
     if(status==='completed'&&b.rows.some(r=>r.identityBasis==='unresolved-native-composite')){status='failed';error='已抵達觀測頂端；複合原生訊息分界待核對，非正式完整聊天'}
-    const data=historyScanPayload(b,status,error);
+    const data=b.branch?historyScanPayload(b,status,error):historyPayload(b,status,error);
     // Counts are only a local lower bound; never mix previous rows into this run.
     if(b.bottomReached&&!b.branch&&!b.sample&&!b.isolated&&data.format!==pc.COMPOSITE&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
     try{(b.branch?pc.validateBranch:data.format===pc.COMPOSITE?pc.validateCompositeEvidence:b.sample?pc.validateSample:pc.validateRaw)(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false;if(b.branch)data.evidence.branchBoundary.verified=false}
