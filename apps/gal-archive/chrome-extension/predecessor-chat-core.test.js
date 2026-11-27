@@ -1165,3 +1165,26 @@ test('current-position resume is explicit, before first bottom scroll, and compl
  a.match(verify,/pc\.edgeProof\(rows,b\.rows/);a.match(verify,/pc\.resumeSeed\(b\.rows,rows/);
  a.ok(verify.indexOf('b.resume.tailVerified=true')>verify.indexOf('seed.rows.length!==b.rows.length'));
 });
+
+test('actual current-position historyRun never jumps to bottom before extending and proving top; changed tail stays pending',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  function historyIdentityWindow('),src.indexOf('  async function historyRejoinByIdentity('))+src.slice(src.indexOf('  async function historyVerifyDeferredTail('),src.indexOf('  async function historyBegin('));
+ for(const badTail of [false,true]){
+  const saved=[r('3'),r('4','assistant'),r('5'),r('6','assistant')],prefix=[r('1'),r('2','assistant')];
+  let now=1000,output,firstRead=true;const trace=[],positions=[];
+  const host={scrollTop:500,scrollHeight:2100,clientHeight:100};
+  const b={host,rows:[],sample:0,knownMinimum:4,resumeRows:saved,resume:{currentPosition:true,baseCount:4,tailVerified:false,frontierVerified:false,minIndex:4,checkedWindows:0,sourceSha256:'a'.repeat(64)},hostProof:{maxRange:2000,observedMovement:true},bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,scrollStats:{attempts:0,overlapRetries:0,noGrowthWindows:0},overlapIssues:[],download:{},stop:{},pane:{},chat:'/c/abc'};
+  const ctx={Date:class extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}},pc:{...c,validateRaw:()=>{}},state:{bulk:b},chrome:{storage:{local:{set:async()=>{}}}},historyGuard:()=>{},historyLocateHost:async()=>{},historyHostObservation:()=>{},historyStatus:()=>{},historyScroll:(h,to)=>{h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,Math.max(0,to));positions.push({top:h.scrollTop,topVerified:b.topReached})},historySettled:async(b,o)=>{
+   now+=1000;if(firstRead){firstRead=false;a.equal(host.scrollTop,500);return [...prefix,...saved.slice(0,2)]}
+   if(o.upward){host.scrollTop=0;return [...prefix,...saved.slice(0,2)]}
+   return badTail?[saved[2],{...saved[3],text:'changed tail'}]:saved.slice(-2);
+  },historyAtBottom:h=>h.scrollTop===h.scrollHeight-h.clientHeight,historyLoading:()=>false,historyEdgeOrdinal:()=>({}),historyAttachmentChange:()=>{},historyTrace:(b,event)=>trace.push(event),sleep:async ms=>{now+=ms},historyRemember:async()=>{},historyPayload:(b,status,error)=>({status,error,count:b.rows.length,rows:b.rows,evidence:{resume:b.resume,bottomReached:b.bottomReached,topReached:b.topReached}}),historyDownload:d=>{output=d;return 'resume.json'}};
+  vm.createContext(ctx);vm.runInContext(block+';globalThis.run=historyRun;',ctx);await ctx.run(b);
+  a.equal(output.count,6);a.deepEqual(Array.from(output.rows,x=>x.id),['1','2','3','4','5','6']);
+  a.ok(positions.length&&positions.every(x=>x.top!==2000||x.topVerified));
+  a.ok(trace.includes('resume-current-frontier-verified'));a.equal(output.evidence.resume.frontierVerified,true);
+  a.equal(output.status,badTail?'failed':'completed',output.error);a.equal(output.evidence.resume.tailVerified,!badTail);a.equal(output.evidence.bottomReached,!badTail);
+  if(badTail)a.match(output.error,/內容或格式改變/);else a.ok(trace.includes('resume-deferred-tail-verified'));
+ }
+});

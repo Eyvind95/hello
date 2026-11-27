@@ -2363,7 +2363,7 @@
   // No mutation of the accumulated prefix until the actual bottom is stable.
   async function historyVerifyDeferredTail(b){
     historyStatus(b,'頂端已取證；最後核對目前聊天尾端');
-    let stable=0,prev=null,prevRows=null;const deadline=Date.now()+60000;
+    let stable=0,prev=null;const deadline=Date.now()+60000;
     for(;;){
       historyGuard(b);if(Date.now()>deadline)throw Error('尾端尚未重新核對；保留候選斷點，禁止宣告完整');
       historyScroll(b.host,b.host.scrollHeight);
@@ -2380,7 +2380,7 @@
           historyTrace(b,'resume-deferred-tail-verified',{matched:seed.matched});return;
         }
       }else{stable=0;prev=sig}
-      prevRows=rows;await sleep(650);
+      await sleep(650);
     }
   }
   async function historyRun(b){
@@ -2706,7 +2706,8 @@
         if(currentPosition){
           const prior=sourceEvidence.resume?.inheritedBottom;
           b.resume.currentPosition=true;
-          b.resume.inheritedBottom=pc.pendingTailProof(checkpoint.data)?{...prior}:{runId:checkpoint.data.runId,sha256:checkpoint.hash,lastId:b.resume.sourceLastId,bottomStableMs:sourceEvidence.bottomStableMs,maxRange:sourceEvidence.hostProof?.maxRange||Math.max(0,...(sourceEvidence.scrollTrace||[]).map(x=>pc.scrollRange(x.scrollHeight,x.clientHeight))),observedMovement:sourceEvidence.hostProof?sourceEvidence.hostProof.observedMovement===true:true};
+          b.resume.inheritedBottom=pc.pendingTailProof(checkpoint.data)?{...prior}:{runId:checkpoint.data.runId,sha256:checkpoint.hash,lastId:b.resume.sourceLastId,bottomStableMs:sourceEvidence.bottomStableMs,maxRange:sourceEvidence.hostProof?.maxRange||Math.max(0,...(sourceEvidence.scrollTrace||[]).map(x=>pc.scrollRange(x.scrollHeight,x.clientHeight))),observedMovement:sourceEvidence.hostProof?.observedMovement===true};
+          if(!b.resume.inheritedBottom.observedMovement)throw Error('目前位置續掃需要原保全有效捲動證據，請改用普通底端續掃');
         }
         b.resumeFoldObservations=[...(Array.isArray(sourceEvidence.inheritedFoldObservations)?sourceEvidence.inheritedFoldObservations:[]),...(Array.isArray(sourceEvidence.foldObservations)?sourceEvidence.foldObservations:[])];
         // Keep prior variant snapshots in later checkpoints; original rows remain unchanged.
