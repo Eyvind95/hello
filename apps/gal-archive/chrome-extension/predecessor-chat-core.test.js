@@ -1039,3 +1039,22 @@ test('native quoted code UI label is repaired in text and structure, never seman
  const changed={...normal,text:f.body.innerText,structure:[{tag:'blockquote',text:label+'\n'+value},{tag:'code',text:value}]};
  a.throws(()=>c.mergeUp([normal],[changed]));
 });
+
+
+test('rush native retry has no click-count cap, retains backoff, deadline and cancellation',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('));
+ for(const mode of ['sixth-clears','deadline','cancel']){
+  let now=1000,clicks=0,present=true;const times=[];
+  const row={closest:()=>null,children:[]},status={textContent:'無法載入較早的訊息',closest:()=>null,parentElement:row},button={tagName:'BUTTON',textContent:'重試',getAttribute:()=>null,click(){clicks++;times.push(now);if(mode==='sixth-clears'&&clicks===6)present=false}};
+  row.children=[status,button];const host={querySelectorAll:()=>present?[status]:[],contains:n=>n===row,scrollTop:0,scrollHeight:537121};
+  const b={host,rows:[]};class Clock extends Date{constructor(){super(now)}static now(){return now}}
+  const ctx={Date:Clock,historyVisible:()=>true,historyGuard:()=>{},historyStatus:()=>{},sleep:async ms=>{now+=ms}};
+  vm.runInNewContext(block+';globalThis.retry=historyNativeRetry;',ctx);
+  const run=ctx.retry(b,61000,{maxAttempts:Infinity,guard:()=>{if(mode==='cancel'&&clicks>=4)throw Error('cancelled')}});
+  if(mode==='sixth-clears'){a.equal(await run,true);a.equal(clicks,6);a.equal(b.nativeHistoryRetry.cleared,1);a.deepEqual(times,[1000,3000,8000,18000,28000,38000]);}
+  else if(mode==='deadline'){await a.rejects(run,/重試等待逾時/);a.equal(now,61000);a.ok(clicks>3);}
+  else{await a.rejects(run,/cancelled/);a.equal(clicks,4);}
+  a.equal(b.rows.length,0);a.equal(host.scrollTop,0);
+ }
+});
