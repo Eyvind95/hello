@@ -2685,11 +2685,25 @@
     const chat=path(),source=location.origin+chat,title=pc.chatTitle(requestedTitle||document.title);
     if(!title||!checkpoint||!/^[a-f0-9]{64}$/.test(checkpoint.hash))return {ok:false,error:'請選擇有效原保全及聊天名稱'};
     const saved=pc.validateCheckpoint(checkpoint.data,source,true);
+    // Capture runtime metadata before the extension context can disappear.
+    const scannerVersion=chrome.runtime.getManifest().version,chatId=pc.sourceId(source);
     const b={mode:'predecessor-prefix-supplement',chat};
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
     const startedAt=new Date().toISOString(),runId=crypto.randomUUID(),deadline=Date.now()+900000;
     let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],lastConflict=null,host=null;
+    let nextCheckpoint=50;const checkpointExports=[];
+    const payload=(phase,partial=false)=>{
+      const candidateRows=!partial&&join?join.candidate.map((r,index)=>({...r,index})):null;
+      return {format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status:phase,runId,title,chatId,sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error:partial?null:error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,folds,lastConflict,matched:partial?0:join?.matched||0,added:partial?0:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,checkpoint:partial,checkpointExports:checkpointExports.slice()},candidateRows};
+    };
+    const preserve=()=>{
+      if(rows.length<nextCheckpoint)return;
+      const count=rows.length;
+      try{const filename=historyDownload(payload('partial',true));checkpointExports.push({count,filename,triggered:true});}
+      catch(e){checkpointExports.push({count,triggered:false,error:String(e.message||e)});}
+      nextCheckpoint=Math.floor(count/50)*50+50;
+    };
     const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==chat||isGenerating()||!lock.isConnected)throw Error('補掃已停止或聊天狀態變更');if(Date.now()>=deadline)throw Error('補掃達15分鐘上限')};
     const readStable=async()=>{
       let previous=null,lastAt=0;const until=Math.min(deadline,Date.now()+60000);
@@ -2723,7 +2737,7 @@
       if(!observedTopVerified)throw Error(observedOnly?'候選頂端未穩定核對，不開始補掃':'真正開頭條件未核對，不開始補掃');
       const initial=await readStable();
       if(host.scrollTop>6||initial[0]?.id!==observedFirstId||!historyTopNavigationSnapshot(host,observedFirstId,names).match)throw Error('首則原文與已核對頂端不符');
-      rows=historyPrefixMerge([],initial);windows++;
+      rows=historyPrefixMerge([],initial);windows++;preserve();
       let lastProgress=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0;
       while(true){
         guard();join=historyPrefixJoin(rows,saved);
@@ -2739,20 +2753,21 @@
           if(next.length>rows.length){lastProgress=Date.now();rows=next}
           anchorTop=host.scrollTop;anchorHeight=host.scrollHeight;windows++;retries=0;step=Math.max(24,Math.floor(host.clientHeight*.65));
           if(trace.length<500)trace.push({top:anchorTop,height:anchorHeight,count:rows.length});
+          preserve();
           if(historyAtBottom(host)&&!historyPrefixJoin(rows,saved))throw Object.assign(Error('已到觀測底端但未接到保全前沿'),{terminal:true});
         }catch(e){
           lastConflict={reason:String(e.message||e),top:host.scrollTop,height:host.scrollHeight,rows:live||[]};
-          if(e.terminal||cancel()||!host.isConnected||++retries>=4)throw e;
+          if(e.terminal||/extension context invalidated/i.test(String(e.message||e))||cancel()||!host.isConnected||++retries>=4)throw e;
           historyScroll(host,Math.max(0,anchorTop+Math.max(0,host.scrollHeight-anchorHeight)));await sleep(350);
           step=Math.max(24,Math.floor(step/2));
         }
       }
     }catch(e){error=String(e.message||e);status=cancel()?'cancelled':'failed'}
     finally{if(state.bulk===b)state.bulk=null;lock.remove()}
-    const candidateRows=join?join.candidate.map((r,index)=>({...r,index})):null;
-    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true},candidateRows};
+    // No chrome.runtime access is needed to export after a context failure.
+    const data=payload(status);
     const filename=historyDownload(data);
-    return {ok:!!join,message:join?(observedOnly?'候選頂端重疊核對成功（真開頭未驗證）｜新增 ':'局部重疊核對成功｜新增 ')+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
+    return {ok:!!join,message:join?(observedOnly?'候選頂端重疊核對成功（真開頭未驗證）｜新增 ':'局部重疊核對成功｜新增 ')+join.added+'｜候選 '+data.candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
   }
 
 
