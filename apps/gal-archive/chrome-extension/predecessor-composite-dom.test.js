@@ -441,3 +441,26 @@ test('interior fold offset needs real control and matching DOM anchors; literal/
  assert.equal(f(body,control,'正文'+label+'後文',label),null);
  left='錯誤前文';assert.equal(f(body,control,raw,label),null);
 });
+
+test('writing block fold proof binds unique aria target and rendered surface, not hidden Range text',()=>{
+ const start=s.indexOf('  function historyWritingBlockFoldProof('),end=s.indexOf('  function historyReadText(',start);
+ const f=vm.runInNewContext(s.slice(start,end)+';historyWritingBlockFoldProof',{Node:{DOCUMENT_POSITION_FOLLOWING:4},EXPAND_LABEL:/^(顯示更多)$/});
+ let state='false',label='顯示更多',duplicate=false,editor=true,ordered=true,quoted=false,inside=true;
+ const target={id:'_r_fixture_',innerText:'修正正文。',contains:()=>false,querySelector:()=>editor?{}:null,compareDocumentPosition:()=>ordered?4:0};
+ const surface={get innerText(){return '標題\n\n修正正文。\n\n'+label},querySelectorAll:()=>duplicate?[target,target]:[target]};
+ const control={matches:()=>true,closest:q=>q.includes('writing-block-surface')?surface:quoted?{}:null,getAttribute:k=>k==='aria-expanded'?state:'_r_fixture_'};
+ const body={contains:()=>inside};
+ const raw=()=> '前文。\n\n'+surface.innerText+'\n\n後文。';
+ const check=()=>f(body,control,raw(),label);
+ assert.equal(check().inlineOffset,raw().indexOf(label));
+ assert.equal(check().inlineBasis,'writing-block-aria-surface');
+ state='true';label='顯示較少';assert.equal(check().inlineExpanded,true);
+ state='false';assert.equal(check(),null);state='true';
+ duplicate=true;assert.equal(check(),null);duplicate=false;
+ editor=false;assert.equal(check(),null);editor=true;
+ ordered=false;assert.equal(check(),null);ordered=true;
+ quoted=true;assert.equal(check(),null);quoted=false;
+ inside=false;assert.equal(check(),null);inside=true;
+ assert.equal(f(body,control,raw()+'\n'+label,label),null);
+ assert.equal(f(body,control,raw().replace('修正正文。','異常正文。'),label),null);
+});

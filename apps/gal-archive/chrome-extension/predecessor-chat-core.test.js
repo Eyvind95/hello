@@ -1275,3 +1275,16 @@ test('assistant interior control toggle is bound to observed offset, not global 
  for(const ctx of [{current:new Map([['f',f]])},{current:new Map([['e',e],['f',{...f,inlineOffset:at+1}]])},{current:new Map([['e',e],['f',{...f,inlineBasis:null}]])},{current,currentOverflow:1},{source:[legacy],current:new Map([['f',f]])}])a.throws(()=>c.mergeUp([old],[live],null,ctx));
  for(const row of [{...live,text:live.text+'額外正文'},{...live,structure:[{tag:'strong',text:'第二段'}]},{...live,text:live.text.replace('第一段','另一段')},{...live,attachments:[{kind:'link',label:'x',url:'https://example.com'}]}])a.throws(()=>c.mergeUp([old],[row],null,{current}));
 });
+
+test('writing-block proof allows exact label transition and rejects malformed evidence',()=>{
+ const old=r('a','assistant','前文。\n\n標題\n\n正文。\n\n顯示更多\n\n後文。'),live={...old,text:old.text.replace('顯示更多','顯示較少')};
+ const at=old.text.indexOf('顯示更多'),start=old.text.indexOf('標題');
+ const obs=(row,label,collapsed)=>({messageId:row.id,label,collapsed,rawLength:row.text.length,removedSuffix:'',fullTextVerified:false,inlineOffset:at,inlineBasis:'writing-block-aria-surface',inlineSurfaceOffset:start,inlineSurfaceLength:at+label.length-start,inlineControlTarget:'_r_fixture_',inlineExpanded:!collapsed});
+ const e=obs(old,'顯示更多',true),f=obs(live,'顯示較少',false),changes=[];
+ const ctx={current:new Map([['e',e],['f',f]])};
+ a.deepEqual(c.mergeUp([old],[live],x=>changes.push(x),ctx),[old]);a.equal(changes[0].fullTextVerified,false);
+ const legacy={messageId:old.id,label:e.label,collapsed:true,rawLength:old.text.length,removedSuffix:'',fullTextVerified:false};
+ a.deepEqual(c.mergeUp([old],[live],null,{source:[legacy],sourceSha256:'a'.repeat(64),current:new Map([['f',f]])}),[old]);
+ for(const bad of [{...f,inlineExpanded:false},{...f,inlineSurfaceOffset:start+1},{...f,inlineControlTarget:''},{...f,inlineSurfaceLength:0},{...f,inlineBasis:'unknown'}])a.throws(()=>c.mergeUp([old],[live],null,{current:new Map([['e',e],['f',bad]])}));
+ a.throws(()=>c.mergeUp([old],[{...live,text:live.text+'真變動'}],null,ctx));
+});

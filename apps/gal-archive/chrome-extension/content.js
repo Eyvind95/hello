@@ -1537,6 +1537,35 @@
       return at;
     }catch(_){return null}
   }
+  // Writing-block headers can add hidden accessibility text to DOM Range.
+  // Instead bind the real aria-controlled editor and its unique rendered
+  // surface to the raw response. This is positional evidence, not a rewrite.
+  function historyWritingBlockFoldProof(body,control,raw,label){
+    if(!control.matches('button[type="button"][aria-controls][aria-expanded]')||
+       !body.contains(control)||control.closest('pre,code,blockquote'))return null;
+    const state=control.getAttribute('aria-expanded');
+    if(state!=='true'&&state!=='false')return null;
+    if((state==='false')!==EXPAND_LABEL.test(label))return null;
+    const surface=control.closest('[class~="group/writing-block-surface"]');
+    if(!surface||surface===body||!body.contains(surface))return null;
+    const targetId=control.getAttribute('aria-controls');
+    if(!targetId||/\s/.test(targetId))return null;
+    const targets=[...surface.querySelectorAll('[id]')].filter(x=>x.id===targetId);
+    if(targets.length!==1)return null;
+    const target=targets[0];
+    if(target===control||target.contains(control)||!target.querySelector('.writing-block-editor')||
+       !(target.compareDocumentPosition(control)&Node.DOCUMENT_POSITION_FOLLOWING))return null;
+    const surfaceText=surface.innerText||'',editorText=target.innerText||'';
+    if(!editorText.trim()||!surfaceText.endsWith('\n'+label))return null;
+    const end=surfaceText.length-label.length;
+    if(!surfaceText.slice(0,end).trimEnd().endsWith(editorText.trimEnd()))return null;
+    const start=raw.indexOf(surfaceText),at=start+end;
+    if(start<0||raw.indexOf(surfaceText,start+1)!==-1||at<=0||
+       raw.indexOf(label)!==at||raw.indexOf(label,at+label.length)!==-1||
+       raw[at-1]!=='\n'||raw[at+label.length]!=='\n')return null;
+    return {inlineOffset:at,inlineBasis:'writing-block-aria-surface',inlineSurfaceOffset:start,
+      inlineSurfaceLength:surfaceText.length,inlineControlTarget:targetId,inlineExpanded:state==='true'};
+  }
   function historyReadText(body,owner,id,onFold){
     const raw=body.innerText||'';
     const controls=[...new Set([...expandButtons(owner),...owner.querySelectorAll('button,[role="button"],a,[tabindex],[class*="cursor-pointer"],[class*="cursor-interaction"]')].filter(c=>historyVisible(c)&&/^(?:顯示較少|顯示較多|顯示更多|顯示全部|展開全文|Show less|Show more|Read more)$/i.test(String(c.innerText||c.textContent||c.getAttribute('aria-label')||'').trim())))];
@@ -1554,7 +1583,9 @@
         }
       }
       const inlineOffset=!removedSuffix&&id.startsWith('assistant|')?historyInlineFoldOffset(body,control,raw,label):null;
-      onFold({messageId:id,label,collapsed:EXPAND_LABEL.test(label),rawLength:raw.length,removedSuffix,fullTextVerified:false,...(inlineOffset!==null?{inlineOffset,inlineBasis:'interactive-dom-range'}:{})});
+      const inlineProof=inlineOffset!==null?{inlineOffset,inlineBasis:'interactive-dom-range'}:
+        !removedSuffix&&id.startsWith('assistant|')?historyWritingBlockFoldProof(body,control,raw,label):null;
+      onFold({messageId:id,label,collapsed:EXPAND_LABEL.test(label),rawLength:raw.length,removedSuffix,fullTextVerified:false,...(inlineProof||{})});
     }
     return text;
   }
