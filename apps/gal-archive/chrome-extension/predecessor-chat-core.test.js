@@ -1035,6 +1035,31 @@ test('native quoted code UI label is repaired in text and structure, never seman
  a.equal(ctx.fix(genuine.body,{},'id',genuine.body.innerText),genuine.body.innerText);
  a.equal(ctx.structure(genuine.quote,genuine.body),label+'\n'+value);
  const missing=build({bodyGap:label});a.equal(ctx.fix(missing.body,{},'id',missing.body.innerText),expected);
+ // WATER-001: the quote has prose on both sides and the code is a
+ // separately captured structure entry. Preserve the exact old prose projection.
+ function mixedQuote({variant='label',excluded=true,copy=true,sourceMarker=true,extra=false,ambiguous=false,foreign=false}={}){
+  const value='line A  \nline B  ',before='intro\nsecond\n\nquestion\n\nreply:',after='ending';
+  const code=el('code',{},[el('span',{},[text(value)])]);
+  const header=el('div',excluded?{'data-markdown-copy':'exclude',contenteditable:'false'}:{},[el('div',{},[text(label)]),el('button',{'aria-label':copy?'複製代碼':'其他'},[])]);
+  const source=el('div',sourceMarker?{'data-code-block-source':'true'}:{},[code]);
+  const wrapper=el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,source]);
+  const group=el('div',{},[wrapper,...(extra?[el('p',{},[text('extra')])]:[])]);
+  const gap=variant==='label'?label+'\n'+value:variant==='code'?value:variant==='absent'?'':'unexpected text';
+  const raw=before+'\n\n'+(gap?gap+'\n\n':'')+after;
+  const quote=el('blockquote',{},[el('p',{},[text('intro\nsecond')]),el('p',{},[text('question')]),el('p',{},[text('reply:')]),group,el('p',{},[text(after)]),...(ambiguous?[el('div',{},[text('extra')])]:[])],raw);
+  const body=el('div',{},[el('p',{},[text('outside before')]),quote,el('p',{},[text('outside after')])],'outside before\n\n'+raw+'\n\noutside after');
+  return {body:foreign?el('div'):body,quote,code,value,before,after,raw};
+ }
+ for(const variant of ['label','code','absent']){
+  const q=mixedQuote({variant});
+  a.equal(ctx.structure(q.quote,q.body),q.before+'\n\n'+q.after);
+  a.equal(ctx.structure(q.code,q.body),q.value);
+  a.equal(ctx.fix(q.body,{},'id',q.body.innerText),'outside before\n\n'+q.before+'\n\n'+q.value+'\n\n'+q.after+'\n\noutside after');
+ }
+ for(const options of [{excluded:false},{copy:false},{sourceMarker:false},{extra:true},{ambiguous:true},{foreign:true},{variant:'unknown'}]){
+  const q=mixedQuote(options);
+  a.equal(ctx.structure(q.quote,q.body),q.raw);
+ }
  // Synthetic native DOM based on the observed 15-character rendering delta.
  const blank='\u3000\n\u3000\n\u3000\n\u3000\n\u3000';
  function blankBlock({gap='純文字\n'+blank,markers=true,copy=true,extra=false,repeat=false,codeValue=blank}={}){
