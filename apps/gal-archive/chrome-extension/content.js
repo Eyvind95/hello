@@ -1915,14 +1915,14 @@
     const visible=(r)=>h&&r?Math.min(h.bottom,r.bottom)>Math.max(h.top,r.top)&&Math.min(h.right,r.right)>Math.max(h.left,r.left):null;
     return {hostRect:h,statusRect:status,buttonRect:button,buttonInHostViewport:visible(button)};
   }
-  // Only strictly verified earlier rows replenish the local retry budget.
+  // Only strictly verified earlier rows reset the local retry counter/backoff.
   function historyNativeProgress(b,kind){
     const stats=b.nativeHistoryRetry;
     if(!stats||!stats.sinceProgress)return;
     stats.trace.push({at:new Date().toISOString(),event:'verified-progress-reset',kind,count:b.rows.length,minIndex:b.resume?.minIndex??null,previousAttempts:stats.sinceProgress,totalAttempts:stats.attempts});
     stats.sinceProgress=0;stats.progressResets++;
   }
-  async function historyNativeRetry(b,until,{guard=()=>historyGuard(b),report=msg=>historyStatus(b,msg),maxAttempts=3}={}){
+  async function historyNativeRetry(b,until,{guard=()=>historyGuard(b),report=msg=>historyStatus(b,msg),maxAttempts=Infinity}={}){
     let detected=historyNativeFailure(b.host);
     if(!detected)return false;
     const stats=b.nativeHistoryRetry||(b.nativeHistoryRetry={attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]});
