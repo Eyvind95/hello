@@ -380,3 +380,47 @@ test('full reader keeps composite text in order and payload is non-importable ev
  assert.equal(data.format,pc.COMPOSITE);assert.equal(data.status,'failed');assert.equal(data.importable,false);assert.equal(data.evidence.topReached,true);assert.equal(data.evidence.continuity,false);assert.equal(data.evidence.unresolvedCompositeCount,1);
  assert.equal(pc.validateCompositeEvidence(data).size,2);assert.throws(()=>pc.validateRaw(data));
 });
+
+test('observed generated-image-only topology requires completed native role and excludes real prose, uploads and unknown images',()=>{
+ const src=s.slice(s.indexOf('  function historyGeneratedImageProof('),s.indexOf('  const HISTORY_IMAGE_SINGLE_LIMIT='));
+ const attrs=(v)=>({getAttribute:k=>v[k]??null,hasAttribute:k=>k in v});
+ const text=v=>({nodeType:3,nodeValue:v});
+ const node=(tag,a={},children=[])=>({nodeType:1,tagName:tag,...attrs(a),children:children.filter(n=>n.nodeType===1),childNodes:children,contains(n){return n===this||this.children.some(x=>x.contains(n))}});
+ const img=node('IMG'),preview=node('BUTTON',{'aria-label':'產生的圖片 1'},[img]),edit=node('BUTTON',{'aria-label':'編輯生成的圖像 1'},[text('編輯')]),share=node('BUTTON',{'aria-label':'分享生成的圖像 1'}),gallery=node('DIV',{},[preview,edit,share]);
+ const body=node('DIV',{'data-response-body':'answer-id','data-chatgpt-search-message-ids':'answer-id'},[node('DIV',{},[gallery])]);
+ const role={...attrs({'data-conversation-role':'assistant'}),compareDocumentPosition:()=>4};
+ body.parentElement={children:[role,body]};
+ let completed=true,isUser=false,conflict=[],semantic=[],galleries=[gallery],images=[img];
+ body.closest=()=>completed?state:null;
+ body.querySelectorAll=q=>q==='[data-testid="generated-image-gallery"]'?galleries:q==='img'?images:q.startsWith('[data-message-id]')?conflict:semantic;
+ gallery.querySelectorAll=q=>q==='img'?images:[preview];
+ const state={contains:n=>n===body},owner={contains:n=>n===body||n===state};
+ const proof=vm.runInNewContext(src+';historyGeneratedImageProof',{Node:{DOCUMENT_POSITION_FOLLOWING:4},historyVisible:()=>true,isUserDescendant:()=>isUser});
+ assert.equal(proof(body,owner).id,'assistant|message:answer-id');assert.equal(proof(body,owner).image,img);
+ completed=false;assert.equal(proof(body,owner),null);completed=true;
+ isUser=true;assert.equal(proof(body,owner),null);isUser=false;
+ role.getAttribute=()=> 'user';assert.equal(proof(body,owner),null);role.getAttribute=()=> 'assistant';
+ body.childNodes.push(text('真正正文'));assert.equal(proof(body,owner),null);body.childNodes.pop();
+ semantic=[node('P')];assert.equal(proof(body,owner),null);semantic=[];
+ conflict=[node('DIV',{'data-message-id':'different'})];assert.equal(proof(body,owner),null);conflict=[];
+ images=[img,node('IMG')];assert.equal(proof(body,owner),null);images=[img];
+ galleries=[];assert.equal(proof(body,owner),null);
+});
+test('generated image byte preservation keeps actual blob bytes, hash, and ignores user, mixed, external and failed images',async()=>{
+ const src=s.slice(s.indexOf('  const HISTORY_IMAGE_SINGLE_LIMIT='),s.indexOf('  function historyRead(host,'));
+ const bytes=Uint8Array.from([137,80,78,71,13,10,26,10,1,2,3]);
+ const b={mode:'predecessor-history',chat:'/c/test'},state={bulk:b};let fetches=0;
+ const api=vm.runInNewContext(src+';({capture:historyCaptureGeneratedImages,inherit:historyInheritGeneratedImages,export:historyGeneratedImageExport})',{Uint8Array,Map,Set,Date,Number,String,Array,crypto:require('node:crypto').webcrypto,AbortSignal,btoa,atob,state,path:()=>'/c/test',fetch:async u=>{fetches++;if(u.endsWith('fail'))throw Error('unavailable');return new Response(bytes,{headers:{'Content-Type':'image/png'}})}});
+ const row={id:'assistant|message:one',role:'assistant',text:'',nonTextOmitted:true};
+ const image={isConnected:true,complete:true,naturalWidth:10,naturalHeight:20,currentSrc:'blob:https://chatgpt.com/fixture'};
+ const entry={row,generatedImage:{id:row.id,image}};
+ await api.capture(b,[{row:{...row,role:'user'},generatedImage:entry.generatedImage},{row:{...row,text:'caption'},generatedImage:entry.generatedImage}]);assert.equal(fetches,0);
+ await api.capture(b,[entry]);await api.capture(b,[entry]);assert.equal(fetches,1);
+ const result=api.export(b,[row]);assert.equal(result[0].status,'captured');assert.equal(result[0].sha256,require('node:crypto').createHash('sha256').update(bytes).digest('hex'));assert.equal(result[0].base64,Buffer.from(bytes).toString('base64'));
+ const other={...row,id:'assistant|message:two'};
+ await api.capture(b,[{row:other,generatedImage:{id:other.id,image:{...image,currentSrc:'https://external.invalid/image.png'}}}]);assert.equal(fetches,1);assert.equal(api.export(b,[other])[0].status,'unavailable');
+ await api.capture(b,[{row:other,generatedImage:{id:other.id,image:{...image,currentSrc:'blob:https://chatgpt.com/fail'}}}]);assert.equal(api.export(b,[other])[0].status,'unavailable');
+ const resumed={};await api.inherit(resumed,{rows:[row],evidence:{generatedImageAssets:result}});assert.equal(api.export(resumed,[row])[0].sha256,result[0].sha256);
+ const bad={};await api.inherit(bad,{rows:[row],evidence:{generatedImageAssets:[{...result[0],sha256:'0'.repeat(64)}]}});assert.equal(api.export(bad,[row]).length,0);
+ assert.equal(api.export(b,[]).length,0);
+});

@@ -726,7 +726,7 @@ test('unresolved image frontier preserves an isolated evidence segment without a
 test('actual historyRun keeps original rows and exports independent earlier segment, never completed',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  function historyPayload('),src.indexOf('  function historyDownload('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  const HISTORY_IMAGE_SINGLE_LIMIT='),src.indexOf('  function historyRead(host,'))+src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  function historyPayload('),src.indexOf('  function historyDownload('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  const img=n=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/00000000-0000-4000-8000-'+String(n).padStart(12,'0')});
  const saved=[{...r('u'),attachments:[img(1)]},r('a','assistant'),r('u2'),r('a2','assistant'),r('u3'),r('a3','assistant')];
  const live={...saved[0],attachments:[img(2),img(3)]},prefix=[r('p'),r('pa','assistant')],initial=[...prefix,live,...saved.slice(1,3)],earliest=r('earlier','assistant');
@@ -761,7 +761,7 @@ test('inter-window bottom jump restores last accepted viewport coordinate frame'
 test('actual historyRun returns to verified isolated viewport after between-window bottom snap',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
- const block=src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  function historyPayload('),src.indexOf('  function historyDownload('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
+ const block=src.slice(src.indexOf('  const HISTORY_IMAGE_SINGLE_LIMIT='),src.indexOf('  function historyRead(host,'))+src.slice(src.indexOf('  function historyNativeFailure('),src.indexOf('  async function historySettled('))+src.slice(src.indexOf('  function historyPayload('),src.indexOf('  function historyDownload('))+src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  async function historyBegin('));
  const img=n=>({kind:'image-reference',label:'使用者附件',url:'blob:https://chatgpt.com/00000000-0000-4000-8000-'+String(n).padStart(12,'0')});
  const saved=[{...r('u'),attachments:[img(1)]},r('a','assistant'),r('u2'),r('a2','assistant'),r('u3'),r('a3','assistant')];
  const live={...saved[0],attachments:[img(2),img(3)]},prefix=[r('p'),r('pa','assistant')],initial=[...prefix,live,...saved.slice(1,3)],earliest=r('earlier','assistant');

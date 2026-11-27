@@ -1810,6 +1810,98 @@
     if(evidence.length)throw historyIssue('GPT 正文與程式碼框不一致，無法安全確認完整正文',owner,{messageId:id,codeEvidence:evidence.slice(0,20),codeEvidenceOverflow:Math.max(0,evidence.length-20)});
     return text;
   }
+  // Narrow exception for the observed native generated-image-only renderer.
+  // Never treat arbitrary img, user uploads, captions, or tool UI as prose.
+  function historyGeneratedImageProof(body,owner){
+    const gallerySelector='[data-testid="generated-image-gallery"]',previewSelector='[data-testid="generated-image-preview"]';
+    const galleries=[...body.querySelectorAll(gallerySelector)];
+    if(!galleries.length)return null;
+    const id=body.getAttribute('data-response-body');
+    const valid=/^[a-zA-Z0-9_-]+$/;
+    if(!valid.test(id||'')||body.getAttribute('data-chatgpt-search-message-ids')!==id||!owner.contains(body)||!historyVisible(body)||isUserDescendant(body))return null;
+    const state=body.closest('[data-talvt-turn-state="complete"]');
+    if(!state||!owner.contains(state))return null;
+    const parent=body.parentElement,roles=[...parent.children].filter(n=>n.hasAttribute('data-conversation-role'));
+    if(roles.length!==1||roles[0].getAttribute('data-conversation-role')!=='assistant'||!(roles[0].compareDocumentPosition(body)&Node.DOCUMENT_POSITION_FOLLOWING))return null;
+    const conflicts=[...body.querySelectorAll('[data-message-id],[data-source-message-id],[data-dil-message-id],[data-chatgpt-selection-message-id],[data-message-author-role]')];
+    if(conflicts.some(n=>['data-message-id','data-source-message-id','data-dil-message-id','data-chatgpt-selection-message-id'].some(a=>n.hasAttribute(a)&&n.getAttribute(a)!==id)||(n.hasAttribute('data-message-author-role')&&n.getAttribute('data-message-author-role')!=='assistant')))return null;
+    if(galleries.length!==1||body.querySelectorAll('p,pre,code,blockquote,table,[data-markdown-text-style="assistant-message"]').length)return null;
+    const gallery=galleries[0],images=[...gallery.querySelectorAll('img')],previews=[...gallery.querySelectorAll(previewSelector)];
+    // Only single-image turns are proven by the real Iron Tomb evidence.
+    // Multi-image carousels or other layouts remain subject to normal checks.
+    if(images.length!==1||previews.length!==1||body.querySelectorAll('img').length!==1||!previews[0].contains(images[0])||!historyVisible(previews[0])||!historyVisible(images[0]))return null;
+    if(!/^(?:產生的圖片|生成的圖片|Generated image)\s*1$/i.test(previews[0].getAttribute('aria-label')||''))return null;
+    // A preview may not hide a caption or unrelated textual body.
+    const onlyImage=n=>n===images[0]||n.nodeType===8||(n.nodeType===3&&!String(n.nodeValue||'').trim())||(n.nodeType===1&&['DIV','SPAN'].includes(n.tagName)&&[...n.childNodes].every(onlyImage));
+    if(![...previews[0].childNodes].every(onlyImage))return null;
+    const knownControl=n=>n===previews[0]||(n.tagName==='BUTTON'&&gallery.contains(n)&&/^(?:編輯生成的圖像|分享生成的圖像|Edit generated image|Share generated image)\s*1$/i.test(n.getAttribute('aria-label')||''));
+    let unknown=false;
+    const walk=n=>{
+      if(n.nodeType===3){if(String(n.nodeValue||'').trim())unknown=true;return}
+      if(n.nodeType===8)return;
+      if(n.nodeType!==1){unknown=true;return}
+      if(knownControl(n))return;
+      // Nonempty hidden prose is not silently dropped either.
+      if(n!==body&&n.tagName!=='DIV'&&n.tagName!=='SPAN'){unknown=true;return}
+      for(const child of n.childNodes)walk(child);
+    };
+    // The image and its own edit/share controls are the only nonempty body.
+    walk(body);
+    if(unknown)return null;
+    return {id:'assistant|message:'+id,image:images[0]};
+  }
+  const HISTORY_IMAGE_SINGLE_LIMIT=12*1024*1024,HISTORY_IMAGE_TOTAL_LIMIT=48*1024*1024,HISTORY_IMAGE_COUNT_LIMIT=100;
+  function historyImageMime(bytes){
+    if(bytes.length>=8&&[137,80,78,71,13,10,26,10].every((x,i)=>bytes[i]===x))return 'image/png';
+    if(bytes.length>=3&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255)return 'image/jpeg';
+    if(bytes.length>=12&&String.fromCharCode(...bytes.slice(0,4))==='RIFF'&&String.fromCharCode(...bytes.slice(8,12))==='WEBP')return 'image/webp';
+    return null;
+  }
+  async function historyCaptureGeneratedImages(b,entries){
+    if(!entries?.length||b.sample||!['predecessor-history','predecessor-prefix-supplement'].includes(b.mode))return;
+    const map=b.generatedImageAssets||(b.generatedImageAssets=new Map());
+    for(const entry of entries){
+      const proof=entry.generatedImage;if(!proof||entry.row.id!==proof.id||entry.row.role!=='assistant'||entry.row.text!==''||entry.row.nonTextOmitted!==true)continue;
+      if(b.cancelled||state.bulk!==b||path()!==b.chat)return;
+      const prior=map.get(proof.id);if(prior?.status==='captured'||prior?.attempts>=2)continue;
+      if(!prior&&map.size>=HISTORY_IMAGE_COUNT_LIMIT){b.generatedImageOverflow=(b.generatedImageOverflow||0)+1;continue}
+      const record={messageId:proof.id,ordinal:1,status:'unavailable',attempts:(prior?.attempts||0)+1,observedAt:new Date().toISOString()};
+      try{
+        const img=proof.image,src=img.currentSrc||img.src;
+        if(!img.isConnected||!img.complete||!img.naturalWidth||!img.naturalHeight||!/^blob:https:\/\/chatgpt\.com\/[a-zA-Z0-9-]+$/.test(src||''))throw Error('已生成圖片未掛載可讀的同源 blob');
+        const response=await fetch(src,{signal:AbortSignal.timeout(2500),credentials:'omit'});
+        if(!response.ok)throw Error('圖片 blob 讀取失敗');
+        const blob=await response.blob(),used=[...map.values()].reduce((n,x)=>n+(x.byteLength||0),0);
+        if(!blob.size||blob.size>HISTORY_IMAGE_SINGLE_LIMIT||used+blob.size>HISTORY_IMAGE_TOTAL_LIMIT)throw Error('圖片保全大小上限');
+        const bytes=new Uint8Array(await blob.arrayBuffer()),mime=historyImageMime(bytes);
+        if(!mime||blob.type!==mime)throw Error('圖片格式無法核對');
+        if(b.cancelled||state.bulk!==b||path()!==b.chat)throw Error('掃描狀態已變更');
+        const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');
+        let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+        Object.assign(record,{status:'captured',mime,byteLength:bytes.length,sha256,base64:btoa(binary),width:img.naturalWidth,height:img.naturalHeight,source:'rendered-blob; original-server-bytes-not-verified'});
+      }catch(e){record.reason=String(e.message||e).slice(0,300)}
+      map.set(proof.id,record);
+    }
+  }
+  async function historyInheritGeneratedImages(b,data){
+    const rows=data?.candidateRows||data?.rows||[],allowed=new Set(rows.filter(r=>r.role==='assistant'&&r.text===''&&r.nonTextOmitted===true).map(r=>r.id)),map=b.generatedImageAssets||(b.generatedImageAssets=new Map());
+    const records=data?.evidence?.generatedImageAssets;
+    for(const x of Array.isArray(records)?records:[]){
+      if(!x||typeof x!=='object')continue;
+      if(!allowed.has(x.messageId)||x.ordinal!==1||x.status!=='captured'||map.has(x.messageId)||map.size>=HISTORY_IMAGE_COUNT_LIMIT)continue;
+      if(!Number.isSafeInteger(x.byteLength)||x.byteLength<1||x.byteLength>HISTORY_IMAGE_SINGLE_LIMIT||typeof x.base64!=='string'||x.base64.length!==4*Math.ceil(x.byteLength/3)||!(/^[a-f0-9]{64}$/.test(x.sha256||'')))continue;
+      if([...map.values()].reduce((n,y)=>n+(y.byteLength||0),0)+x.byteLength>HISTORY_IMAGE_TOTAL_LIMIT)continue;
+      try{
+        const bytes=Uint8Array.from(atob(x.base64),ch=>ch.charCodeAt(0)),sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
+        if(bytes.length!==x.byteLength||historyImageMime(bytes)!==x.mime||sha256!==x.sha256)continue;
+        map.set(x.messageId,{messageId:x.messageId,ordinal:1,status:'captured',attempts:1,observedAt:x.observedAt,mime:x.mime,byteLength:x.byteLength,sha256,base64:x.base64,width:x.width,height:x.height,source:'inherited-rendered-blob; original-server-bytes-not-verified'});
+      }catch(_){}
+    }
+  }
+  function historyGeneratedImageExport(b,rows){
+    const allowed=new Set(rows.filter(r=>r.role==='assistant'&&r.text===''&&r.nonTextOmitted===true).map(r=>r.id));
+    return [...(b.generatedImageAssets?.values()||[])].filter(x=>allowed.has(x.messageId));
+  }
   function historyRead(host,onFold=()=>{},onEntries=()=>{},allowComposite=false){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
     const add=(role,el,body,identityHint,fallback=false)=>{
@@ -1848,6 +1940,14 @@
       if(body.parentElement?.closest('[data-response-body]'))continue;
       const owner=historyOwner(body);
       if(!historyVisible(owner))continue;
+      const generated=historyGeneratedImageProof(body,owner);
+      if(generated){
+        const row={id:generated.id,role:'assistant',text:'',identityBasis:'native-dom-id',sourceCreatedAt:getVisibleSourceTime(body),structure:[],attachments:[],nonTextOmitted:true};
+        const group=owners.get(owner)||[];
+        if(group.some(x=>x.row.id===row.id))throw historyIssue('重複生成圖片原生訊息 ID',owner);
+        const item={row,el:body,owner,body,generatedImage:generated};
+        group.push(item);owners.set(owner,group);entries.push(item);explicit.push({el:body,role:'assistant',owner});continue;
+      }
       const native=historyResponseIdentity(body,owner,allowComposite);
       if(!historyVisible(body))throw historyIssue('明確 GPT 正文尚未穩定掛載',owner,{responseBodyId:native});
       add('assistant',body,body,native);
@@ -2097,7 +2197,7 @@
             // unmount it. Full scans never supply anchorRead.
             const anchor=b.mode==='predecessor-anchor'&&anchorRead?anchorRead(b.host):null;
             if(anchor?.observation)return anchor.rows;
-            const rows=anchor?anchor.rows:historyRead(b.host,observation=>historyFoldObservation(b,observation),undefined,b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
+            let entries=null;const rows=anchor?anchor.rows:historyRead(b.host,observation=>historyFoldObservation(b,observation),x=>{entries=x},b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
             if(lastRows&&last!==null&&last!==fingerprint){
               b.scrollStats.fingerprintChanges++;
@@ -2110,6 +2210,7 @@
               if(farBottom())throw handoffIdentity();
               const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost,policy):null;
               if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);const result=await recoverWait(recovered);target=result.target;targetHeight=result.height;continue}
+              if(entries?.some(x=>x.generatedImage)){await historyCaptureGeneratedImages(b,entries);historyGuard(b)}
               return rows;
             }
             if(last!==fingerprint){
@@ -2219,7 +2320,7 @@
     if(compositeCount&&status==='completed'){status='failed';error='已抵達觀測頂端；複合原生訊息分界待核對，非正式完整聊天'}
     if(compositeCount)warnings.push('含 '+compositeCount+' 個複合原生單元，count 是顯示單元數而非原生訊息數；分界未核對，不得正式匯入或分類。僅供取證與手動指定保全續掃。');
     if(b.isolated)warnings.push('前沿圖片參照仍有未解衝突；正式 rows 保留原有則數，不合併隔離取證。獨立原文段見 evidence.isolatedSegment，禁止當完整聊天或正式續掃斷點。');
-    warnings.push('前輩聊天為文字保全：圖片內容、網址、數量與一致性不在收錄／驗收範圍；純非文字回合只保留原生ID與角色。');
+    warnings.push('前輩聊天仍以文字保全為主；唯一圖片特例為已辨識的 AI 單張純生成圖片回覆，嘗試保存當下渲染 blob 位元組至 evidence.generatedImageAssets。玩家圖片、混合文字圖片、原始伺服器圖片及所有圖片數量一致性不在驗收範圍。');
     if(b.sample)warnings.push('最近'+b.sample+'則測試：僅供診斷，禁止當完整聊天匯入或分類。');
     if(b.nativeHistoryRetry?.attempts)warnings.push('曾觸發原生歷史載入重試；錯誤消失不代表訊息已取得，仍依原文重疊及前沿核對。');
     if(b.trustedWheelCount)warnings.push('掃描期間觀測到可信滾輪輸入，不能當成無人工介入的自動驗收；來源可能是使用者或瀏覽器自動化。');
@@ -2234,7 +2335,7 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:compositeCount?pc.COMPOSITE:b.sample?pc.SAMPLE:pc.FORMAT,...(compositeCount?{importable:false}:{}),...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed'&&!compositeCount,...(compositeCount?{unresolvedCompositeCount:compositeCount,displayUnitContinuityOnly:true}:{}),firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images; not checked',lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,unjoinedWindows:b.unjoinedWindows||[],unjoinedOverflow:b.unjoinedOverflow||0,identityRejoinTrace:b.identityRejoinTrace||[],identityRejoinTraceOverflow:b.identityRejoinTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
+    return {format:compositeCount?pc.COMPOSITE:b.sample?pc.SAMPLE:pc.FORMAT,...(compositeCount?{importable:false}:{}),...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed'&&!compositeCount,...(compositeCount?{unresolvedCompositeCount:compositeCount,displayUnitContinuityOnly:true}:{}),firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images-except-proven-assistant-generated-image-only; observed-bytes-only',generatedImageAssets:historyGeneratedImageExport(b,rows),generatedImageOverflow:b.generatedImageOverflow||0,lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,unjoinedWindows:b.unjoinedWindows||[],unjoinedOverflow:b.unjoinedOverflow||0,identityRejoinTrace:b.identityRejoinTrace||[],identityRejoinTraceOverflow:b.identityRejoinTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
   }
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+(data.evidence.isolatedSegment?.count??data.count):'')+'.json';
@@ -2718,6 +2819,7 @@
     }
     state.bulk=b;
     try{
+      if(checkpoint)await historyInheritGeneratedImages(b,checkpoint.data);
       // Disable only this chat's existing automatic upload so scrolling over
       // historical messages cannot upload them after the scan ends.
       const minimumKey='ga-predecessor-min:'+b.chat;
@@ -2859,8 +2961,8 @@
         guard();if(!host.isConnected)throw Error('捲動容器已更換');
         if(!historyLoading(host)&&!historyNativeFailure(host)){
           try{
-            const current=historyRead(host,x=>{if(folds.length<200)folds.push(x)},entries=>historyPrefixConflictDom(entries,known,conflictDom),true),sig=pc.fingerprint(current);
-            if(previous===sig&&Date.now()-lastAt>=550)return current;
+            let mounted=null;const current=historyRead(host,x=>{if(folds.length<200)folds.push(x)},entries=>{mounted=entries;historyPrefixConflictDom(entries,known,conflictDom)},true),sig=pc.fingerprint(current);
+            if(previous===sig&&Date.now()-lastAt>=550){if(mounted?.some(x=>x.generatedImage)){await historyCaptureGeneratedImages(b,mounted);guard()}return current}
             if(previous!==sig){previous=sig;lastAt=Date.now()}
           }catch(e){lastConflict={reason:String(e.message||e),evidence:e.historyEvidence||null};previous=null}
         }else previous=null;
@@ -2869,7 +2971,8 @@
       throw Error('局部正文未能穩定讀取');
     };
     try{
-      host=historyHost();
+      await historyInheritGeneratedImages(b,checkpoint.data);if(prior)await historyInheritGeneratedImages(b,prior.data);
+      guard();host=historyHost();
       if(!host)throw Error('找不到捲動容器');
       if(previous){
         rows=previous;
@@ -3009,7 +3112,7 @@
     }catch(e){error=String(e.message||e);status=cancel()?'cancelled':'failed'}
     finally{if(state.bulk===b)state.bulk=null;lock.remove()}
     const candidateRows=join?join.candidate.map((r,index)=>({...r,index})):null;
-    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,openingTrace,recoveryTrace,conflictDom,resumeNavigation,nativeHistoryRetry:b.nativeHistoryRetry||null,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
+    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{generatedImageAssets:historyGeneratedImageExport(b,candidateRows||rows),generatedImageOverflow:b.generatedImageOverflow||0,expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,openingTrace,recoveryTrace,conflictDom,resumeNavigation,nativeHistoryRetry:b.nativeHistoryRetry||null,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
     const filename=historyDownload(data);
     return {ok:!!join,message:join?(observedOnly?'候選頂端重疊核對成功（真開頭未驗證）｜新增 ':'局部重疊核對成功｜新增 ')+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
   }
