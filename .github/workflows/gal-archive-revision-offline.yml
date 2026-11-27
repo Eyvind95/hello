@@ -14,3 +14,5 @@ jobs:
         with:
           node-version: '22'
       - run: node --test apps/gal-archive/archive-pilot-import.test.js apps/gal-archive/archive-pilot-revision.test.js
+      - name: Real isolated Chromium IndexedDB test (synthetic only)
+        run: node apps/gal-archive/archive-pilot-revision-browser-runner.cjs
