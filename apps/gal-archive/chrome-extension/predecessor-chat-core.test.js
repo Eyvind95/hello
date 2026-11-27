@@ -1288,3 +1288,30 @@ test('writing-block proof allows exact label transition and rejects malformed ev
  for(const bad of [{...f,inlineExpanded:false},{...f,inlineSurfaceOffset:start+1},{...f,inlineControlTarget:''},{...f,inlineSurfaceLength:0},{...f,inlineBasis:'unknown'}])a.throws(()=>c.mergeUp([old],[live],null,{current:new Map([['e',e],['f',bad]])}));
  a.throws(()=>c.mergeUp([old],[{...live,text:live.text+'真變動'}],null,ctx));
 });
+
+
+test('exclusive GPT branch boundary trims parent and keeps first new player exactly once',()=>{
+ const old=r('user|turn:old'),anchor={...r('assistant|message:boundary','assistant','mother tail'),identityBasis:'native-dom-id'},u=r('user|turn:new'),g={...r('assistant|message:new','assistant'),identityBasis:'native-dom-id'};
+ a.deepEqual(c.branchBoundary([old,anchor,u,g],[old,anchor,u,g],anchor).rows,[u,g]);
+ const merged=c.mergeUp([u,g],[old,anchor,u]);
+ a.deepEqual(c.branchBoundary(merged,[old,anchor,u],anchor).rows,[u,g]);
+ a.equal(c.branchBoundary([u,g],[u,g],anchor),null);
+ a.throws(()=>c.branchAnchor(old));
+ a.throws(()=>c.branchAnchor({...anchor,id:'assistant|turn:boundary',identityBasis:'turn-key'}));
+ a.throws(()=>c.branchBoundary([old,{...anchor,text:'changed'},u,g],[old,{...anchor,text:'changed'},u],anchor));
+ a.throws(()=>c.branchBoundary(merged,[old,anchor],anchor));
+ a.throws(()=>c.branchBoundary([old,anchor],[old,anchor],anchor));
+ a.throws(()=>c.branchBoundary([old,anchor,g],[old,anchor,g],anchor));
+ a.deepEqual(merged,[old,anchor,u,g]); // normal merge remains untouched
+});
+test('branch evidence is never a complete physical top or normal predecessor import',()=>{
+ const anchor='assistant|message:boundary',hash='a'.repeat(64),rows=[{...r('user|turn:new'),index:0}];
+ const data={format:'gal-predecessor-branch-chat',scope:'assistant-exclusive-boundary',version:1,canonical:false,importable:false,fidelity:'rendered-dom',status:'completed',runId:'branch-run',title:'茶話會',chatId:'branch-chat',sourceUrl:'https://chatgpt.com/c/branch-chat',startedAt:'2026-01-01T00:00:00Z',finishedAt:'2026-01-01T00:00:05Z',count:1,rows,warnings:[],error:null,evidence:{bottomReached:true,bottomStableMs:3000,topReached:false,topStableMs:0,continuity:true,firstId:rows[0].id,lastId:rows[0].id,branchBoundary:{anchorId:anchor,anchorSha256:hash,observedSha256:hash,verified:true,firstNewId:rows[0].id}}};
+ a.ok(c.validateBranch(data).has(rows[0].id));
+ a.throws(()=>c.validateRaw(data));
+ a.throws(()=>c.validateCheckpoint(data,data.sourceUrl));
+ for(const e of [{topReached:true},{continuity:false},{bottomReached:false},{branchBoundary:{...data.evidence.branchBoundary,verified:false}},{branchBoundary:{...data.evidence.branchBoundary,observedSha256:'b'.repeat(64)}}])a.throws(()=>c.validateBranch({...data,evidence:{...data.evidence,...e}}));
+ a.throws(()=>c.validateBranch({...data,importable:true}));
+ a.throws(()=>c.validateBranch({...data,rows:[{...r(anchor,'assistant'),index:0}]}));
+ a.ok(c.validateBranch({...data,status:'failed',error:'not found',evidence:{...data.evidence,continuity:false,branchBoundary:{anchorId:anchor,anchorSha256:hash,verified:false}}}));
+});

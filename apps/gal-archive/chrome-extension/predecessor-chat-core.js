@@ -604,5 +604,36 @@ function anchorDiagnosticHint(target,indices,geo,previous={},maxScreens=24,repea
  return {top:clamp(destination),height,mode,direction,best,improved,restored,restore:mode==='restore-live-best',low,high};
 }
 
-return {anchorDiagnosticHint,anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,pendingTailProof,resumeWindow,resumeSeed,resumeFrontierSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,midrangeBottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+
+ // A user-selected native assistant is an exclusive branch boundary, not a
+ // physical conversation top. Never infer it from text or turn ordinals.
+ function branchAnchor(row){
+  validateRows([row]);
+  check(row.role==='assistant'&&row.identityBasis==='native-dom-id'&&/^assistant\|message:[a-zA-Z0-9_-]+$/.test(row.id)&&!isComposite(row),'分支頂端必須是單一 GPT 原生回應');
+  check(!!row.text.trim(),'分支頂端必須有可核對正文');
+  return row;
+ }
+ function branchBoundary(merged,live,anchor){
+  branchAnchor(anchor);validateRows(merged);validateRows(live);
+  const at=merged.findIndex(r=>r.id===anchor.id);
+  if(at<0)return null;
+  const hit=live.findIndex(r=>r.id===anchor.id);
+  check(hit>=0&&compareRow(anchor,live[hit]).equal&&compareRow(anchor,merged[at]).equal,'分支錨點正文或格式不符');
+  const rows=merged.slice(at+1);
+  check(rows.length>0&&rows[0].role==='user'&&live[hit+1]?.id===rows[0].id&&compareRow(rows[0],live[hit+1]).equal,'分支錨點未與第一則新增玩家訊息相鄰');
+  check(!rows.some(isComposite),'分支包含未核對複合訊息');
+  return {rows,anchor:live[hit],firstNewId:rows[0].id};
+ }
+ function validateBranch(data){
+  check(data?.format==='gal-predecessor-branch-chat'&&data.scope==='assistant-exclusive-boundary'&&data.importable===false&&data.canonical===false&&data.version===VERSION&&data.fidelity==='rendered-dom'&&['completed','failed','cancelled'].includes(data.status),'不是獨立分支保全');
+  check(validId(data.runId)&&validId(data.title)&&data.chatId===sourceId(data.sourceUrl),'分支來源不符');
+  check(Number.isFinite(Date.parse(data.startedAt))&&Date.parse(data.finishedAt)>=Date.parse(data.startedAt),'分支掃描時間無效');
+  const ids=validateRows(data.rows),ev=data.evidence,q=ev?.branchBoundary;
+  check(data.count===data.rows.length&&data.rows.every((r,i)=>r.index===i)&&ev?.topReached===false&&q&&/^assistant\|message:[a-zA-Z0-9_-]+$/.test(q.anchorId)&&/^[a-f0-9]{64}$/.test(q.anchorSha256)&&!ids.has(q.anchorId),'分支證據或索引錯誤');
+  if(data.status==='completed')check(!data.error&&ev.bottomReached===true&&ev.bottomStableMs>=3000&&ev.continuity===true&&q.verified===true&&q.observedSha256===q.anchorSha256&&q.firstNewId===data.rows[0]?.id&&data.rows[0]?.role==='user'&&ev.firstId===data.rows[0]?.id&&ev.lastId===data.rows.at(-1)?.id&&!data.rows.some(isComposite),'分支完成缺少邊界或尾端證據');
+  else check(ev.continuity===false&&q.verified===false,'未完成分支不得宣告連續性');
+  return ids;
+ }
+
+return {branchAnchor,branchBoundary,validateBranch,anchorDiagnosticHint,anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,pendingTailProof,resumeWindow,resumeSeed,resumeFrontierSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,midrangeBottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });
