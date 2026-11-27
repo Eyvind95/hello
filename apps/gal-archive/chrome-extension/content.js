@@ -2624,6 +2624,7 @@
     data.evidence.topReached=false;data.evidence.topStableMs=0;
     data.evidence.coverage='selected-assistant-boundary; no independent server manifest';
     data.evidence.branchReadRecovery=b.branchReadRecovery||[];
+    if(b.branchDownProgress)data.evidence.branchDownProgress=b.branchDownProgress;
     data.evidence.continuity=data.status==='completed'&&!!b.branchProof;
     data.evidence.branchBoundary={anchorId:b.branch.row.id,anchorSha256:b.branch.hash,direction:b.branch.direction||'up',verified:false,...(data.status==='completed'?b.branchProof||{}:{})};
     data.warnings.push('分支專用保全：指定 GPT 回應及其之前訊息不計入完成檔。未完成檔尚未證明範圍，不可當成分支新增正文或完整聊天匯入。');
@@ -2661,8 +2662,17 @@
     b.rows=first.rows;b.windows++;
     b.branchProof={anchorId:anchor.id,anchorSha256:b.branch.hash,observedSha256:hash,firstNewId:first.firstNewId,verified:true,verifiedAt:new Date().toISOString()};
     historyTrace(b,'assistant-branch-boundary-verified',{anchorId:anchor.id,firstNewId:first.firstNewId,direction:'down'});
-    let lastGrowth=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,acceptedLive=live.slice(live.findIndex(r=>r.id===anchor.id)+1),step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0,bottomSince=null,bottomSig=null;
-    const accept=async current=>{
+    let lastGrowth=Date.now(),lastProgress=lastGrowth,anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,acceptedLive=live.slice(live.findIndex(r=>r.id===anchor.id)+1),step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0,bottomSince=null,bottomSig=null;
+    // A long mounted reply may span many viewports. Only an exact overlapping
+    // accepted window, a bounded forward landing and a NEW high-water mark
+    // can extend the idle deadline. Geometry never proves row completeness.
+    // Keep a separate hard cap per unchanged row frontier; no endless retry.
+    const idleLimit=180000,frontierLimit=900000;
+    const progress=b.branchDownProgress={idleLimitMs:idleLimit,frontierLimitMs:frontierLimit,verifiedForwardWindows:0,verifiedForwardPixels:0,uncreditedWindows:0,highWaterTop:anchorTop,lastGrowthAt:new Date(lastGrowth).toISOString(),lastProgressAt:new Date(lastProgress).toISOString()};
+    const deadline=()=>Math.min(lastProgress+idleLimit,lastGrowth+frontierLimit);
+    const guardProgress=()=>{const now=Date.now();if(now-lastGrowth>=frontierLimit)throw Error('同一尾端15分鐘無新增連續訊息');if(now-lastProgress>=idleLimit)throw Error('180秒無新增連續訊息、已驗證向下位移或底端穩定證據')};
+    const move=(target,kind)=>{b.scrollStats.attempts=(b.scrollStats.attempts||0)+1;historyTrace(b,'branch-down-scroll',{kind,target,from:host.scrollTop});historyScroll(host,target)};
+    const accept=async (current,movement=null)=>{
       historyGuard(b);
       let next=current;
       const a=current.findIndex(r=>r.id===anchor.id);
@@ -2672,8 +2682,19 @@
       }
       const rows=historyPrefixMerge(b.rows,next);
       if(rows.some(pc.isComposite))throw Error('分支含未核對複合訊息');
-      if(rows.length>b.rows.length)lastGrowth=Date.now();
-      b.rows=rows;acceptedLive=next;anchorTop=host.scrollTop;anchorHeight=host.scrollHeight;b.windows++;
+      const grew=rows.length>b.rows.length,actual=host.scrollTop,actualHeight=host.scrollHeight,tail=b.rows.at(-1)?.id;
+      if(grew){lastGrowth=lastProgress=Date.now();progress.highWaterTop=actual;progress.lastGrowthAt=new Date(lastGrowth).toISOString();progress.lastProgressAt=progress.lastGrowthAt}
+      else if(movement){
+        b.scrollStats.noGrowthWindows=(b.scrollStats.noGrowthWindows||0)+1;
+        const {from,pre,oldHeight,target,viewport,previousTail}=movement;
+        // A stale/older window, jump, resize/reflow, restore, or oscillation
+        // is not evidence of traversing a long reply. Exact merge above is mandatory.
+        const credited=previousTail===tail&&next.at(-1)?.id===tail&&Math.abs(pre-from)<=2&&actualHeight===oldHeight&&host.clientHeight===viewport&&from>=progress.highWaterTop-2&&actual>progress.highWaterTop+2&&actual<=target+8&&actual-from<=viewport*.9+8;
+        if(credited){progress.verifiedForwardWindows++;progress.verifiedForwardPixels+=actual-progress.highWaterTop;progress.highWaterTop=actual;lastProgress=Date.now();progress.lastProgressAt=new Date(lastProgress).toISOString()}
+        else progress.uncreditedWindows++;
+        historyTrace(b,'branch-down-no-new-rows',{from,target,actual,oldHeight,actualHeight,tail,credited,highWaterTop:progress.highWaterTop,msSinceGrowth:Date.now()-lastGrowth,msSinceProgress:Date.now()-lastProgress});
+      }
+      b.rows=rows;acceptedLive=next;anchorTop=actual;anchorHeight=actualHeight;b.windows++;
       historyHostObservation(b);
       return next;
     };
@@ -2681,7 +2702,7 @@
     // require stable actual bottom and an exact last-ID/body overlap.
     for(;;){
       historyGuard(b);
-      if(Date.now()-lastGrowth>=180000)throw Error('180秒無新增連續訊息或底端穩定證據');
+      guardProgress();
       if(historyAtBottom(host)&&acceptedLive.at(-1)?.id===b.rows.at(-1)?.id&&!historyLoading(host)&&!historyNativeFailure(host)){
         const sig=JSON.stringify([pc.fingerprint(acceptedLive),host.scrollHeight]);
         if(sig!==bottomSig){bottomSig=sig;bottomSince=Date.now()}
@@ -2689,34 +2710,35 @@
           b.bottomReached=true;b.bottomStableMs=Date.now()-bottomSince;return;
         }
         historyStatus(b,'核對分支底端穩定');await sleep(650);
-        live=await historySettled(b,{deadline:lastGrowth+180000});
+        live=await historySettled(b,{deadline:deadline()});
         await accept(live);continue;
       }
       bottomSince=null;bottomSig=null;
       historyStatus(b,'從指定 GPT 頂端向下掃描');
       const from=anchorTop,oldHeight=anchorHeight,tail=b.rows.at(-1)?.id;
       const target=Math.min(Math.max(0,host.scrollHeight-host.clientHeight),from+step);
-      historyScroll(host,target);await sleep(350);
+      const movement={from,pre:host.scrollTop,oldHeight,target,viewport:host.clientHeight,previousTail:acceptedLive.at(-1)?.id};
+      move(target,'forward');await sleep(350);
       try{
-        live=await historySettled(b,{deadline:lastGrowth+180000});
-        await accept(live);retries=0;step=Math.max(24,Math.floor(host.clientHeight*.65));
+        live=await historySettled(b,{deadline:deadline()});
+        await accept(live,movement);retries=0;step=Math.max(24,Math.floor(host.clientHeight*.65));
       }catch(e){
-        historyGuard(b);if(++retries>=4)throw e;
+        historyGuard(b);guardProgress();b.scrollStats.overlapRetries=(b.scrollStats.overlapRetries||0)+1;if(++retries>=4)throw e;
         historyTrace(b,'branch-down-forward-conflict',{target,anchorTop:from,anchorHeight:oldHeight,anchorId:tail,reason:String(e.message||e)});
         let restored=false;
         for(let attempt=1;attempt<=3;attempt++){
           historyGuard(b);
-          if(Date.now()-lastGrowth>=180000)throw Error('180秒無新增連續訊息');
+          guardProgress();
           if(historyAtBottom(host)&&host.scrollTop-from>host.clientHeight*4&&attempt>1){
-            historyScroll(host,host.scrollTop-Math.max(24,Math.floor(host.clientHeight*.5)));await sleep(600);
+            move(host.scrollTop-Math.max(24,Math.floor(host.clientHeight*.5)),'bottom-escape');await sleep(600);
           }
           const adjusted=from+host.scrollHeight-oldHeight;
           const hint=attempt===1?from:attempt===2?adjusted:Math.min(from,adjusted)-Math.floor(host.clientHeight*.25);
-          historyScroll(host,hint);await sleep(600);
+          move(hint,'restore');await sleep(600);
           try{
-            live=await historySettled(b,{deadline:Math.min(lastGrowth+180000,Date.now()+12000)});
+            live=await historySettled(b,{deadline:Math.min(deadline(),Date.now()+12000)});
             if(!live.some(r=>r.id===tail))throw Error('復原視窗未找到已核對尾端');
-            await accept(live);restored=true;historyTrace(b,'branch-down-restore-verified',{attempt,anchorId:tail});break;
+            await accept(live);b.scrollStats.frontierRestores=(b.scrollStats.frontierRestores||0)+1;restored=true;historyTrace(b,'branch-down-restore-verified',{attempt,anchorId:tail});break;
           }catch(err){historyGuard(b);historyTrace(b,'branch-down-restore-rejected',{attempt,reason:String(err.message||err)})}
         }
         if(!restored)throw Error('無法復原向下連續視窗：'+String(e.message||e));
