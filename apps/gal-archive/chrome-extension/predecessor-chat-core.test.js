@@ -1350,21 +1350,21 @@ test('actual branch down starts at selected current GPT, strictly merges adjacen
 test('branch down long stable windows credit bounded actual progress, not stuck, oscillating, resized or stale windows',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  async function historyBranchDown('),src.indexOf('  async function historyRun(b)'))+src.slice(src.indexOf('  function historyPrefixMerge('),src.indexOf('  function historyPrefixJoin('));
- for(const mode of ['long','stuck','oscillate','resize','stale','hard-cap']){
-  let now=1000,moves=0,first=true;const hash='a'.repeat(64),host={scrollTop:100,scrollHeight:mode==='hard-cap'?100000:20000,clientHeight:100};
+ for(const mode of ['long','stuck','oscillate','resize','stale','geometry-budget']){
+  let now=1000,moves=0,first=true;const hash='a'.repeat(64),host={scrollTop:100,scrollHeight:mode==='long'?40000:mode==='geometry-budget'?5000:20000,clientHeight:100};
   const anchor={...r('assistant|message:anchor','assistant','parent'),identityBasis:'native-dom-id'},u=r('user|turn:u'),g={...r('assistant|message:g','assistant','long reply'),identityBasis:'native-dom-id'},u2=r('user|turn:u2'),g2={...r('assistant|message:g2','assistant'),identityBasis:'native-dom-id'};
   const b={host,branch:{row:anchor,hash,direction:'down'},rows:[],windows:0,scrollStats:{}};
   const Clock=class extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}};
-  const ctx={Date:Clock,pc:c,historyGuard:()=>{},historyStatus:()=>{},historyTrace:()=>{},historyHostObservation:()=>{},historyLoading:()=>false,historyNativeFailure:()=>null,historyEdgeOrdinal:()=>({}),historyAtBottom:h=>h.scrollTop>=h.scrollHeight-h.clientHeight,historyBranchDigest:async()=>hash,historyScroll:(h,to)=>{moves++;if(mode==='stuck')return;if(mode==='oscillate'){h.scrollTop=moves%2?165:100;return}h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,to);if(mode==='resize')h.scrollHeight++},sleep:async ms=>{now+=ms},historySettled:async()=>{now+=2000;if(first){first=false;return [anchor,u,g]}if(mode==='stale')return [u];if(mode==='long'&&host.scrollTop>=10000)return [g,u2,g2];return [u,g]}};
+  const ctx={Date:Clock,pc:c,historyGuard:()=>{},historyStatus:()=>{},historyTrace:()=>{},historyHostObservation:()=>{},historyLoading:()=>false,historyNativeFailure:()=>null,historyEdgeOrdinal:()=>({}),historyAtBottom:h=>h.scrollTop>=h.scrollHeight-h.clientHeight,historyBranchDigest:async()=>hash,historyScroll:(h,to)=>{moves++;if(mode==='stuck')return;if(mode==='oscillate'){h.scrollTop=moves%2?165:100;return}h.scrollTop=Math.min(h.scrollHeight-h.clientHeight,to);if(mode==='resize')h.scrollHeight++;if(mode==='geometry-budget'&&moves===2)h.scrollHeight=100000},sleep:async ms=>{now+=ms},historySettled:async()=>{now+=2000;if(first){first=false;return [anchor,u,g]}if(mode==='stale')return [u];if(mode==='long'&&host.scrollTop>=30000)return [g,u2,g2];return [u,g]}};
   vm.runInNewContext(block+';globalThis.down=historyBranchDown;',ctx);
   if(mode==='long'){
-   await ctx.down(b);a.deepEqual(Array.from(b.rows,x=>x.id),[u.id,g.id,u2.id,g2.id]);a.ok(now>180000);a.equal(b.bottomReached,true);a.ok(b.branchDownProgress.verifiedForwardWindows>100);a.ok(b.branchDownProgress.verifiedForwardPixels>9000);
+   await ctx.down(b);a.deepEqual(Array.from(b.rows,x=>x.id),[u.id,g.id,u2.id,g2.id]);a.ok(now>900000);a.equal(b.bottomReached,true);a.ok(b.branchDownProgress.verifiedForwardWindows>100);a.ok(b.branchDownProgress.verifiedForwardPixels>9000);
   }else{
-   await a.rejects(ctx.down(b),mode==='hard-cap'?/15分鐘/:/180秒/);
+   await a.rejects(ctx.down(b),/180秒/);
    a.notEqual(b.bottomReached,true);a.deepEqual(Array.from(b.rows,x=>x.id),[u.id,g.id]);
    if(mode==='oscillate')a.equal(b.branchDownProgress.verifiedForwardWindows,1);
-   else if(mode!=='hard-cap')a.equal(b.branchDownProgress.verifiedForwardWindows,0);
-   if(mode==='hard-cap'){a.ok(now>=900000);a.ok(b.branchDownProgress.verifiedForwardWindows>100)}
+   else if(mode!=='geometry-budget')a.equal(b.branchDownProgress.verifiedForwardWindows,0);
+   if(mode==='geometry-budget'){a.ok(b.branchDownProgress.budgetRejectedWindows>0);a.equal(b.branchDownProgress.frontierRangeEnd,4900);a.ok(b.branchDownProgress.highWaterTop<=4902);a.ok(b.branchDownProgress.verifiedForwardPixels<=4802)}
   }
   a.equal(b.scrollStats.attempts,moves);a.ok(b.scrollStats.noGrowthWindows>0);
  }
