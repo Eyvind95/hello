@@ -2263,7 +2263,7 @@
     };
     while(Date.now()<until){
       historyGuard(b);
-      if(upward&&await historyNativeRetry(b,until)){target=null;targetHeight=null;last=null;lastRows=null;spinAt=0;continue}
+      if((upward||b.branch?.direction==='down')&&await historyNativeRetry(b,until)){target=null;targetHeight=null;last=null;lastRows=null;spinAt=0;continue}
       if(farBottom())throw handoffIdentity();
       const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-before-read',allowBoost,policy):null;
       if(recovered){
@@ -2271,7 +2271,7 @@
         last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);const result=await recoverWait(recovered);target=result.target;targetHeight=result.height;continue;
       }
       if(historyLoading(b.host)){
-        last=null;reason='等待載入轉圈';b.scrollStats.loadingPolls++;
+        last=null;readIssueKey='';readIssueSince=0;reason='等待載入轉圈';b.scrollStats.loadingPolls++;
         const now=Date.now();if(!spinAt)spinAt=now;
         if(upward&&!isGenerating()&&now-spinAt>=8000&&now-lastNudge>=8000&&nudges<3&&b.host.scrollTop>2){
           const from=b.host.scrollTop;historyScroll(b.host,from-Math.max(24,Math.floor(b.host.clientHeight*.2)));
@@ -2326,6 +2326,8 @@
             historyStatus(b,'正文掛載不穩定・小幅上移復原 '+readNudges+'/3（仍需逐字核對）');
             await sleep(Math.min(650,Math.max(0,until-Date.now())));historyGuard(b);
             if(upward){target=b.host.scrollTop;targetHeight=b.host.scrollHeight}
+            const recovery=b.branchReadRecovery||(b.branchReadRecovery=[]);
+            if(recovery.length<100)recovery.push({at:new Date().toISOString(),messageId:key,attempt:readNudges,from,requested,actual:b.host.scrollTop,reason});
             historyTrace(b,'branch-read-issue-nudge-landed',{messageId:key,attempt:readNudges,requested,actual:b.host.scrollTop});
             continue;
           }
@@ -2621,6 +2623,7 @@
     data.format='gal-predecessor-branch-chat';data.scope='assistant-exclusive-boundary';data.importable=false;
     data.evidence.topReached=false;data.evidence.topStableMs=0;
     data.evidence.coverage='selected-assistant-boundary; no independent server manifest';
+    data.evidence.branchReadRecovery=b.branchReadRecovery||[];
     data.evidence.continuity=data.status==='completed'&&!!b.branchProof;
     data.evidence.branchBoundary={anchorId:b.branch.row.id,anchorSha256:b.branch.hash,direction:b.branch.direction||'up',verified:false,...(data.status==='completed'?b.branchProof||{}:{})};
     data.warnings.push('分支專用保全：指定 GPT 回應及其之前訊息不計入完成檔。未完成檔尚未證明範圍，不可當成分支新增正文或完整聊天匯入。');
@@ -2645,7 +2648,9 @@
       if(historyAtBottom(host))break;
       historyScroll(host,from+step);await sleep(350);
       live=await historySettled(b,{deadline:Date.now()+12000});
-      accepted=historyPrefixMerge(accepted,live.slice(Math.max(0,live.findIndex(r=>r.id===anchor.id))));
+      const visibleAt=live.findIndex(r=>r.id===anchor.id);
+      if(visibleAt<0)throw Error('指定 GPT 錨點已離開可核對視窗；請回到回應尾端及下一則玩家訊息附近');
+      accepted=historyPrefixMerge(accepted,live.slice(visibleAt));
       if(accepted.length===1&&Math.abs(host.scrollTop-from)<2)break;
     }
     // Keep the parent anchor out of all branch rows, even on a failure.
@@ -2656,7 +2661,7 @@
     b.rows=first.rows;b.windows++;
     b.branchProof={anchorId:anchor.id,anchorSha256:b.branch.hash,observedSha256:hash,firstNewId:first.firstNewId,verified:true,verifiedAt:new Date().toISOString()};
     historyTrace(b,'assistant-branch-boundary-verified',{anchorId:anchor.id,firstNewId:first.firstNewId,direction:'down'});
-    let lastGrowth=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,acceptedLive=live,step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0,bottomSince=null,bottomSig=null;
+    let lastGrowth=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,acceptedLive=live.slice(live.findIndex(r=>r.id===anchor.id)+1),step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0,bottomSince=null,bottomSig=null;
     const accept=async current=>{
       historyGuard(b);
       let next=current;
@@ -3825,9 +3830,9 @@
         if(picking){clearPick();return}
         if(!available())return;
         if(branchId.value.trim()){
-          branchPick.disabled=true;branchStart.disabled=true;
+          branchPick.disabled=true;branchStart.disabled=true;branchDown.disabled=true;
           try{await captureBranch(null,branchId.value.trim())}catch(e){branchInfo.textContent='⛔ '+String(e.message||e)}
-          finally{branchPick.disabled=false;branchStart.disabled=false}
+          finally{branchPick.disabled=false;branchStart.disabled=false;branchDown.disabled=false}
           return;
         }
         picking=true;branchPick.textContent='取消點選';
@@ -3837,15 +3842,15 @@
           if(pane.contains(event.target))return;
           if(!event.target?.closest?.('[data-response-body],[data-message-author-role],[data-turn-key],[data-testid^="conversation-turn-"]'))return;
           event.preventDefault();event.stopImmediatePropagation();clearPick();
-          branchPick.disabled=true;branchStart.disabled=true;
+          branchPick.disabled=true;branchStart.disabled=true;branchDown.disabled=true;
           try{await captureBranch(event.target,null)}catch(e){branchInfo.textContent='⛔ '+String(e.message||e)}
-          finally{branchPick.disabled=false;branchStart.disabled=false}
+          finally{branchPick.disabled=false;branchStart.disabled=false;branchDown.disabled=false}
         };
         document.addEventListener('click',pickListener,true);
       };
       const launchBranch=async(direction)=>{
         clearPick();
-        if(!available())return;
+        if(!available()||branchPick.disabled)return;
         if(!branchRecord||branchId.value.trim()!==branchRecord.row.id){branchInfo.textContent='請先擷取目前畫面中的指定 GPT 回應';return}
         branchStart.disabled=true;branchPick.disabled=true;branchDown.disabled=true;
         try{
