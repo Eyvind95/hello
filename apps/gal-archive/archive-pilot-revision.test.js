@@ -123,3 +123,27 @@ test('historical middle insertion retains all existing row order and rejects pre
  old.pilotMessages.reverse();b.targets[0].beforeSha256=await api.digest(old);
  await a.rejects(api.inspect([old],b),/既有來源順序異常/);
 });
+
+test('prepare binds actual readback row hashes and refuses candidate-only or mismatched local/cloud data',async()=>{
+ const {before,bundle,source,hash,pack,candidate}=await fixture(),prepare=require('./archive-pilot-revision-prepare.js');
+ const raw=async x=>{const text=JSON.stringify(x);return {text,sha256:await api.sha(text)}};
+ const t=normal.binding(before),sourceText=JSON.stringify(source);
+ const r2=await raw({format:normal.BUNDLE,version:1,sourceText,pack}),r3=await raw({format:normal.BUNDLE,version:1,sourceText,pack:candidate});
+ const decisions=bundle.targets[0].operations.map(op=>({cycleUUID:t.cycleId,cycleTitle:t.cycleTitle,worldKey:t.worldKey,manager:pack.manager,field:op.field,sourceId:op.sourceId,operation:op.action,index:source.rows.find(x=>x.id===op.sourceId).index,dataChanged:true,oldText:op.old?.text??null,newText:candidate[op.field].find(x=>x.sourceId===op.sourceId)?.text??null}));
+ const ledgerFile=await raw({format:'gal-predecessor-r3-change-ledger',actualChanges:3,decisions,historyNotes:[{note:'fixture attribution'}]});
+ const digest=await api.digest(before);
+ // This fixture is synthetic. The test never claims provenance of a real site capture.
+ const snapshot={format:'gal-predecessor-revision-site-snapshot',version:1,mode:'read-only-double-read',targets:[{target:t,local:before,cloud:structuredClone(before),localSha256:digest,cloudSha256:digest,equal:true}],inventories:{localCycles:[{id:before.id,sha256:digest}],cloudCycles:[{id:before.id,sha256:digest}]}};
+ const snap=async x=>raw({...x,snapshotSha256:await api.digest(x)});
+ const input={snapshotFile:await snap(snapshot),ledgerFile,pairs:[{r2,r3}],revisionId:'synthetic-prepare'};
+ const out=await prepare.prepare(input);
+ a.equal(out.preview.changes.length,3);a.equal(out.bundle.targets[0].operations.find(x=>x.action==='replace').old.rowSha256,await api.digest(before.casinoLogs[0]));
+ a.deepEqual(out.bundle.audit.historyNotes,[{note:'fixture attribution'}]);
+ const store=storage([before]);const applied=await api.apply(store,out.bundle,out.preview);a.deepEqual(applied.receipt.audit,out.bundle.audit);
+ await a.rejects(prepare.prepare({...input,snapshotFile:r2}),/不是實際網站/);
+ const mismatch=structuredClone(snapshot);mismatch.targets[0].cloud.notes='other device edit';
+ await a.rejects(prepare.prepare({...input,snapshotFile:await snap(mismatch)}),/本機與 Firebase 狀態不一致/);
+ const changed=structuredClone(snapshot);changed.targets[0].local.casinoLogs[0].text='manual change';changed.targets[0].cloud=structuredClone(changed.targets[0].local);
+ const changedHash=await api.digest(changed.targets[0].local);changed.targets[0].localSha256=changed.targets[0].cloudSha256=changedHash;changed.inventories.localCycles[0].sha256=changed.inventories.cloudCycles[0].sha256=changedHash;
+ await a.rejects(prepare.prepare({...input,snapshotFile:await snap(changed)}),/舊來源或正文有異動/);
+});
