@@ -1922,18 +1922,18 @@
     stats.trace.push({at:new Date().toISOString(),event:'verified-progress-reset',kind,count:b.rows.length,minIndex:b.resume?.minIndex??null,previousAttempts:stats.sinceProgress,totalAttempts:stats.attempts});
     stats.sinceProgress=0;stats.progressResets++;
   }
-  async function historyNativeRetry(b,until){
+  async function historyNativeRetry(b,until,{guard=()=>historyGuard(b),report=msg=>historyStatus(b,msg)}={}){
     let detected=historyNativeFailure(b.host);
     if(!detected)return false;
     const stats=b.nativeHistoryRetry||(b.nativeHistoryRetry={attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]});
     const record=(event,details={})=>stats.trace.push({at:new Date().toISOString(),event,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,count:b.rows.length,...details});
     while(detected){
-      historyGuard(b);
+      guard();
       if(Date.now()>=until){record('deadline');throw Error('原生歷史載入失敗：已達無進展期限')}
       if(!detected.button){record('blocked',{reason:detected.reason});throw Error('原生歷史載入失敗：無法唯一確認可用重試按鈕')}
       if(stats.sinceProgress>=3){record('exhausted');throw Error('原生歷史載入失敗：未取得核對進展，已達3次重試上限')}
       const attempt=++stats.attempts,localAttempt=++stats.sinceProgress;
-      historyStatus(b,'原生歷史載入失敗，重試 '+localAttempt+'/3（累計 '+attempt+'次）');
+      report('原生歷史載入失敗，重試 '+localAttempt+'/3（累計 '+attempt+'次）');
       // Give native loading more time on repeated failure; preserve the
       // original three-click local cap and the absolute progress deadline.
       const observationMs=[2000,5000,10000][localAttempt-1],clickedAt=Date.now();
@@ -1944,7 +1944,7 @@
       const waitEnd=Math.min(until,clickedAt+observationMs);
       let absentSince=null;
       while(Date.now()<waitEnd){
-        await sleep(Math.min(250,waitEnd-Date.now()));historyGuard(b);
+        await sleep(Math.min(250,waitEnd-Date.now()));guard();
         detected=historyNativeFailure(b.host);
         if(!detected){if(absentSince===null)absentSince=Date.now()}
         else absentSince=null;
@@ -1954,7 +1954,7 @@
       // If the banner disappears just before the observation ends, give
       // it only the remainder of the 500ms stability interval.
       while(!detected&&absentSince!==null&&Date.now()-absentSince<500){
-        await sleep(Math.min(250,500-(Date.now()-absentSince),until-Date.now()));historyGuard(b);
+        await sleep(Math.min(250,500-(Date.now()-absentSince),until-Date.now()));guard();
         if(Date.now()>=until){record('deadline',{attempt});throw Error('原生歷史載入失敗：重試等待逾時')}
         detected=historyNativeFailure(b.host);
       }
@@ -2551,15 +2551,16 @@
     if(expectedId&&!/^user\|turn:[a-zA-Z0-9_-]+$/.test(expectedId))return {ok:false,error:'開頭 ID 必須是 user|turn:…'};
     if(names.length>20||names.some(n=>n.length>200))return {ok:false,error:'附件條件過多或過長'};
     if(!valid()||state.bulk||state.scanning||state.activeSends||state.timeBusy||state.enabled||isGenerating()||document.getElementById(HISTORY_PANEL))return {ok:false,error:'請先停止本聊天的監看、生成或其他操作，並關閉前一批已保全面板'};
-    const b={mode:'predecessor-top-navigation',chat:path()};
+    const b={mode:'predecessor-top-navigation',chat:path(),rows:[]};
     // Shared panel ID prevents another installed version starting a scan on this page.
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
     let stableSince=null,lastSignature='',lastProgress=Date.now(),best=Infinity,lastHost=null,lastFirst='',lastHeight=0;
     const known=!!expectedId||names.length>0;
+    const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==b.chat||isGenerating()||!lock.isConnected)throw Error('導航已停止或聊天狀態已變更');};
     try{
       while(true){
-        if(cancel()||state.bulk!==b||!valid()||path()!==b.chat||isGenerating()||!lock.isConnected)throw Error('導航已停止或聊天狀態已變更');
+        guard();
         const h=historyHost(),now=Date.now();
         if(!h){
           stableSince=null;lastSignature='';
@@ -2572,14 +2573,20 @@
           lastProgress=now;best=Math.min(best,top);
           lastHost=h;lastFirst=x.firstId;lastHeight=height;
         }
+        b.host=h;
+        if(historyNativeFailure(h)){
+          stableSince=null;lastSignature='';
+          await historyNativeRetry(b,lastProgress+180000,{guard:()=>{guard();if(!h.isConnected||historyHost()!==h)throw Error('導航捲動容器已變更');},report});
+          continue;
+        }
         const signature=[top<=6,height,x.firstId,x.isUser,x.match,x.found].join('|');
-        const eligible=top<=6&&!loading&&!!x.owner&&(!known||x.match);
+        const eligible=top<=6&&!loading&&x.match&&/^user\|turn:[a-zA-Z0-9_-]+$/.test(x.firstId);
         if(!eligible||signature!==lastSignature)stableSince=null;
         if(eligible&&stableSince===null)stableSince=now;
         lastSignature=signature;
         if(eligible&&now-stableSince>=8000)return {ok:true,verified:known,message:known?'已確認抵達指定開頭（只導航，未掃描）':'已抵達觀測頂端；未指定開頭條件，尚未確認真正開頭'};
         if(now-lastProgress>=180000)throw Error(known?'180秒無新進展，未找到指定開頭；不能宣告抵頂':'180秒無新進展，未確認抵頂');
-        report('只導航｜距頂 '+Math.round(top)+' px｜'+(known?(x.match?'開頭條件吻合，等待穩定':'尋找指定開頭；附件 '+x.found+'/'+names.length):'未指定開頭條件')+(loading?'｜等待歷史載入':''));
+        report('只導航｜距頂 '+Math.round(top)+' px｜'+(known?(x.match?'開頭條件吻合，等待穩定':'尋找指定開頭；附件 '+x.found+'/'+names.length):(x.match?'觀測首則，等待穩定（非真開頭）':'等待有效玩家原生首則'))+(loading?'｜等待歷史載入':''));
         if(!loading&&(!eligible||top>6))historyScroll(h,0);
         await sleep(600);
       }
@@ -2713,7 +2720,7 @@
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
     const startedAt=new Date().toISOString(),runId=crypto.randomUUID();
-    let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],lastConflict=null,host=null;
+    let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],openingTrace=[],lastConflict=null,host=null;
     const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==chat||isGenerating()||!lock.isConnected)throw Error('補掃已停止或聊天狀態變更');};
     const readStable=async()=>{
       let previous=null,lastAt=0;const until=Date.now()+60000;
@@ -2747,7 +2754,9 @@
         guard();if(!host.isConnected||host.scrollTop>6)throw Error('已離開頂端，請重新定位');
         const x=historyTopNavigationSnapshot(host,expectedId,names),sig=JSON.stringify([x.firstId,x.found,host.scrollHeight]);
         const validFirst=/^user\|turn:[a-zA-Z0-9_-]+$/.test(x.firstId);
-        if(!x.match||!validFirst||historyLoading(host)||historyNativeFailure(host)){since=null;signature=null}
+        const loading=historyLoading(host),nativeFailure=historyNativeFailure(host);
+        openingTrace.push({elapsedMs:60000-(openingDeadline-Date.now()),top:host.scrollTop,height:host.scrollHeight,firstId:x.firstId||null,match:!!x.match,validFirst,loading:!!loading,nativeFailure:nativeFailure?(nativeFailure.reason||'retry-available'):null});
+        if(!x.match||!validFirst||loading||nativeFailure){since=null;signature=null}
         else if(signature!==sig||since===null){signature=sig;since=Date.now()}
         else if(Date.now()-since>=8000){observedTopVerified=true;observedFirstId=x.firstId;openingVerified=!observedOnly;break}
         report(observedOnly?'觀測頂端及原生首則，等待穩定（非真開頭證明）':'核對已知開頭及附件，等待穩定');await sleep(600);
@@ -2783,7 +2792,7 @@
     }catch(e){error=String(e.message||e);status=cancel()?'cancelled':'failed'}
     finally{if(state.bulk===b)state.bulk=null;lock.remove()}
     const candidateRows=join?join.candidate.map((r,index)=>({...r,index})):null;
-    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
+    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,openingTrace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
     const filename=historyDownload(data);
     return {ok:!!join,message:join?(observedOnly?'候選頂端重疊核對成功（真開頭未驗證）｜新增 ':'局部重疊核對成功｜新增 ')+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
   }
