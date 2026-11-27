@@ -2675,7 +2675,29 @@
     const candidate=[...rows.slice(0,start),...saved];pc.validateRows(candidate);
     return {added:start,matched:overlap.length,candidate};
   }
-  async function historyPrefixSupplement(expectedId,files,requestedTitle,checkpoint,report,cancel=()=>false,observedOnly=false){
+  // A previous prefix is independent evidence, never an official checkpoint.
+  function historyPrefixResumeRows(prior,checkpoint,saved,source){
+    const d=prior?.data,e=d?.evidence;
+    if(!/^[a-f0-9]{64}$/.test(prior?.hash||'')||d?.format!=='gal-predecessor-prefix-supplement-evidence'||d.version!==1||
+      !['failed','cancelled'].includes(d.status)||d.canonical!==false||d.importable!==false||d.continuity!==false||
+      d.sourceUrl!==source||d.chatId!==pc.sourceId(source)||typeof d.runId!=='string'||!d.runId||d.candidateRows!==null||
+      d.base?.runId!==checkpoint.data.runId||d.base?.sha256!==checkpoint.hash||d.base?.count!==saved.length||d.base?.firstId!==saved[0].id||
+      e?.observedTopVerified!==true||e.originalCheckpointUnchanged!==true||
+      !Array.isArray(d.rows)||d.count!==d.rows.length||d.rows.length<2||d.rows.length>5000||
+      !/^user\|turn:[a-zA-Z0-9_-]+$/.test(e.observedFirstId||'')||d.rows[0]?.id!==e.observedFirstId||
+      d.rows.some((r,i)=>r.index!==i))throw Error('頂端取證來源、雜湊基準或順序不符');
+    pc.validateRows(d.rows);
+    if(historyPrefixJoin(d.rows,saved))throw Error('此取證已有完整接合，無須續掃');
+    return d.rows.slice();
+  }
+  function historyPrefixResumeWindow(previous,live){
+    pc.validateRows(live);
+    const tail=previous.slice(-2),at=live.findIndex(r=>r.id===tail[0].id);
+    if(at<0||live[at+1]?.id!==tail[1].id||!tail.every((r,i)=>pc.compareRow(r,live[at+i]).equal))
+      throw Error('目前視窗沒有原頂端取證最後兩則連續重疊，請先定位尾端');
+    return historyPrefixMerge(previous,live);
+  }
+  async function historyPrefixSupplement(expectedId,files,requestedTitle,checkpoint,report,cancel=()=>false,observedOnly=false,prior=null){
     const names=[...new Set(String(files||'').split(/[,，;；\n]/).map(x=>x.trim()).filter(Boolean))];
     expectedId=String(expectedId||'').trim();
     if(!observedOnly&&!/^user\|turn:[a-zA-Z0-9_-]+$/.test(expectedId))return {ok:false,error:'補掃必須設定已知開頭 user|turn:…'};
@@ -2685,6 +2707,8 @@
     const chat=path(),source=location.origin+chat,title=pc.chatTitle(requestedTitle||document.title);
     if(!title||!checkpoint||!/^[a-f0-9]{64}$/.test(checkpoint.hash))return {ok:false,error:'請選擇有效原保全及聊天名稱'};
     const saved=pc.validateCheckpoint(checkpoint.data,source,true);
+    if(prior&&!observedOnly)throw Error('頂端取證續掃僅允許候選模式');
+    const previous=prior?historyPrefixResumeRows(prior,checkpoint,saved,source):null;
     const b={mode:'predecessor-prefix-supplement',chat};
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
@@ -2708,7 +2732,15 @@
     };
     try{
       host=historyHost();
-      if(!host||host.scrollTop>6)throw Error('請先使用直衝到頂，或手動抵達真正開頭');
+      if(!host)throw Error('找不到捲動容器');
+      if(previous){
+        rows=previous;
+        observedFirstId=prior.data.evidence.observedFirstId;observedTopVerified=true;openingVerified=false;
+        folds=Array.isArray(prior.data.evidence.folds)?prior.data.evidence.folds.slice(0,200):[];
+        const current=await readStable();
+        rows=historyPrefixResumeWindow(previous,current);windows++;
+      }else{
+      if(host.scrollTop>6)throw Error('請先使用直衝到頂，或手動抵達真正開頭');
       let since=null,signature=null;
       const openingDeadline=Math.min(deadline,Date.now()+60000);
       while(Date.now()<openingDeadline){
@@ -2724,6 +2756,7 @@
       const initial=await readStable();
       if(host.scrollTop>6||initial[0]?.id!==observedFirstId||!historyTopNavigationSnapshot(host,observedFirstId,names).match)throw Error('首則原文與已核對頂端不符');
       rows=historyPrefixMerge([],initial);windows++;
+      }
       let lastProgress=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0;
       while(true){
         guard();join=historyPrefixJoin(rows,saved);
@@ -2750,7 +2783,7 @@
     }catch(e){error=String(e.message||e);status=cancel()?'cancelled':'failed'}
     finally{if(state.bulk===b)state.bulk=null;lock.remove()}
     const candidateRows=join?join.candidate.map((r,index)=>({...r,index})):null;
-    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true},candidateRows};
+    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
     const filename=historyDownload(data);
     return {ok:!!join,message:join?(observedOnly?'候選頂端重疊核對成功（真開頭未驗證）｜新增 ':'局部重疊核對成功｜新增 ')+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
   }
@@ -3083,6 +3116,9 @@
       for(const [value,label] of [['file','選擇原保全 JSON（建議）'],['pinned','已記住的原保全'],['candidate','已記住的候選保全']]){const option=document.createElement('option');option.value=value;option.textContent=label;prefixSlot.append(option)}
       prefixSlot.value='file';
       const prefixFile=document.createElement('input');prefixFile.id=historyPageId('prefix-file');prefixFile.type='file';prefixFile.accept='.json,application/json';prefixFile.style.cssText=input.style.cssText;
+      const prefixPriorLabel=document.createElement('label');prefixPriorLabel.textContent='續掃已保存的頂端取證（選填；先定位原取證最後兩則）';
+      const prefixPrior=document.createElement('input');prefixPrior.id=historyPageId('prefix-prior');prefixPrior.type='file';prefixPrior.accept='.json,application/json';prefixPrior.style.cssText=input.style.cssText;
+      const prefixPriorHash=document.createElement('input');prefixPriorHash.id=historyPageId('prefix-prior-hash');prefixPriorHash.type='text';prefixPriorHash.maxLength=64;prefixPriorHash.placeholder='頂端取證原件 SHA-256（續掃必填）';prefixPriorHash.style.cssText=input.style.cssText;
       let prefixObservedMode=false;
       const prefixObserved=document.createElement('button');prefixObserved.id=historyPageId('prefix-observed');
       historyPanelButton(prefixObserved,'#334155');
@@ -3100,7 +3136,7 @@
       prefixStart.onclick=async()=>{
         if(pane.dataset.chat!==path()||prefixStart.disabled)return;
         prefixCancelled=false;
-        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,topId,topFiles,rushTop,prefixStart,prefixFile,prefixSlot,prefixObserved,close];
+        const controls=[start,trial,twenty,resumeButton,candidateButton,localImport,manualImport,anchorLocate,anchorCapture,anchorInput,topId,topFiles,rushTop,prefixStart,prefixFile,prefixSlot,prefixObserved,prefixPrior,prefixPriorHash,close];
         controls.forEach(n=>n.disabled=true);prefixStop.hidden=false;
         const restore=localProgress(prefixStop,'頂端向下補掃');
         const status=message=>{mode.textContent='目前模式：頂端向下補掃\n'+message;feedback.textContent=message};
@@ -3112,7 +3148,16 @@
           if(!checkpoint)throw Error('找不到指定保全');
           if(prefixCancelled||pane.dataset.chat!==path()||!pane.isConnected)throw Error('補掃已停止或聊天切換');
           status('核對原保全 '+checkpoint.data.count+' 個顯示單元');
-          const r=await historyPrefixSupplement(topId.value,topFiles.value,input.value.trim(),checkpoint,status,()=>prefixCancelled||!pane.isConnected,prefixObservedMode);
+          let prior=null;const priorFile=prefixPrior.files?.[0],expectedPriorHash=String(prefixPriorHash.value||'').trim().toLowerCase();
+          if(priorFile||expectedPriorHash){
+            if(!prefixObservedMode||topId.value.trim()||topFiles.value.trim())throw Error('頂端取證續掃需選候選模式並清空開頭條件');
+            if(!priorFile||priorFile.size>GalCheckpointMemory.MAX||!/^[a-f0-9]{64}$/.test(expectedPriorHash))throw Error('請選擇頂端取證原件並輸入完整SHA-256');
+            const raw=await priorFile.arrayBuffer(),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',raw)),n=>n.toString(16).padStart(2,'0')).join('');
+            if(hash!==expectedPriorHash)throw Error('頂端取證SHA-256不一致');
+            prior={hash,data:JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw))};
+          }
+          if(prefixCancelled||pane.dataset.chat!==path()||!pane.isConnected)throw Error('補掃已停止或聊天切換');
+          const r=await historyPrefixSupplement(topId.value,topFiles.value,input.value.trim(),checkpoint,status,()=>prefixCancelled||!pane.isConnected,prefixObservedMode,prior);
           status(r.ok?r.message:'⛔ '+r.error);
         }catch(e){status('⛔ '+String(e.message||e))}
         finally{restore();controls.forEach(n=>n.disabled=false);prefixStop.hidden=true}
@@ -3185,7 +3230,7 @@
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
+      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixPriorLabel,prefixPrior,prefixPriorHash,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }
