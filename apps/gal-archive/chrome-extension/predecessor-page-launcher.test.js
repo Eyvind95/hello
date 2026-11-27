@@ -342,3 +342,16 @@ test('prefix resume validates provenance and two consecutive live tail rows befo
  for(const live of [[c,d],[b,d],[b,{...c,text:'changed'},d],[c,b,d]])assert.throws(()=>ctx.resume(previous,live),/重疊/);
  for(const change of [{chatId:'other'},{count:4},{sourceUrl:'wrong'},{canonical:true},{base:{...prior.data.base,sha256:'c'.repeat(64)}},{rows:[a,{...b,index:9},c]}])assert.throws(()=>ctx.validate({...prior,data:{...prior.data,...change}},cp,saved,sourceUrl),/來源/);
 });
+
+
+test('prefix supplement runs beyond fifteen minutes when growing, still stops on no progress or cancellation',async()=>{
+ const pc0=require('./predecessor-chat-core'),r=i=>({id:'user|turn:test-'+i,role:'user',text:'row '+i,identityBasis:'turn-key',sourceCreatedAt:null,structure:[],attachments:[]});
+ const all=Array.from({length:16},(_,i)=>r(i)),saved=all.slice(12);let now=0,at=0,stop=false,mode='grow',moves=0;const downloads=[];
+ const host={scrollTop:0,scrollHeight:100000,clientHeight:600,isConnected:true};
+ const ctx={pc:{...pc0,validateCheckpoint:()=>saved,sourceId:()=> 'test'},state:{},location:{origin:'https://chatgpt.com'},document:{title:'測試前輩',getElementById:()=>null,createElement:()=>({dataset:{},isConnected:true,remove(){}}),body:{append(){}}},chrome:{runtime:{id:'test',getManifest:()=>({version:'0.10.76'})}},crypto:{randomUUID:()=> 'test-run'},valid:()=>true,path:()=>'/c/test',isGenerating:()=>false,HISTORY_PANEL:'scan',historyHost:()=>host,historyTopNavigationSnapshot:()=>({match:true,firstId:all[0].id,found:1}),historyLoading:()=>false,historyNativeFailure:()=>false,historyRead:()=>all.slice(at,at+2),historyScroll:(h,to)=>{h.scrollTop=to;moves++;now+=100000;if(mode==='grow')at++;if(mode==='cancel')stop=true},historyAtBottom:()=>false,sleep:async ms=>{now+=ms},Date:class extends Date{static now(){return now}},historyDownload:x=>{downloads.push(x);return 'evidence.json'}};
+ const block=source.slice(source.indexOf('  function historyPrefixMerge'),source.indexOf('  async function historyAnchorCapture'));vm.createContext(ctx);vm.runInContext(block+';globalThis.supplement=historyPrefixSupplement',ctx);
+ const cp={hash:'a'.repeat(64),data:{runId:'base'}},run=()=>ctx.supplement('','','測試前輩',cp,()=>{},()=>stop,true);
+ assert.equal((await run()).ok,true);assert.ok(now>900000);assert.equal(downloads.at(-1).evidence.matched,2);assert.equal(downloads.at(-1).evidence.added,12);assert.equal(downloads.at(-1).importable,false);
+ now=0;at=0;moves=0;host.scrollTop=0;mode='stalled';assert.equal((await run()).ok,false);assert.match(downloads.at(-1).error,/180秒無新增/);assert.equal(moves,2);assert.equal(downloads.at(-1).count,2);
+ now=0;at=0;moves=0;host.scrollTop=0;mode='cancel';assert.equal((await run()).ok,false);assert.equal(downloads.at(-1).status,'cancelled');assert.equal(ctx.state.bulk,null);
+});

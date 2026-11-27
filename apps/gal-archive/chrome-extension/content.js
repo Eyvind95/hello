@@ -2712,11 +2712,11 @@
     const b={mode:'predecessor-prefix-supplement',chat};
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
-    const startedAt=new Date().toISOString(),runId=crypto.randomUUID(),deadline=Date.now()+900000;
+    const startedAt=new Date().toISOString(),runId=crypto.randomUUID();
     let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],lastConflict=null,host=null;
-    const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==chat||isGenerating()||!lock.isConnected)throw Error('補掃已停止或聊天狀態變更');if(Date.now()>=deadline)throw Error('補掃達15分鐘上限')};
+    const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==chat||isGenerating()||!lock.isConnected)throw Error('補掃已停止或聊天狀態變更');};
     const readStable=async()=>{
-      let previous=null,lastAt=0;const until=Math.min(deadline,Date.now()+60000);
+      let previous=null,lastAt=0;const until=Date.now()+60000;
       while(Date.now()<until){
         guard();if(!host.isConnected)throw Error('捲動容器已更換');
         if(!historyLoading(host)&&!historyNativeFailure(host)){
@@ -2742,7 +2742,7 @@
       }else{
       if(host.scrollTop>6)throw Error('請先使用直衝到頂，或手動抵達真正開頭');
       let since=null,signature=null;
-      const openingDeadline=Math.min(deadline,Date.now()+60000);
+      const openingDeadline=Date.now()+60000;
       while(Date.now()<openingDeadline){
         guard();if(!host.isConnected||host.scrollTop>6)throw Error('已離開頂端，請重新定位');
         const x=historyTopNavigationSnapshot(host,expectedId,names),sig=JSON.stringify([x.firstId,x.found,host.scrollHeight]);
@@ -3129,7 +3129,7 @@
       };
       renderPrefixMode();
       prefixObserved.onclick=()=>{if(prefixObserved.disabled||pane.dataset.chat!==path())return;prefixObservedMode=!prefixObservedMode;renderPrefixMode()};
-      const prefixStart=document.createElement('button');prefixStart.id=historyPageId('prefix-start');prefixStart.type='button';prefixStart.textContent='↓ 從頂端向下補掃（到保全前沿停止）';
+      const prefixStart=document.createElement('button');prefixStart.id=historyPageId('prefix-start');prefixStart.type='button';prefixStart.textContent='↓ 從頂端向下補掃（無總時限，接合即停）';
       const prefixStop=document.createElement('button');prefixStop.id=historyPageId('prefix-stop');prefixStop.type='button';prefixStop.textContent='停止並下載局部取證';prefixStop.hidden=true;
       let prefixCancelled=false;
       prefixStop.onclick=()=>{prefixCancelled=true;mode.textContent='目前模式：頂端補掃｜正在停止並保全'};
