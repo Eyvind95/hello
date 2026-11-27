@@ -2720,7 +2720,7 @@
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
     const startedAt=new Date().toISOString(),runId=crypto.randomUUID();
-    let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],openingTrace=[],lastConflict=null,host=null;
+    let rows=[],join=null,openingVerified=false,observedTopVerified=false,observedFirstId=null,error=null,status='failed',windows=0,folds=[],trace=[],openingTrace=[],recoveryTrace=[],lastConflict=null,host=null,anchorRows=null;
     const guard=()=>{if(cancel()||state.bulk!==b||!valid()||path()!==chat||isGenerating()||!lock.isConnected)throw Error('補掃已停止或聊天狀態變更');};
     const readStable=async()=>{
       let previous=null,lastAt=0;const until=Date.now()+60000;
@@ -2745,7 +2745,7 @@
         observedFirstId=prior.data.evidence.observedFirstId;observedTopVerified=true;openingVerified=false;
         folds=Array.isArray(prior.data.evidence.folds)?prior.data.evidence.folds.slice(0,200):[];
         const current=await readStable();
-        rows=historyPrefixResumeWindow(previous,current);windows++;
+        rows=historyPrefixResumeWindow(previous,current);anchorRows=current;windows++;
       }else{
       if(host.scrollTop>6)throw Error('請先使用直衝到頂，或手動抵達真正開頭');
       let since=null,signature=null;
@@ -2764,9 +2764,45 @@
       if(!observedTopVerified)throw Error(observedOnly?'候選頂端未穩定核對，不開始補掃':'真正開頭條件未核對，不開始補掃');
       const initial=await readStable();
       if(host.scrollTop>6||initial[0]?.id!==observedFirstId||!historyTopNavigationSnapshot(host,observedFirstId,names).match)throw Error('首則原文與已核對頂端不符');
-      rows=historyPrefixMerge([],initial);windows++;
+      rows=historyPrefixMerge([],initial);anchorRows=initial;windows++;
       }
       let lastProgress=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0;
+      const recordRecovery=(event,details={})=>{recoveryTrace.push({event,at:new Date().toISOString(),top:host.scrollTop,height:host.scrollHeight,count:rows.length,...details});if(recoveryTrace.length>200)recoveryTrace.shift()};
+      const acceptWindow=(live,next)=>{
+        if(next.length>rows.length){lastProgress=Date.now();rows=next}
+        anchorTop=host.scrollTop;anchorHeight=host.scrollHeight;anchorRows=live;windows++;
+        if(trace.length<500)trace.push({top:anchorTop,height:anchorHeight,count:rows.length});
+      };
+      // A coordinate is only a hint. Restore and verify the old window before
+      // taking another downward step; never merge a distant bottom window.
+      const restoreWindow=async()=>{
+        const oldTop=anchorTop,oldHeight=anchorHeight,tail=anchorRows.at(-1)?.id;
+        if(!tail)throw Error('缺少前一視窗原生錨點');
+        let why='無法回到已核對視窗';
+        for(let attempt=1;attempt<=3;attempt++){
+          guard();if(!host.isConnected)throw Error('捲動容器已更換');
+          if(Date.now()-lastProgress>=180000)throw Error('180秒無新增連續訊息');
+          const bottom=historyAtBottom(host)&&host.scrollTop-oldTop>host.clientHeight*4;
+          if(bottom&&attempt>1){
+            const nudge=Math.max(0,host.scrollTop-Math.max(24,Math.floor(host.clientHeight*.5)));
+            recordRecovery('bottom-escape-nudge',{attempt,target:nudge,anchorTop:oldTop,anchorId:tail});historyScroll(host,nudge);await sleep(600);guard();
+          }
+          const height=host.scrollHeight,adjusted=oldTop+height-oldHeight;
+          const hint=attempt===1?oldTop:attempt===2?adjusted:Math.min(oldTop,adjusted)-Math.floor(host.clientHeight*.25);
+          const target=Math.max(0,Math.min(height-host.clientHeight,hint));
+          recordRecovery('restore-attempt',{attempt,target,anchorTop:oldTop,anchorHeight:oldHeight,anchorId:tail});
+          report('復原已核對視窗 '+attempt+'/3｜先確認原生錨點，不繼續向下');
+          historyScroll(host,target);await sleep(attempt===1?600:1000);guard();
+          try{
+            const live=await readStable();
+            if(!live.some(r=>r.id===tail))throw Error('復原視窗未找到原生錨點');
+            const next=historyPrefixMerge(rows,live);
+            recordRecovery('restore-verified',{attempt,anchorId:tail,firstId:live[0]?.id,lastId:live.at(-1)?.id});
+            acceptWindow(live,next);return;
+          }catch(e){why=String(e.message||e);recordRecovery('restore-rejected',{attempt,anchorId:tail,reason:why});guard();}
+        }
+        throw Error('無法復原已核對向下視窗：'+why);
+      };
       while(true){
         guard();join=historyPrefixJoin(rows,saved);
         if(join){status=observedOnly?'joined-observed-prefix':'joined-evidence';break}
@@ -2778,21 +2814,20 @@
         let live=null;
         try{
           live=await readStable();const next=historyPrefixMerge(rows,live);
-          if(next.length>rows.length){lastProgress=Date.now();rows=next}
-          anchorTop=host.scrollTop;anchorHeight=host.scrollHeight;windows++;retries=0;step=Math.max(24,Math.floor(host.clientHeight*.65));
-          if(trace.length<500)trace.push({top:anchorTop,height:anchorHeight,count:rows.length});
+          acceptWindow(live,next);retries=0;step=Math.max(24,Math.floor(host.clientHeight*.65));
           if(historyAtBottom(host)&&!historyPrefixJoin(rows,saved))throw Object.assign(Error('已到觀測底端但未接到保全前沿'),{terminal:true});
         }catch(e){
           lastConflict={reason:String(e.message||e),top:host.scrollTop,height:host.scrollHeight,rows:live||[]};
           if(e.terminal||cancel()||!host.isConnected||++retries>=4)throw e;
-          historyScroll(host,Math.max(0,anchorTop+Math.max(0,host.scrollHeight-anchorHeight)));await sleep(350);
+          recordRecovery('forward-conflict',{target,anchorTop,anchorHeight,anchorId:anchorRows.at(-1)?.id,reason:lastConflict.reason,liveIds:(live||[]).map(r=>r.id)});
+          await restoreWindow();
           step=Math.max(24,Math.floor(step/2));
         }
       }
     }catch(e){error=String(e.message||e);status=cancel()?'cancelled':'failed'}
     finally{if(state.bulk===b)state.bulk=null;lock.remove()}
     const candidateRows=join?join.candidate.map((r,index)=>({...r,index})):null;
-    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,openingTrace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
+    const data={format:'gal-predecessor-prefix-supplement-evidence',version:1,canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status,runId,title,chatId:pc.sourceId(source),sourceUrl:source,startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows:rows.map((r,index)=>({...r,index})),error,base:{runId:checkpoint.data.runId,count:saved.length,sha256:checkpoint.hash,firstId:saved[0].id},evidence:{expectedId,expectedAttachments:names,openingVerified,observedTopVerified,observedFirstId,openingBasis:observedOnly?'observed-top-only':'specified-opening',windows,trace,openingTrace,recoveryTrace,folds,lastConflict,matched:join?.matched||0,added:join?.added||0,joinedCandidateCount:candidateRows?.length||0,originalCheckpointUnchanged:true,...(prior?{prefixResume:{runId:prior.data.runId,sha256:prior.hash,count:previous.length,tailIds:previous.slice(-2).map(r=>r.id),openingProof:'inherited-observed-only'}}:{})},candidateRows};
     const filename=historyDownload(data);
     return {ok:!!join,message:join?(observedOnly?'候選頂端重疊核對成功（真開頭未驗證）｜新增 ':'局部重疊核對成功｜新增 ')+join.added+'｜候選 '+candidateRows.length+' 個顯示單元（非正式匯入）｜'+filename:'未接合，已下載獨立取證｜'+filename,error:join?null:error+'｜已下載獨立取證 '+filename};
   }
