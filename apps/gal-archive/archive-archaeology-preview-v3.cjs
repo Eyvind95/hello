@@ -73,9 +73,25 @@ function binding(target){
 function reviewKey(target,manager,section,ref,f,context){
  return key(...binding(target),manager,section,ref.sha256,ref.chatId,ref.sourceId,ref.sourceIndex,f.start,f.end,f.kind,context);
 }
+const refKey=ref=>key(ref.sha256,ref.chatId,ref.sourceId,ref.sourceIndex);
+const spanKey=f=>[f.start,f.end,f.kind??null,f.text];
+function entryReviewKey(target,manager,section,entry){
+ check(['rejectedEvents','easterEggs'].includes(section),'無效語義核定類型');
+ const detail=section==='rejectedEvents'?[entry.title??null,refKey(entry.decision),spanKey(entry.decision)]:[entry.title,entry.status];
+ return key('entry-review',...binding(target),manager,section,refKey(entry),entry.fragments.map(spanKey),detail);
+}
+function crossCycleKey(manager,a,b){
+ return key('cross-cycle',manager,...[a,b].sort());
+}
+function coverageKey(target,manager,section,entry,f,context){
+ return key('coverage',reviewKey(target,manager,section,entry,f,context),['rejectedEvents','easterEggs'].includes(section)?entryReviewKey(target,manager,section,entry):null);
+}
+function decisionCoverageKey(target,manager,entry){
+ return key('decision-coverage',entryReviewKey(target,manager,'rejectedEvents',entry));
+}
 // review is supplied by the trusted offline operator, not inside the candidate.
 // This module cannot establish that a reviewer actually understood the text.
-function preview({originals,review,candidate}){
+function preview({originals,review,candidate,requireFullCoverage=false}){
  check(obj(candidate)&&candidate.format===FORMAT&&candidate.version===VERSION&&str(candidate.manager)&&Array.isArray(candidate.targets),'考古預覽格式不符');
  check(obj(review)&&Array.isArray(review.sources)&&Array.isArray(review.fragments)&&Array.isArray(review.targets),'缺少獨立審查清冊');
  check(Array.isArray(originals),'缺少原始位元組');
@@ -103,6 +119,27 @@ function preview({originals,review,candidate}){
   check(v.raw.chatId===ref.chatId&&r&&r.index===ref.sourceIndex&&!unresolved(r),'來源 ID、索引或隔離身分不符');
   return {v,r};
  }
+ const usedReviews=new Set(),actual=new Map(),claims=new Map(),crossReviews=new Map(),usedCross=new Set();
+ check(review.crossCycle===undefined||Array.isArray(review.crossCycle),'跨輪迴核定清冊格式錯誤');
+ for(const a of review.crossCycle||[]){
+  check(obj(a)&&str(a.key)&&str(a.reviewId)&&str(a.reason)&&!crossReviews.has(a.key),'跨輪迴核定清冊異常');crossReviews.set(a.key,a);
+ }
+ function requireReview(k,message){check(reviews.has(k),message);usedReviews.add(k)}
+ function record(ref,k){
+  const rk=refKey(ref);
+  if(!actual.has(rk))actual.set(rk,new Set());
+  check(!actual.get(rk).has(k),'重複覆蓋片段');actual.get(rk).add(k);
+ }
+ function claim(ref,f,k,tk){
+  const rk=refKey(ref),prior=claims.get(rk)||[];
+  for(const a of prior){
+   if(a.tk===tk||f.start>=a.end||f.end<=a.start)continue;
+   const ck=crossCycleKey(candidate.manager,a.k,k);
+   check(crossReviews.has(ck),'跨輪迴片段歸屬衝突：'+ref.sourceId);
+   usedCross.add(ck);
+  }
+  prior.push({tk,start:f.start,end:f.end,k});claims.set(rk,prior);
+ }
  const seenTargets=new Set(),out=[];
  for(const t of candidate.targets){
   const tk=key(...binding(t.target));check(targets.has(tk)&&!seenTargets.has(tk),'未核定或重複輪迴');seenTargets.add(tk);
@@ -129,24 +166,59 @@ function preview({originals,review,candidate}){
       }else context=block==='prefix'?'prefix':'reviewed-outside-story';
      }else if(f.kind==='player-correction'||f.kind==='player-annotation')check(r.role==='user','非玩家來源不能標為玩家修正');
      if(section==='pilotMessages'&&r.role==='user'&&(context!=='prefix'||f.kind!=='commentary')){
-      const a=reviews.get(reviewKey(t.target,candidate.manager,section,entry,f,context));
-      check(a,'需要獨立逐片段語義核定');
+      requireReview(reviewKey(t.target,candidate.manager,section,entry,f,context),'需要獨立逐片段語義核定');
      }
      return {...span,kind:f.kind,context};
     });
     let decision;
     if(section==='rejectedEvents'){
      const d=entry.decision,{r:dr}=locate(d);check(dr.role==='user','拒絕決定不是玩家原文');
-     const ds=exactSpan(dr,d),f={...d,kind:'event-evidence'};
-     check(reviews.has(reviewKey(t.target,candidate.manager,section,d,f,'declined:'+identity)),'缺少獨立拒絕關聯核定');
+     const ds=exactSpan(dr,d);
+     check(entry.title===undefined||(str(entry.title)&&r.text.includes(entry.title)),'拒絕事件標題不在原文');
+     requireReview(entryReviewKey(t.target,candidate.manager,section,entry),'缺少獨立拒絕關聯核定（正文與決定必須完全相符）');
      decision={sha256:d.sha256,chatId:d.chatId,sourceId:d.sourceId,sourceIndex:d.sourceIndex,...ds};
+     const dk=decisionCoverageKey(t.target,candidate.manager,entry);record(d,dk);claim(d,ds,dk,tk);
     }
-    if(section==='easterEggs')check(str(entry.title)&&['confirmed','uncertain'].includes(entry.status),'彩蛋缺少確認狀態');
-    return {id:'predecessor:'+section+':'+entry.chatId+':'+r.id,role:r.role,source:{sha256:entry.sha256,chatId:entry.chatId,sourceId:r.id,sourceIndex:r.index,status:v.raw.status,basis:v.basis,canonical:false},fragments,...(decision?{decision}:{}),...(section==='easterEggs'?{title:entry.title,status:entry.status}:{})};
+    if(section==='easterEggs'){
+     check(str(entry.title)&&['confirmed','uncertain'].includes(entry.status),'彩蛋缺少確認狀態');
+     requireReview(entryReviewKey(t.target,candidate.manager,section,entry),'彩蛋標題、確認狀態及原文需獨立語義核定');
+    }
+    for(const f of fragments){
+     const k=coverageKey(t.target,candidate.manager,section,entry,f,f.context);
+     record(entry,k);claim(entry,f,k,tk);
+    }
+    return {id:'predecessor:'+section+':'+entry.chatId+':'+r.id,role:r.role,source:{sha256:entry.sha256,chatId:entry.chatId,sourceId:r.id,sourceIndex:r.index,status:v.raw.status,basis:v.basis,canonical:false},fragments,...(decision?{decision,...(entry.title!==undefined?{title:entry.title}:{})}:{}),...(section==='easterEggs'?{title:entry.title,status:entry.status}:{})};
    });
   }
   out.push(result);
  }
- return {format:'gal-predecessor-archaeology-preview-result',version:VERSION,status:'preview-only',canonical:false,importable:false,manager:candidate.manager,targets:out,sourceEvidence:[...views].map(([sha256,v])=>({sha256,chatId:v.raw.chatId,runId:v.raw.runId,status:v.raw.status,basis:v.basis,count:v.rows.length,isolated:v.rows.filter(unresolved).length,warnings:v.warnings,...(v.baseSha256?{baseSha256:v.baseSha256}:{})})),counts:{sources:[...views.values()].reduce((n,v)=>n+v.rows.length,0),entries:out.reduce((n,t)=>n+SECTIONS.reduce((s,k)=>s+t[k].length,0),0),fragments:out.reduce((n,t)=>n+SECTIONS.reduce((s,k)=>s+t[k].reduce((m,e)=>m+e.fragments.length,0),0),0)}};
+ let coverage={status:'not-requested'};
+ if(requireFullCoverage){
+  check(Array.isArray(review.coverage),'完整覆蓋驗收缺少獨立逐來源清冊');
+  const ledger=new Map();
+  for(const e of review.coverage){
+   check(obj(e)&&str(e.reviewId)&&str(e.reason)&&Array.isArray(e.keys)&&e.keys.every(str)&&new Set(e.keys).size===e.keys.length&&['selected','excluded','isolated'].includes(e.disposition),'覆蓋清冊欄位異常');
+   const v=views.get(e.sha256),r=v?.map.get(e.sourceId),rk=refKey(e);
+   check(v&&v.raw.chatId===e.chatId&&r&&r.index===e.sourceIndex&&!ledger.has(rk),'覆蓋清冊來源或索引異常');
+   check(unresolved(r)?e.disposition==='isolated':e.disposition!=='isolated','隔離來源分類錯誤');
+   check(e.disposition==='selected'?e.keys.length>0:e.keys.length===0,'覆蓋清冊選取狀態與片段不符');
+   ledger.set(rk,e);
+  }
+  const missingSources=[],missingFragments=[],unexpectedFragments=[],missingTargets=[];
+  for(const tk of targets)if(!seenTargets.has(tk))missingTargets.push(tk);
+  for(const [sha256,v] of views)for(const r of v.rows){
+   const rk=refKey({sha256,chatId:v.raw.chatId,sourceId:r.id,sourceIndex:r.index}),e=ledger.get(rk),got=actual.get(rk)||new Set();
+   if(!e){missingSources.push(rk);continue}
+   const expected=new Set(e.keys);
+   if(e.disposition==='selected'&&!got.size)missingSources.push(rk);
+   for(const k of expected)if(!got.has(k))missingFragments.push(k);
+   for(const k of got)if(!expected.has(k))unexpectedFragments.push(k);
+  }
+  const unusedReviews=[...reviews.keys()].filter(k=>!usedReviews.has(k));
+  const unusedCross=[...crossReviews.keys()].filter(k=>!usedCross.has(k));
+  const complete=!(missingSources.length||missingFragments.length||unexpectedFragments.length||missingTargets.length||unusedReviews.length||unusedCross.length);
+  coverage={status:complete?'complete-against-independent-ledger':'incomplete',reviewedSources:ledger.size,selectedSources:[...ledger.values()].filter(e=>e.disposition==='selected').length,excludedSources:[...ledger.values()].filter(e=>e.disposition==='excluded').length,isolatedSources:[...ledger.values()].filter(e=>e.disposition==='isolated').length,missingSources,missingFragments,unexpectedFragments,missingTargets,unusedReviews,unusedCross};
+ }
+ return {coverage,format:'gal-predecessor-archaeology-preview-result',version:VERSION,status:'preview-only',canonical:false,importable:false,manager:candidate.manager,targets:out,sourceEvidence:[...views].map(([sha256,v])=>({sha256,chatId:v.raw.chatId,runId:v.raw.runId,status:v.raw.status,basis:v.basis,count:v.rows.length,isolated:v.rows.filter(unresolved).length,warnings:v.warnings,...(v.baseSha256?{baseSha256:v.baseSha256}:{})})),counts:{sources:[...views.values()].reduce((n,v)=>n+v.rows.length,0),entries:out.reduce((n,t)=>n+SECTIONS.reduce((s,k)=>s+t[k].length,0),0),fragments:out.reduce((n,t)=>n+SECTIONS.reduce((s,k)=>s+t[k].reduce((m,e)=>m+e.fragments.length,0),0),0)}};
 }
-module.exports={FORMAT,VERSION,SECTIONS,reviewKey,preview};
+module.exports={FORMAT,VERSION,SECTIONS,reviewKey,entryReviewKey,crossCycleKey,coverageKey,decisionCoverageKey,preview};
