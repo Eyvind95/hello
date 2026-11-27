@@ -23,7 +23,7 @@ FORMAT = "gal-predecessor-cycle-overwrite"
 BUNDLE = "gal-predecessor-import-bundle"
 JOINED = "gal-predecessor-prefix-supplement-evidence"
 MARKER = re.compile(r"(?:^|\n)[ \t]*(?:[\uFF08(][ \t]*)?(?:\u6211|\u4ed6)[ \t]*[\uFF1A:][ \t]*(?:[\uFF09)])?")
-mcp = FastMCP("GalArchive-Python", stateless_http=True, json_response=True, host="127.0.0.1", port=18766)
+mcp = FastMCP("GalArchive-Python", stateless_http=True, json_response=True, host="127.0.0.1", port=18767)
 
 
 def require(ok, message):
@@ -531,7 +531,7 @@ def self_test():
 # An HTTP request does not inherit another caller's initialization state.
 # Keep the endpoint local and require a separate random local credential.
 # Never log request bodies, headers, paths, archive data or credentials.
-HTTP_PORT = 18766
+HTTP_PORT = 18767
 
 def http_app():
     from starlette.responses import JSONResponse
