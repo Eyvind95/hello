@@ -246,16 +246,29 @@ function validateRaw(data){return validateRawInternal(data,false)}
 function validateCompositeEvidence(data){return validateRawInternal(data,true)}
 // Checkpoints are user-selected, previously preserved partial scans. Never
 // treat their rows as newly read or accept a different branch or tail.
+// Deferred-tail checkpoints retain the prior verified tail as provenance,
+ // not as a claim that it has been re-read in this run. They are never complete.
+function pendingTailProof(data){
+ const ev=data.evidence,q=ev?.resume,p=q?.inheritedBottom;
+ return !!(q?.currentPosition===true&&q.tailVerified===false&&q.frontierVerified===true&&q.minIndex===0&&Number.isSafeInteger(q.checkedWindows)&&q.checkedWindows>=1&&
+   Number.isSafeInteger(q.baseCount)&&q.baseCount>=2&&data.count>=q.baseCount&&
+   /^[a-f0-9]{64}$/.test(q.sourceSha256||'')&&validId(q.sourceRunId)&&
+   data.rows[data.count-q.baseCount]?.id===q.sourceFirstId&&data.rows.at(-1)?.id===q.sourceLastId&&
+   Array.isArray(q.frontierPair)&&q.frontierPair.length===2&&q.frontierPair[0]===q.sourceFirstId&&q.frontierPair[1]===data.rows[data.count-q.baseCount+1]?.id&&
+   p&&validId(p.runId)&&/^[a-f0-9]{64}$/.test(p.sha256||'')&&p.lastId===q.sourceLastId&&p.bottomStableMs>=3000&&p.maxRange>8&&p.observedMovement===true&&
+   ev.bottomReached===false&&ev.bottomStableMs===0&&ev.continuity===false&&ev.firstId===data.rows[0]?.id&&ev.lastId===data.rows.at(-1)?.id&&ev.windows>0);
+}
 function validateCheckpoint(data,source,omitImages=false){
  (data?.format===COMPOSITE?validateCompositeEvidence:validateRaw)(data);
  check(['failed','cancelled'].includes(data.status)&&data.count>=2,'請選擇至少兩則的未完成完整掃描保全檔');
  check(data.chatId===sourceId(source)&&new URL(data.sourceUrl).pathname.replace(/\/$/,'')===new URL(source).pathname.replace(/\/$/,''),'續掃來源不是目前聊天');
  const ev=data.evidence;
  check(!ev.isolatedSegment,'隔離取證尚未核對附件，不能作為正式續掃斷點');
- check(ev.bottomReached===true&&ev.bottomStableMs>=3000&&ev.firstId===data.rows[0].id&&ev.lastId===data.rows.at(-1).id&&ev.windows>0,'斷點缺少底端或訊息邊界證據');
+ const pending=pendingTailProof(data);
+ check(pending||(ev.bottomReached===true&&ev.bottomStableMs>=3000&&ev.firstId===data.rows[0].id&&ev.lastId===data.rows.at(-1).id&&ev.windows>0),'斷點缺少底端或訊息邊界證據');
  check(ev.hostProof?ev.hostProof.maxRange>8&&ev.hostProof.observedMovement===true:Array.isArray(ev.scrollTrace)&&ev.scrollTrace.some(t=>scrollRange(t.scrollHeight,t.clientHeight)>8),'斷點缺少有效捲動證據');
  check(!String(data.error||'').startsWith('輸出核對失敗'),'斷點輸出驗證失敗');
- if(ev.resume)check(ev.resume.tailVerified&&ev.resume.frontierVerified,'前次續掃尚未核對前沿，請使用原始斷點');
+ if(ev.resume)check(pending||(ev.resume.tailVerified&&ev.resume.frontierVerified),'前次續掃尚未核對前沿，請使用原始斷點');
  return data.rows.map(({index,...r})=>omitImages?withoutImages(r):r);
 }
 function resumeWindow(saved,live){
@@ -269,6 +282,12 @@ function resumeSeed(saved,live,onChange,foldContext){
  const merged=mergeUp(saved,live,onChange,foldContext);
  check(merged.length===saved.length||progress.frontier,'續掃前沿未核對，不能增加舊訊息');
  return {rows:merged,...progress};
+}
+function resumeFrontierSeed(saved,live,onChange,foldContext){
+ const progress=resumeWindow(saved,live);
+ check(progress.frontier&&progress.matched>=2,'目前位置未核對原保全前沿的兩則相鄰訊息');
+ const rows=mergeUp(saved,live,onChange,foldContext);
+ return {rows,...progress};
 }
 function resumeStep(viewport,minIndex){return minIndex>12?Math.max(scrollStep(viewport,8),Math.floor(viewport*5)):0}
 // Larger steps still require exact overlap.
@@ -523,5 +542,5 @@ function anchorDiagnosticHint(target,indices,geo,previous={},maxScreens=24,repea
  return {top:clamp(destination),height,mode,direction,best,improved,restored,restore:mode==='restore-live-best',low,high};
 }
 
-return {anchorDiagnosticHint,anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,resumeWindow,resumeSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
+return {anchorDiagnosticHint,anchorLiveNavigation,anchorLiveRecoveryHint,anchorBudget,anchorTextMatch,anchorTextDirection,anchorRelativeDelta,FORMAT,CLASS,COMPOSITE,SAMPLE,SAMPLE_LIMIT,VERSION,categories,isComposite,compositeId,validateCompositeEvidence,validateRows,mergeUp,isolateFrontierWindow,edgeProof,sourceId,validateRaw,validateClassification,validateSample,sampleReady,sampleRows,sampleLimit,chatTitle,withoutImages,compareRow,reconcileOverlap,rememberAttachmentObservations,fingerprint,scrollStep,noNewRows,scrollReset,scrollRecoveryTarget,frontierPosition,verifiedViewportAnchor,heightGrowthRejoinAnchor,breakthroughStep,scrollRange,minimumCount,fullCoverageGate,rejoinTarget,validateCheckpoint,pendingTailProof,resumeWindow,resumeSeed,resumeFrontierSeed,resumeStep,recoveryCycle,recoveryPolicy,clearRecoveryPolicy,alternateRecoveryPolicy,codeRenderEquivalent,bottomEscape,escapeStageCount,escapeStageTarget,escapeLanding};
 });

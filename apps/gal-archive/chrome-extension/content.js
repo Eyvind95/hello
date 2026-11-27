@@ -2229,7 +2229,7 @@
     if(b.attachmentChanges.some(x=>x.type))warnings.push('玩家圖片參照曾延遲出現或未觀測到；保留已觀測的圖片參照及前後快照，附件數量與原始位元組尚未驗證。');
     if(b.renderChanges?.length)warnings.push('程式碼框介面標籤與文字節點拆分經逐字核對等價；原先收錄不改寫，兩份觀測保存在 codeRenderVariants，非伺服器原始格式。');
     if(b.foldTailVariants?.length)warnings.push('玩家折疊尾端差異僅核對同ID及其他原文欄位；保留舊正文、兩份觀測及折疊證據，完整原文尚未驗證，請見 foldTailVariants。');
-    if(b.resume)warnings.push('續掃沿用先前保全 '+b.resume.baseCount+' 則；本次僅驗證已重新經過的視窗、尾端與前沿，不代表舊正文全部重新收錄。來源 SHA-256 及驗證狀態見 evidence.resume。');
+    if(b.resume)warnings.push('續掃沿用先前保全 '+b.resume.baseCount+' 則；本次僅驗證已重新經過的視窗，不代表舊正文全部重新收錄。'+(b.resume.currentPosition&&!b.resume.tailVerified?'本次尾端尚未重新核對，僅沿用舊底端證據；候選不可作完成檔。':'來源 SHA-256 及驗證狀態見 evidence.resume。'));
     for(let i=0;i<rows.length;i++)if((i===0&&rows[i].role!=='user')||(i>0&&rows[i].role===rows[i-1].role))warnings.push('角色序列需人工確認：原始索引 '+i+'（保留，不猜測配對）');
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
@@ -2359,10 +2359,47 @@
     }
     record('not-located',{steps,snaps,stalled,failedProbes,sweep,best:Number.isFinite(best)?best:null});return null;
   }
+  // At the end only: verify the live tail before any completion claim.
+  // No mutation of the accumulated prefix until the actual bottom is stable.
+  async function historyVerifyDeferredTail(b){
+    historyStatus(b,'頂端已取證；最後核對目前聊天尾端');
+    let stable=0,prev=null,prevRows=null;const deadline=Date.now()+60000;
+    for(;;){
+      historyGuard(b);if(Date.now()>deadline)throw Error('尾端尚未重新核對；保留候選斷點，禁止宣告完整');
+      historyScroll(b.host,b.host.scrollHeight);
+      const rows=await historySettled(b,{deadline});
+      historyHostObservation(b);
+      const sig=JSON.stringify([pc.fingerprint(rows),b.host.scrollHeight]);
+      if(historyAtBottom(b.host)&&sig===prev){
+        if(!stable)stable=Date.now();
+        if(pc.edgeProof(rows,b.rows,{edge:'bottom',atEdge:true,stableMs:Date.now()-stable,loading:historyLoading(b.host)||!!historyNativeFailure(b.host),...historyEdgeOrdinal(b,'bottom')})){
+          const changes=[],seed=pc.resumeSeed(b.rows,rows,x=>changes.push(x),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume.sourceSha256,attachmentBridges:b.acceptedAttachmentBridges});
+          if(seed.rows.length!==b.rows.length)throw Error('尾端出現未核定新訊息；不得改寫候選');
+          b.rows=seed.rows;for(const change of changes)historyAttachmentChange(b,change);
+          b.bottomReached=true;b.bottomStableMs=Date.now()-stable;b.resume.tailVerified=true;b.resume.tailVerifiedAt=new Date().toISOString();b.resume.checkedWindows++;b.windows++;
+          historyTrace(b,'resume-deferred-tail-verified',{matched:seed.matched});return;
+        }
+      }else{stable=0;prev=sig}
+      prevRows=rows;await sleep(650);
+    }
+  }
   async function historyRun(b){
     let status='failed',error=null;
     try{
       await historyLocateHost(b);
+      if(b.resume?.currentPosition){
+        b.rows=b.resumeRows.slice();b.resume.minIndex=0;
+        b.breakthrough={resets:0,attempts:0,frontier:{id:b.rows[0].id,top:b.host.scrollTop,height:b.host.scrollHeight}};
+        historyStatus(b,'從目前位置核對保全前沿（不先返回底端）');
+        const deadline=Date.now()+180000;
+        let live=await historySettled(b,{deadline:Math.min(deadline,Date.now()+12000)});
+        if(!historyIdentityWindow(b.resumeRows,live,true))live=await historyRejoinByIdentity(b,deadline);
+        if(!live)throw Error('目前位置無法核對前沿；請人工滑到原保全最早兩則附近後重試，不會自動跳底');
+        const seed=pc.resumeFrontierSeed(b.resumeRows,live,change=>historyAttachmentChange(b,change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume.sourceSha256,attachmentBridges:b.acceptedAttachmentBridges});
+        b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),seed.rows,live);
+        b.rows=seed.rows;b.resume.frontierVerified=true;b.resume.frontierVerifiedAt=new Date().toISOString();b.resume.frontierPair=b.resumeRows.slice(0,2).map(r=>r.id);b.resume.checkedWindows=1;b.windows++;
+        historyHostObservation(b);historyTrace(b,'resume-current-frontier-verified',{matched:seed.matched,tailDeferred:true});
+      }else{
       historyStatus(b,'定位聊天最底端');
       let stable=0,prev=null,prevRows=null,bottomDeadline=Date.now()+60000;
       for(;;){
@@ -2377,10 +2414,11 @@
         // Keep the most recent observed tail as emergency evidence only.
         b.rows=rows;await sleep(650);
       }
+      }
       let topSince=0,topSignature=null,lastGrowth=Date.now(),lastCount=b.rows.length,edgeAttempt=0,unchanged=0;
       b.breakthrough={resets:0,attempts:0,frontier:{id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight}};
       if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample))status='completed';
-      if(b.resume){
+      if(b.resume&&!b.resume.currentPosition){
         const seed=pc.resumeSeed(b.resumeRows,b.rows,change=>historyAttachmentChange(b,change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256,attachmentBridges:b.acceptedAttachmentBridges});
         b.acceptedAttachmentBridges=pc.rememberAttachmentObservations(b.acceptedAttachmentBridges||new Map(),seed.rows,b.rows);
         b.rows=seed.rows;b.resume.tailVerified=true;b.resume.tailVerifiedAt=new Date().toISOString();b.resume.frontierVerified=seed.frontier;if(seed.frontier)b.resume.frontierVerifiedAt=b.resume.tailVerifiedAt;b.resume.minIndex=seed.minIndex;b.resume.checkedWindows=1;
@@ -2538,7 +2576,9 @@
             }
             if(b.resume&&!b.resume.frontierVerified)throw Error('續掃尚未核對原斷點，禁止完成');
             if(!pc.fullCoverageGate(b.rows.length,b.sample?0:b.knownMinimum,b.hostProof.maxRange,b.hostProof.observedMovement)||pc.scrollRange(b.host.scrollHeight,b.host.clientHeight)<=8){historyTrace(b,'false-top-rejected',{knownMinimum:b.knownMinimum,hostProof:b.hostProof});throw Error('疑似假頂端：捲動證據不足或未達已知最低訊息數 '+b.knownMinimum)}
-            b.topReached=true;b.topStableMs=Date.now()-topSince;status='completed';break}
+            b.topReached=true;b.topStableMs=Date.now()-topSince;
+            if(b.resume?.currentPosition)await historyVerifyDeferredTail(b);
+            status='completed';break}
           if(Date.now()-edgeAttempt>60000)throw Error('頁面已在頂端，但首則訊息或頂端穩定證據不符');
         }else{topSince=0;topSignature=null;edgeAttempt=0}
         if(b.rows.length>lastCount){
@@ -2648,7 +2688,7 @@
     }finally{if(!borrowed){if(state.bulk===b)state.bulk=null;lock.remove()}}
   }
 
-  async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null){
+  async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null,currentPosition=false){
     if(!pc||!valid())return {ok:false,error:'請開啟具體 ChatGPT 聊天並載入新版'};
     if(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating())return {ok:false,error:'此聊天正在監看擷取、掃描或生成，稍後再開始'};
     if(document.getElementById(HISTORY_PANEL))return {ok:false,error:'前一批保全仍在頁面，請確認下載並關閉面板後再開始'};
@@ -2663,6 +2703,11 @@
         if(!/^[a-f0-9]{64}$/.test(checkpoint.hash))throw Error('斷點雜湊無效');
         b.resume={baseCount:b.resumeRows.length,sourceRunId:checkpoint.data.runId,sourceVersion:checkpoint.data.scannerVersion||null,imagePolicy:'omit-images; original checkpoint hash unchanged',sourceSha256:checkpoint.hash,sourceFirstId:b.resumeRows[0].id,sourceLastId:b.resumeRows.at(-1).id,tailVerified:false,frontierVerified:false,minIndex:b.resumeRows.length,checkedWindows:0};
         const sourceEvidence=checkpoint.data.evidence;
+        if(currentPosition){
+          const prior=sourceEvidence.resume?.inheritedBottom;
+          b.resume.currentPosition=true;
+          b.resume.inheritedBottom=pc.pendingTailProof(checkpoint.data)?{...prior}:{runId:checkpoint.data.runId,sha256:checkpoint.hash,lastId:b.resume.sourceLastId,bottomStableMs:sourceEvidence.bottomStableMs,maxRange:sourceEvidence.hostProof?.maxRange||Math.max(0,...(sourceEvidence.scrollTrace||[]).map(x=>pc.scrollRange(x.scrollHeight,x.clientHeight))),observedMovement:sourceEvidence.hostProof?sourceEvidence.hostProof.observedMovement===true:true};
+        }
         b.resumeFoldObservations=[...(Array.isArray(sourceEvidence.inheritedFoldObservations)?sourceEvidence.inheritedFoldObservations:[]),...(Array.isArray(sourceEvidence.foldObservations)?sourceEvidence.foldObservations:[])];
         // Keep prior variant snapshots in later checkpoints; original rows remain unchanged.
         b.foldTailVariants=Array.isArray(sourceEvidence.foldTailVariants)?sourceEvidence.foldTailVariants.map(x=>({...x,previous:pc.withoutImages(x.previous),current:pc.withoutImages(x.current)})):[];
@@ -2683,7 +2728,7 @@
       document.getElementById(HISTORY_PANEL)?.remove();
       const pane=document.createElement('section');pane.id=HISTORY_PANEL;pane.dataset.gaExtensionId=chrome.runtime.id;
       pane.style.cssText='position:fixed;z-index:2147483646;left:12px;right:auto;bottom:156px;top:auto;box-sizing:border-box;max-width:calc(100vw - 24px);max-height:min(35vh,calc(100vh - 180px));overflow:auto;background:#202840;color:#fff;border:1px solid #9ba9cb;padding:10px;border-radius:12px;font:13px system-ui;box-shadow:0 3px 20px #0006';
-      const h=document.createElement('strong');h.textContent='V'+chrome.runtime.getManifest().version+'｜'+(b.sample?'最近'+b.sample+'則・測試掃描':b.resume?'完整聊天・保全續掃':'完整聊天・從底端向上掃描');
+      const h=document.createElement('strong');h.textContent='V'+chrome.runtime.getManifest().version+'｜'+(b.sample?'最近'+b.sample+'則・測試掃描':b.resume?(b.resume.currentPosition?'完整聊天・目前位置續掃':'完整聊天・保全續掃'):'完整聊天・從底端向上掃描');
       b.action=document.createElement('div');b.action.setAttribute('role','status');b.action.style.cssText='padding:8px;margin:5px 0;background:#111827;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere';b.action.textContent='目前動作：準備掃描';
       b.info=document.createElement('pre');b.info.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0';
       b.stop=historyPanelButton(document.createElement('button'),'#a13232');b.stop.textContent='停止並保全';b.stop.setAttribute('aria-label','停止並保全掃描');b.stop.onclick=()=>{b.cancelled=true;b.action.textContent='目前動作：停止並保全中'};
@@ -3222,6 +3267,9 @@
       const checkpointFile=document.createElement('input');checkpointFile.id=historyPageId('checkpoint');checkpointFile.type='file';checkpointFile.accept='.json,application/json';checkpointFile.style.cssText=input.style.cssText;
       const resumeButton=document.createElement('button');resumeButton.id=historyPageId('resume');resumeButton.type='button';resumeButton.textContent='⚡ 完整聊天續掃（使用已記住的保全）';
       const candidateButton=document.createElement('button');candidateButton.id=historyPageId('resume-candidate');candidateButton.type='button';candidateButton.textContent='使用較新候選保全續掃（需核定）';candidateButton.hidden=true;
+      const currentPositionLabel=document.createElement('label');currentPositionLabel.style.cssText='display:block;margin:8px 0;color:#bcebe4';
+      const currentPosition=document.createElement('input');currentPosition.type='checkbox';currentPosition.id=historyPageId('resume-current-position');
+      currentPositionLabel.append(currentPosition,document.createTextNode(' 從目前位置接續（不先跳底；核對前沿，最後驗尾端）'));
       const savedInfo=document.createElement('p');savedInfo.id=historyPageId('saved-checkpoint');savedInfo.textContent='尚未讀取本機保全記憶';
       const hashInput=document.createElement('input');hashInput.id=historyPageId('checkpoint-hash');hashInput.type='text';hashInput.maxLength=64;hashInput.placeholder='免選檔匯入：原檔 SHA-256';hashInput.style.cssText=input.style.cssText;
       const localImport=document.createElement('button');localImport.id=historyPageId('local-import');localImport.type='button';localImport.textContent='從安裝目錄讀取並記住保全';
@@ -3401,7 +3449,7 @@
             }
             if(pane.dataset.chat!==path())throw Error('聊天已切換，停止續掃');
           }
-          const result=await (sample?historyBegin(input.value.trim(),sample):historyBegin(input.value.trim(),false,pc.minimumCount(minimum.value),checkpoint));
+          const result=await (sample?historyBegin(input.value.trim(),sample):historyBegin(input.value.trim(),false,pc.minimumCount(minimum.value),checkpoint,!!resume&&currentPosition.checked));
           if(result?.ok){pane.remove();return}
           feedback.textContent='⛔ '+(result?.error||'無法啟動掃描');
         }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
@@ -3410,7 +3458,7 @@
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixPriorLabel,prefixPrior,prefixPriorHash,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
+      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixPriorLabel,prefixPrior,prefixPriorHash,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,currentPositionLabel,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }
