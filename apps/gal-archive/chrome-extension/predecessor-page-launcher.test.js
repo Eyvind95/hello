@@ -320,6 +320,7 @@ test('guided anchor lost live rank restored at most once until improvement',()=>
 
 test('observed prefix mode is a visible explicit button, defaults off, and dispatches the exact selected mode',async()=>{
  const f=fixture(),get=id=>f.nodes.get('ga-predecessor-page-'+id+'--testextension');f.saved({data:{count:1110},hash:'a'.repeat(64)});f.launch();get('launcher').onclick();
+ get('config').isConnected=true;
  const toggle=get('prefix-observed');assert.equal(toggle.tag,'button');assert.equal(toggle.type,'button');assert.match(toggle.style.cssText,/min-height:44px!important/);assert.match(toggle.textContent,/未選擇/);
  get('prefix-slot').value='candidate';get('top-id').value='';get('top-files').value='';
  toggle.onclick();assert.match(toggle.textContent,/已選擇/);assert.deepEqual(f.calls,[]);
