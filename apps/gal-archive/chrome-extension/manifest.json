@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.90",
-  "version_name": "V0.10.90 寫作區塊折疊證據",
+  "version": "0.10.91",
+  "version_name": "V0.10.91 GPT 分支指定頂端",
   "description": "輪迴檔案館：原生回答辨識及程式碼框正文完整性檢查。",
   "permissions": [
     "storage",
