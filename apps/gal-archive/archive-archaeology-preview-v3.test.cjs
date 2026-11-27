@@ -278,3 +278,63 @@ test('legacy recovery rejects unrelated errors, synthetic clearance, absent evid
   assert.throws(()=>api.preview(i),/接合證據不足|候選|例外/);
  }
 });
+
+
+const jointApi=require('./archive-archaeology-preview-v3-joint.cjs');
+const registryFor=(target,aliases=[])=>[{...target,aliases,backupFileId:'fixture-backup',backupHeader:'《世界》｜'+target.cycleTitle+'｜輪迴 ID '+target.cycleId+'｜',reviewId:'independent-target-fixture'}];
+test('backup title canonicalization is UUID-bound and cannot carry semantic keys across title change',()=>{
+ const {input,t}=fullFixture(),registry=registryFor(target,['角色名']);
+ t.target={...target,cycleTitle:'角色名'};
+ const before=JSON.stringify(input.candidate),n=jointApi.normalizeCandidateTargets(input.candidate,registry);
+ assert.equal(n.changes.length,1);assert.equal(n.changes[0].reviewKeysMustBeReissued,true);
+ assert.equal(n.candidate.targets[0].target.cycleTitle,target.cycleTitle);
+ assert.equal(JSON.stringify(input.candidate),before);
+ assert.deepEqual(n.candidate.targets[0].pilotMessages,t.pilotMessages);
+ assert.equal(api.preview({...input,candidate:n.candidate}).coverage.status,'complete-against-independent-ledger');
+ t.target={...target,cycleTitle:'未知別名'};assert.throws(()=>jointApi.normalizeCandidateTargets(input.candidate,registry),/別名/);
+ t.target={...target,cycleId:'other'};assert.throws(()=>jointApi.normalizeCandidateTargets(input.candidate,registry),/輪迴/);
+ assert.throws(()=>jointApi.normalizeCandidateTargets(input.candidate,[{...registry[0],backupHeader:'wrong'}]),/表頭/);
+});
+function managerBatch(managerName,chatId,sourceId){
+ const d=raw(chatId,'run-'+chatId,[row('assistant',sourceId,'一樣的正文',0)]),o=original(d),f={start:0,end:d.rows[0].text.length,text:d.rows[0].text,kind:'commentary'},e={sha256:o.sha256,chatId,sourceId:d.rows[0].id,sourceIndex:0,fragments:[f]};
+ const sections=Object.fromEntries(api.SECTIONS.map(k=>[k,[]]));sections.quizLogs=[e];
+ const candidate={format:api.FORMAT,version:3,manager:managerName,targets:[{target,...sections}]};
+ const review={sources:[approval(d,o)],targets:[target],fragments:[],coverage:[{sha256:o.sha256,chatId,sourceId:e.sourceId,sourceIndex:0,disposition:'selected',keys:[api.coverageKey(target,managerName,'quizLogs',e,f,'source')],reviewId:'independent-fixture',reason:'fixture'}]};
+ return {originals:[o],candidate,review};
+}
+test('joint preview keeps both managers with identical text and refuses incomplete review or duplicate managers',()=>{
+ const a=managerBatch('甲','a','a1'),b=managerBatch('乙','b','b1'),registry=registryFor(target,['角色名']);
+ a.candidate.targets[0].target={...target,cycleTitle:'角色名'};
+ const out=jointApi.jointPreview({batches:[a,b],registry});
+ assert.equal(out.status,'preview-only');assert.equal(out.importable,false);assert.equal(out.targets.length,1);
+ const managers=out.targets[0].managers;assert.equal(managers.length,2);
+ assert.equal(managers[0].sections.quizLogs[0].fragments[0].text,managers[1].sections.quizLogs[0].fragments[0].text);
+ assert.notEqual(managers[0].sections.quizLogs[0].managedId,managers[1].sections.quizLogs[0].managedId);
+ assert.deepEqual(managers.map(x=>x.manager),['甲','乙']);assert.equal(out.titleChanges.length,1);
+ assert.throws(()=>jointApi.jointPreview({batches:[a,a],registry}),/管理者批次重複/);
+ b.review.coverage=[];assert.throws(()=>jointApi.jointPreview({batches:[a,b],registry}),/覆蓋未通過/);
+});
+function researchFixture(){
+ const a=managerBatch('甲','a','a1'),b=managerBatch('乙','b','b1'),sources=[...a.review.sources,...b.review.sources],registry=registryFor(target,['角色名']);
+ const common={task:'test-joint',status:'preview-only',canonical:false,importable:false};
+ const works=sources.map((s,i)=>({type:'原生答卷10+1',author:i?'乙':'甲',sha256:s.sha256,chatId:s.chatId,sourceId:'assistant|message:'+(i?'b1':'a1'),sourceIndex:0,rangeUtf16:[0,5],textSha256:'a'.repeat(64)}));
+ const ep=(w)=>({chatId:w.chatId,sourceId:w.sourceId,index:w.sourceIndex,role:'assistant',rangeUtf16:w.rangeUtf16,textSha256:w.textSha256});
+ const q={quoteId:'q1',carrier:ep(works[0]),match:ep(works[1]),delete:false,countAsNewAnswer:false};
+ const fine={...common,version:'3.2-flare-stage002',target:{...target,cycleTitle:'角色名'},occurrences:[{occurrenceId:'occ1',originalAuthor:'unknown'}],stage002ReviewedRows:[]};
+ const red={...common,version:'RED-V3.3-countersign',sources,formalWorks:works,quoteDispositions:[q],newDifferences:[]};
+ const fo=original(fine),ro=original(red);
+ const flare={...common,version:'FLARE-V3.4',sourceFiles:sources,inputFiles:[{sha256:ro.sha256},{sha256:fo.sha256}],formalWorks:works,quoteEvidence:[q],changes:[],counts:{unresolvedAuthorRetained:1}};
+ const fl=original(flare),receipt={...common,version:'RED-V3.4-receipt',countersignStage:'complete',inputs:[{sha256:ro.sha256},{sha256:fl.sha256}],counts:{unresolvedAuthorRetained:1}},re=original(receipt);
+ const artifacts=[{kind:'red33',...ro},{kind:'flare34',...fl},{kind:'fine32',...fo},{kind:'receipt',...re}];
+ return {registry,artifacts,approvedSources:sources,review:{reviewId:'fixture-review',task:common.task,target,hashes:Object.fromEntries(artifacts.map(o=>[o.kind,o.sha256])),counts:{formalWorks:2,relations:1,differences:0,occurrences:1,fineClassifications:0,unresolvedAuthor:1}}};
+}
+test('joint research retains both native answer source identities, all signed artifacts and unresolved authors without re-signing',()=>{
+ const f=researchFixture(),p=jointApi.retainJointResearch(f);
+ assert.equal(p.importable,false);assert.equal(p.nativeAnswerSources.length,2);assert.equal(p.artifacts.length,4);
+ assert.equal(p.nativeAnswerSources[0].author,'甲');assert.equal(p.nativeAnswerSources[1].author,'乙');
+ assert.equal(p.counts.unresolvedAuthor,1);
+ assert.equal(p.artifacts.find(x=>x.kind==='fine32').data.occurrences[0].originalAuthor,'unknown');
+ const bad=researchFixture();bad.artifacts[0].bytes=Buffer.from('{}');assert.throws(()=>jointApi.retainJointResearch(bad),/雜湊/);
+ const bad2=researchFixture();bad2.review.counts.unresolvedAuthor=0;assert.throws(()=>jointApi.retainJointResearch(bad2),/未決作者/);
+ const bad3=researchFixture();bad3.approvedSources.pop();assert.throws(()=>jointApi.retainJointResearch(bad3),/來源預覽/);
+});
