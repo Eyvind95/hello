@@ -3061,10 +3061,26 @@
     }finally{if(!borrowed){if(state.bulk===b)state.bulk=null;lock.remove()}}
   }
 
+  // A routine observer poll can briefly hold state.scanning. A deliberate
+  // scan click must not disappear merely because it landed during that poll.
+  function historyStartBlocker(chat){
+    if(!pc||!valid()||path()!==chat)return '聊天已切換或不是具體 ChatGPT 聊天，請重新開啟掃描設定';
+    if(state.bulk)return '此聊天已有操作進行中，請先停止並保全';
+    if(document.getElementById(HISTORY_PANEL))return '前一批保全仍在頁面，請確認下載並關閉面板後再開始';
+    if(state.activeSends||state.timeBusy||isGenerating())return '此聊天正在上傳、擷取時間或生成，請完成後再開始';
+    return null;
+  }
+  async function historyStartGate(chat){
+    const until=Date.now()+5000;
+    for(;;){
+      const blocker=historyStartBlocker(chat);if(blocker)return blocker;
+      if(!state.scanning)return null;
+      if(Date.now()>=until)return '例行監看擷取仍在忙碌，請稍後再按一次';
+      await sleep(100);
+    }
+  }
   async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null,currentPosition=false,branch=null){
-    if(!pc||!valid())return {ok:false,error:'請開啟具體 ChatGPT 聊天並載入新版'};
-    if(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating())return {ok:false,error:'此聊天正在監看擷取、掃描或生成，稍後再開始'};
-    if(document.getElementById(HISTORY_PANEL))return {ok:false,error:'前一批保全仍在頁面，請確認下載並關閉面板後再開始'};
+    const chat=path(),blocked=await historyStartGate(chat);if(blocked)return {ok:false,error:blocked};
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
@@ -3074,6 +3090,7 @@
         if(sample||checkpoint||currentPosition||branch.chat!==b.chat)throw Error('分支模式不使用完整聊天保全');
         pc.branchAnchor(branch.row);
         if(await historyBranchDigest(branch.row)!==branch.hash)throw Error('已記住的分支錨點雜湊不符');
+        if(branch.direction!=='up'&&branch.direction!=='down'&&branch.direction!==undefined)throw Error('分支掃描方向無效');
         if(path()!==b.chat||state.bulk)throw Error('聊天已切換或正在掃描');
         b.branch=branch;
       }catch(e){return {ok:false,error:String(e.message||e)}}
@@ -3098,6 +3115,9 @@
         b.knownMinimum=Math.max(b.knownMinimum,b.resume.baseCount);
       }catch(e){return {ok:false,error:String(e.message||e)}}
     }
+    // Digest and checkpoint validation may yield; recheck before taking the lock.
+    const finalBlock=await historyStartGate(b.chat);if(finalBlock)return {ok:false,error:finalBlock};
+    const lockBlock=historyStartBlocker(b.chat);if(lockBlock||state.scanning)return {ok:false,error:lockBlock||'例行擷取剛開始，請再按一次'};
     state.bulk=b;
     try{
       if(checkpoint)await historyInheritGeneratedImages(b,checkpoint.data);
@@ -3817,7 +3837,7 @@
       const branchLabel=document.createElement('strong');branchLabel.textContent='③ 分支聊天・指定 GPT 頂端（不需母聊天 JSON）';
       const branchId=document.createElement('input');branchId.id=historyPageId('branch-anchor-id');branchId.type='text';branchId.maxLength=160;branchId.placeholder='GPT 原生 ID（選填，須在目前畫面）';branchId.style.cssText=input.style.cssText;
       const branchPick=document.createElement('button');branchPick.type='button';branchPick.id=historyPageId('branch-pick');branchPick.textContent='點選原聊天最後一則 GPT 回應';branchPick.style.cssText=anchorStyle;
-      const branchStart=document.createElement('button');branchStart.type='button';branchStart.id=historyPageId('branch-start');branchStart.textContent='↑ 開始分支掃描（不收錄指定回應）';branchStart.style.cssText=start.style.cssText;
+      const branchStart=document.createElement('button');branchStart.type='button';branchStart.id=historyPageId('branch-start');branchStart.textContent='↑ 從最底端向上分支掃描（原有模式）';branchStart.style.cssText=start.style.cssText;
       const branchDown=document.createElement('button');branchDown.type='button';branchDown.id=historyPageId('branch-down');branchDown.textContent='↓ 從指定 GPT 頂端向下掃描（建議）';branchDown.style.cssText=start.style.cssText;
       const branchInfo=document.createElement('p');branchInfo.textContent='尚未指定 GPT 回應';
       const branchKey='ga-predecessor-branch-anchor:'+pane.dataset.chat;
@@ -3872,15 +3892,19 @@
       };
       const launchBranch=async(direction)=>{
         clearPick();
-        if(!available()||branchPick.disabled)return;
-        if(!branchRecord||branchId.value.trim()!==branchRecord.row.id){branchInfo.textContent='請先擷取目前畫面中的指定 GPT 回應';return}
-        branchStart.disabled=true;branchPick.disabled=true;branchDown.disabled=true;
+        const name=direction==='up'?'從最底端向上分支掃描':'從指定 GPT 頂端向下分支掃描';
+        const report=message=>{branchInfo.textContent=message;mode.textContent='目前模式：'+name+'｜'+message};
+        if(!pane.isConnected||pane.dataset.chat!==path()){report('⛔ 聊天已切換，請重新開啟設定');return}
+        if(branchPick.disabled){report('⛔ 正在核對錨點或啟動，請勿重複點擊');return}
+        if(!branchRecord||branchId.value.trim()!==branchRecord.row.id){report('⛔ 請先擷取目前畫面中的指定 GPT 回應');return}
+        branchStart.disabled=true;branchPick.disabled=true;branchDown.disabled=true;close.disabled=true;
+        report('準備啟動掃描（核對聊天、錨點與忙碌狀態）');
         try{
           const result=await historyBegin(input.value.trim(),false,0,null,false,{...branchRecord,direction});
           if(result.ok){pane.remove();return}
-          branchInfo.textContent='⛔ '+result.error;
-        }catch(e){branchInfo.textContent='⛔ '+String(e.message||e)}
-        finally{branchStart.disabled=false;branchPick.disabled=false;branchDown.disabled=false}
+          report('⛔ '+result.error);
+        }catch(e){report('⛔ '+String(e.message||e))}
+        finally{branchStart.disabled=false;branchPick.disabled=false;branchDown.disabled=false;close.disabled=false}
       };
       branchStart.onclick=()=>launchBranch('up');branchDown.onclick=()=>launchBranch('down');
       chrome.storage.local.get(branchKey).then(async stored=>{
@@ -3913,8 +3937,8 @@
           }
           const result=await (sample?historyBegin(input.value.trim(),sample):historyBegin(input.value.trim(),false,pc.minimumCount(minimum.value),checkpoint,!!resume&&currentPosition.checked));
           if(result?.ok){pane.remove();return}
-          feedback.textContent='⛔ '+(result?.error||'無法啟動掃描');
-        }catch(e){feedback.textContent='⛔ '+String(e.message||e)}
+          feedback.textContent='⛔ '+(result?.error||'無法啟動掃描');mode.textContent=feedback.textContent;
+        }catch(e){feedback.textContent='⛔ '+String(e.message||e);mode.textContent=feedback.textContent}
         finally{start.disabled=false;trial.disabled=false;twenty.disabled=false;resumeButton.disabled=false;candidateButton.disabled=false;localImport.disabled=false;manualImport.disabled=false;anchorLocate.disabled=false;anchorCapture.disabled=false;close.disabled=false;rushTop.disabled=false;prefixStart.disabled=false}
       };
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);

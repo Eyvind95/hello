@@ -1369,3 +1369,35 @@ test('branch down long stable windows credit bounded actual progress, not stuck,
   a.equal(b.scrollStats.attempts,moves);a.ok(b.scrollStats.noGrowthWindows>0);
  }
 });
+
+test('history launch gate waits for routine polling but rejects actual busy, stale chat, and unclosed evidence',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),p=require('node:path');
+ const src=fs.readFileSync(p.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyStartBlocker('),src.indexOf('  async function historyBegin('));
+ for(const scenario of ['idle','routine','persistent','bulk','panel','sending','generating','changed','race']){
+  let now=0,chat='/c/a',panel=false,generating=false;const state={scanning:scenario==='routine'||scenario==='persistent'||scenario==='race',bulk:null,activeSends:0,timeBusy:false};
+  if(scenario==='bulk')state.bulk={};if(scenario==='panel')panel=true;if(scenario==='sending')state.activeSends=1;if(scenario==='generating')generating=true;if(scenario==='changed')chat='/c/b';
+  const ctx={pc:{},valid:()=>true,path:()=>chat,state,HISTORY_PANEL:'panel',document:{getElementById:()=>panel},isGenerating:()=>generating,Date:{now:()=>now},sleep:async ms=>{now+=ms;if(scenario==='routine'&&now>=300)state.scanning=false;if(scenario==='race'&&now>=300){state.scanning=false;state.bulk={}}}};
+  vm.runInNewContext(block+';globalThis.gate=historyStartGate;',ctx);
+  const result=await ctx.gate('/c/a');
+  if(scenario==='idle'||scenario==='routine'){a.equal(result,null);a.equal(now,scenario==='idle'?0:300)}
+  else {a.equal(typeof result,'string');a.ok(result.length>0);if(scenario==='persistent')a.equal(now,5000);if(scenario==='race')a.equal(now,300)}
+ }
+});
+test('both branch launch buttons call the same entry with explicit direction, visible errors and restored controls',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),p=require('node:path');
+ const src=fs.readFileSync(p.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('      const launchBranch=async(direction)=>'),src.indexOf('      chrome.storage.local.get(branchKey).then'));
+ for(const direction of ['up','down'])for(const scenario of ['success','busy','missing','stale','throws']){
+  const calls=[],branchStart={},branchDown={},branchPick={},close={},branchInfo={},mode={},branchId={value:scenario==='missing'?'wrong':'anchor'},input={value:'聊天'};
+  const branchRecord={row:{id:'anchor'},chat:'/c/a',hash:'a'.repeat(64)};
+  const pane={isConnected:true,dataset:{chat:'/c/a'},remove(){this.isConnected=false}};
+  const ctx={clearPick:()=>{},path:()=>scenario==='stale'?'/c/b':'/c/a',pane,branchStart,branchDown,branchPick,close,branchInfo,mode,branchId,input,branchRecord,historyBegin:async(...args)=>{calls.push(args);if(scenario==='throws')throw Error('failure');return scenario==='busy'?{ok:false,error:'busy'}:{ok:true}}};
+  vm.runInNewContext(block,ctx);
+  await (direction==='up'?branchStart.onclick():branchDown.onclick());
+  if(scenario==='missing'||scenario==='stale')a.equal(calls.length,0);
+  else {a.equal(calls.length,1);a.equal(calls[0][5].direction,direction);a.equal(calls[0][5].row.id,'anchor');a.equal(branchStart.disabled,false);a.equal(branchDown.disabled,false);a.equal(close.disabled,false)}
+  if(scenario==='success')a.equal(pane.isConnected,false);
+  else {a.equal(pane.isConnected,true);a.match(branchInfo.textContent,/⛔/);a.match(mode.textContent,/⛔/)}
+ }
+});
