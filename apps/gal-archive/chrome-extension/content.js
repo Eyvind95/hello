@@ -2207,7 +2207,7 @@
     return true;
   }
   async function historySettled(b,{deadline=Infinity,upward=false,target=null,targetHeight=null,allowBoost=true,preferIdentity=false,anchorRead=null}={}){
-    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0;const policy=upward?pc.recoveryPolicy(b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null})):null;
+    const until=Math.min(Date.now()+60000,deadline);let last=null,lastRows=null,lastAt=0,reason='',spinAt=0,lastNudge=0,nudges=0,resets=0,readIssueKey='',readIssueSince=0,readNudgeAt=0,readNudges=0;const policy=upward?pc.recoveryPolicy(b.breakthrough||(b.breakthrough={resets:0,attempts:0,frontier:null})):null;
     const retryError=()=>Object.assign(Error('頁面反覆自動返回底端；本次定位策略無法穩定'),{code:'HISTORY_RECOVERY_RETRY'});
     const farBottom=()=>preferIdentity&&upward&&target!==null&&historyAtBottom(b.host)&&b.host.scrollTop-target>b.host.clientHeight*4;
     const handoffIdentity=()=>Object.assign(Error('頁面反覆自動返回底端；改用相對原生ID定位'),{code:'HISTORY_RECOVERY_RETRY'});
@@ -2287,6 +2287,7 @@
             const anchor=b.mode==='predecessor-anchor'&&anchorRead?anchorRead(b.host):null;
             if(anchor?.observation)return anchor.rows;
             let entries=null;const rows=anchor?anchor.rows:historyRead(b.host,observation=>historyFoldObservation(b,observation),x=>{entries=x},b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
+            readIssueKey='';readIssueSince=0;
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
             if(lastRows&&last!==null&&last!==fingerprint){
               b.scrollStats.fingerprintChanges++;
@@ -2306,7 +2307,29 @@
               last=fingerprint;lastAt=Date.now();
             }
             reason='等待原文與格式穩定';
-        }catch(e){if(e.code==='HISTORY_RECOVERY_RETRY')throw e;last=null;reason=String(e.message||e);b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null}}
+        }catch(e){
+          if(e.code==='HISTORY_RECOVERY_RETRY')throw e;
+          last=null;lastRows=null;reason=String(e.message||e);
+          b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null};
+          // A mounted code block can briefly disagree with the rendered body.
+          // Reproduce the user's small upward movement, never accept the bad
+          // read or reset the deadline. Limit this to branch scanning first.
+          const key=b.branch&&reason.includes('GPT 正文與程式碼框不一致')?(e.historyEvidence?.messageId||e.historyEvidence?.turnKey||e.historyEvidence?.testId||''):'';
+          const now=Date.now();
+          if(key!==readIssueKey){readIssueKey=key;readIssueSince=now}
+          if(key&&now-readIssueSince>=2000&&now-readNudgeAt>=2000&&readNudges<3&&!isGenerating()&&b.host.scrollTop>2){
+            historyGuard(b);
+            const from=b.host.scrollTop,step=Math.max(24,Math.floor(b.host.clientHeight*[.2,.35,.5][readNudges]));
+            const requested=Math.max(0,from-step);
+            historyScroll(b.host,requested);readNudgeAt=now;readNudges++;b.scrollStats.readIssueNudges=(b.scrollStats.readIssueNudges||0)+1;
+            historyTrace(b,'branch-read-issue-nudge',{messageId:key,attempt:readNudges,from,requested,reason});
+            historyStatus(b,'正文掛載不穩定・小幅上移復原 '+readNudges+'/3（仍需逐字核對）');
+            await sleep(Math.min(650,Math.max(0,until-Date.now())));historyGuard(b);
+            if(upward){target=b.host.scrollTop;targetHeight=b.host.scrollHeight}
+            historyTrace(b,'branch-read-issue-nudge-landed',{messageId:key,attempt:readNudges,requested,actual:b.host.scrollTop});
+            continue;
+          }
+        }
       }
       historyStatus(b,reason+'（最多等待60秒）');await sleep(350);
     }
@@ -2599,14 +2622,113 @@
     data.evidence.topReached=false;data.evidence.topStableMs=0;
     data.evidence.coverage='selected-assistant-boundary; no independent server manifest';
     data.evidence.continuity=data.status==='completed'&&!!b.branchProof;
-    data.evidence.branchBoundary={anchorId:b.branch.row.id,anchorSha256:b.branch.hash,verified:false,...(data.status==='completed'?b.branchProof||{}:{})};
+    data.evidence.branchBoundary={anchorId:b.branch.row.id,anchorSha256:b.branch.hash,direction:b.branch.direction||'up',verified:false,...(data.status==='completed'?b.branchProof||{}:{})};
     data.warnings.push('分支專用保全：指定 GPT 回應及其之前訊息不計入完成檔。未完成檔尚未證明範圍，不可當成分支新增正文或完整聊天匯入。');
     return data;
+  }
+  // Start at the selected native assistant in the CURRENT mounted window.
+  // Reuse the proven strict downward prefix merge; never rush to physical top
+  // or jump to the bottom and then treat the intervening history as scanned.
+  async function historyBranchDown(b){
+    const host=b.host,anchor=b.branch.row;
+    historyStatus(b,'從目前位置核對指定 GPT 頂端（不跳底）');
+    let live=await historySettled(b,{deadline:Date.now()+60000});
+    historyGuard(b);
+    let at=live.findIndex(r=>r.id===anchor.id);
+    if(at<0||!pc.compareRow(anchor,live[at]).equal)throw Error('目前視窗未核對指定 GPT 頂端；請移至原回應與下一則玩家訊息附近');
+    let accepted=live.slice(at);
+    // Long assistant replies may not yet mount their following user. Take
+    // bounded small overlapping downward steps until that neighbor appears.
+    for(let i=0;accepted.length===1&&i<12;i++){
+      historyGuard(b);
+      const from=host.scrollTop,step=Math.max(24,Math.floor(host.clientHeight*.35));
+      if(historyAtBottom(host))break;
+      historyScroll(host,from+step);await sleep(350);
+      live=await historySettled(b,{deadline:Date.now()+12000});
+      accepted=historyPrefixMerge(accepted,live.slice(Math.max(0,live.findIndex(r=>r.id===anchor.id))));
+      if(accepted.length===1&&Math.abs(host.scrollTop-from)<2)break;
+    }
+    // Keep the parent anchor out of all branch rows, even on a failure.
+    const first=pc.branchBoundary(accepted,live,anchor);
+    if(!first)throw Error('未核對指定 GPT 回應與第一則新增玩家相鄰');
+    const hash=await historyBranchDigest(first.anchor);historyGuard(b);
+    if(hash!==b.branch.hash)throw Error('分支錨點雜湊不符');
+    b.rows=first.rows;b.windows++;
+    b.branchProof={anchorId:anchor.id,anchorSha256:b.branch.hash,observedSha256:hash,firstNewId:first.firstNewId,verified:true,verifiedAt:new Date().toISOString()};
+    historyTrace(b,'assistant-branch-boundary-verified',{anchorId:anchor.id,firstNewId:first.firstNewId,direction:'down'});
+    let lastGrowth=Date.now(),anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,acceptedLive=live,step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0,bottomSince=null,bottomSig=null;
+    const accept=async current=>{
+      historyGuard(b);
+      let next=current;
+      const a=current.findIndex(r=>r.id===anchor.id);
+      if(a>=0){
+        if(!pc.compareRow(anchor,current[a]).equal)throw Error('分支錨點重新掛載後內容不符');
+        next=current.slice(a+1);
+      }
+      const rows=historyPrefixMerge(b.rows,next);
+      if(rows.some(pc.isComposite))throw Error('分支含未核對複合訊息');
+      if(rows.length>b.rows.length)lastGrowth=Date.now();
+      b.rows=rows;acceptedLive=next;anchorTop=host.scrollTop;anchorHeight=host.scrollHeight;b.windows++;
+      historyHostObservation(b);
+      return next;
+    };
+    // The original initial view is already verified. At each bottom poll
+    // require stable actual bottom and an exact last-ID/body overlap.
+    for(;;){
+      historyGuard(b);
+      if(Date.now()-lastGrowth>=180000)throw Error('180秒無新增連續訊息或底端穩定證據');
+      if(historyAtBottom(host)&&acceptedLive.at(-1)?.id===b.rows.at(-1)?.id&&!historyLoading(host)&&!historyNativeFailure(host)){
+        const sig=JSON.stringify([pc.fingerprint(acceptedLive),host.scrollHeight]);
+        if(sig!==bottomSig){bottomSig=sig;bottomSince=Date.now()}
+        if(pc.edgeProof(acceptedLive,b.rows,{edge:'bottom',atEdge:true,stableMs:Date.now()-bottomSince,loading:false,...historyEdgeOrdinal(b,'bottom')})){
+          b.bottomReached=true;b.bottomStableMs=Date.now()-bottomSince;return;
+        }
+        historyStatus(b,'核對分支底端穩定');await sleep(650);
+        live=await historySettled(b,{deadline:lastGrowth+180000});
+        await accept(live);continue;
+      }
+      bottomSince=null;bottomSig=null;
+      historyStatus(b,'從指定 GPT 頂端向下掃描');
+      const from=anchorTop,oldHeight=anchorHeight,tail=b.rows.at(-1)?.id;
+      const target=Math.min(Math.max(0,host.scrollHeight-host.clientHeight),from+step);
+      historyScroll(host,target);await sleep(350);
+      try{
+        live=await historySettled(b,{deadline:lastGrowth+180000});
+        await accept(live);retries=0;step=Math.max(24,Math.floor(host.clientHeight*.65));
+      }catch(e){
+        historyGuard(b);if(++retries>=4)throw e;
+        historyTrace(b,'branch-down-forward-conflict',{target,anchorTop:from,anchorHeight:oldHeight,anchorId:tail,reason:String(e.message||e)});
+        let restored=false;
+        for(let attempt=1;attempt<=3;attempt++){
+          historyGuard(b);
+          if(Date.now()-lastGrowth>=180000)throw Error('180秒無新增連續訊息');
+          if(historyAtBottom(host)&&host.scrollTop-from>host.clientHeight*4&&attempt>1){
+            historyScroll(host,host.scrollTop-Math.max(24,Math.floor(host.clientHeight*.5)));await sleep(600);
+          }
+          const adjusted=from+host.scrollHeight-oldHeight;
+          const hint=attempt===1?from:attempt===2?adjusted:Math.min(from,adjusted)-Math.floor(host.clientHeight*.25);
+          historyScroll(host,hint);await sleep(600);
+          try{
+            live=await historySettled(b,{deadline:Math.min(lastGrowth+180000,Date.now()+12000)});
+            if(!live.some(r=>r.id===tail))throw Error('復原視窗未找到已核對尾端');
+            await accept(live);restored=true;historyTrace(b,'branch-down-restore-verified',{attempt,anchorId:tail});break;
+          }catch(err){historyGuard(b);historyTrace(b,'branch-down-restore-rejected',{attempt,reason:String(err.message||err)})}
+        }
+        if(!restored)throw Error('無法復原向下連續視窗：'+String(e.message||e));
+        step=Math.max(24,Math.floor(step/2));
+      }
+      if(b.rows.length>=(b.branchNextCheckpoint||100)){
+        b.branchNextCheckpoint=Math.floor(b.rows.length/100)*100+100;
+        try{const snapshot=historyScanPayload(b,'failed','向下掃描中，非完整分支');snapshot.evidence.checkpoint=true;pc.validateBranch(snapshot);const file=historyDownload(snapshot);(b.checkpointExports||(b.checkpointExports=[])).push({count:b.rows.length,file,triggered:true})}catch(e){historyTrace(b,'checkpoint-download-failed',{reason:String(e.message||e)})}
+      }
+      await sleep(150);
+    }
   }
   async function historyRun(b){
     let status='failed',error=null;
     try{
       await historyLocateHost(b);
+      if(b.branch?.direction==='down'){await historyBranchDown(b);status='completed'}else{
       if(b.resume?.currentPosition){
         b.rows=b.resumeRows.slice();b.resume.minIndex=0;
         b.breakthrough={resets:0,attempts:0,frontier:{id:b.rows[0].id,top:b.host.scrollTop,height:b.host.scrollHeight}};
@@ -2825,6 +2947,7 @@
         if(pc.noNewRows(lastGrowth,Date.now(),growthLimit))throw Error((growthLimit/1000)+'秒未取得新訊息；已保全，禁止無限重複掃描');
         await sleep(150);
       }
+      }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
     if(status==='completed'&&b.rows.some(r=>r.identityBasis==='unresolved-native-composite')){status='failed';error='已抵達觀測頂端；複合原生訊息分界待核對，非正式完整聊天'}
     const data=b.branch?historyScanPayload(b,status,error):historyPayload(b,status,error);
@@ -2962,7 +3085,7 @@
       document.getElementById(HISTORY_PANEL)?.remove();
       const pane=document.createElement('section');pane.id=HISTORY_PANEL;pane.dataset.gaExtensionId=chrome.runtime.id;
       pane.style.cssText='position:fixed;z-index:2147483646;left:50%;right:auto;transform:translateX(-50%);bottom:156px;top:auto;box-sizing:border-box;max-width:calc(100vw - 24px);max-height:min(35vh,calc(100vh - 180px));overflow:auto;background:#202840;color:#fff;border:1px solid #9ba9cb;padding:10px;border-radius:12px;font:13px system-ui;box-shadow:0 3px 20px #0006';
-      const h=document.createElement('strong');h.textContent='V'+chrome.runtime.getManifest().version+'｜'+(b.branch?'分支聊天・指定 GPT 頂端':b.sample?'最近'+b.sample+'則・測試掃描':b.resume?(b.resume.currentPosition?'完整聊天・目前位置續掃':'完整聊天・保全續掃'):'完整聊天・從底端向上掃描');
+      const h=document.createElement('strong');h.textContent='V'+chrome.runtime.getManifest().version+'｜'+(b.branch?'分支聊天・指定 GPT 頂端・'+(b.branch.direction==='down'?'向下':'向上'):b.sample?'最近'+b.sample+'則・測試掃描':b.resume?(b.resume.currentPosition?'完整聊天・目前位置續掃':'完整聊天・保全續掃'):'完整聊天・從底端向上掃描');
       b.action=document.createElement('div');b.action.setAttribute('role','status');b.action.style.cssText='padding:8px;margin:5px 0;background:#111827;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere';b.action.textContent='目前動作：準備掃描';
       b.info=document.createElement('pre');b.info.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0';
       b.stop=historyPanelButton(document.createElement('button'),'#a13232');b.stop.textContent='停止並保全';b.stop.setAttribute('aria-label','停止並保全掃描');b.stop.onclick=()=>{b.cancelled=true;b.action.textContent='目前動作：停止並保全中'};
@@ -3668,6 +3791,7 @@
       const branchId=document.createElement('input');branchId.id=historyPageId('branch-anchor-id');branchId.type='text';branchId.maxLength=160;branchId.placeholder='GPT 原生 ID（選填，須在目前畫面）';branchId.style.cssText=input.style.cssText;
       const branchPick=document.createElement('button');branchPick.type='button';branchPick.id=historyPageId('branch-pick');branchPick.textContent='點選原聊天最後一則 GPT 回應';branchPick.style.cssText=anchorStyle;
       const branchStart=document.createElement('button');branchStart.type='button';branchStart.id=historyPageId('branch-start');branchStart.textContent='↑ 開始分支掃描（不收錄指定回應）';branchStart.style.cssText=start.style.cssText;
+      const branchDown=document.createElement('button');branchDown.type='button';branchDown.id=historyPageId('branch-down');branchDown.textContent='↓ 從指定 GPT 頂端向下掃描（建議）';branchDown.style.cssText=start.style.cssText;
       const branchInfo=document.createElement('p');branchInfo.textContent='尚未指定 GPT 回應';
       const branchKey='ga-predecessor-branch-anchor:'+pane.dataset.chat;
       let branchRecord=null,pickListener=null,picking=false;
@@ -3719,18 +3843,19 @@
         };
         document.addEventListener('click',pickListener,true);
       };
-      branchStart.onclick=async()=>{
+      const launchBranch=async(direction)=>{
         clearPick();
         if(!available())return;
         if(!branchRecord||branchId.value.trim()!==branchRecord.row.id){branchInfo.textContent='請先擷取目前畫面中的指定 GPT 回應';return}
-        branchStart.disabled=true;branchPick.disabled=true;
+        branchStart.disabled=true;branchPick.disabled=true;branchDown.disabled=true;
         try{
-          const result=await historyBegin(input.value.trim(),false,0,null,false,branchRecord);
+          const result=await historyBegin(input.value.trim(),false,0,null,false,{...branchRecord,direction});
           if(result.ok){pane.remove();return}
           branchInfo.textContent='⛔ '+result.error;
         }catch(e){branchInfo.textContent='⛔ '+String(e.message||e)}
-        finally{branchStart.disabled=false;branchPick.disabled=false}
+        finally{branchStart.disabled=false;branchPick.disabled=false;branchDown.disabled=false}
       };
+      branchStart.onclick=()=>launchBranch('up');branchDown.onclick=()=>launchBranch('down');
       chrome.storage.local.get(branchKey).then(async stored=>{
         const record=stored[branchKey];if(!record||!available()||branchRecord||branchId.value)return;
         try{pc.branchAnchor(record.row);if(record.chat!==pane.dataset.chat||await historyBranchDigest(record.row)!==record.hash)return;
@@ -3768,7 +3893,7 @@
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixPriorLabel,prefixPrior,prefixPriorHash,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,currentPositionLabel,resumeButton,candidateButton,note,trial,twenty,start,branchLabel,branchId,branchPick,branchInfo,branchStart,close,feedback);document.body.append(pane);showSaved();
+      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixPriorLabel,prefixPrior,prefixPriorHash,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,currentPositionLabel,resumeButton,candidateButton,note,trial,twenty,start,branchLabel,branchId,branchPick,branchInfo,branchDown,branchStart,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }
