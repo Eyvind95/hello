@@ -1831,6 +1831,9 @@
     // Multi-image carousels or other layouts remain subject to normal checks.
     if(images.length!==1||previews.length!==1||body.querySelectorAll('img').length!==1||!previews[0].contains(images[0])||!historyVisible(previews[0])||!historyVisible(images[0]))return null;
     if(!/^(?:產生的圖片|生成的圖片|Generated image)\s*1$/i.test(previews[0].getAttribute('aria-label')||''))return null;
+    // A preview may not hide a caption or unrelated textual body.
+    const onlyImage=n=>n===images[0]||n.nodeType===8||(n.nodeType===3&&!String(n.nodeValue||'').trim())||(n.nodeType===1&&['DIV','SPAN'].includes(n.tagName)&&[...n.childNodes].every(onlyImage));
+    if(![...previews[0].childNodes].every(onlyImage))return null;
     const knownControl=n=>n===previews[0]||(n.tagName==='BUTTON'&&gallery.contains(n)&&/^(?:編輯生成的圖像|分享生成的圖像|Edit generated image|Share generated image)\s*1$/i.test(n.getAttribute('aria-label')||''));
     let unknown=false;
     const walk=n=>{
@@ -1882,7 +1885,9 @@
   }
   async function historyInheritGeneratedImages(b,data){
     const rows=data?.candidateRows||data?.rows||[],allowed=new Set(rows.filter(r=>r.role==='assistant'&&r.text===''&&r.nonTextOmitted===true).map(r=>r.id)),map=b.generatedImageAssets||(b.generatedImageAssets=new Map());
-    for(const x of data?.evidence?.generatedImageAssets||[]){
+    const records=data?.evidence?.generatedImageAssets;
+    for(const x of Array.isArray(records)?records:[]){
+      if(!x||typeof x!=='object')continue;
       if(!allowed.has(x.messageId)||x.ordinal!==1||x.status!=='captured'||map.has(x.messageId)||map.size>=HISTORY_IMAGE_COUNT_LIMIT)continue;
       if(!Number.isSafeInteger(x.byteLength)||x.byteLength<1||x.byteLength>HISTORY_IMAGE_SINGLE_LIMIT||typeof x.base64!=='string'||x.base64.length!==4*Math.ceil(x.byteLength/3)||!(/^[a-f0-9]{64}$/.test(x.sha256||'')))continue;
       if([...map.values()].reduce((n,y)=>n+(y.byteLength||0),0)+x.byteLength>HISTORY_IMAGE_TOTAL_LIMIT)continue;
@@ -2205,7 +2210,7 @@
               if(farBottom())throw handoffIdentity();
               const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost,policy):null;
               if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);const result=await recoverWait(recovered);target=result.target;targetHeight=result.height;continue}
-              if(entries?.some(x=>x.generatedImage))await historyCaptureGeneratedImages(b,entries);
+              if(entries?.some(x=>x.generatedImage)){await historyCaptureGeneratedImages(b,entries);historyGuard(b)}
               return rows;
             }
             if(last!==fingerprint){
@@ -2796,7 +2801,6 @@
       if(b.sample)return {ok:false,error:'測試不能續掃'};
       try{
         b.resumeRows=pc.validateCheckpoint(checkpoint.data,location.origin+b.chat,true);
-        await historyInheritGeneratedImages(b,checkpoint.data);
         if(!/^[a-f0-9]{64}$/.test(checkpoint.hash))throw Error('斷點雜湊無效');
         b.resume={baseCount:b.resumeRows.length,sourceRunId:checkpoint.data.runId,sourceVersion:checkpoint.data.scannerVersion||null,imagePolicy:'omit-images; original checkpoint hash unchanged',sourceSha256:checkpoint.hash,sourceFirstId:b.resumeRows[0].id,sourceLastId:b.resumeRows.at(-1).id,tailVerified:false,frontierVerified:false,minIndex:b.resumeRows.length,checkedWindows:0};
         const sourceEvidence=checkpoint.data.evidence;
@@ -2815,6 +2819,7 @@
     }
     state.bulk=b;
     try{
+      if(checkpoint)await historyInheritGeneratedImages(b,checkpoint.data);
       // Disable only this chat's existing automatic upload so scrolling over
       // historical messages cannot upload them after the scan ends.
       const minimumKey='ga-predecessor-min:'+b.chat;
@@ -2944,7 +2949,6 @@
     if(prior&&!observedOnly)throw Error('頂端取證續掃僅允許候選模式');
     const previous=prior?historyPrefixResumeRows(prior,checkpoint,saved,source):null;
     const b={mode:'predecessor-prefix-supplement',chat,rows:[]};
-    await historyInheritGeneratedImages(b,checkpoint.data);if(prior)await historyInheritGeneratedImages(b,prior.data);
     const lock=document.createElement('section');lock.id=HISTORY_PANEL;lock.hidden=true;lock.dataset.gaExtensionId=chrome.runtime.id;
     state.bulk=b;document.body.append(lock);
     const startedAt=new Date().toISOString(),runId=crypto.randomUUID();
@@ -2958,7 +2962,7 @@
         if(!historyLoading(host)&&!historyNativeFailure(host)){
           try{
             let mounted=null;const current=historyRead(host,x=>{if(folds.length<200)folds.push(x)},entries=>{mounted=entries;historyPrefixConflictDom(entries,known,conflictDom)},true),sig=pc.fingerprint(current);
-            if(previous===sig&&Date.now()-lastAt>=550){if(mounted?.some(x=>x.generatedImage))await historyCaptureGeneratedImages(b,mounted);return current}
+            if(previous===sig&&Date.now()-lastAt>=550){if(mounted?.some(x=>x.generatedImage)){await historyCaptureGeneratedImages(b,mounted);guard()}return current}
             if(previous!==sig){previous=sig;lastAt=Date.now()}
           }catch(e){lastConflict={reason:String(e.message||e),evidence:e.historyEvidence||null};previous=null}
         }else previous=null;
@@ -2967,7 +2971,8 @@
       throw Error('局部正文未能穩定讀取');
     };
     try{
-      host=historyHost();
+      await historyInheritGeneratedImages(b,checkpoint.data);if(prior)await historyInheritGeneratedImages(b,prior.data);
+      guard();host=historyHost();
       if(!host)throw Error('找不到捲動容器');
       if(previous){
         rows=previous;
