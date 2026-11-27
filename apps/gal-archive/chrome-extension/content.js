@@ -1656,7 +1656,8 @@
     if(headers.length!==1||!only(wrapper,[headers[0],source]))return null;
     const header=headers[0],label=String(header.textContent||'').trim();
     if(!/^(純文字|程式碼)$/.test(label)||header.querySelectorAll('code,pre,p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table').length)return null;
-    if(![...header.querySelectorAll('button,[role="button"]')].some(n=>/複製|copy/i.test([n.getAttribute('aria-label'),n.getAttribute('title'),n.getAttribute('data-testid')].filter(Boolean).join(' '))))return null;
+    const copies=[...header.querySelectorAll('button,[role="button"]')].filter(n=>/複製|copy/i.test([n.getAttribute('aria-label'),n.getAttribute('title'),n.getAttribute('data-testid')].filter(Boolean).join(' ')));
+    if(copies.length!==1)return null;
     let group=wrapper;
     while(group.parentElement!==body&&group.parentElement?.tagName==='DIV'&&only(group.parentElement,[group]))group=group.parentElement;
     // No inline, quoted, hidden, or ambiguous semantic ancestor.
@@ -1667,7 +1668,7 @@
     if(left<0||at<=left||right<=at||children.slice(left+1,at).some(n=>!whitespace(n))||children.slice(at+1,right).some(n=>!whitespace(n)))return null;
     return {before,after,label,value};
   }
-  function historyAssistantCodeText(body,owner,id,raw){
+  function historyAssistantCodeText(body,owner,id,raw,onBlank=()=>{}){
     const codes=[...body.querySelectorAll('code')].filter(historyVisible);
     let text=raw;
     // Match an entire line-delimited semantic anchor, not an incidental
@@ -1727,7 +1728,10 @@
           if(left?.length===1&&right?.length===1){
             const start=left[0]+a.length,end=right[0],gap=text.slice(start,end);
             const allowed=['\n\n','\n\n'+proof.label+'\n'+value+'\n\n','\n\n'+value+'\n\n'];
-            if(end>=start&&allowed.includes(gap))text=text.slice(0,start)+'\n\n'+text.slice(end);
+            if(end>=start&&allowed.includes(gap)&&gap!=='\n\n'){
+              onBlank({offset:start,previousGap:gap,normalizedGap:'\n\n',codeText:value,label:proof.label,before:a,after:b});
+              text=text.slice(0,start)+'\n\n'+text.slice(end);
+            }
           }
         }
         continue;
@@ -1818,14 +1822,15 @@
       if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
       const stable=composite?pc.compositeId(composite.compositeNative.turnId,composite.compositeNative.ids):role+'|'+(native?'message:'+native:'turn:'+turn);
       let text=historyReadText(body,identityHint?body:owner,stable,onFold);
-      if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text);
+      const blankCodeNormalizations=[];
+      if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text,x=>{if(blankCodeNormalizations.length<8)blankCodeNormalizations.push(x)});
       const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:role==='assistant'?historyAssistantStructureText(n,body):n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
       const row={id:stable,role,text,identityBasis:composite?'unresolved-native-composite':native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments,...(composite||{})};
       const sameOwner=owners.get(owner)||[];
       if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
-      const item={row,el,owner,body};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
+      const item={row,el,owner,body,blankCodeNormalizations};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
     };
     // Read the entire marked response before the legacy selector can pick
     // a nested PDF citation. Keep native message identity, not the user turn ID.
@@ -2764,12 +2769,13 @@
     for(const entry of entries){
       const row=entry.row,old=known.get(row.id);
       if(!old||row.role!=='assistant'||row.identityBasis!=='native-dom-id')continue;
-      const cmp=pc.compareRow(old,row),kind=cmp.equal?'matching':'conflicting';
-      if(cmp.equal&&!observations.some(x=>x.messageId===row.id&&x.kind==='conflicting'))continue;
+      const cmp=pc.compareRow(old,row),normalizations=entry.blankCodeNormalizations||[];
+      const kind=!cmp.equal?'conflicting':normalizations.length?'blank-code-normalized':'matching';
+      if(kind==='matching'&&!observations.some(x=>x.messageId===row.id&&x.kind==='conflicting'))continue;
       if(observations.length>=4||observations.some(x=>x.messageId===row.id&&x.kind===kind))continue;
       let rawDom;
       try{rawDom=historyAnchorDomSnapshot(entry)}catch(e){rawDom={status:'unavailable',reason:String(e.message||e).slice(0,300)}}
-      observations.push({messageId:row.id,kind,fields:cmp.fields,row,rawDom});
+      observations.push({messageId:row.id,kind,fields:cmp.fields,row,rawDom,...(normalizations.length?{blankCodeNormalizations:normalizations}:{})});
     }
   }
   async function historyPrefixSupplement(expectedId,files,requestedTitle,checkpoint,report,cancel=()=>false,observedOnly=false,prior=null){

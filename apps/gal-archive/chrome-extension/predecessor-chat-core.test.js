@@ -1046,7 +1046,8 @@ test('native quoted code UI label is repaired in text and structure, never seman
   return {body,code};
  }
  for(const gap of ['',blank,'純文字\n'+blank]){
-  const f=blankBlock({gap});a.equal(ctx.fix(f.body,{},'id',f.body.innerText),'before\n\nafter');a.equal(ctx.structure(f.code,f.body),blank);
+  const f=blankBlock({gap}),proofs=[];a.equal(ctx.fix(f.body,{},'id',f.body.innerText,x=>proofs.push(x)),'before\n\nafter');a.equal(ctx.structure(f.code,f.body),blank);
+  a.equal(proofs.length,gap?1:0);if(gap){a.equal(proofs[0].codeText,blank);a.equal(proofs[0].previousGap,'\n\n'+gap+'\n\n')}
  }
  for(const options of [{markers:false},{copy:false},{extra:true},{repeat:true},{gap:'純文字\n'+blank+'\nreal prose'},{codeValue:''}]){
   const f=blankBlock(options);a.equal(ctx.fix(f.body,{},'id',f.body.innerText),f.body.innerText);
@@ -1111,6 +1112,7 @@ test('prefix overlap captures conflict DOM immediately, retains matching variant
  const old={...r('assistant|message:x','assistant','before\n\nafter'),identityBasis:'native-dom-id',structure:[{tag:'code',text:'\u3000'}]},changed={...old,text:'before\n\n純文字\n\u3000\n\nafter'};
  const observations=[],known=new Map([[old.id,old]]);
  ctx.capture([{row:changed}],known,observations);ctx.capture([{row:changed}],known,observations);ctx.capture([{row:old}],known,observations);
- a.equal(calls.length,2);a.equal(observations[0].kind,'conflicting');a.equal(observations[1].kind,'matching');a.equal(observations[0].rawDom.status,'captured');
+ ctx.capture([{row:old,blankCodeNormalizations:[{codeText:' '}]}],known,observations);a.equal(observations[2].kind,'blank-code-normalized');a.equal(observations[2].blankCodeNormalizations[0].codeText,' ');
+ a.equal(calls.length,3);a.equal(observations[0].kind,'conflicting');a.equal(observations[1].kind,'matching');a.equal(observations[0].rawDom.status,'captured');
  a.throws(()=>ctx.merge([old],[changed]));a.equal(old.text,'before\n\nafter');
 });

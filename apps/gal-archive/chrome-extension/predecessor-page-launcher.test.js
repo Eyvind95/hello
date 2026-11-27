@@ -148,6 +148,10 @@ test('navigation loop refuses a false top with wrong anchor, can cancel, and nev
  assert.equal(unknown.verified,false);assert.match(unknown.message,/尚未確認/);
  now=0;stop=true;await assert.rejects(ctx.rush('','',()=>{},()=>stop),/導航已停止/);
  assert.equal(state.bulk,null);
+ const shared={chat:'/c/test',rows:[]},lock={isConnected:true,remove(){throw Error('borrowed lock must not be removed')}};state.bulk=shared;now=0;stop=false;
+ const borrowed=await ctx.rush('user|turn:abc','a.pdf',()=>{},()=>stop,{b:shared,lock});assert.equal(borrowed.verified,true);assert.equal(state.bulk,shared);
+ now=0;stop=true;await assert.rejects(ctx.rush('user|turn:abc','',()=>{},()=>stop,{b:shared,lock}),/導航已停止/);assert.equal(state.bulk,shared);
+ state.bulk=null;
  assert.doesNotMatch(block,/\b(?:historyRead|historyDownload|historyRemember|historyPayload)\s*\(/);
 });
 test('rush handles native history retry before accepting top, never scrolls while retrying, and rejects invalid observed first',async()=>{
