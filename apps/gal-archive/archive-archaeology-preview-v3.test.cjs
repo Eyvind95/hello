@@ -235,3 +235,46 @@ test('embedded Gal AI text cannot masquerade as player rejection decision',()=>{
  input.review.fragments.push(approvalKey(api.entryReviewKey(target,manager,'rejectedEvents',e)));
  assert.throws(()=>api.preview(input),/Gal AI.*拒絕決定/);
 });
+
+
+function legacyFixture(){
+ const b=raw('legacy-chat','base',[row('user','u4','old u',0),row('assistant','a4','old a',1),row('user','u5','end',2)],'failed'),bo=original(b);
+ const prefix=[row('user','u1','one',0),row('assistant','a1','two',1),row('user','u2','',2),row('assistant','a2','four',3)];
+ prefix[2].nonTextOmitted=true;
+ const base={runId:b.runId,count:b.count,sha256:bo.sha256,firstId:b.rows[0].id};
+ const prior={format:'gal-predecessor-prefix-supplement-evidence',version:1,scannerVersion:'0.10.83',canonical:false,importable:false,continuity:false,status:'failed',chatId:b.chatId,runId:'prior',count:2,rows:prefix.slice(0,2),base,candidateRows:null,evidence:{observedTopVerified:true,observedFirstId:prefix[0].id}};
+ const po=original(prior),candidateRows=[...prefix,...b.rows.map((r,i)=>({...r,index:i+4}))],tailIds=prior.rows.map(r=>r.id);
+ const d={format:prior.format,version:1,scannerVersion:'0.10.83',canonical:false,importable:false,continuity:false,fidelity:'rendered-dom',status:'joined-observed-prefix',chatId:b.chatId,runId:'joined',count:6,rows:candidateRows.slice(0,6),candidateRows,base,error:null,evidence:{observedTopVerified:true,openingVerified:false,openingBasis:'observed-top-only',observedFirstId:prefix[0].id,originalCheckpointUnchanged:true,lastConflict:{reason:'空白回合未能確認內容／附件',evidence:null},added:4,matched:2,joinedCandidateCount:7,windows:50,recoveryTrace:[],conflictDom:[],prefixResume:{runId:prior.runId,sha256:po.sha256,count:2,tailIds,openingProof:'inherited-observed-only'},resumeNavigation:[{kind:'current-window',target:null,verified:true,tailIds}]}};
+ const make=(approve=true)=>{const o=original(d),a=approval(d,o,7);if(approve)a.legacyReadRecovery={disposition:'historical-read-error-window-recovered',reviewId:'synthetic-independent',reason:'legacy current-window recovery independently checked',sha256:o.sha256,baseSha256:bo.sha256,prefixSha256:po.sha256,chatId:d.chatId,runId:d.runId,causalSourceId:null};
+ return {originals:[o,bo,po],review:{sources:[a],targets:[target],fragments:[]},candidate:{format:api.FORMAT,version:3,manager,targets:[{target,...Object.fromEntries(api.SECTIONS.map(k=>[k,[]]))}]}}};
+ return {d,prior,make};
+}
+test('legacy read error is not cleared or inferred to identify a blank row; exact prior and external approval needed for preview',()=>{
+ const {d,make}=legacyFixture();
+ assert.throws(()=>api.preview(make(false)),/接合證據不足/);
+ const i=make(),before=JSON.stringify(d),out=api.preview(i);
+ assert.equal(out.importable,false);assert.equal(out.counts.sources,7);
+ assert.equal(out.sourceEvidence[0].legacyReadRecovery.causalSourceId,null);
+ assert.equal(out.sourceEvidence[0].legacyReadRecovery.rowContentVerified,false);
+ assert.deepEqual(out.sourceEvidence[0].legacyReadRecovery.originalLastConflict,d.evidence.lastConflict);
+ assert.ok(out.sourceEvidence[0].warnings.includes('causal-row-unidentified'));assert.equal(JSON.stringify(d),before);
+ assert.throws(()=>normal.plan({world:target.worldKey,id:target.cycleId,title:target.cycleTitle},d,{format:normal.FORMAT,version:2,target,manager,chatId:d.chatId,sourceSha256:i.originals[0].sha256},i.originals[0].sha256),/頂端補掃/);
+});
+test('legacy recovery rejects unrelated errors, synthetic clearance, absent evidence, changed prefix, and unbound approval',()=>{
+ for(const mode of ['wrong-version','wrong-conflict','merge-conflict','missing-prior','wrong-prefix','wrong-tail','unverified-resume','wrong-review-hash','causal-guess','candidate-tamper','unexpected-exception']){
+  const {d,make}=legacyFixture();
+  if(mode==='wrong-version')d.scannerVersion='0.10.84';
+  if(mode==='wrong-conflict')d.evidence.lastConflict.reason='其他衝突';
+  if(mode==='merge-conflict')d.evidence.recoveryTrace=[{event:'forward-conflict'}];
+  if(mode==='wrong-prefix'){d.rows[0]={...d.rows[0],text:'changed'};d.candidateRows[0]=d.rows[0]}
+  if(mode==='wrong-tail')d.evidence.resumeNavigation[0].tailIds=['wrong','tail'];
+  if(mode==='unverified-resume')d.evidence.resumeNavigation[0].verified=false;
+  if(mode==='candidate-tamper')d.candidateRows[6]={...d.candidateRows[6],text:'changed'};
+  if(mode==='unexpected-exception')d.evidence.lastConflict=null;
+  const i=make();
+  if(mode==='missing-prior')i.originals.pop();
+  if(mode==='wrong-review-hash')i.review.sources[0].legacyReadRecovery.sha256='f'.repeat(64);
+  if(mode==='causal-guess')i.review.sources[0].legacyReadRecovery.causalSourceId=d.rows[2].id;
+  assert.throws(()=>api.preview(i),/接合證據不足|候選|例外/);
+ }
+});
