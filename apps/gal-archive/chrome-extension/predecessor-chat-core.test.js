@@ -1130,7 +1130,7 @@ test('shared native retry defaults to no click-count cap, retains backoff, deadl
  test('every upward native retry caller inherits the unlimited click policy',()=>{
  const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
  a.match(src,/async function historyNativeRetry\(b,until,\{[^\n]*maxAttempts=Infinity/);
- a.match(src,/if\(upward&&await historyNativeRetry\(b,until\)\)/);
+ a.match(src,/if\(\(upward\|\|b\.branch\?\.direction==='down'\)&&await historyNativeRetry\(b,until\)\)/);
  a.match(src,/if\(await historyNativeRetry\(b,deadline\)\)continue/);
  a.match(src,/const nativeRetried=await historyNativeRetry\(b,deadline\)/);
  a.doesNotMatch(src,/maxAttempts\s*:\s*3\b/);
@@ -1341,7 +1341,7 @@ test('actual branch down starts at selected current GPT, strictly merges adjacen
   const Clock=class extends Date{constructor(){super(now)}static now(){return now}};
   const ctx={Date:Clock,pc:c,historyGuard:()=>{},historyStatus:()=>{},historyTrace:()=>{},historyHostObservation:()=>{},historyLoading:()=>false,historyNativeFailure:()=>null,historyEdgeOrdinal:()=>({}),historyAtBottom:h=>h.scrollTop===200,historyBranchDigest:async()=>hash,historyScroll:(h,to)=>{h.scrollTop=Math.max(0,Math.min(200,to));moves.push(h.scrollTop)},sleep:async ms=>{now+=ms},historySettled:async()=>{now+=700;if(host.scrollTop<=100)return mode==='missing-anchor'?[u,g]:mode==='changed-anchor'?[old,{...anchor,text:'changed'},u,g]:[old,anchor,u,g];if(mode==='disjoint')return [r('user|turn:unrelated')];if(host.scrollTop<200)return [g,u2];return [u2,g2]}};
   vm.runInNewContext(block+';globalThis.down=historyBranchDown;',ctx);
-  if(mode==='normal'){await ctx.down(b);a.deepEqual(b.rows.map(x=>x.id),[u.id,g.id,u2.id,g2.id]);a.equal(b.branchProof.verified,true);a.ok(b.bottomStableMs>=3000);a.equal(b.bottomReached,true);a.equal(moves[0],165)}
+  if(mode==='normal'){await ctx.down(b);a.deepEqual(Array.from(b.rows,x=>x.id),[u.id,g.id,u2.id,g2.id]);a.equal(b.branchProof.verified,true);a.ok(b.bottomStableMs>=3000);a.equal(b.bottomReached,true);a.equal(moves[0],165)}
   else {await a.rejects(ctx.down(b));a.notEqual(b.bottomReached,true);a.ok(b.rows.every(x=>x.id!==anchor.id&&x.id!==old.id));if(mode!=='disjoint')a.equal(moves.length,0)}
   a.ok(moves.every(x=>x>=100));
  }
