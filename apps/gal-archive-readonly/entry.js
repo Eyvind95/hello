@@ -25,15 +25,15 @@ $('capture').onclick=async()=>{
    const text=JSON.stringify(result,null,2);
    const hash=await ArchiveReadOnlyHash.sha(text);
    if(auth.currentUser?.uid!==uid||!$('ready').checked)throw Error('狀態已變更');
-   output={text,hash,filename:'CAT-FINAL-002_R2_網站唯讀快照_'+result.finishedAt.replace(/[:.]/g,'-')+'.json'};
+   output={uid,text,hash,filename:'CAT-FINAL-002_R2_網站唯讀快照_'+result.finishedAt.replace(/[:.]/g,'-')+'.json'};
    $('result').textContent=['唯讀取證完成（未寫入正式資料）',...result.targets.map(t=>t.target.cycleTitle+'：本機／Firebase '+(t.equal?'一致':'不一致；僅保全，不可匯入')),'檔案 SHA-256：'+hash,'請按下載並私人保存。'].join('\n');
   });
  }catch(e){output=null;$('result').textContent='取證停止：'+String(e.message||e)}finally{db?.close();busy=false;refresh()}
 };
-$('download').onclick=()=>{if(busy||!output)return;const url=URL.createObjectURL(new Blob([output.text],{type:'application/json;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=output.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000)};
+$('download').onclick=()=>{if(busy||!output||auth?.currentUser?.uid!==output.uid)return;const url=URL.createObjectURL(new Blob([output.text],{type:'application/json;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=output.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000)};
 try{
  if(!window.firebase||!window.ArchiveReadOnlyHash||!window.ArchiveReadOnlySnapshot)throw Error('必要模組未完整載入');
  const app=firebase.apps[0]||firebase.initializeApp(firebaseConfig);auth=app.auth();firestore=app.firestore();
- auth.onAuthStateChanged(u=>{if(!u)output=null;$('auth').textContent=u?'已讀取既有 Google 登入（未切換帳號）':'未找到既有登入；請停止，不在本頁登入';refresh()},e=>{$('auth').textContent='登入狀態讀取失敗：'+e.message;refresh()});
+ auth.onAuthStateChanged(u=>{if(output&&output.uid!==u?.uid)output=null;$('auth').textContent=u?'已讀取既有 Google 登入（未切換帳號）':'未找到既有登入；請停止，不在本頁登入';refresh()},e=>{$('auth').textContent='登入狀態讀取失敗：'+e.message;refresh()});
 }catch(e){$('auth').textContent=String(e.message||e);refresh()}
 })();
