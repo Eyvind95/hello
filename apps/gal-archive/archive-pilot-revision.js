@@ -174,14 +174,14 @@ async function inspect(records,bundle,receipt=null){
   targets.push({target:normal.binding(r),before:structuredClone(r),after:next,beforeSha256:target.beforeSha256,afterSha256:await digest(next)});
   changes.push(...local.map(x=>({...x,target:normal.binding(r),chatId:pack.chatId})));
  }
- return {status:'preview',revisionId:bundle.revisionId,bundleSha256,targets,changes};
+ return {status:'preview',revisionId:bundle.revisionId,bundleSha256,targets,changes,...(bundle.audit?{audit:structuredClone(bundle.audit)}:{})};
 }
 // A storage adapter must provide a *single atomic* compare-and-swap of every
 // target and durable receipt. It must never call the ordinary merge writer.
 // No browser/cloud adapter is registered by this offline module.
 function makeReceipt(p,afterTargets){
  return {format:'gal-predecessor-revision-receipt',version:1,status:'applied',revisionId:p.revisionId,bundleSha256:p.bundleSha256,
- targets:afterTargets.map(t=>({target:t.target,before:t.before,after:t.after,beforeSha256:t.beforeSha256,afterSha256:t.afterSha256}))};
+ targets:afterTargets.map(t=>({target:t.target,before:t.before,after:t.after,beforeSha256:t.beforeSha256,afterSha256:t.afterSha256})),...(p.audit?{audit:structuredClone(p.audit)}:{})};
 }
 async function apply(adapter,bundle,approved){
  if(approved?.status!=='preview')fail('必須先預覽並明確核准');
