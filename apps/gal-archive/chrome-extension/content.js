@@ -2431,7 +2431,7 @@
   function historyDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+(data.evidence.isolatedSegment?.count??data.count):'')+'.json';
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=url;a.download=(data.format==='gal-predecessor-prefix-supplement-evidence'?'前輩頂端補掃取證_':data.format===pc.COMPOSITE?'前輩複合待核對_':data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    a.href=url;a.download=(data.format==='gal-predecessor-branch-chat'?'茶話會分支聊天_':data.format==='gal-predecessor-prefix-supplement-evidence'?'前輩頂端補掃取證_':data.format===pc.COMPOSITE?'前輩複合待核對_':data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
     return a.download;
   }
   async function historyRemember(b,data){
@@ -2575,6 +2575,34 @@
       await sleep(650);
     }
   }
+  async function historyBranchDigest(row){
+    return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pc.fingerprint([row])))),n=>n.toString(16).padStart(2,'0')).join('');
+  }
+  async function historyBranchStop(b,live){
+    if(!b.branch)return false;
+    const found=pc.branchBoundary(b.rows,live,b.branch.row);
+    if(!found)return false;
+    const observedSha256=await historyBranchDigest(found.anchor);
+    historyGuard(b);
+    if(observedSha256!==b.branch.hash)throw Error('分支錨點雜湊不符');
+    b.rows=found.rows;
+    b.branchProof={anchorId:b.branch.row.id,anchorSha256:b.branch.hash,observedSha256,firstNewId:found.firstNewId,verified:true,verifiedAt:new Date().toISOString()};
+    historyTrace(b,'assistant-branch-boundary-verified',{anchorId:b.branch.row.id,firstNewId:found.firstNewId});
+    return true;
+  }
+  function historyScanPayload(b,status,error){
+    if(!b.branch)return historyPayload(b,status,error);
+    const at=b.rows.findIndex(r=>r.id===b.branch.row.id);
+    const rows=at<0?b.rows:b.rows.slice(at+1);
+    const data=historyPayload({...b,rows},status,error);
+    data.format='gal-predecessor-branch-chat';data.scope='assistant-exclusive-boundary';data.importable=false;
+    data.evidence.topReached=false;data.evidence.topStableMs=0;
+    data.evidence.coverage='selected-assistant-boundary; no independent server manifest';
+    data.evidence.continuity=data.status==='completed'&&!!b.branchProof;
+    data.evidence.branchBoundary={anchorId:b.branch.row.id,anchorSha256:b.branch.hash,verified:false,...(data.status==='completed'?b.branchProof||{}:{})};
+    data.warnings.push('分支專用保全：指定 GPT 回應及其之前訊息不計入完成檔。未完成檔尚未證明範圍，不可當成分支新增正文或完整聊天匯入。');
+    return data;
+  }
   async function historyRun(b){
     let status='failed',error=null;
     try{
@@ -2609,6 +2637,7 @@
       }
       let topSince=0,topSignature=null,lastGrowth=Date.now(),lastCount=b.rows.length,edgeAttempt=0,unchanged=0;
       b.breakthrough={resets:0,attempts:0,frontier:{id:b.rows[0]?.id,top:b.host.scrollTop,height:b.host.scrollHeight}};
+      if(b.branch&&await historyBranchStop(b,b.rows))status='completed';
       if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample))status='completed';
       if(b.resume&&!b.resume.currentPosition){
         const seed=pc.resumeSeed(b.resumeRows,b.rows,change=>historyAttachmentChange(b,change),{source:b.resumeFoldObservations,current:b.foldObservations,currentOverflow:b.foldObservationOverflow,sourceSha256:b.resume?.sourceSha256,attachmentBridges:b.acceptedAttachmentBridges});
@@ -2755,6 +2784,7 @@
         verifiedViewport={top:b.host.scrollTop,height:b.host.scrollHeight};
         historyHostObservation(b);
         historyStatus(b,b.isolated?'附件待核對・獨立向上取證':b.sample?'最近'+b.sample+'則測試':b.resume&&!b.resume.frontierVerified?'急速返回・已核對舊索引 '+(b.resume.minIndex+1)+'／'+b.resume.baseCount:'向上掃描');
+        if(b.branch&&await historyBranchStop(b,rows)){status='completed';break}
         if(b.sample&&pc.sampleReady(b.rows,b.bottomReached,b.topReached,b.sample)){historyTrace(b,'sample-completed',{step,from:pos});status='completed';break}
         const atTop=b.host.scrollTop<=2,sig=JSON.stringify([rows[0]?.id,b.rows.length,b.host.scrollHeight]);
         if(atTop){
@@ -2766,6 +2796,7 @@
               b.isolated.topReached=true;b.isolated.topStableMs=Date.now()-topSince;
               throw Error('隔離取證已達觀測頂端；附件仍待核對，正式掃描未完成');
             }
+            if(b.branch)throw Error('已到觀測頂端但未找到指定 GPT 回應；分支未完成');
             if(b.resume&&!b.resume.frontierVerified)throw Error('續掃尚未核對原斷點，禁止完成');
             if(!pc.fullCoverageGate(b.rows.length,b.sample?0:b.knownMinimum,b.hostProof.maxRange,b.hostProof.observedMovement)||pc.scrollRange(b.host.scrollHeight,b.host.clientHeight)<=8){historyTrace(b,'false-top-rejected',{knownMinimum:b.knownMinimum,hostProof:b.hostProof});throw Error('疑似假頂端：捲動證據不足或未達已知最低訊息數 '+b.knownMinimum)}
             b.topReached=true;b.topStableMs=Date.now()-topSince;
@@ -2784,9 +2815,9 @@
         if(!b.sample&&b.rows.length>=nextCheckpoint&&(b.isolated||!b.resume||b.resume.frontierVerified)){
           nextCheckpoint=Math.floor(b.rows.length/100)*100+100;
           try{
-            const snapshot=historyPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔');
-            snapshot.evidence.checkpoint=true;(snapshot.format===pc.COMPOSITE?pc.validateCompositeEvidence:pc.validateRaw)(snapshot);
-            try{await historyRemember(b,snapshot)}catch(_){}
+            const snapshot=historyScanPayload(b,'failed','自動斷點保全：掃描仍在進行，非完整檔');
+            snapshot.evidence.checkpoint=true;(b.branch?pc.validateBranch:snapshot.format===pc.COMPOSITE?pc.validateCompositeEvidence:pc.validateRaw)(snapshot);
+            if(!b.branch)try{await historyRemember(b,snapshot)}catch(_){}
             const file=historyDownload(snapshot);(b.checkpointExports||(b.checkpointExports=[])).push({count:b.rows.length,file,triggered:true});
             historyTrace(b,'checkpoint-download',{count:b.rows.length,file});
           }catch(e){historyTrace(b,'checkpoint-download-failed',{reason:String(e.message||e)})}
@@ -2796,17 +2827,17 @@
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
     if(status==='completed'&&b.rows.some(r=>r.identityBasis==='unresolved-native-composite')){status='failed';error='已抵達觀測頂端；複合原生訊息分界待核對，非正式完整聊天'}
-    const data=historyPayload(b,status,error);
+    const data=historyScanPayload(b,status,error);
     // Counts are only a local lower bound; never mix previous rows into this run.
-    if(b.bottomReached&&!b.sample&&!b.isolated&&data.format!==pc.COMPOSITE&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
-    try{(data.format===pc.COMPOSITE?pc.validateCompositeEvidence:b.sample?pc.validateSample:pc.validateRaw)(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false}
-    if(!b.sample&&!b.isolated&&data.status!=='completed'&&(!b.resume||data.count>b.resume.baseCount)){
+    if(b.bottomReached&&!b.branch&&!b.sample&&!b.isolated&&data.format!==pc.COMPOSITE&&b.rows.length>b.knownMinimum){try{await chrome.storage.local.set({['ga-predecessor-min:'+b.chat]:b.rows.length})}catch(e){data.warnings.push('本機最低數量紀錄保存失敗')}}
+    try{(b.branch?pc.validateBranch:data.format===pc.COMPOSITE?pc.validateCompositeEvidence:b.sample?pc.validateSample:pc.validateRaw)(data)}catch(e){data.status='failed';data.error='輸出核對失敗：'+String(e.message||e);data.evidence.continuity=false;if(b.branch)data.evidence.branchBoundary.verified=false}
+    if(!b.branch&&!b.sample&&!b.isolated&&data.status!=='completed'&&(!b.resume||data.count>b.resume.baseCount)){
       try{await historyRemember(b,data)}catch(_){}
     }
     b.download.onclick=event=>{event?.preventDefault();event?.stopPropagation();try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};
     b.download.hidden=false;b.stop.textContent='✕ 關閉面板';b.stop.setAttribute?.('aria-label','關閉面板');b.stop.onclick=event=>{event?.preventDefault();event?.stopPropagation();b.pane.remove()};
     if(state.bulk===b)state.bulk=null;
-    try{historyStatus(b,(data.status==='completed'?(b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。'+(b.memoryStatus?'\n'+b.memoryStatus:''))}
+    try{historyStatus(b,(data.status==='completed'?(b.branch?'已核對指定 GPT 分支頂端；':b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。'+(b.memoryStatus?'\n'+b.memoryStatus:''))}
     catch(e){historyStatus(b,'保全已留在本頁，下載觸發失敗：'+e.message)}
   }
 
@@ -2880,7 +2911,7 @@
     }finally{if(!borrowed){if(state.bulk===b)state.bulk=null;lock.remove()}}
   }
 
-  async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null,currentPosition=false){
+  async function historyBegin(requestedTitle,sample=false,minimum=0,checkpoint=null,currentPosition=false,branch=null){
     if(!pc||!valid())return {ok:false,error:'請開啟具體 ChatGPT 聊天並載入新版'};
     if(state.bulk||state.scanning||state.activeSends||state.timeBusy||isGenerating())return {ok:false,error:'此聊天正在監看擷取、掃描或生成，稍後再開始'};
     if(document.getElementById(HISTORY_PANEL))return {ok:false,error:'前一批保全仍在頁面，請確認下載並關閉面板後再開始'};
@@ -2888,6 +2919,15 @@
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
     const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,bottomEscapeAttempts:0,bottomEscapeDepartures:0,stagedReturns:0,stagedReturnLandings:0,stagedReturnArrivals:0,stagedEnvelopeLandings:0,stagedReturnBackoffs:0,recoveryCycles:0,crossWindowCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    if(branch){
+      try{
+        if(sample||checkpoint||currentPosition||branch.chat!==b.chat)throw Error('分支模式不使用完整聊天保全');
+        pc.branchAnchor(branch.row);
+        if(await historyBranchDigest(branch.row)!==branch.hash)throw Error('已記住的分支錨點雜湊不符');
+        if(path()!==b.chat||state.bulk)throw Error('聊天已切換或正在掃描');
+        b.branch=branch;
+      }catch(e){return {ok:false,error:String(e.message||e)}}
+    }
     if(checkpoint){
       if(b.sample)return {ok:false,error:'測試不能續掃'};
       try{
@@ -2915,14 +2955,14 @@
       // historical messages cannot upload them after the scan ends.
       const minimumKey='ga-predecessor-min:'+b.chat;
       const {watch={},[minimumKey]:known=0}=await chrome.storage.local.get(['watch',minimumKey]);
-      b.knownMinimum=Math.max(b.knownMinimum,pc.minimumCount(known));
+      if(!b.branch)b.knownMinimum=Math.max(b.knownMinimum,pc.minimumCount(known));
       if(watch[b.chat]===true){delete watch[b.chat];await chrome.storage.local.set({watch})}
       state.enabled=false;state.watchedPath=null;candidates.clear();
       historyGuard(b);
       document.getElementById(HISTORY_PANEL)?.remove();
       const pane=document.createElement('section');pane.id=HISTORY_PANEL;pane.dataset.gaExtensionId=chrome.runtime.id;
       pane.style.cssText='position:fixed;z-index:2147483646;left:50%;right:auto;transform:translateX(-50%);bottom:156px;top:auto;box-sizing:border-box;max-width:calc(100vw - 24px);max-height:min(35vh,calc(100vh - 180px));overflow:auto;background:#202840;color:#fff;border:1px solid #9ba9cb;padding:10px;border-radius:12px;font:13px system-ui;box-shadow:0 3px 20px #0006';
-      const h=document.createElement('strong');h.textContent='V'+chrome.runtime.getManifest().version+'｜'+(b.sample?'最近'+b.sample+'則・測試掃描':b.resume?(b.resume.currentPosition?'完整聊天・目前位置續掃':'完整聊天・保全續掃'):'完整聊天・從底端向上掃描');
+      const h=document.createElement('strong');h.textContent='V'+chrome.runtime.getManifest().version+'｜'+(b.branch?'分支聊天・指定 GPT 頂端':b.sample?'最近'+b.sample+'則・測試掃描':b.resume?(b.resume.currentPosition?'完整聊天・目前位置續掃':'完整聊天・保全續掃'):'完整聊天・從底端向上掃描');
       b.action=document.createElement('div');b.action.setAttribute('role','status');b.action.style.cssText='padding:8px;margin:5px 0;background:#111827;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere';b.action.textContent='目前動作：準備掃描';
       b.info=document.createElement('pre');b.info.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0';
       b.stop=historyPanelButton(document.createElement('button'),'#a13232');b.stop.textContent='停止並保全';b.stop.setAttribute('aria-label','停止並保全掃描');b.stop.onclick=()=>{b.cancelled=true;b.action.textContent='目前動作：停止並保全中'};
@@ -3624,8 +3664,83 @@
       trial.style.cssText='display:block;width:100%;padding:10px;margin-bottom:8px;background:#166b65;color:white;border:1px solid #8edcd3;border-radius:8px;cursor:pointer';
       const twenty=document.createElement('button');twenty.type='button';twenty.id=historyPageId('test-twenty');twenty.textContent='🧪 測試掃描 20 則';twenty.style.cssText=trial.style.cssText;
       const close=document.createElement('button');close.type='button';close.textContent='關閉';close.style.cssText='margin-top:8px;padding:7px 12px;background:#374151;color:white;border-radius:7px;cursor:pointer';
-      close.onclick=()=>pane.remove();
+      const branchLabel=document.createElement('strong');branchLabel.textContent='③ 分支聊天・指定 GPT 頂端（不需母聊天 JSON）';
+      const branchId=document.createElement('input');branchId.id=historyPageId('branch-anchor-id');branchId.type='text';branchId.maxLength=160;branchId.placeholder='GPT 原生 ID（選填，須在目前畫面）';branchId.style.cssText=input.style.cssText;
+      const branchPick=document.createElement('button');branchPick.type='button';branchPick.id=historyPageId('branch-pick');branchPick.textContent='點選原聊天最後一則 GPT 回應';branchPick.style.cssText=anchorStyle;
+      const branchStart=document.createElement('button');branchStart.type='button';branchStart.id=historyPageId('branch-start');branchStart.textContent='↑ 開始分支掃描（不收錄指定回應）';branchStart.style.cssText=start.style.cssText;
+      const branchInfo=document.createElement('p');branchInfo.textContent='尚未指定 GPT 回應';
+      const branchKey='ga-predecessor-branch-anchor:'+pane.dataset.chat;
+      let branchRecord=null,pickListener=null,picking=false;
+      const clearPick=()=>{if(pickListener)document.removeEventListener('click',pickListener,true);pickListener=null;picking=false;branchPick.textContent='點選原聊天最後一則 GPT 回應'};
+      const available=()=>pane.isConnected&&pane.dataset.chat===path()&&!state.bulk&&!state.scanning&&!state.activeSends&&!state.timeBusy&&!isGenerating();
+      const captureBranch=async(target,id)=>{
+        if(!available())throw Error('請先停止其他操作');
+        const host=historyHost();if(!host)throw Error('找不到聊天容器');
+        let matched=[];
+        historyRead(host,()=>{},entries=>{matched=entries.filter(e=>id?e.row.id===id:e.el.contains(target)||e.owner.contains(target))});
+        // Owner fallback is only safe when the clicked target selects a unique
+        // assistant body. A composite owner containing a user is ambiguous.
+        if(target){
+          const exact=matched.filter(e=>e.el.contains(target));
+          if(exact.length)matched=exact;
+        }
+        if(matched.length!==1)throw Error('未唯一選中原生 GPT 回應');
+        const row=pc.branchAnchor(matched[0].row);
+        const hash=await historyBranchDigest(row);
+        await sleep(250);
+        if(!available())throw Error('聊天狀態已變更');
+        const again=historyRead(host).filter(r=>r.id===row.id);
+        if(again.length!==1||!pc.compareRow(row,again[0]).equal||await historyBranchDigest(again[0])!==hash)throw Error('指定 GPT 回應尚未穩定');
+        if(!available())throw Error('聊天狀態已變更');
+        const record={chat:pane.dataset.chat,row,hash,selectedAt:new Date().toISOString()};
+        await chrome.storage.local.set({[branchKey]:record});
+        if(!available())throw Error('聊天狀態已變更');
+        branchRecord=record;branchId.value=row.id;branchInfo.textContent='已指定 GPT 回應（不計入）｜'+row.id+'\nSHA-256 '+hash;
+      };
+      branchPick.onclick=async()=>{
+        if(picking){clearPick();return}
+        if(!available())return;
+        if(branchId.value.trim()){
+          branchPick.disabled=true;branchStart.disabled=true;
+          try{await captureBranch(null,branchId.value.trim())}catch(e){branchInfo.textContent='⛔ '+String(e.message||e)}
+          finally{branchPick.disabled=false;branchStart.disabled=false}
+          return;
+        }
+        picking=true;branchPick.textContent='取消點選';
+        branchInfo.textContent='請點原聊天最後一則 GPT 正文；玩家訊息不允許。';
+        pickListener=async event=>{
+          if(!available()){clearPick();return}
+          if(pane.contains(event.target))return;
+          if(!event.target?.closest?.('[data-response-body],[data-message-author-role],[data-turn-key],[data-testid^="conversation-turn-"]'))return;
+          event.preventDefault();event.stopImmediatePropagation();clearPick();
+          branchPick.disabled=true;branchStart.disabled=true;
+          try{await captureBranch(event.target,null)}catch(e){branchInfo.textContent='⛔ '+String(e.message||e)}
+          finally{branchPick.disabled=false;branchStart.disabled=false}
+        };
+        document.addEventListener('click',pickListener,true);
+      };
+      branchStart.onclick=async()=>{
+        clearPick();
+        if(!available())return;
+        if(!branchRecord||branchId.value.trim()!==branchRecord.row.id){branchInfo.textContent='請先擷取目前畫面中的指定 GPT 回應';return}
+        branchStart.disabled=true;branchPick.disabled=true;
+        try{
+          const result=await historyBegin(input.value.trim(),false,0,null,false,branchRecord);
+          if(result.ok){pane.remove();return}
+          branchInfo.textContent='⛔ '+result.error;
+        }catch(e){branchInfo.textContent='⛔ '+String(e.message||e)}
+        finally{branchStart.disabled=false;branchPick.disabled=false}
+      };
+      chrome.storage.local.get(branchKey).then(async stored=>{
+        const record=stored[branchKey];if(!record||!available()||branchRecord||branchId.value)return;
+        try{pc.branchAnchor(record.row);if(record.chat!==pane.dataset.chat||await historyBranchDigest(record.row)!==record.hash)return;
+          if(!available()||branchRecord||branchId.value)return;
+          branchRecord=record;branchId.value=record.row.id;branchInfo.textContent='已記住指定 GPT 回應｜'+record.row.id;
+        }catch(_){}
+      }).catch(()=>{});
+      close.onclick=()=>{clearPick();pane.remove()};
       const launch=async(sample,resume=false)=>{
+        clearPick();
         if(pane.dataset.chat!==path()){pane.remove();return}
         if(!pc.chatTitle(input.value)){feedback.textContent='請填寫聊天實際名稱，不能使用新對話等預設名稱';return}
         start.disabled=true;trial.disabled=true;twenty.disabled=true;resumeButton.disabled=true;candidateButton.disabled=true;localImport.disabled=true;manualImport.disabled=true;anchorLocate.disabled=true;anchorCapture.disabled=true;close.disabled=true;rushTop.disabled=true;prefixStart.disabled=true;feedback.textContent='正在開啟掃描…';mode.textContent='目前模式：'+(resume?'完整聊天・保全續掃':sample?'測試掃描':'完整聊天・從底端向上掃描')+'｜準備中';
@@ -3653,7 +3768,7 @@
       resumeButton.style.cssText=start.style.cssText;resumeButton.onclick=()=>launch(false,true);
       candidateButton.style.cssText=start.style.cssText;candidateButton.onclick=()=>launch(false,'candidate');
       start.onclick=()=>launch(false);trial.onclick=()=>launch(true);twenty.onclick=()=>launch(20);
-      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixPriorLabel,prefixPrior,prefixPriorHash,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,currentPositionLabel,resumeButton,candidateButton,note,trial,twenty,start,close,feedback);document.body.append(pane);showSaved();
+      pane.append(heading,version,mode,label,input,savedInfo,topLabel,topId,topFiles,rushTop,rushStop,prefixLabel,prefixSlot,prefixFile,prefixObserved,prefixPriorLabel,prefixPrior,prefixPriorHash,prefixStart,prefixStop,anchorLabel,anchorInput,anchorFileLabel,anchorFile,anchorHash,anchorStepLabel,anchorStep,anchorLocate,anchorCapture,anchorStop,fullLabel,minLabel,minimum,checkpointLabel,checkpointFile,hashInput,localImport,manualImport,currentPositionLabel,resumeButton,candidateButton,note,trial,twenty,start,branchLabel,branchId,branchPick,branchInfo,branchStart,close,feedback);document.body.append(pane);showSaved();
     };
     document.body.append(button);
   }
