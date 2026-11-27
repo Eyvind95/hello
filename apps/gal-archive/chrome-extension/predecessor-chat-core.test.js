@@ -1130,7 +1130,7 @@ test('shared native retry defaults to no click-count cap, retains backoff, deadl
  test('every upward native retry caller inherits the unlimited click policy',()=>{
  const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
  a.match(src,/async function historyNativeRetry\(b,until,\{[^\n]*maxAttempts=Infinity/);
- a.match(src,/if\(upward&&await historyNativeRetry\(b,until\)\)/);
+ a.match(src,/if\(\(upward\|\|b\.branch\?\.direction==='down'\)&&await historyNativeRetry\(b,until\)\)/);
  a.match(src,/if\(await historyNativeRetry\(b,deadline\)\)continue/);
  a.match(src,/const nativeRetried=await historyNativeRetry\(b,deadline\)/);
  a.doesNotMatch(src,/maxAttempts\s*:\s*3\b/);
@@ -1314,4 +1314,35 @@ test('branch evidence is never a complete physical top or normal predecessor imp
  a.throws(()=>c.validateBranch({...data,importable:true}));
  a.throws(()=>c.validateBranch({...data,rows:[{...r(anchor,'assistant'),index:0}]}));
  a.ok(c.validateBranch({...data,status:'failed',error:'not found',evidence:{...data.evidence,continuity:false,branchBoundary:{anchorId:anchor,anchorSha256:hash,verified:false}}}));
+});
+
+
+test('branch code mismatch reproduces local upward movement but never accepts the mismatched read',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  async function historySettled('),src.indexOf('  function historyGuard('));
+ for(const mode of ['recovers','persistent','other-error','normal-scan']){
+  let now=1000,reads=0,moves=0;const trace=[],rows=[r('valid')],host={scrollTop:800,scrollHeight:1000,clientHeight:100};
+  const b={host,branch:mode==='normal-scan'?null:{direction:'down'},rows:[],scrollStats:{fingerprintChanges:0},stabilityIssues:[]};
+  const Clock=class extends Date{constructor(){super(now)}static now(){return now}};
+  const ctx={Date:Clock,pc:c,historyGuard:()=>{},historyNativeRetry:async()=>false,historyLoading:()=>false,isGenerating:()=>false,historyRead:()=>{reads++;if(mode==='recovers'&&moves)return rows;throw Object.assign(Error(mode==='other-error'?'unrelated error':'GPT 正文與程式碼框不一致，無法安全確認完整正文'),{historyEvidence:{messageId:'assistant|message:test'}})},historyFoldObservation:()=>{},historyAttachmentChange:()=>{},historyStatus:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyScroll:(h,to)=>{a.ok(to<h.scrollTop);h.scrollTop=to;moves++},sleep:async ms=>{now+=ms}};
+  vm.runInNewContext(block+';globalThis.settle=historySettled;',ctx);
+  if(mode==='recovers'){a.deepEqual(await ctx.settle(b,{deadline:10000}),rows);a.equal(moves,1);a.ok(reads>3);a.equal(b.branchReadRecovery.length,1)}
+  else {await a.rejects(ctx.settle(b,{deadline:12000}),/等待逾時/);a.equal(moves,mode==='persistent'?3:0)}
+  a.equal(b.rows.length,0);a.ok(now<=12350);
+ }
+});
+test('actual branch down starts at selected current GPT, strictly merges adjacent views, proves tail and never jumps to parent',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  async function historyBranchDown('),src.indexOf('  async function historyRun(b)'))+src.slice(src.indexOf('  function historyPrefixMerge('),src.indexOf('  function historyPrefixJoin('));
+ for(const mode of ['normal','missing-anchor','changed-anchor','disjoint']){
+  let now=1000;const moves=[],hash='a'.repeat(64),host={scrollTop:100,scrollHeight:300,clientHeight:100};
+  const old=r('user|turn:old'),anchor={...r('assistant|message:anchor','assistant','parent'),identityBasis:'native-dom-id'},u=r('user|turn:u'),g={...r('assistant|message:g','assistant'),identityBasis:'native-dom-id'},u2=r('user|turn:u2'),g2={...r('assistant|message:g2','assistant'),identityBasis:'native-dom-id'};
+  const b={host,branch:{row:anchor,hash,direction:'down'},rows:[],windows:0,scrollStats:{}};
+  const Clock=class extends Date{constructor(){super(now)}static now(){return now}};
+  const ctx={Date:Clock,pc:c,historyGuard:()=>{},historyStatus:()=>{},historyTrace:()=>{},historyHostObservation:()=>{},historyLoading:()=>false,historyNativeFailure:()=>null,historyEdgeOrdinal:()=>({}),historyAtBottom:h=>h.scrollTop===200,historyBranchDigest:async()=>hash,historyScroll:(h,to)=>{h.scrollTop=Math.max(0,Math.min(200,to));moves.push(h.scrollTop)},sleep:async ms=>{now+=ms},historySettled:async()=>{now+=700;if(host.scrollTop<=100)return mode==='missing-anchor'?[u,g]:mode==='changed-anchor'?[old,{...anchor,text:'changed'},u,g]:[old,anchor,u,g];if(mode==='disjoint')return [r('user|turn:unrelated')];if(host.scrollTop<200)return [g,u2];return [u2,g2]}};
+  vm.runInNewContext(block+';globalThis.down=historyBranchDown;',ctx);
+  if(mode==='normal'){await ctx.down(b);a.deepEqual(Array.from(b.rows,x=>x.id),[u.id,g.id,u2.id,g2.id]);a.equal(b.branchProof.verified,true);a.ok(b.bottomStableMs>=3000);a.equal(b.bottomReached,true);a.equal(moves[0],165)}
+  else {await a.rejects(ctx.down(b));a.notEqual(b.bottomReached,true);a.ok(b.rows.every(x=>x.id!==anchor.id&&x.id!==old.id));if(mode!=='disjoint')a.equal(moves.length,0)}
+  a.ok(moves.every(x=>x>=100));
+ }
 });
