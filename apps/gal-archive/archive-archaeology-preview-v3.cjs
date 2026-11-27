@@ -26,15 +26,36 @@ function rowsOf(rows,count){
  native.validateRows(rows);
  return rows;
 }
-function sourceView(data,originals){
+// V0.10.83 stored the most recent readStable exception even after a successful
+// stable read and strict forward merge. Only the specific reviewed legacy
+// current-window resume shape below is eligible for OFFLINE preview. This
+// does not identify the failing row or certify omitted text/attachments.
+function legacyReadRecovery(data,originals,sourceApproval,local){
+ const e=data.evidence,b=data.base,q=sourceApproval?.legacyReadRecovery,p=e.prefixResume;
+ check(obj(q)&&q.disposition==='historical-read-error-window-recovered'&&str(q.reviewId)&&str(q.reason)&&q.sha256===sourceApproval.sha256&&q.baseSha256===b.sha256&&q.chatId===data.chatId&&q.runId===data.runId&&q.causalSourceId===null,'接合證據不足：歷史讀取錯誤未獨立核定');
+ check(data.scannerVersion==='0.10.83'&&data.status==='joined-observed-prefix'&&same(e.lastConflict,{reason:'空白回合未能確認內容／附件',evidence:null})&&Array.isArray(e.recoveryTrace)&&e.recoveryTrace.length===0&&Array.isArray(e.conflictDom)&&e.conflictDom.length===0&&Number.isSafeInteger(e.windows)&&e.windows>0,'接合證據不足：不是已知歷史讀取錯誤形態');
+ check(obj(p)&&HEX.test(p.sha256)&&q.prefixSha256===p.sha256&&p.openingProof==='inherited-observed-only'&&Number.isSafeInteger(p.count)&&p.count>=2&&p.count<e.added&&Array.isArray(p.tailIds)&&p.tailIds.length===2,'接合證據不足：缺少核定前綴保全');
+ const prior=originals.get(p.sha256);
+ check(prior&&prior.format===JOINED&&prior.status==='failed'&&prior.canonical===false&&prior.importable===false&&prior.continuity===false&&prior.chatId===data.chatId&&prior.runId===p.runId&&prior.count===p.count&&prior.candidateRows===null&&same(prior.base,b)&&prior.evidence?.observedTopVerified===true&&prior.evidence?.observedFirstId===e.observedFirstId,'接合證據不足：實際舊前綴不符');
+ const rows=rowsOf(prior.rows,p.count);
+ check(same(rows.map(withoutIndex),local.slice(0,p.count).map(withoutIndex))&&same(rows.slice(-2).map(r=>r.id),p.tailIds),'接合證據不足：舊前綴或尾端不符');
+ const nav=e.resumeNavigation;
+ check(Array.isArray(nav)&&nav.length===1&&nav[0]?.kind==='current-window'&&nav[0].target===null&&nav[0].verified===true&&same(nav[0].tailIds,p.tailIds),'接合證據不足：缺少原地續掃相鄰尾端證據');
+ return {disposition:q.disposition,reviewId:q.reviewId,reason:q.reason,prefixSha256:p.sha256,baseSha256:b.sha256,causalSourceId:null,originalLastConflict:e.lastConflict,scope:'offline-preview-only',rowContentVerified:false};
+}
+function sourceView(data,originals,sourceApproval){
  const local=rowsOf(data.rows,data.count);
  if(data.format==='gal-predecessor-chat'&&data.status==='completed'){
+  check(sourceApproval?.legacyReadRecovery===undefined,'正常完成檔不得套用歷史錯誤例外');
   check(data.evidence?.topReached===true&&data.evidence?.bottomReached===true&&data.evidence?.continuity===true,'完成檔缺少上下端或連續性證據');
   return {rows:local,warnings:['rendered-branch-only'],basis:'completed-display'};
  }
  check(data.format===JOINED&&['joined-observed-prefix','joined-evidence'].includes(data.status)&&data.canonical===false&&data.importable===false&&data.continuity===false&&data.fidelity==='rendered-dom'&&data.error===null,'不允許的來源證據類型');
  const e=data.evidence,b=data.base;
- check(obj(e)&&obj(b)&&HEX.test(b.sha256)&&e.originalCheckpointUnchanged===true&&e.lastConflict===null,'接合證據不足');
+ check(obj(e)&&obj(b)&&HEX.test(b.sha256)&&e.originalCheckpointUnchanged===true,'接合證據不足');
+ const legacy=e.lastConflict!==null;
+ if(legacy)check(obj(sourceApproval?.legacyReadRecovery),'接合證據不足');
+ else check(sourceApproval?.legacyReadRecovery===undefined,'無歷史錯誤不得套用例外');
  const observed=data.status==='joined-observed-prefix';
  check(observed?e.observedTopVerified===true&&e.openingVerified===false&&e.openingBasis==='observed-top-only'&&e.observedFirstId===local[0].id:e.openingVerified===true&&e.expectedId===local[0].id,'開頭證據狀態不符');
  check(local[0].role==='user','開頭角色不符');
@@ -52,7 +73,8 @@ function sourceView(data,originals){
  }
  const reconstructed=[...local.slice(0,e.added),...base];
  check(c.every((r,i)=>same(withoutIndex(r),withoutIndex(reconstructed[i]))),'候選並非原前綴及原保全的精確接合');
- return {rows:c,basis:observed?'observed-prefix-join':'specified-opening-join',warnings:['rendered-branch-only',...(observed?['true-opening-unverified']:[])],baseSha256:b.sha256};
+ const recovery=legacy?legacyReadRecovery(data,originals,sourceApproval,local):null;
+ return {rows:c,basis:observed?'observed-prefix-join':'specified-opening-join',warnings:['rendered-branch-only',...(observed?['true-opening-unverified']:[]),...(recovery?['historical-read-error-window-recovered','causal-row-unidentified','omitted-content-unverified']:[])],baseSha256:b.sha256,...(recovery?{legacyReadRecovery:recovery}:{})};
 }
 const markers=/(?:^|\n)[ \t]*(?:[（(][ \t]*)?(我|他)[ \t]*[：:][ \t]*(?:[）)])?/gu;
 const splitPair=(s,i)=>i>0&&i<s.length&&/[\uD800-\uDBFF]/.test(s[i-1])&&/[\uDC00-\uDFFF]/.test(s[i]);
@@ -102,7 +124,7 @@ function preview({originals,review,candidate,requireFullCoverage=false}){
  for(const a of review.sources){
   check(obj(a)&&HEX.test(a.sha256)&&str(a.chatId)&&str(a.runId)&&str(a.reviewId)&&!approved.has(a.sha256),'來源核定清冊異常');
   const raw=data.get(a.sha256);check(raw&&raw.chatId===a.chatId&&raw.runId===a.runId&&raw.status===a.status,'來源核定身分不符');
-  const view=sourceView(raw,data);
+  const view=sourceView(raw,data,a);
   check(view.rows.length===a.count&&!chats.has(raw.chatId),'核定筆數或重複聊天身分不符');
   approved.set(a.sha256,a);chats.add(raw.chatId);views.set(a.sha256,{...view,raw,map:new Map(view.rows.map(r=>[r.id,r]))});
  }
@@ -231,6 +253,6 @@ function preview({originals,review,candidate,requireFullCoverage=false}){
   const complete=!(missingSources.length||missingFragments.length||unexpectedFragments.length||missingTargets.length||unusedReviews.length||unusedCross.length);
   coverage={status:complete?'complete-against-independent-ledger':'incomplete',reviewedSources:ledger.size,selectedSources:[...ledger.values()].filter(e=>e.disposition==='selected').length,excludedSources:[...ledger.values()].filter(e=>e.disposition==='excluded').length,isolatedSources:[...ledger.values()].filter(e=>e.disposition==='isolated').length,missingSources,missingFragments,unexpectedFragments,missingTargets,unusedReviews,unusedCross};
  }
- return {coverage,format:'gal-predecessor-archaeology-preview-result',version:VERSION,status:'preview-only',canonical:false,importable:false,manager:candidate.manager,targets:out,sourceEvidence:[...views].map(([sha256,v])=>({sha256,chatId:v.raw.chatId,runId:v.raw.runId,status:v.raw.status,basis:v.basis,count:v.rows.length,isolated:v.rows.filter(unresolved).length,warnings:v.warnings,...(v.baseSha256?{baseSha256:v.baseSha256}:{})})),counts:{sources:[...views.values()].reduce((n,v)=>n+v.rows.length,0),entries:out.reduce((n,t)=>n+SECTIONS.reduce((s,k)=>s+t[k].length,0),0),fragments:out.reduce((n,t)=>n+SECTIONS.reduce((s,k)=>s+t[k].reduce((m,e)=>m+e.fragments.length,0),0),0)}};
+ return {coverage,format:'gal-predecessor-archaeology-preview-result',version:VERSION,status:'preview-only',canonical:false,importable:false,manager:candidate.manager,targets:out,sourceEvidence:[...views].map(([sha256,v])=>({sha256,chatId:v.raw.chatId,runId:v.raw.runId,status:v.raw.status,basis:v.basis,count:v.rows.length,isolated:v.rows.filter(unresolved).length,warnings:v.warnings,...(v.baseSha256?{baseSha256:v.baseSha256}:{}),...(v.legacyReadRecovery?{legacyReadRecovery:v.legacyReadRecovery}:{})})),counts:{sources:[...views.values()].reduce((n,v)=>n+v.rows.length,0),entries:out.reduce((n,t)=>n+SECTIONS.reduce((s,k)=>s+t[k].length,0),0),fragments:out.reduce((n,t)=>n+SECTIONS.reduce((s,k)=>s+t[k].reduce((m,e)=>m+e.fragments.length,0),0),0)}};
 }
 module.exports={FORMAT,VERSION,SECTIONS,reviewKey,entryReviewKey,crossCycleKey,coverageKey,decisionCoverageKey,preview};
