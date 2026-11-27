@@ -1,0 +1,16 @@
+name: Gal Archive Revision Offline Tests
+on:
+  pull_request:
+    paths:
+      - 'apps/gal-archive/archive-pilot-revision*'
+      - 'apps/gal-archive/archive-pilot-import*'
+      - '.github/workflows/gal-archive-revision-offline.yml'
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test apps/gal-archive/archive-pilot-import.test.js apps/gal-archive/archive-pilot-revision.test.js
