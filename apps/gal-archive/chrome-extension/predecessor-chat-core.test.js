@@ -1068,3 +1068,33 @@ test('shared native retry defaults to no click-count cap, retains backoff, deadl
  a.match(src,/const nativeRetried=await historyNativeRetry\(b,deadline\)/);
  a.doesNotMatch(src,/maxAttempts\s*:\s*3\b/);
  });
+
+test('prefix continuation strips only verified export ordinals and retains strict overlap',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),ctx={pc:c};
+ vm.runInNewContext(src.slice(src.indexOf('  function historyPrefixMerge('),src.indexOf('  async function historyPrefixSupplement('))+';globalThis.resume=historyPrefixResumeRows;globalThis.window=historyPrefixResumeWindow;globalThis.hints=historyPrefixRestoreHints;',ctx);
+ const source='https://chatgpt.com/c/abc',saved=[r('later'),r('later2','assistant')],checkpoint={hash:'a'.repeat(64),data:{runId:'base'}};
+ const rows=[r('user|turn:first'),r('assistant|message:last','assistant')];
+ const prior={hash:'b'.repeat(64),data:{format:'gal-predecessor-prefix-supplement-evidence',version:1,status:'failed',canonical:false,importable:false,continuity:false,sourceUrl:source,chatId:'abc',runId:'prefix',candidateRows:null,base:{runId:'base',sha256:checkpoint.hash,count:2,firstId:'later'},count:2,rows:rows.map((r,index)=>({...r,index})),evidence:{observedTopVerified:true,originalCheckpointUnchanged:true,observedFirstId:rows[0].id,trace:[{count:2,top:1000,height:10000}]}}};
+ const restored=ctx.resume(prior,checkpoint,saved,source);
+ a.equal(restored[0].index,undefined);a.equal(prior.data.rows[0].index,0);
+ a.equal(ctx.window(restored,rows).length,2);
+ a.throws(()=>ctx.window(restored,[rows[0],{...rows[1],text:'changed'}]));
+ a.throws(()=>ctx.window(restored,[rows[1],rows[0]]));
+ a.equal(JSON.stringify(ctx.hints(prior,restored,{scrollHeight:10000,clientHeight:500})),'[1000]');
+ a.equal(JSON.stringify(ctx.hints(prior,restored,{scrollHeight:10200,clientHeight:500})),'[1000,1200,1020]');
+ a.equal(ctx.hints(prior,restored,{scrollHeight:1000,clientHeight:500}).length,0);
+ a.equal(ctx.hints({...prior,data:{...prior.data,evidence:{trace:[{count:1,top:1000,height:10000}]}}},restored,{scrollHeight:10000,clientHeight:500}).length,0);
+ prior.data.rows[0].index=1;a.throws(()=>ctx.resume(prior,checkpoint,saved,source));
+});
+test('prefix overlap captures conflict DOM immediately, retains matching variant, and does not accept it',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),calls=[];
+ const ctx={pc:c,historyAnchorDomSnapshot:entry=>{calls.push(entry.row.id);return {status:'captured',messageId:entry.row.id}}};
+ vm.runInNewContext(src.slice(src.indexOf('  function historyPrefixMerge('),src.indexOf('  async function historyPrefixSupplement('))+';globalThis.capture=historyPrefixConflictDom;globalThis.merge=historyPrefixMerge;',ctx);
+ const old={...r('assistant|message:x','assistant','before\n\nafter'),identityBasis:'native-dom-id',structure:[{tag:'code',text:'\u3000'}]},changed={...old,text:'before\n\n純文字\n\u3000\n\nafter'};
+ const observations=[],known=new Map([[old.id,old]]);
+ ctx.capture([{row:changed}],known,observations);ctx.capture([{row:changed}],known,observations);ctx.capture([{row:old}],known,observations);
+ a.equal(calls.length,2);a.equal(observations[0].kind,'conflicting');a.equal(observations[1].kind,'matching');a.equal(observations[0].rawDom.status,'captured');
+ a.throws(()=>ctx.merge([old],[changed]));a.equal(old.text,'before\n\nafter');
+});

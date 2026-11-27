@@ -348,10 +348,11 @@ test('prefix resume validates provenance and two consecutive live tail rows befo
  const row=(id,index)=>({id,role:'user',text:id,identityBasis:'turn-key',sourceCreatedAt:null,structure:[],attachments:[],index});
  const a=row('user|turn:a',0),b=row('user|turn:b',1),c=row('user|turn:c',2),d=row('user|turn:d',0),e=row('user|turn:e',1),saved=[d,e],sourceUrl='https://chatgpt.com/c/test',cp={hash:'a'.repeat(64),data:{runId:'base'}};
  const prior={hash:'b'.repeat(64),data:{format:'gal-predecessor-prefix-supplement-evidence',version:1,status:'failed',canonical:false,importable:false,continuity:false,chatId:'test',sourceUrl,runId:'prefix',candidateRows:null,count:3,rows:[a,b,c],base:{runId:'base',sha256:cp.hash,count:2,firstId:d.id},evidence:{observedTopVerified:true,originalCheckpointUnchanged:true,observedFirstId:a.id}}};
- const before=JSON.stringify(prior);const previous=ctx.validate(prior,cp,saved,sourceUrl);
- assert.equal(JSON.stringify(ctx.resume(previous,[b,c,d,e])),JSON.stringify([a,b,c,d,e]));assert.equal(JSON.stringify(prior),before);
- for(const live of [[c,d],[b,d],[b,{...c,text:'changed'},d],[c,b,d]])assert.throws(()=>ctx.resume(previous,live),/重疊/);
- for(const change of [{chatId:'other'},{count:4},{sourceUrl:'wrong'},{canonical:true},{base:{...prior.data.base,sha256:'c'.repeat(64)}},{rows:[a,{...b,index:9},c]}])assert.throws(()=>ctx.validate({...prior,data:{...prior.data,...change}},cp,saved,sourceUrl),/來源/);
+ const liveRow=({index,...row})=>row;
+ const before=JSON.stringify(prior);const previous=ctx.validate(prior,cp,saved.map(liveRow),sourceUrl);
+ assert.equal(JSON.stringify(ctx.resume(previous,[b,c,d,e].map(liveRow))),JSON.stringify([a,b,c,d,e].map(liveRow)));assert.equal(JSON.stringify(prior),before);
+ for(const live of [[c,d],[b,d],[b,{...c,text:'changed'},d],[c,b,d]])assert.throws(()=>ctx.resume(previous,live.map(liveRow)),/重疊/);
+ for(const change of [{chatId:'other'},{count:4},{sourceUrl:'wrong'},{canonical:true},{base:{...prior.data.base,sha256:'c'.repeat(64)}},{rows:[a,{...b,index:9},c]}])assert.throws(()=>ctx.validate({...prior,data:{...prior.data,...change}},cp,saved.map(liveRow),sourceUrl),/來源/);
 });
 
 
