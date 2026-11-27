@@ -1092,9 +1092,9 @@ test('prefix overlap captures conflict DOM immediately, retains matching variant
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),calls=[];
  const ctx={pc:c,historyAnchorDomSnapshot:entry=>{calls.push(entry.row.id);return {status:'captured',messageId:entry.row.id}}};
  vm.runInNewContext(src.slice(src.indexOf('  function historyPrefixMerge('),src.indexOf('  async function historyPrefixSupplement('))+';globalThis.capture=historyPrefixConflictDom;globalThis.merge=historyPrefixMerge;',ctx);
- const old={...r('assistant|message:x','assistant','before\\n\\nafter'),identityBasis:'native-dom-id',structure:[{tag:'code',text:'\\u3000'}]},changed={...old,text:'before\\n\\n純文字\\n\\u3000\\n\\nafter'};
+ const old={...r('assistant|message:x','assistant','before\n\nafter'),identityBasis:'native-dom-id',structure:[{tag:'code',text:'\u3000'}]},changed={...old,text:'before\n\n純文字\n\u3000\n\nafter'};
  const observations=[],known=new Map([[old.id,old]]);
  ctx.capture([{row:changed}],known,observations);ctx.capture([{row:changed}],known,observations);ctx.capture([{row:old}],known,observations);
  a.equal(calls.length,2);a.equal(observations[0].kind,'conflicting');a.equal(observations[1].kind,'matching');a.equal(observations[0].rawDom.status,'captured');
- a.throws(()=>ctx.merge([old],[changed]));a.equal(old.text,'before\\n\\nafter');
+ a.throws(()=>ctx.merge([old],[changed]));a.equal(old.text,'before\n\nafter');
 });
