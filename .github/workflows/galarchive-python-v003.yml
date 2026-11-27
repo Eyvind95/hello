@@ -1,0 +1,16 @@
+name: GalArchive Python V003 synthetic tests
+on:
+  push:
+    branches: [feat/galarchive-python-local-v003]
+  workflow_dispatch:
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install 'mcp==1.30.0'
+      - run: python apps/gal-archive/local-python/galarchive_mcp_v003.py --self-test
+      - run: python -m unittest discover -s apps/gal-archive/local-python -p test_v003.py -v
