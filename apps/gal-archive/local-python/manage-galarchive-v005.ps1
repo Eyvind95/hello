@@ -49,7 +49,7 @@ function Write-State([string]$Name,$Value) {
     $temp = Join-Path $homeDir ('.' + [guid]::NewGuid().ToString('N') + '.tmp')
     try {
         [IO.File]::WriteAllText($temp,($Value | ConvertTo-Json -Depth 6 -Compress), (New-Object Text.UTF8Encoding($false)))
-        if ([IO.File]::Exists($path)) { [IO.File]::Replace($temp,$path,$null) }
+        if ([IO.File]::Exists($path)) { [IO.File]::Replace($temp,$path,[System.Management.Automation.Language.NullString]::Value) }
         else { [IO.File]::Move($temp,$path) }
     } finally {
         if ([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) }
@@ -161,38 +161,133 @@ function Install-Manager {
     Write-Host 'Credentials are encrypted by Windows DPAPI and stored under LocalAppData, not in Drive.'
     Write-Host 'No old process was stopped. Stop the old launcher normally after active writes finish, then use GalArchive Start.'
 }
-function Start-Owned([string]$File,[string]$Args) {
-    $info = New-Object Diagnostics.ProcessStartInfo
-    $info.FileName = $File
-    $info.Arguments = $Args
-    $info.WorkingDirectory = $base
-    $info.UseShellExecute = $false
-    $info.CreateNoWindow = $true
-    # Do not store application logs or secrets. Drain both pipes to avoid deadlocks.
-    $info.RedirectStandardOutput = $true
-    $info.RedirectStandardError = $true
-    $p = New-Object Diagnostics.Process
-    $p.StartInfo = $info
-    try {
-        if (-not $p.Start()) { throw 'Child did not start.' }
-        $p.BeginOutputReadLine()
-        $p.BeginErrorReadLine()
-        return $p
-    } catch {
-        try { if (-not $p.HasExited) { $p.Kill() } } catch {}
-        $p.Dispose()
-        throw
+function Initialize-OwnedProcessType {
+    if ('GalArchiveOwnedChild' -as [type]) { return }
+    # Start suspended, attach to a kill-on-close Windows job, then resume.
+    # Covers the Python venv redirector and any descendants, even if the
+    # supervisor itself crashes. Output goes to NUL, not a credential-bearing log.
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public sealed class GalArchiveOwnedChild : IDisposable {
+    [StructLayout(LayoutKind.Sequential)] struct Basic {
+        public long PerProcess, PerJob;
+        public uint Flags;
+        public UIntPtr MinWorkingSet, MaxWorkingSet;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass, SchedulingClass;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct Io {
+        public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct Extended {
+        public Basic BasicLimit;
+        public Io IoInfo;
+        public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemory, PeakJobMemory;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct SecurityAttributes {
+        public int Length;
+        public IntPtr Descriptor;
+        [MarshalAs(UnmanagedType.Bool)] public bool Inherit;
+    }
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct Startup {
+        public int Size;
+        public string Reserved, Desktop, Title;
+        public uint X,Y,XSize,YSize,XChars,YChars,Fill,Flags;
+        public ushort ShowWindow,Reserved2Length;
+        public IntPtr Reserved2,StdIn,StdOut,StdErr;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct ProcInfo {
+        public IntPtr Process, Thread;
+        public uint ProcessId, ThreadId;
+    }
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    static extern IntPtr CreateJobObject(IntPtr attrs,string name);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    static extern bool SetInformationJobObject(IntPtr job,int kind,ref Extended limits,uint size);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    static extern bool AssignProcessToJobObject(IntPtr job,IntPtr process);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
+    static extern IntPtr CreateFile(string name,uint access,uint share,ref SecurityAttributes attrs,uint disposition,uint flags,IntPtr template);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
+    static extern bool CreateProcess(string app,StringBuilder cmd,IntPtr procAttrs,IntPtr threadAttrs,
+        bool inherit,uint flags,IntPtr environment,string directory,ref Startup startup,out ProcInfo info);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    static extern uint ResumeThread(IntPtr thread);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    static extern bool TerminateProcess(IntPtr process,uint code);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    static extern bool CloseHandle(IntPtr handle);
+    private IntPtr job, process;
+    public int Id {get;private set;}
+    public bool HasExited {
+        get {
+            if(process==IntPtr.Zero) return true;
+            uint result=WaitForSingleObject(process,0);
+            if(result==0) return true;
+            if(result==258) return false;
+            throw new Win32Exception(Marshal.GetLastWin32Error(),"Wait failed");
+        }
+    }
+    private GalArchiveOwnedChild() {}
+    static void Check(bool ok,string stage) {
+        if(!ok) throw new Win32Exception(Marshal.GetLastWin32Error(),stage);
+    }
+    public static GalArchiveOwnedChild Start(string file,string args,string directory) {
+        var child=new GalArchiveOwnedChild();
+        IntPtr nul=IntPtr.Zero;
+        var pi=new ProcInfo();
+        try {
+            child.job=CreateJobObject(IntPtr.Zero,null);
+            Check(child.job!=IntPtr.Zero,"Create job");
+            var limits=new Extended();
+            limits.BasicLimit.Flags=0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            Check(SetInformationJobObject(child.job,9,ref limits,(uint)Marshal.SizeOf(typeof(Extended))),"Set job limits");
+            var sa=new SecurityAttributes();
+            sa.Length=Marshal.SizeOf(typeof(SecurityAttributes)); sa.Inherit=true;
+            nul=CreateFile("NUL",0xC0000000,3,ref sa,3,0,IntPtr.Zero);
+            Check(nul!=new IntPtr(-1),"Open NUL");
+            var si=new Startup();
+            si.Size=Marshal.SizeOf(typeof(Startup));
+            si.Flags=0x100; si.StdIn=nul; si.StdOut=nul; si.StdErr=nul;
+            Check(CreateProcess(file,new StringBuilder("\""+file+"\" "+args),IntPtr.Zero,IntPtr.Zero,
+                true,0x08000004,IntPtr.Zero,directory,ref si,out pi),"Create suspended child");
+            child.process=pi.Process; child.Id=(int)pi.ProcessId;
+            Check(AssignProcessToJobObject(child.job,pi.Process),"Attach owned process to job");
+            Check(ResumeThread(pi.Thread)!=0xFFFFFFFF,"Resume owned process");
+            return child;
+        } catch {
+            if(pi.Process!=IntPtr.Zero) TerminateProcess(pi.Process,1);
+            child.Dispose();
+            throw;
+        } finally {
+            if(pi.Thread!=IntPtr.Zero) CloseHandle(pi.Thread);
+            if(nul!=IntPtr.Zero && nul!=new IntPtr(-1)) CloseHandle(nul);
+        }
+    }
+    public void Dispose() {
+        // Closing our non-inheritable job handle terminates ONLY its members.
+        if(job!=IntPtr.Zero) { CloseHandle(job); job=IntPtr.Zero; }
+        if(process!=IntPtr.Zero) {
+            WaitForSingleObject(process,10000);
+            CloseHandle(process); process=IntPtr.Zero;
+        }
     }
 }
+'@
+}
+function Start-Owned([string]$File,[string]$Args) {
+    Initialize-OwnedProcessType
+    return [GalArchiveOwnedChild]::Start($File,$Args,$base)
+}
 function Stop-Owned($p) {
-    if ($null -eq $p) { return }
-    try {
-        if (-not $p.HasExited) {
-            # Only the exact process object created by this manager, never a name or port match.
-            $p.Kill()
-            [void]$p.WaitForExit(10000)
-        }
-    } finally { $p.Dispose() }
+    if ($null -ne $p) { $p.Dispose() }
 }
 function Test-Discovery([string]$Key) {
     try {
@@ -333,9 +428,19 @@ function Self-Test {
         if ((Get-Backoff 1) -ne 2 -or (Get-Backoff 30) -ne 60) { throw 'Backoff failed' }
         if (-not (Test-Owner @{pid=$PID;startTicks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks.ToString()})) { throw 'Process identity check failed' }
         if (Test-Owner @{pid=$PID;startTicks='0'}) { throw 'PID reuse guard failed' }
-        $p=Start-Owned $powerShell '-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 30"'
-        try { if ($p.HasExited) { throw 'Owned child start failed' } } finally { Stop-Owned $p }
-        Write-Host 'GalArchive manager self-test PASS (DPAPI, atomic state, lock, stop token, backoff, child lifecycle).'
+        $pidFile = Join-Path $script:homeDir 'descendant.pid'
+        $command = '$p=Start-Process -FilePath "'+$powerShell+'" -ArgumentList ''-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 60"'' -PassThru; [IO.File]::WriteAllText("'+$pidFile+'",$p.Id.ToString()); Start-Sleep -Seconds 60'
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        $p=Start-Owned $powerShell ('-NoProfile -NonInteractive -EncodedCommand '+$encoded)
+        $desc=$null
+        try {
+            for ($i=0;$i -lt 50 -and -not (Test-Path -LiteralPath $pidFile);$i++) { Start-Sleep -Milliseconds 200 }
+            if ($p.HasExited -or -not (Test-Path -LiteralPath $pidFile)) { throw 'Owned child/descendant start failed' }
+            $desc=Get-Process -Id ([int](Get-Content -LiteralPath $pidFile -Raw)) -ErrorAction Stop
+        } finally { Stop-Owned $p }
+        if ($null -eq $desc -or -not $desc.WaitForExit(10000)) { throw 'Owned descendant was not terminated by job close' }
+        $desc.Dispose()
+        Write-Host 'GalArchive manager self-test PASS (DPAPI, atomic state, lock, stop token, backoff, owned process-tree cleanup).'
     } finally {
         Remove-Item -LiteralPath $script:homeDir -Recurse -Force
         $script:homeDir=$original
