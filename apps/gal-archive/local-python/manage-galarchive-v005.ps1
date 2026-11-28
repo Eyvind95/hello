@@ -1,7 +1,7 @@
 # GalArchive V005 Windows manager. No administrator or credential upload required.
 [CmdletBinding()]
 param(
-    [ValidateSet('Install','Start','Run','Status','Stop','DisableAutostart','EnableAutostart','SelfTest')]
+    [ValidateSet('Install','Start','Run','Status','Stop','DisableAutostart','EnableAutostart','SelfTest','SelfTestJob')]
     [string]$Action = 'Install',
     [switch]$Reconfigure,
     [switch]$NoPause
@@ -161,18 +161,13 @@ function Install-Manager {
     Write-Host 'Credentials are encrypted by Windows DPAPI and stored under LocalAppData, not in Drive.'
     Write-Host 'No old process was stopped. Stop the old launcher normally after active writes finish, then use GalArchive Start.'
 }
-function Initialize-OwnedProcessType {
-    if ('GalArchiveOwnedChild' -as [type]) { return }
-    # Start suspended, attach to a kill-on-close Windows job, then resume.
-    # Covers the Python venv redirector and any descendants, even if the
-    # supervisor itself crashes. Output goes to NUL, not a credential-bearing log.
-    Add-Type -TypeDefinition @'
+function Join-ManagerJob {
+    if (-not ('GalArchiveManagerJob' -as [type])) {
+        Add-Type -TypeDefinition @'
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-using System.Text;
-
-public sealed class GalArchiveOwnedChild : IDisposable {
+public static class GalArchiveManagerJob {
     [StructLayout(LayoutKind.Sequential)] struct Basic {
         public long PerProcess, PerJob;
         public uint Flags;
@@ -189,108 +184,57 @@ public sealed class GalArchiveOwnedChild : IDisposable {
         public Io IoInfo;
         public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemory, PeakJobMemory;
     }
-    [StructLayout(LayoutKind.Sequential)] struct SecurityAttributes {
-        public int Length;
-        public IntPtr Descriptor;
-        [MarshalAs(UnmanagedType.Bool)] public bool Inherit;
-    }
-    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct Startup {
-        public int Size;
-        public string Reserved, Desktop, Title;
-        public uint X,Y,XSize,YSize,XChars,YChars,Fill,Flags;
-        public ushort ShowWindow,Reserved2Length;
-        public IntPtr Reserved2,StdIn,StdOut,StdErr;
-    }
-    [StructLayout(LayoutKind.Sequential)] struct ProcInfo {
-        public IntPtr Process, Thread;
-        public uint ProcessId, ThreadId;
-    }
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
     static extern IntPtr CreateJobObject(IntPtr attrs,string name);
     [DllImport("kernel32.dll",SetLastError=true)]
     static extern bool SetInformationJobObject(IntPtr job,int kind,ref Extended limits,uint size);
     [DllImport("kernel32.dll",SetLastError=true)]
     static extern bool AssignProcessToJobObject(IntPtr job,IntPtr process);
-    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
-    static extern IntPtr CreateFile(string name,uint access,uint share,ref SecurityAttributes attrs,uint disposition,uint flags,IntPtr template);
-    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
-    static extern bool CreateProcess(string app,StringBuilder cmd,IntPtr procAttrs,IntPtr threadAttrs,
-        bool inherit,uint flags,IntPtr environment,string directory,ref Startup startup,out ProcInfo info);
-    [DllImport("kernel32.dll",SetLastError=true)]
-    static extern uint ResumeThread(IntPtr thread);
-    [DllImport("kernel32.dll",SetLastError=true)]
-    static extern bool TerminateProcess(IntPtr process,uint code);
-    [DllImport("kernel32.dll",SetLastError=true)]
-    static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
-    [DllImport("kernel32.dll",SetLastError=true)]
-    static extern bool CloseHandle(IntPtr handle);
-    [DllImport("kernel32.dll",SetLastError=true)]
-    static extern bool GetExitCodeProcess(IntPtr process,out uint code);
-    private IntPtr job, process;
-    public uint ExitCode {get {uint code; Check(GetExitCodeProcess(process,out code),"Get exit code"); return code;}}
-    public int Id {get;private set;}
-    public bool HasExited {
-        get {
-            if(process==IntPtr.Zero) return true;
-            uint result=WaitForSingleObject(process,0);
-            if(result==0) return true;
-            if(result==258) return false;
-            throw new Win32Exception(Marshal.GetLastWin32Error(),"Wait failed");
+    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    private static IntPtr job;
+    public static void Join() {
+        if(job!=IntPtr.Zero) return;
+        IntPtr h=CreateJobObject(IntPtr.Zero,null);
+        if(h==IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        var limits=new Extended();
+        limits.BasicLimit.Flags=0x2000; // kill on close
+        if(!SetInformationJobObject(h,9,ref limits,(uint)Marshal.SizeOf(typeof(Extended))) ||
+           !AssignProcessToJobObject(h,GetCurrentProcess())) {
+            int code=Marshal.GetLastWin32Error();
+            CloseHandle(h);
+            throw new Win32Exception(code,"Cannot create managed process job");
         }
-    }
-    private GalArchiveOwnedChild() {}
-    static void Check(bool ok,string stage) {
-        if(!ok) throw new Win32Exception(Marshal.GetLastWin32Error(),stage);
-    }
-    public static GalArchiveOwnedChild Start(string file,string args,string directory) {
-        var child=new GalArchiveOwnedChild();
-        IntPtr nul=IntPtr.Zero;
-        var pi=new ProcInfo();
-        try {
-            child.job=CreateJobObject(IntPtr.Zero,null);
-            Check(child.job!=IntPtr.Zero,"Create job");
-            var limits=new Extended();
-            limits.BasicLimit.Flags=0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            Check(SetInformationJobObject(child.job,9,ref limits,(uint)Marshal.SizeOf(typeof(Extended))),"Set job limits");
-            var sa=new SecurityAttributes();
-            sa.Length=Marshal.SizeOf(typeof(SecurityAttributes)); sa.Inherit=true;
-            nul=CreateFile("NUL",0xC0000000,3,ref sa,3,0,IntPtr.Zero);
-            Check(nul!=new IntPtr(-1),"Open NUL");
-            var si=new Startup();
-            si.Size=Marshal.SizeOf(typeof(Startup));
-            si.Flags=0x100; si.StdIn=nul; si.StdOut=nul; si.StdErr=nul;
-            Check(CreateProcess(file,new StringBuilder("\""+file+"\" "+args),IntPtr.Zero,IntPtr.Zero,
-                true,0x08000004,IntPtr.Zero,directory,ref si,out pi),"Create suspended child");
-            child.process=pi.Process; child.Id=(int)pi.ProcessId;
-            Check(AssignProcessToJobObject(child.job,pi.Process),"Attach owned process to job");
-            Check(ResumeThread(pi.Thread)!=0xFFFFFFFF,"Resume owned process");
-            return child;
-        } catch {
-            if(pi.Process!=IntPtr.Zero) TerminateProcess(pi.Process,1);
-            child.Dispose();
-            throw;
-        } finally {
-            if(pi.Thread!=IntPtr.Zero) CloseHandle(pi.Thread);
-            if(nul!=IntPtr.Zero && nul!=new IntPtr(-1)) CloseHandle(nul);
-        }
-    }
-    public void Dispose() {
-        // Closing our non-inheritable job handle terminates ONLY its members.
-        if(job!=IntPtr.Zero) { CloseHandle(job); job=IntPtr.Zero; }
-        if(process!=IntPtr.Zero) {
-            WaitForSingleObject(process,10000);
-            CloseHandle(process); process=IntPtr.Zero;
-        }
+        // The non-inheritable handle stays open for the supervisor's lifetime.
+        // On ANY supervisor exit, Windows closes it and terminates its descendants.
+        // Do NOT close it while the supervisor is still running.
+        job=h;
     }
 }
 '@
+    }
+    [GalArchiveManagerJob]::Join()
 }
 function Start-Owned([string]$File,[string]$Args) {
-    Initialize-OwnedProcessType
-    return [GalArchiveOwnedChild]::Start($File,$Args,$base)
-}
-function Stop-Owned($p) {
-    if ($null -ne $p) { $p.Dispose() }
+    $info = New-Object Diagnostics.ProcessStartInfo
+    $info.FileName = $File
+    $info.Arguments = $Args
+    $info.WorkingDirectory = $base
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $p = New-Object Diagnostics.Process
+    $p.StartInfo = $info
+    try {
+        if (-not $p.Start()) { throw 'Child did not start.' }
+        $p.BeginOutputReadLine()
+        $p.BeginErrorReadLine()
+        return $p
+    } catch {
+        $p.Dispose()
+        throw
+    }
 }
 function Test-Discovery([string]$Key) {
     try {
@@ -326,6 +270,7 @@ function Run-Manager {
         try { $apiKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
         finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr); $secret.Dispose() }
         if (-not $apiKey -or -not $cfg.tunnelId) { throw 'Invalid saved credentials.' }
+        Join-ManagerJob
         while (-not (Test-StopRequest $script:instance)) {
             if (-not (Test-Path -LiteralPath $cfg.archiveRoot -PathType Container)) {
                 Set-Status 'waiting' 'Archive drive not mounted yet' $failures
@@ -357,7 +302,7 @@ function Run-Manager {
                     if (Test-Discovery $key) { $ready = $true; break }
                     Start-Sleep -Milliseconds 500
                 }
-                if (Test-StopRequest $script:instance) { continue }
+                if (Test-StopRequest $script:instance) { break }
                 if (-not $ready) { throw 'Local discovery failed.' }
                 $env:CONTROL_PLANE_TUNNEL_ID = $cfg.tunnelId
                 $env:CONTROL_PLANE_API_KEY = $apiKey
@@ -381,25 +326,23 @@ function Run-Manager {
                 }
             } catch {
                 $failures++
-                Set-Status 'restarting' 'Child startup or process failure; retrying with backoff' $failures
+                Set-Status 'restarting' 'Owned child failed; Task Scheduler will retry (up to 3 times, 1 minute apart)' $failures
+                throw
             } finally {
-                try { Stop-Owned $tunnel } finally { Stop-Owned $child }
+                # The job closes on supervisor exit; no unrelated processes are killed.
+                if ($null -ne $tunnel) { $tunnel.Dispose() }
+                if ($null -ne $child) { $child.Dispose() }
                 $script:serverPid = $null
                 $script:tunnelPid = $null
                 foreach ($name in @('CONTROL_PLANE_API_KEY','GALARCHIVE_HTTP_KEY','MCP_EXTRA_HEADERS','MCP_DISCOVERY_EXTRA_HEADERS')) {
                     Remove-Item ("Env:"+$name) -ErrorAction SilentlyContinue
                 }
             }
-            if (-not (Test-StopRequest $script:instance)) {
-                for ($i=0; $i -lt (Get-Backoff $failures); $i++) {
-                    if (Test-StopRequest $script:instance) { break }
-                    Start-Sleep -Seconds 1
-                }
-            }
+            break
         }
         Set-Status 'stopped' 'Stopped by user; login autostart remains configured' $failures
     } catch {
-        Set-Status 'error' 'Configuration or manager failure; use Status and recheck setup' $failures
+        if ($failures -eq 0) { Set-Status 'error' 'Configuration or manager failure; use Status and recheck setup' $failures }
         throw 'GalArchive manager failed. No credentials included in this error.'
     } finally {
         foreach ($n in $old.Keys) { [Environment]::SetEnvironmentVariable($n,$old[$n],'Process') }
@@ -432,32 +375,30 @@ function Self-Test {
         if (-not (Test-Owner @{pid=$PID;startTicks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks.ToString()})) { throw 'Process identity check failed' }
         if (Test-Owner @{pid=$PID;startTicks='0'}) { throw 'PID reuse guard failed' }
         $pidFile = Join-Path $script:homeDir 'descendant.pid'
-        $errorFile = Join-Path $script:homeDir 'test-error.txt'
-        $childFile = Join-Path $script:homeDir 'child.py'
-        $testPython = if (Test-Path -LiteralPath $python -PathType Leaf) { $python } else { (Get-Command python.exe -ErrorAction Stop).Source }
-        $fixture = @'
-from pathlib import Path
-import subprocess, sys, time, traceback
-base = Path(__file__).parent
-try:
-    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-    (base / "descendant.pid").write_text(str(p.pid))
-    time.sleep(60)
-except Exception:
-    (base / "test-error.txt").write_text(traceback.format_exc())
-    raise
-'@
-        [IO.File]::WriteAllText($childFile,$fixture)
-        $p=Start-Owned $testPython ('"'+$childFile+'"')
+        $oldTestDir = $env:GALARCHIVE_MANAGER_TEST_DIR
+        $env:GALARCHIVE_MANAGER_TEST_DIR = $script:homeDir
+        $p=$null
         $desc=$null
         try {
+            $p=Start-Owned $powerShell ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$scriptFile+'" -Action SelfTestJob -NoPause')
             for ($i=0;$i -lt 100 -and -not (Test-Path -LiteralPath $pidFile) -and -not $p.HasExited;$i++) { Start-Sleep -Milliseconds 200 }
-            if (Test-Path -LiteralPath $errorFile) { throw ('Synthetic child: '+(Get-Content -LiteralPath $errorFile -Raw)) }
-            if ($p.HasExited -or -not (Test-Path -LiteralPath $pidFile)) { throw ('Owned child/descendant start failed, exit='+$p.ExitCode) }
+            if (-not (Test-Path -LiteralPath $pidFile)) {
+                $why = Join-Path $script:homeDir 'job-error.txt'
+                if (Test-Path -LiteralPath $why) { throw ('Job child: '+(Get-Content -LiteralPath $why -Raw)) }
+                throw 'Owned job child did not start'
+            }
             $desc=Get-Process -Id ([int](Get-Content -LiteralPath $pidFile -Raw)) -ErrorAction Stop
-        } finally { Stop-Owned $p }
-        if ($null -eq $desc -or -not $desc.WaitForExit(10000)) { throw 'Owned descendant was not terminated by job close' }
-        $desc.Dispose()
+            [IO.File]::WriteAllText((Join-Path $script:homeDir 'job-exit.txt'),'exit')
+            if (-not $p.WaitForExit(15000) -or $p.ExitCode -ne 0) { throw 'Synthetic job supervisor did not exit normally' }
+            if (-not $desc.WaitForExit(10000)) { throw 'Owned descendant was not terminated by job close' }
+        } finally {
+            if ($null -ne $p) {
+                if (-not $p.HasExited) { $p.Kill(); [void]$p.WaitForExit(10000) }
+                $p.Dispose()
+            }
+            if ($null -ne $desc) { $desc.Dispose() }
+            $env:GALARCHIVE_MANAGER_TEST_DIR = $oldTestDir
+        }
         Write-Host 'GalArchive manager self-test PASS (DPAPI, atomic state, lock, stop token, backoff, owned process-tree cleanup).'
     } finally {
         Remove-Item -LiteralPath $script:homeDir -Recurse -Force
@@ -488,6 +429,33 @@ try {
         }
         'DisableAutostart' { Set-Autostart $false; Write-Host 'Login autostart disabled; desktop Start remains available.' }
         'EnableAutostart' { Set-Autostart $true; Write-Host 'Login autostart enabled.' }
+        'SelfTestJob' {
+            # Isolated synthetic supervisor, no production state or credentials.
+            $dir=$env:GALARCHIVE_MANAGER_TEST_DIR
+            if (-not $dir -or -not (Test-Path -LiteralPath $dir -PathType Container) -or
+                (Split-Path -Leaf $dir) -notmatch '^galarchive-manager-test-[a-f0-9]{32}
+    }
+} catch {
+    if ($Action -eq 'Run') { exit 1 }
+    Write-Error -ErrorAction Continue ('GalArchive manager: '+$_.Exception.Message)
+    if (-not $NoPause) { [void](Read-Host 'Press Enter to close') }
+    exit 1
+}
+if (-not $NoPause -and $Action -notin @('Run','SelfTest','SelfTestJob')) { [void](Read-Host 'Press Enter to close') }
+) { throw 'Invalid synthetic test directory' }
+            try {
+                Join-ManagerJob
+                $testPython = if (Test-Path -LiteralPath $python -PathType Leaf) { $python } else { (Get-Command python.exe -ErrorAction Stop).Source }
+                $child = Start-Owned $testPython '-c "import time; time.sleep(60)"'
+                [IO.File]::WriteAllText((Join-Path $dir 'descendant.pid'),$child.Id.ToString())
+                for ($i=0;$i -lt 150 -and -not (Test-Path -LiteralPath (Join-Path $dir 'job-exit.txt'));$i++) { Start-Sleep -Milliseconds 200 }
+                $child.Dispose()
+                exit 0
+            } catch {
+                [IO.File]::WriteAllText((Join-Path $dir 'job-error.txt'),$_.Exception.Message)
+                exit 1
+            }
+        }
         'SelfTest' { Self-Test }
     }
 } catch {
