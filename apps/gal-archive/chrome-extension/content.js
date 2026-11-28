@@ -2977,7 +2977,7 @@
   async function historyRun(b){
     let status='failed',error=null;
     try{
-      await historyLocateHost(b);
+      await historyLocateHost(b);historyGuard(b);
       if(b.branch?.direction==='down'){await historyBranchDown(b);status='completed'}else{
       if(b.resume?.currentPosition){
         b.rows=b.resumeRows.slice();b.resume.minIndex=0;
@@ -3223,7 +3223,7 @@
   function historyStopFeedback(b,msg){
     const count=b.stopArchive?.count??(b.isolated?b.isolated.originalRows.length:b.rows.length);
     if(b.action)b.action.textContent='目前動作：'+msg;
-    if(b.summary)b.summary.textContent='已保全 '+count+' 則｜'+(b.runnerExited?'掃描已退出':'停止要求已收到，等待掃描退出');
+    if(b.summary)b.summary.textContent='已核對 '+count+' 則｜'+(b.runnerExited?'掃描已退出':'停止要求已收到，等待掃描退出');
     if(b.info)b.info.textContent=msg+'\n'+count+' 則；不會上傳 Firebase。'+(b.memoryStatus?'\n'+b.memoryStatus:'');
   }
   function historyRenderStopped(b){
@@ -3241,7 +3241,7 @@
     }
     const exit=b.runnerExited?'掃描已退出。':'掃描正在退出；不必等待即可核對下載。';
     if(!archive){historyStopFeedback(b,'保全建立失敗：'+(b.stopArchiveError||'未知錯誤')+'。請勿刷新，按重試建立保全。'+exit);return}
-    if(!archive.triggered){historyStopFeedback(b,'保全已留在本頁，下載觸發失敗：'+(archive.downloadError||'未知錯誤')+'。請勿刷新，按重新下載。'+exit);return}
+    if(archive.downloadError||!archive.triggered){historyStopFeedback(b,'保全已留在本頁，最新下載觸發失敗：'+(archive.downloadError||'未知錯誤')+'。'+(archive.triggered?'先前曾觸發下載，請核對紀錄。':'請勿刷新。')+'可按重新下載。'+exit);return}
     historyStopFeedback(b,'已觸發下載（未完成保全）：'+archive.prepared.filename+'。'+(archive.validationError?'輸出核對失敗，僅供鑑識。':'')+exit+'請核對 Chrome 下載紀錄；不代表檔案已寫入磁碟。');
   }
   function historySaveStopped(b,retry=false){
