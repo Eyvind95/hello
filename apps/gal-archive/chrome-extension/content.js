@@ -2710,6 +2710,8 @@
     data.evidence.coverage='selected-assistant-boundary; no independent server manifest';
     data.evidence.branchReadRecovery=b.branchReadRecovery||[];
     if(b.branchDownProgress)data.evidence.branchDownProgress=b.branchDownProgress;
+    if(b.branchOverlapEvidence?.length)data.evidence.branchOverlapEvidence=b.branchOverlapEvidence;
+    if(b.branchOverlapEvidenceOverflow)data.evidence.branchOverlapEvidenceOverflow=b.branchOverlapEvidenceOverflow;
     data.evidence.continuity=data.status==='completed'&&!!b.branchProof;
     data.evidence.branchBoundary={anchorId:b.branch.row.id,anchorSha256:b.branch.hash,direction:b.branch.direction||'up',verified:false,...(data.status==='completed'?b.branchProof||{}:{})};
     data.warnings.push('分支專用保全：指定 GPT 回應及其之前訊息不計入完成檔。未完成檔尚未證明範圍，不可當成分支新增正文或完整聊天匯入。');
@@ -2720,6 +2722,37 @@
   // or jump to the bottom and then treat the intervening history as scanned.
   async function historyBranchDown(b){
     const host=b.host,anchor=b.branch.row;
+    // Preserve the first conflicting rendered observation BEFORE restoring or
+    // moving the viewport. The old accepted row is never rewritten.
+    let tailDom=null;
+    const snapshot=entry=>{
+      if(!entry)return null;
+      try{return historyAnchorDomSnapshot(entry)}catch(e){return {status:'unavailable',reason:String(e.message||e).slice(0,300)}}
+    };
+    const mounted=id=>(b.branchDownEntries||[]).find(e=>e.row?.id===id);
+    const rememberTail=()=>{
+      const row=b.rows.at(-1);
+      if(tailDom?.id===row?.id)return;
+      tailDom=null;
+      if(row?.role==='assistant'&&row.identityBasis==='native-dom-id'&&row.structure?.some(x=>x.tag==='code')){
+        tailDom={id:row.id,rawDom:snapshot(mounted(row.id))};
+      }
+    };
+    const boundedRow=row=>{
+      const serialized=JSON.stringify(row);
+      return serialized.length<=500000?{complete:true,row}:{complete:false,id:row.id,serializedLength:serialized.length,serializedPrefix:serialized.slice(0,500000)};
+    };
+    const capture=(previous,current,fields)=>{
+      const list=b.branchOverlapEvidence||(b.branchOverlapEvidence=[]);
+      // Keep the first four failures, including first fresh variant. Bound
+      // snapshots; no evidence allocation on successful ordinary windows.
+      if(list.length>=4){b.branchOverlapEvidenceOverflow=(b.branchOverlapEvidenceOverflow||0)+1;return}
+      list.push({at:new Date().toISOString(),messageId:current.id,fields:[...fields],scrollTop:host.scrollTop,scrollHeight:host.scrollHeight,
+        previous:boundedRow(previous),current:boundedRow(current),
+        previousRawDom:tailDom?.id===previous.id?tailDom.rawDom:null,currentRawDom:snapshot(mounted(current.id)),
+        accepted:false});
+    };
+    const merge=(previous,current)=>historyPrefixMerge(previous,current,capture);
     historyStatus(b,'從目前位置核對指定 GPT 頂端（不跳底）');
     let live=await historySettled(b,{deadline:Date.now()+60000});
     historyGuard(b);
@@ -2736,7 +2769,7 @@
       live=await historySettled(b,{deadline:Date.now()+12000});
       const visibleAt=live.findIndex(r=>r.id===anchor.id);
       if(visibleAt<0)throw Error('指定 GPT 錨點已離開可核對視窗；請回到回應尾端及下一則玩家訊息附近');
-      accepted=historyPrefixMerge(accepted,live.slice(visibleAt));
+      accepted=merge(accepted,live.slice(visibleAt));
       if(accepted.length===1&&Math.abs(host.scrollTop-from)<2)break;
     }
     // Keep the parent anchor out of all branch rows, even on a failure.
@@ -2744,7 +2777,7 @@
     if(!first)throw Error('未核對指定 GPT 回應與第一則新增玩家相鄰');
     const hash=await historyBranchDigest(first.anchor);historyGuard(b);
     if(hash!==b.branch.hash)throw Error('分支錨點雜湊不符');
-    b.rows=first.rows;b.windows++;
+    b.rows=first.rows;b.windows++;rememberTail();
     b.branchProof={anchorId:anchor.id,anchorSha256:b.branch.hash,observedSha256:hash,firstNewId:first.firstNewId,verified:true,verifiedAt:new Date().toISOString()};
     historyTrace(b,'assistant-branch-boundary-verified',{anchorId:anchor.id,firstNewId:first.firstNewId,direction:'down'});
     let lastGrowth=Date.now(),lastProgress=lastGrowth,anchorTop=host.scrollTop,anchorHeight=host.scrollHeight,acceptedLive=live.slice(live.findIndex(r=>r.id===anchor.id)+1),step=Math.max(24,Math.floor(host.clientHeight*.65)),retries=0,bottomSince=null,bottomSig=null;
@@ -2808,7 +2841,7 @@
         if(!pc.compareRow(anchor,current[a]).equal)throw Error('分支錨點重新掛載後內容不符');
         next=current.slice(a+1);
       }
-      const rows=historyPrefixMerge(b.rows,next);
+      const rows=merge(b.rows,next);
       if(rows.some(pc.isComposite))throw Error('分支含未核對複合訊息');
       const grew=rows.length>b.rows.length,actual=host.scrollTop,actualHeight=host.scrollHeight,tail=b.rows.at(-1)?.id;
       if(grew){lastGrowth=lastProgress=Date.now();progress.highWaterTop=actual;progress.frontierStartTop=actual;progress.frontierRangeEnd=rangeEnd();progress.lastGrowthAt=new Date(lastGrowth).toISOString();progress.lastProgressAt=progress.lastGrowthAt}
@@ -2825,7 +2858,7 @@
         else progress.uncreditedWindows++;
         historyTrace(b,'branch-down-no-new-rows',{from,target,actual,oldHeight,actualHeight,tail,credited,withinBudget,frontierRangeEnd:progress.frontierRangeEnd,highWaterTop:progress.highWaterTop,msSinceGrowth:Date.now()-lastGrowth,msSinceProgress:Date.now()-lastProgress});
       }
-      b.rows=rows;acceptedLive=next;anchorTop=actual;anchorHeight=actualHeight;b.windows++;
+      b.rows=rows;acceptedLive=next;anchorTop=actual;anchorHeight=actualHeight;b.windows++;if(grew)rememberTail();
       historyHostObservation(b);
       return next;
     };
@@ -3298,7 +3331,7 @@
   // mutation, no automatic expansion, no Firebase, and no continuity claim.
 
   // Evidence-only prefix supplement: no checkpoint mutation or official import.
-  function historyPrefixMerge(previous,live){
+  function historyPrefixMerge(previous,live,onConflict=()=>{}){
     pc.validateRows(previous);pc.validateRows(live);
     if(!live.length)throw Error('目前沒有可讀訊息');
     if(!previous.length)return live.slice();
@@ -3307,7 +3340,11 @@
     if(!hits.length||hits[0].i!==0)throw Error('向下視窗沒有連續重疊');
     for(let j=0;j<hits.length;j++){
       const x=hits[j];
-      if(x.i!==j||x.at!==hits[0].at+j||!pc.compareRow(previous[x.at],x.r).equal)throw Error('向下視窗重疊正文、格式或順序不符：'+x.r.id);
+      const cmp=pc.compareRow(previous[x.at],x.r);
+      if(x.i!==j||x.at!==hits[0].at+j||!cmp.equal){
+        if(!cmp.equal)onConflict(previous[x.at],x.r,cmp.fields);
+        throw Error('向下視窗重疊正文、格式或順序不符：'+x.r.id);
+      }
     }
     if(hits.length===live.length)return previous.slice();
     if(hits.at(-1).at!==previous.length-1)throw Error('新增訊息未接在已驗證尾端');
