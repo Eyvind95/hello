@@ -1636,7 +1636,7 @@ test('split native generated-image and following assistant text retain distinct 
    querySelectorAll(s){const out=[];for(const child of this.children){if(matches(child,s))out.push(child);out.push(...child.querySelectorAll(s))}return out},
    contains(x){return this===x||this.children.some(child=>child.contains(x))},
    closest(s){for(let p=this;p;p=p.parentElement)if(matches(p,s))return p;return null},
-   matches(s){return matches(this,s)},compareDocumentPosition(other){let root=this;while(root.parentElement)root=root.parentElement;const flat=[];const walk=n=>{flat.push(n);for(const x of n.children)walk(x)};walk(root);return flat.indexOf(this)<flat.indexOf(other)?4:0}
+   querySelector(s){return this.querySelectorAll(s)[0]||null},matches(s){return matches(this,s)},compareDocumentPosition(other){let root=this;while(root.parentElement)root=root.parentElement;const flat=[];const walk=n=>{flat.push(n);for(const x of n.children)walk(x)};walk(root);return flat.indexOf(this)<flat.indexOf(other)?4:0}
   };kids.forEach(k=>k.parentElement=n);return n
  };
  function fixture(mode='valid'){
