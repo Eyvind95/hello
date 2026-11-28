@@ -147,8 +147,8 @@ function Install-Manager {
     }
     $existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if ($null -eq $existing) {
-        $args = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$scriptFile+'" -Action Run'
-        $a = New-ScheduledTaskAction -Execute $powerShell -Argument $args -WorkingDirectory $base
+        $taskArguments = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$scriptFile+'" -Action Run'
+        $a = New-ScheduledTaskAction -Execute $powerShell -Argument $taskArguments -WorkingDirectory $base
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User ([Security.Principal.WindowsIdentity]::GetCurrent().Name)
         $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
         $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
@@ -215,10 +215,11 @@ public static class GalArchiveManagerJob {
     }
     [GalArchiveManagerJob]::Join()
 }
-function Start-Owned([string]$File,[string]$Args) {
+function Start-Owned([string]$File,[string]$CommandLine) {
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $File
-    $info.Arguments = $Args
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) { throw 'Missing child command line.' }
+    $info.Arguments = $CommandLine
     $info.WorkingDirectory = $base
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -385,7 +386,7 @@ function Self-Test {
             if (-not (Test-Path -LiteralPath $pidFile)) {
                 $why = Join-Path $script:homeDir 'job-error.txt'
                 if (Test-Path -LiteralPath $why) { throw ('Job child: '+(Get-Content -LiteralPath $why -Raw)) }
-                throw 'Owned job child did not start'
+                throw ('Owned job child did not start; exit status: '+$(if($p.HasExited){$p.ExitCode}else{'still-running'}))
             }
             $desc=Get-Process -Id ([int](Get-Content -LiteralPath $pidFile -Raw)) -ErrorAction Stop
             [IO.File]::WriteAllText((Join-Path $script:homeDir 'job-exit.txt'),'exit')
