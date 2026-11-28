@@ -2186,6 +2186,8 @@
     // verified bodies. Ordinary hidden labels and known UI controls are not
     // archive messages. Traverse display:contents wrappers as well.
     const covered=[userBlock,image.body,reply.body];
+    const label=reply.body.parentElement.children[0];
+    if(label.getAttribute('data-conversation-role')==='assistant'&&RESPONSE_LABEL.test(String(label.innerText||'').trim()))covered.push(label);
     const walk=n=>{
       if(covered.includes(n))return true;
       if(n.nodeType===8)return true;
