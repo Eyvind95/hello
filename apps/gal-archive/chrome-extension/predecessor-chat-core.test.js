@@ -1636,13 +1636,13 @@ test('split native generated-image and following assistant text retain distinct 
    querySelectorAll(s){const out=[];for(const child of this.children){if(matches(child,s))out.push(child);out.push(...child.querySelectorAll(s))}return out},
    contains(x){return this===x||this.children.some(child=>child.contains(x))},
    closest(s){for(let p=this;p;p=p.parentElement)if(matches(p,s))return p;return null},
-   compareDocumentPosition(other){return this.parentElement===other.parentElement&&this.parentElement.children.indexOf(this)<this.parentElement.children.indexOf(other)?4:0}
+   matches(s){return matches(this,s)},compareDocumentPosition(other){let root=this;while(root.parentElement)root=root.parentElement;const flat=[];const walk=n=>{flat.push(n);for(const x of n.children)walk(x)};walk(root);return flat.indexOf(this)<flat.indexOf(other)?4:0}
   };kids.forEach(k=>k.parentElement=n);return n
  };
  function fixture(mode='valid'){
   const id='image-id',tid='text-id',uid='user-id';
-  const role=(v)=>el('h4',{'data-conversation-role':v});
-  const user=el('div',{},[role('user'),el('div',{'data-chatgpt-search-unit-key':'fallback:0:user','data-chatgpt-search-message-ids':mode==='wrong-user'?'other':uid},[el('div',{'data-user-message-bubble':'true'})])]);
+  const role=(v)=>el('h4',{'data-conversation-role':v},[],v==='assistant'?'ChatGPT 說：':'你說：');
+  const user=el('div',{},[role('user'),el('div',{'data-chatgpt-search-unit-key':'fallback:0:user','data-chatgpt-search-message-ids':mode==='wrong-user'?'other':uid},[el('div',{'data-user-message-bubble':'true'},[],'fixture request')])]);
   const img=el('img'),preview=el('button',{'data-testid':'generated-image-preview','aria-label':'產生的圖片 1'},[img]);
   const body=el('div',{'data-response-body':id,'data-chatgpt-search-message-ids':mode==='wrong-image'?'other':id},[el('div',{'data-testid':'generated-image-gallery'},[preview,el('button',{'aria-label':'編輯生成的圖像 1'}),el('button',{'aria-label':'分享生成的圖像 1'})]),...(mode==='caption'?[el('p',{},[],'unexpected text')]:[])]);
   const imageBlock=el('div',{},[el('span',{'hidden':'','data-chatgpt-agent-turn-start':''}),body]);
@@ -1653,7 +1653,7 @@ test('split native generated-image and following assistant text retain distinct 
   const owner=el('div',{'data-turn-key':uid},[el('div',{'data-talvt-turn-state':mode==='incomplete'?'pending':'complete'},[activity])]);
   if(mode==='hidden-text')textBody.visible=false;
   if(mode==='hidden-image')img.visible=false;
-  return {owner,body,textBody,img,id,tid}
+  return {owner,body,textBody,img,id,tid,userBubble:user.children[1].children[0],activity}
  }
  const x=fixture();
  a.equal(ctx.prove(x.body,x.owner).id,'assistant|message:'+x.id);a.equal(ctx.prove(x.body,x.owner).image,x.img);
@@ -1661,6 +1661,37 @@ test('split native generated-image and following assistant text retain distinct 
  for(const mode of ['wrong-user','wrong-image','same-id','wrong-selection','extra-id','wrong-role','swapped','extra-block','incomplete','hidden-text','hidden-image','caption']){
   const f=fixture(mode);a.equal(ctx.prove(f.body,f.owner),null,mode);
  }
+
+ // Exercise the actual historyRead pipeline, not merely the image proof.
+ // Text extraction is stubbed; native identities, fallback reconciliation,
+ // row ordering, real core validation, and window merge run unchanged.
+ const read=src.slice(src.indexOf('  function historySplitLegacyCovered('),src.indexOf('  function historyEdgeOrdinal('));
+ let active,legacy,root;
+ Object.assign(ctx,{historyRoot:()=>root,historyOwner:n=>n.closest('[data-turn-key]')||n,
+  outerUsers:()=>[active.userBubble],assistantElements:()=>[legacy],assistantFallbackTexts:new WeakMap(),
+  historyReadText:n=>n.innerText,historyAssistantCodeText:(body,owner,id,t)=>t,
+  historyAssistantStructureText:n=>n.innerText,getVisibleSourceTime:()=>null,
+  HISTORY_STRUCT:'p',HISTORY_ATTACHMENT:'img,a',HISTORY_SKIP:'button,[hidden]',USER_BUBBLE_SELECTOR:'[data-user-message-bubble="true"]',
+  RESPONSE_LABEL:/^(?:ChatGPT\s*(?:說|said)|你說|You said|Assistant)\s*[:：]?$/i,
+  historyAttachment:()=>({kind:'image-reference',label:'',url:null}),getComputedStyle:()=>({display:'block'}),pc:c});
+ vm.runInNewContext(read+';globalThis.read=historyRead;',ctx);
+ function readFixture(mode='valid',locator='owner'){
+   active=fixture(mode);root=el('main',{},[active.owner]);legacy=locator==='owner'?active.owner:locator==='text-parent'?active.textBody.parentElement:active.textBody;
+   if(locator==='unrelated'){legacy=el('div',{},[],'unknown');legacy.parentElement=active.owner;active.owner.children.push(legacy)}
+   if(mode==='extra-visible'){const node={nodeType:3,nodeValue:'uncaptured prose',parentElement:active.owner};active.owner.childNodes=[...active.owner.children,node]}
+   if(mode==='extra-attachment'){const node=el('img');node.parentElement=active.owner;active.owner.children.push(node)}
+   return ctx.read(null);
+ }
+ const expected=['user|turn:user-id','assistant|message:image-id','assistant|message:text-id'];
+ for(const locator of ['owner','text-parent','text-body']){
+   const rows=readFixture('valid',locator);a.deepEqual(Array.from(rows,x=>x.id),expected);
+   a.equal(rows[1].nonTextOmitted,true);a.equal(rows[2].text,'fixture confirmation');a.equal(c.validateRows(rows).size,3);
+   const joined=c.mergeUp([rows[2],r('user|turn:later')],rows);
+   a.deepEqual(Array.from(joined,x=>x.id),[...expected,'user|turn:later']);
+ }
+ for(const mode of ['extra-visible','extra-attachment'])a.throws(()=>readFixture(mode),/回合內多個同角色來源/);
+ a.throws(()=>readFixture('valid','unrelated'),/回合內多個同角色來源/);
+
  // The old standalone image role is still accepted, without any text sibling.
  const standalone=fixture(),body=standalone.body;
  const owner=el('div',{'data-turn-key':'standalone-turn'},[el('div',{'data-talvt-turn-state':'complete'},[el('div',{},[el('h4',{'data-conversation-role':'assistant'}),body])])]);
