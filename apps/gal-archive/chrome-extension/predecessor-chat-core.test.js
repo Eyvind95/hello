@@ -1467,3 +1467,28 @@ test('branch down accelerates only inside same fully verified native body, falls
   else {a.ok(fast.every(x=>x.from>=750));}
  }
 });
+
+
+test('branch overlap rejection preserves old and new observation before restoration, never promotes it',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  async function historyBranchDown('),src.indexOf('  async function historyRun(b)'))+src.slice(src.indexOf('  function historyPrefixMerge('),src.indexOf('  function historyPrefixJoin('));
+ for(const field of ['text','structure']){
+  let now=1000,reads=0;
+  const hash='a'.repeat(64),host={scrollTop:100,scrollHeight:1000,clientHeight:100};
+  const anchor={...r('assistant|message:anchor','assistant','parent'),identityBasis:'native-dom-id'},u=r('user|turn:u'),g={...r('assistant|message:g','assistant','before\n\n// comment\n\nafter'),identityBasis:'native-dom-id',structure:[{tag:'code',text:'// comment'}]},u2=r('user|turn:u2');
+  const changed=field==='text'?{...g,text:g.text.replace('// comment','JavaScript\n// comment')}:{...g,structure:[...g.structure,{tag:'strong',text:'before'}]};
+  const b={host,branch:{row:anchor,hash,direction:'down'},rows:[],windows:0,scrollStats:{}};
+  const Clock=class extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}};
+  const ctx={Date:Clock,pc:c,historyGuard:()=>{},historyStatus:()=>{},historyTrace:()=>{},historyHostObservation:()=>{},historyLoading:()=>false,historyNativeFailure:()=>null,historyAtBottom:()=>false,historyBranchDigest:async()=>hash,
+   historyAnchorDomSnapshot:entry=>({status:'captured',messageId:entry.row.id,projection:entry.projection}),
+   historyScroll:(h,to)=>{h.scrollTop=to},sleep:async ms=>{now+=ms},historySettled:async()=>{
+    now+=700;reads++;const rows=reads===1?[anchor,u,g]:[changed,u2];
+    b.branchDownEntries=rows.map(row=>({row,projection:reads===1?'initial':'remounted'}));return rows;
+   }};
+  vm.runInNewContext(block+';globalThis.down=historyBranchDown;',ctx);
+  await a.rejects(ctx.down(b),/無法復原向下連續視窗/);
+  a.deepEqual(Array.from(b.rows,x=>x.id),[u.id,g.id]);a.equal(b.rows[1],g);a.notEqual(b.bottomReached,true);
+  a.equal(b.branchOverlapEvidence.length,4);
+  const first=b.branchOverlapEvidence[0];a.equal(first.messageId,g.id);a.deepEqual(Array.from(first.fields),[field]);a.equal(first.previous.row,g);a.equal(first.current.row,changed);a.equal(first.previousRawDom.projection,'initial');a.equal(first.currentRawDom.projection,'remounted');a.equal(first.accepted,false);
+ }
+});
