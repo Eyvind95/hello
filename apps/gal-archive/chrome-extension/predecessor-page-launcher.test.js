@@ -102,13 +102,13 @@ test('toolbar actual popup markup and callbacks preserve old entries and never f
  await nodes.get('predecessorConfig').onclick();assert.equal(calls.at(-1),'predecessor-popup-config');
 });
 
-test('new toolbar and right launcher ignore old-version launcher and configuration without removing them',async()=>{
+test('new toolbar and left launcher ignore old-version launcher and configuration without removing them',async()=>{
  const f=fixture();let legacyClicks=0;
  const oldButton={id:'ga-predecessor-page-launcher',click(){legacyClicks++}},oldPane={id:'ga-predecessor-page-config',dataset:{chat:'/c/first'}};
  f.nodes.set(oldButton.id,oldButton);f.nodes.set(oldPane.id,oldPane);
  await f.popup({type:'predecessor-popup-config',chat:'/c/first'});
  const launcher=f.nodes.get('ga-predecessor-page-launcher--testextension'),pane=f.nodes.get('ga-predecessor-page-config--testextension');
- assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/left:auto!important;right:16px!important;transform:none!important;bottom:108px!important/);assert.match(pane.style.cssText,/left:50%!important;right:auto!important;transform:translateX\(-50%\)!important/);
+ assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/left:16px!important;right:auto!important;transform:none!important;bottom:108px!important/);assert.match(pane.style.cssText,/left:50%!important;right:auto!important;transform:translateX\(-50%\)!important/);
  assert.match(launcher.textContent,/V0\.10\.48/);assert.equal(legacyClicks,0);
  assert.equal(f.nodes.get(oldButton.id),oldButton);assert.equal(f.nodes.get(oldPane.id),oldPane);
  f.route('/c/second');f.launch();assert.equal(f.nodes.has(pane.id),false);assert.equal(f.nodes.get(oldPane.id),oldPane);
