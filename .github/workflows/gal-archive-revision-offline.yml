@@ -1,0 +1,22 @@
+name: Gal Archive Revision Offline Tests
+on:
+  pull_request:
+    paths:
+      - 'apps/gal-archive/archive-pilot-revision*'
+      - 'apps/gal-archive/archive-pilot-import*'
+      - '.github/workflows/gal-archive-revision-offline.yml'
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test apps/gal-archive/archive-pilot-import.test.js apps/gal-archive/archive-pilot-revision.test.js
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --no-save --package-lock=false playwright@1.51.1
+          npx playwright install chromium
+      - name: Real isolated Chromium IndexedDB test (synthetic only)
+        run: node apps/gal-archive/archive-pilot-revision-browser-runner.cjs
