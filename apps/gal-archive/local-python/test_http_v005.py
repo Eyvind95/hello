@@ -37,6 +37,19 @@ class HTTPTests(unittest.TestCase):
                 discovery = rpc("tools/list",{})
                 self.assertEqual(discovery.status_code,200,discovery.text)
                 self.assertEqual(len(discovery.json()["result"]["tools"]),15)
+                # Exercise actual new MCP schemas over the stateless HTTP endpoint.
+                import uuid
+                gen = str(uuid.uuid4())
+                turn = str(uuid.uuid4())
+                args = {"predecessor_id":"test-http-owner","generation_id":gen}
+                self.assertFalse(tool("begin_live_generation", args).get("isError",False))
+                self.assertFalse(tool("get_live_checkpoint", args).get("isError",False))
+                payload = {**args,"turn_id":turn,"previous_sha256":None,
+                           "player_text":"hello","assistant_text":"world"}
+                self.assertFalse(tool("append_live_turn", payload).get("isError",False))
+                self.assertFalse(tool("append_live_turn", payload).get("isError",False))
+                self.assertTrue(tool("append_live_turn", {**payload,"assistant_text":"changed"}).get("isError",False))
+                self.assertEqual(len(list(Path(tmp,g.LIVE,"predecessors","test-http-owner",gen,"turns").glob("*.json"))),1)
                 def task(i):
                     # Two independent callers may initialize at any time, or call directly.
                     if i % 2 == 0:
