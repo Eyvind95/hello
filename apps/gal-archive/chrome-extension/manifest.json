@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.103",
-  "version_name": "V0.10.103 獨立圖片與文字身份核對",
+  "version": "0.10.104",
+  "version_name": "V0.10.104 獨立圖片與文字身份核對",
   "description": "輪迴檔案館：原生回答辨識及程式碼框正文完整性檢查。",
   "permissions": [
     "storage",
