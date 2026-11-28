@@ -2433,7 +2433,7 @@
             }
             reason='等待原文與格式穩定';
         }catch(e){
-          if(e.code==='HISTORY_RECOVERY_RETRY')throw e;
+          if(b.cancelled||e.code==='HISTORY_RECOVERY_RETRY')throw e;
           last=null;lastRows=null;reason=String(e.message||e);
           b.lastReadIssue={at:new Date().toISOString(),reason,scrollTop:b.host.scrollTop,scrollHeight:b.host.scrollHeight,evidence:e.historyEvidence||null};
           // A mounted code block can briefly disagree with the rendered body.
@@ -2502,6 +2502,7 @@
     bar.append(compact,move);render();return bar;
   }
   function historyStatus(b,msg){
+    if(b.stopRequested)return; // A stale scan continuation must not hide stop/export feedback.
     if(b.mode==='predecessor-anchor'){b.anchorProgress?.(msg);return}
     const count=b.isolated?b.isolated.originalRows.length+'（另有隔離取證 '+b.rows.length+' 則，含重疊）':b.sample?Math.min(b.sample,b.rows.length)+' / '+b.sample:b.rows.length;
     const compositeCount=b.rows.filter(r=>r.identityBasis==='unresolved-native-composite').length;
@@ -2576,13 +2577,19 @@
     if(rows.at(-1)?.role==='user')warnings.push('尾端玩家尚無 GPT 回覆；原樣保留');
     if(rows.some(r=>r.attachments.length))warnings.push('附件僅保留可見名稱／連結參照，未證明附件原始位元組已保存');
     if(rows.some(r=>r.contentBasis==='composite-after-user-dom'))warnings.push('無標記 GPT 回覆以唯一玩家邊界後的完整 DOM 文字節點讀取；保留分段證據，非伺服器原始 Markdown');
-    return {format:compositeCount?pc.COMPOSITE:b.sample?pc.SAMPLE:pc.FORMAT,...(compositeCount?{importable:false}:{}),...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed'&&!compositeCount,...(compositeCount?{unresolvedCompositeCount:compositeCount,displayUnitContinuityOnly:true}:{}),firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images-except-proven-assistant-generated-image-only; observed-bytes-only',generatedImageAssets:historyGeneratedImageExport(b,rows),generatedImageOverflow:b.generatedImageOverflow||0,lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,unjoinedWindows:b.unjoinedWindows||[],unjoinedOverflow:b.unjoinedOverflow||0,identityRejoinTrace:b.identityRejoinTrace||[],identityRejoinTraceOverflow:b.identityRejoinTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
+    return {format:compositeCount?pc.COMPOSITE:b.sample?pc.SAMPLE:pc.FORMAT,...(compositeCount?{importable:false}:{}),...(b.sample?{scope:'sample-'+b.sample,sampleLimit:b.sample,importable:false}:{}),version:1,canonical:false,fidelity:'rendered-dom',status,runId:b.runId,title:b.title,chatId:b.chat.split('/').at(-1),sourceUrl:location.origin+b.chat,startedAt:b.startedAt,finishedAt:new Date().toISOString(),scannerVersion:b.scannerVersion||chrome.runtime.getManifest().version,count:rows.length,rows,warnings,error:error||null,evidence:{bottomReached:b.bottomReached,topReached:b.topReached,bottomStableMs:b.bottomStableMs,topStableMs:b.topStableMs,continuity:status==='completed'&&!compositeCount,...(compositeCount?{unresolvedCompositeCount:compositeCount,displayUnitContinuityOnly:true}:{}),firstId:rows[0]?.id||null,lastId:rows.at(-1)?.id||null,windows:b.windows,coverage:'rendered-branch-only; no independent server manifest',imagePolicy:'omit-images-except-proven-assistant-generated-image-only; observed-bytes-only',generatedImageAssets:historyGeneratedImageExport(b,rows),generatedImageOverflow:b.generatedImageOverflow||0,lastReadIssue:status==='completed'?null:b.lastReadIssue||null,overlapIssues:b.overlapIssues,attachmentReferenceChanges:b.attachmentChanges,attachmentChangeOverflow:b.attachmentChangeOverflow,codeRenderVariants:b.renderChanges||[],codeRenderVariantOverflow:b.renderChangeOverflow||0,attachmentBytesVerified:false,attachmentCountVerified:false,scrollStats:b.scrollStats,nativeHistoryRetry:b.nativeHistoryRetry||{attempts:0,cleared:0,sinceProgress:0,progressResets:0,trace:[]},trustedWheelCount:b.trustedWheelCount||0,trustedWheelTrace:b.trustedWheelTrace||[],trustedWheelOverflow:b.trustedWheelOverflow||0,knownMinimum:b.knownMinimum,resume:b.resume||null,...(b.isolated?{isolatedSegment:{format:'gal-predecessor-frontier-evidence',importable:false,count:b.rows.length,rows:b.rows.map((r,index)=>({...r,index})),anchor:b.isolated.anchor,startedAt:b.isolated.startedAt,topReached:!!b.isolated.topReached,topStableMs:b.isolated.topStableMs||0,windows:b.isolated.windows,sourceSha256:b.resume?.sourceSha256||null}}:{}),checkpointExports:b.checkpointExports||[],hostProof:b.hostProof||null,breakthroughState:b.breakthrough||null,scrollTrace:b.scrollTrace,unjoinedWindows:b.unjoinedWindows||[],unjoinedOverflow:b.unjoinedOverflow||0,identityRejoinTrace:b.identityRejoinTrace||[],identityRejoinTraceOverflow:b.identityRejoinTraceOverflow||0,bottomEscapeTrace:b.bottomEscapeTrace||[],bottomEscapeTraceOverflow:b.bottomEscapeTraceOverflow||0,stabilityIssues:b.stabilityIssues,readMode:'passive-no-expand',foldObservations:[...b.foldObservations.values()],foldObservationOverflow:b.foldObservationOverflow,inheritedFoldObservations:b.resumeFoldObservations||[],foldTailVariants:b.foldTailVariants||[]}};
   }
-  function historyDownload(data){
+  function historyDownload(data){return historyTriggerDownload(historyPrepareDownload(data))}
+  function historyPrepareDownload(data){
     const file=(data.title.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,95)||'未命名聊天')+'_'+data.chatId+'_'+data.runId+'_'+data.status+(data.evidence?.checkpoint?'_斷點'+(data.evidence.isolatedSegment?.count??data.count):'')+'.json';
-    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=url;a.download=(data.format==='gal-predecessor-branch-chat'?'茶話會分支聊天_':data.format==='gal-predecessor-prefix-supplement-evidence'?'前輩頂端補掃取證_':data.format===pc.COMPOSITE?'前輩複合待核對_':data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-    return a.download;
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),filename=(data.format==='gal-predecessor-branch-chat'?'茶話會分支聊天_':data.format==='gal-predecessor-prefix-supplement-evidence'?'前輩頂端補掃取證_':data.format===pc.COMPOSITE?'前輩複合待核對_':data.format===pc.SAMPLE?(data.sampleLimit===20?'前輩二十則測試_':'前輩十則測試_'):'前輩聊天_')+file;
+    return {blob,filename};
+  }
+  function historyTriggerDownload(prepared){
+    const url=URL.createObjectURL(prepared.blob),a=document.createElement('a');
+    try{a.href=url;a.download=prepared.filename;document.body.append(a);a.click()}
+    finally{a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
+    return prepared.filename;
   }
   async function historyRemember(b,data){
     if(b.sample||b.isolated||data.format===pc.COMPOSITE||data.status==='completed'||(b.resume&&(!b.resume.frontierVerified||data.count<=b.resume.baseCount)))return;
@@ -2818,6 +2825,7 @@
     const first=pc.branchBoundary(accepted,live,anchor);
     if(!first)throw Error('未核對指定 GPT 回應與第一則新增玩家相鄰');
     const hash=await historyBranchDigest(first.anchor);historyGuard(b);
+    historyGuard(b);
     if(hash!==b.branch.hash)throw Error('分支錨點雜湊不符');
     b.rows=first.rows;b.windows++;rememberTail();
     b.branchProof={anchorId:anchor.id,anchorSha256:b.branch.hash,observedSha256:hash,firstNewId:first.firstNewId,verified:true,verifiedAt:new Date().toISOString()};
@@ -2969,7 +2977,7 @@
   async function historyRun(b){
     let status='failed',error=null;
     try{
-      await historyLocateHost(b);
+      await historyLocateHost(b);historyGuard(b);
       if(b.branch?.direction==='down'){await historyBranchDown(b);status='completed'}else{
       if(b.resume?.currentPosition){
         b.rows=b.resumeRows.slice();b.resume.minIndex=0;
@@ -3191,6 +3199,8 @@
       }
       }
     }catch(e){error=String(e.message||e);status=b.cancelled?'cancelled':'failed'}
+    try{
+    if(b.stopRequested){await historyFinishStopped(b);return}
     if(status==='completed'&&b.rows.some(r=>r.identityBasis==='unresolved-native-composite')){status='failed';error='已抵達觀測頂端；複合原生訊息分界待核對，非正式完整聊天'}
     const data=b.branch?historyScanPayload(b,status,error):historyPayload(b,status,error);
     // Counts are only a local lower bound; never mix previous rows into this run.
@@ -3199,11 +3209,82 @@
     if(!b.branch&&!b.sample&&!b.isolated&&data.status!=='completed'&&(!b.resume||data.count>b.resume.baseCount)){
       try{await historyRemember(b,data)}catch(_){}
     }
+    if(b.stopRequested){await historyFinishStopped(b);return}
     b.download.onclick=event=>{event?.preventDefault();event?.stopPropagation();try{historyStatus(b,'已觸發下載：'+historyDownload(data))}catch(e){historyStatus(b,'下載觸發失敗，請重試：'+e.message)}};
     b.download.hidden=false;b.stop.textContent='✕ 關閉面板';b.stop.setAttribute?.('aria-label','關閉面板');b.stop.onclick=event=>{event?.preventDefault();event?.stopPropagation();b.pane.remove()};
     if(state.bulk===b)state.bulk=null;
     try{historyStatus(b,(data.status==='completed'?(b.branch?'已核對指定 GPT 分支頂端；':b.sample?b.sample+'則測試完成（'+data.count+' 則）；':'已抵達頂端；'):'未完成：'+data.error+'；')+'已觸發下載 '+historyDownload(data)+'\n請核對下載檔，亦可按重新下載。'+(b.memoryStatus?'\n'+b.memoryStatus:''))}
     catch(e){historyStatus(b,'保全已留在本頁，下載觸發失敗：'+e.message)}
+    }catch(e){b.stopRequested=true;b.cancelled=true;b.stopFailure='終態保全異常：'+String(e.message||e);await historyFinishStopped(b)}
+  }
+
+  // Stop/export is independent of the scan coroutine. Only rows already in
+  // the accepted archive are captured; an unfinished live read is never merged.
+  function historyStopFeedback(b,msg){
+    const count=b.stopArchive?.count??(b.isolated?b.isolated.originalRows.length:b.rows.length);
+    if(b.action)b.action.textContent='目前動作：'+msg;
+    if(b.summary)b.summary.textContent='已核對 '+count+' 則｜'+(b.runnerExited?'掃描已退出':'停止要求已收到，等待掃描退出');
+    if(b.info)b.info.textContent=msg+'\n'+count+' 則；不會上傳 Firebase。'+(b.memoryStatus?'\n'+b.memoryStatus:'');
+  }
+  function historyRenderStopped(b){
+    const archive=b.stopArchive;
+    b.download.hidden=false;
+    b.download.textContent=archive?'重新下載保全 JSON':'重試建立保全 JSON';
+    b.download.onclick=event=>{event?.preventDefault();event?.stopPropagation();historySaveStopped(b,true)};
+    if(b.runnerExited&&archive&&archive.triggered){
+      b.stop.textContent='✕ 關閉面板';
+      b.stop.setAttribute?.('aria-label','關閉面板');
+      b.stop.onclick=event=>{event?.preventDefault();event?.stopPropagation();b.pane.remove()};
+    }else{
+      b.stop.textContent=b.runnerExited?'保全待確認':'停止要求已收到';
+      b.stop.setAttribute?.('aria-label',b.stop.textContent);
+    }
+    const exit=b.runnerExited?'掃描已退出。':'掃描正在退出；不必等待即可核對下載。';
+    if(!archive){historyStopFeedback(b,'保全建立失敗：'+(b.stopArchiveError||'未知錯誤')+'。請勿刷新，按重試建立保全。'+exit);return}
+    if(archive.downloadError||!archive.triggered){historyStopFeedback(b,'保全已留在本頁，最新下載觸發失敗：'+(archive.downloadError||'未知錯誤')+'。'+(archive.triggered?'先前曾觸發下載，請核對紀錄。':'請勿刷新。')+'可按重新下載。'+exit);return}
+    historyStopFeedback(b,'已觸發下載（未完成保全）：'+archive.prepared.filename+'。'+(archive.validationError?'輸出核對失敗，僅供鑑識。':'')+exit+'請核對 Chrome 下載紀錄；不代表檔案已寫入磁碟。');
+  }
+  function historySaveStopped(b,retry=false){
+    if(!b.stopArchive){
+      try{
+        const status=b.stopFailure?'failed':'cancelled',error=b.stopFailure||'使用者停止；立即保全已核對資料，未完成掃描';
+        const data=b.branch?historyScanPayload(b,status,error):historyPayload(b,status,error);
+        data.evidence.stopRequest={requestedAt:b.stopRequestedAt||null,independentOfScanLoop:true,acceptedRowsOnly:true};
+        let validationError=null;
+        try{(b.branch?pc.validateBranch:data.format===pc.COMPOSITE?pc.validateCompositeEvidence:b.sample?pc.validateSample:pc.validateRaw)(data)}
+        catch(e){validationError=String(e.message||e);data.status='failed';data.error='輸出核對失敗：'+validationError;data.evidence.continuity=false;if(b.branch)data.evidence.branchBoundary.verified=false}
+        // Serialize just once. The immutable Blob, rather than mutable live
+        // rows/diagnostics, backs every manual retry and any local memory save.
+        const prepared=historyPrepareDownload(data);
+        b.stopArchive={prepared,count:data.count,validationError,attempted:false,triggered:false};
+        b.stopArchiveError=null;
+      }catch(e){b.stopArchiveError=String(e.message||e)}
+    }
+    const archive=b.stopArchive;
+    if(archive&&(!archive.attempted||retry)){
+      archive.attempted=true;
+      try{historyTriggerDownload(archive.prepared);archive.triggered=true;archive.downloadError=null}
+      catch(e){archive.downloadError=String(e.message||e)}
+    }
+    historyRenderStopped(b);
+  }
+  function historyRequestStop(b,event){
+    event?.preventDefault();event?.stopPropagation();
+    if(b.stopRequested)return;
+    b.stopRequested=true;b.cancelled=true;b.stopRequestedAt=new Date().toISOString();
+    historyStopFeedback(b,'已收到停止指令，立即建立未完成保全');
+    historySaveStopped(b);
+  }
+  async function historyFinishStopped(b){
+    if(!b.stopArchive)historySaveStopped(b);
+    const archive=b.stopArchive;
+    // Local resume memory is optional and happens only after the export is
+    // accessible. Keep the lock while the old coroutine/storage is active.
+    if(archive&&!archive.validationError&&!b.branch&&!b.sample&&!b.isolated&&(!b.resume||archive.count>b.resume.baseCount)){
+      try{await historyRemember(b,JSON.parse(await archive.prepared.blob.text()))}catch(e){b.memoryStatus='本機保全記憶未更新：'+String(e.message||e)}
+    }
+    b.runnerExited=true;if(state.bulk===b)state.bulk=null;
+    historyRenderStopped(b);
   }
 
   // Navigation only: no historyRead, archive rows, checkpoint, download or upload.
@@ -3299,7 +3380,7 @@
     const title=pc.chatTitle(requestedTitle||document.title);
     if(!title||title==='ChatGPT'||title.length>512)return {ok:false,error:'請輸入聊天的實際名稱'};
     const host=historyHost()||bulkHost();if(!host)return {ok:false,error:'找不到聊天捲動容器'};
-    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,bottomEscapeAttempts:0,bottomEscapeDepartures:0,stagedReturns:0,stagedReturnLandings:0,stagedReturnArrivals:0,stagedEnvelopeLandings:0,stagedReturnBackoffs:0,recoveryCycles:0,crossWindowCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
+    const b={mode:'predecessor-history',knownMinimum:pc.minimumCount(minimum),hostProof:null,sample:pc.sampleLimit(sample),attachmentChanges:[],attachmentChangeKeys:new Set(),attachmentChangeOverflow:0,overlapIssues:[],scrollTrace:[],stabilityIssues:[],foldObservations:new Map(),foldObservationOverflow:0,scrollStats:{attempts:0,loadingPolls:0,loadingNudges:0,overlapRetries:0,noGrowthWindows:0,scrollResets:0,bottomEscapeAttempts:0,bottomEscapeDepartures:0,stagedReturns:0,stagedReturnLandings:0,stagedReturnArrivals:0,stagedEnvelopeLandings:0,stagedReturnBackoffs:0,recoveryCycles:0,crossWindowCycles:0,cycleHolds:0,recoveryPlanRetries:0,frontierRestores:0,breakthroughAttempts:0,breakthroughSuccesses:0,rejoinAttempts:0,rejoinSuccesses:0,expansionClicks:0,expansionRestores:0,fingerprintChanges:0},chat:path(),title,host,rows:[],runId:crypto.randomUUID(),startedAt:new Date().toISOString(),scannerVersion:chrome.runtime.getManifest().version,bottomReached:false,topReached:false,bottomStableMs:0,topStableMs:0,windows:0,cancelled:false};
     if(branch){
       try{
         if(sample||checkpoint||currentPosition||branch.chat!==b.chat)throw Error('分支模式不使用完整聊天保全');
@@ -3350,7 +3431,7 @@
       const h=document.createElement('strong');h.textContent='V'+chrome.runtime.getManifest().version+'｜'+(b.branch?'分支聊天・指定 GPT 頂端・'+(b.branch.direction==='down'?'向下':'向上'):b.sample?'最近'+b.sample+'則・測試掃描':b.resume?(b.resume.currentPosition?'完整聊天・目前位置續掃':'完整聊天・保全續掃'):'完整聊天・從底端向上掃描');
       b.action=document.createElement('div');b.action.setAttribute('role','status');b.action.style.cssText='padding:8px;margin:5px 0;background:#111827;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere';b.action.textContent='目前動作：準備掃描';
       b.info=document.createElement('pre');b.info.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0';
-      b.stop=historyPanelButton(document.createElement('button'),'#a13232');b.stop.textContent='停止並保全';b.stop.setAttribute('aria-label','停止並保全掃描');b.stop.onclick=()=>{b.cancelled=true;b.action.textContent='目前動作：停止並保全中'};
+      b.stop=historyPanelButton(document.createElement('button'),'#a13232');b.stop.textContent='停止並保全';b.stop.setAttribute('aria-label','停止並保全掃描');b.stop.onclick=event=>historyRequestStop(b,event);
       b.stop.id='ga-predecessor-history-close';
       b.download=historyPanelButton(document.createElement('button'),'#166b65');b.download.id='ga-predecessor-history-redownload';b.download.textContent='重新下載 JSON';b.download.style.cssText+=';width:100%!important';b.download.hidden=true;
       const header=document.createElement('div');header.style.cssText='position:sticky;top:0;z-index:3;background:#202840;padding:4px 0 8px;display:flex;flex-wrap:wrap;align-items:center;gap:8px';
@@ -3363,7 +3444,7 @@
       pane.gaShowHistoryDetails=b.showPanelDetails;
       const wheel=event=>historyObserveWheel(b,event);
       document.addEventListener('wheel',wheel,{capture:true,passive:true});
-      historyRun(b).finally(()=>document.removeEventListener('wheel',wheel,true));return {ok:true,title};
+      historyRun(b).catch(e=>{b.stopRequested=true;b.cancelled=true;b.stopFailure='未捕捉終態異常：'+String(e.message||e);b.runnerExited=true;if(state.bulk===b)state.bulk=null;historySaveStopped(b)}).finally(()=>document.removeEventListener('wheel',wheel,true));return {ok:true,title};
     }catch(e){if(state.bulk===b)state.bulk=null;return {ok:false,error:String(e.message||e)}}
   }
 
