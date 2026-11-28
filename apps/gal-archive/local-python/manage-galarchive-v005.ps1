@@ -27,21 +27,58 @@ function Assert-OrdinaryPath([string]$Path) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Unexpected reparse point in local manager state.' }
     }
 }
+function Assert-StateAccess {
+    Assert-OrdinaryPath $homeDir
+    if (-not (Test-Path -LiteralPath $homeDir -PathType Container)) { throw 'Manager is not installed. Run Install first.' }
+    # Read the DACL only. Never try to set owner, group or audit information
+    # from the limited scheduled-task process.
+    $acl = [IO.Directory]::GetAccessControl($homeDir,[Security.AccessControl.AccessControlSections]::Access)
+    if (-not $acl.AreAccessRulesProtected) { throw 'Manager state DACL is not protected; repair locally before startup.' }
+    $rules = @($acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
+    $allowed = @($sid,'S-1-5-18')
+    foreach ($rule in $rules) {
+        if ($rule.IdentityReference.Value -notin $allowed -or $rule.AccessControlType -ne 'Allow') {
+            throw 'Unexpected manager state ACL; refusing to use credentials.'
+        }
+    }
+    foreach ($id in $allowed) {
+        $full = @($rules | Where-Object {
+            $_.IdentityReference.Value -eq $id -and
+            ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq [Security.AccessControl.FileSystemRights]::FullControl -and
+            ($_.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]::ContainerInherit) -and
+            ($_.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]::ObjectInherit) -and
+            $_.PropagationFlags -eq [Security.AccessControl.PropagationFlags]::None
+        })
+        if ($full.Count -eq 0) { throw 'Required manager state access rule missing.' }
+    }
+}
 function Init-State {
     Assert-OrdinaryPath $homeDir
-    [void](New-Item -ItemType Directory -Path $homeDir -Force)
+    if (Test-Path -LiteralPath $homeDir) {
+        # Reinstall and runtime must not reapply security to an existing
+        # protected folder. In particular Set-Acl can require SeRestorePrivilege.
+        Assert-StateAccess
+        return
+    }
+    [void](New-Item -ItemType Directory -Path $homeDir)
     Assert-OrdinaryPath $homeDir
-    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl = [IO.Directory]::GetAccessControl($homeDir,[Security.AccessControl.AccessControlSections]::Access)
     $acl.SetAccessRuleProtection($true,$false)
-    $identity = New-Object Security.Principal.SecurityIdentifier($sid)
-    $acl.SetOwner($identity)
+    foreach ($rule in @($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]))) {
+        $acl.RemoveAccessRuleSpecific($rule)
+    }
     foreach ($id in @($sid,'S-1-5-18')) {
         $rule = New-Object Security.AccessControl.FileSystemAccessRule(
             (New-Object Security.Principal.SecurityIdentifier($id)),
             'FullControl','ContainerInherit,ObjectInherit','None','Allow')
         [void]$acl.AddAccessRule($rule)
     }
-    Set-Acl -LiteralPath $homeDir -AclObject $acl
+    # Only the modified access-control section is written, not ownership.
+    [IO.Directory]::SetAccessControl($homeDir,$acl)
+    Assert-StateAccess
+}
+function Safe-Error($Record) {
+    return ('type='+$Record.Exception.GetType().FullName+'; line='+$Record.InvocationInfo.ScriptLineNumber)
 }
 function Write-State([string]$Name,$Value) {
     $path = Join-Path $homeDir $Name
@@ -251,7 +288,7 @@ function Set-Status([string]$Phase,[string]$Detail,[int]$Failures=0) {
 }
 function Run-Manager {
     Assert-Files
-    Init-State
+    Assert-StateAccess
     $lock = Get-Lock
     if ($null -eq $lock) { Write-Host 'Manager already running.'; return }
     $script:instance = [guid]::NewGuid().ToString()
@@ -327,7 +364,7 @@ function Run-Manager {
                 }
             } catch {
                 $failures++
-                Set-Status 'restarting' 'Owned child failed; Task Scheduler will retry (up to 3 times, 1 minute apart)' $failures
+                Set-Status 'restarting' ('Owned child failed; Task Scheduler retry; '+(Safe-Error $_)) $failures
                 throw
             } finally {
                 # The job closes on supervisor exit; no unrelated processes are killed.
@@ -343,7 +380,7 @@ function Run-Manager {
         }
         Set-Status 'stopped' 'Stopped by user; login autostart remains configured' $failures
     } catch {
-        if ($failures -eq 0) { Set-Status 'error' 'Configuration or manager failure; use Status and recheck setup' $failures }
+        if ($failures -eq 0) { Set-Status 'error' ('Configuration or manager failure; '+(Safe-Error $_)) $failures }
         throw 'GalArchive manager failed. No credentials included in this error.'
     } finally {
         foreach ($n in $old.Keys) { [Environment]::SetEnvironmentVariable($n,$old[$n],'Process') }
@@ -355,6 +392,11 @@ function Self-Test {
     $script:homeDir = Join-Path ([IO.Path]::GetTempPath()) ('galarchive-manager-test-'+[guid]::NewGuid().ToString('N'))
     try {
         Init-State
+        $before = [IO.Directory]::GetAccessControl($homeDir,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+        Init-State
+        Assert-StateAccess
+        $after = [IO.Directory]::GetAccessControl($homeDir,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+        if ($before -ne $after) { throw 'Existing state ACL unexpectedly changed' }
         $s = ConvertTo-SecureString 'synthetic-secret' -AsPlainText -Force
         $e = ConvertFrom-SecureString $s
         if ($e -match 'synthetic-secret') { throw 'DPAPI plaintext leak' }
@@ -419,9 +461,9 @@ try {
         'Status' {
             $s=Read-State $statusName
             if (Test-Owner $s) { $s | Format-List | Out-Host }
-            else { Write-Host 'Managed service is not running (or status is stale).'; if (-not (Test-PortsFree)) { Write-Host 'Another tunnel or listener exists; no process was stopped.' } }
+            else { Write-Host 'Managed service is not running (or status is stale).'; if ($null -ne $s) { Write-Host 'Last recorded status (not a live process):'; $s | Format-List | Out-Host }; if (-not (Test-PortsFree)) { Write-Host 'Another tunnel or listener exists; no process was stopped.' } }
             $task=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-            if ($null -ne $task) { Write-Host ('Scheduled task: '+$task.State+'; login triggers: '+@($task.Triggers).Count) }
+            if ($null -ne $task) { Write-Host ('Scheduled task: '+$task.State+'; login triggers: '+@($task.Triggers).Count); $info=Get-ScheduledTaskInfo -TaskName $taskName; Write-Host ('Last task result: '+$info.LastTaskResult+'; last run: '+$info.LastRunTime) }
         }
         'Stop' {
             $s=Read-State $statusName
@@ -451,7 +493,7 @@ try {
         'SelfTest' { Self-Test }
     }
 } catch {
-    if ($Action -eq 'Run') { exit 1 }
+    if ($Action -eq 'Run') { [Console]::Error.WriteLine((Safe-Error $_)); exit 1 }
     Write-Error -ErrorAction Continue ('GalArchive manager: '+$_.Exception.Message)
     if (-not $NoPause) { [void](Read-Host 'Press Enter to close') }
     exit 1
