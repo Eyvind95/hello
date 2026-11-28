@@ -2166,6 +2166,40 @@
     const allowed=new Set(rows.filter(r=>r.role==='assistant'&&r.text===''&&r.nonTextOmitted===true).map(r=>r.id));
     return [...(b.generatedImageAssets?.values()||[])].filter(x=>allowed.has(x.messageId));
   }
+  // Legacy locators can point to an ancestor of two already collected
+  // native replies. Only suppress this redundant locator for the proven
+  // split-image activity, and only when no additional content is present.
+  function historySplitLegacyCovered(el,owner,role,matching,group){
+    if(role!=='assistant'||matching.length!==2||matching.some(x=>x.owner!==owner))return false;
+    const ai=group.filter(x=>x.row.role==='assistant'),users=group.filter(x=>x.row.role==='user');
+    if(ai.length!==2||users.length!==1||ai.some(x=>x.row.identityBasis!=='native-dom-id'||!x.body||!matching.some(m=>m.el===x.el)))return false;
+    const image=ai.find(x=>x.generatedImage),reply=ai.find(x=>!x.generatedImage);
+    if(!image||!reply||!reply.row.text.trim()||image.row.id===reply.row.id||!el.contains(reply.body))return false;
+    const id=image.body.getAttribute('data-response-body'),proof=historyGeneratedImageProof(image.body,owner);
+    if(!proof||proof.id!==image.row.id||!historySplitImageRole(image.body,owner,id))return false;
+    const native=reply.body.getAttribute('data-response-body');
+    if(reply.row.id!=='assistant|message:'+native||historyResponseIdentity(reply.body,owner)!==native)return false;
+    const activity=image.body.parentElement.parentElement,userBlock=activity.children[0];
+    const bubbles=[...userBlock.querySelectorAll('[data-user-message-bubble="true"]')];
+    if(bubbles.length!==1||!(users[0].el.contains(bubbles[0])||bubbles[0].contains(users[0].el)))return false;
+    // Do not discard additional visible text or attachments outside the
+    // verified bodies. Ordinary hidden labels and known UI controls are not
+    // archive messages. Traverse display:contents wrappers as well.
+    const covered=[userBlock,image.body,reply.body];
+    const walk=n=>{
+      if(covered.includes(n))return true;
+      if(n.nodeType===8)return true;
+      if(n.nodeType===3){
+        const value=String(n.nodeValue||'').trim(),p=n.parentElement;
+        return !value||!p||!!p.closest(HISTORY_SKIP)||isUserDescendant(p)||!historyVisible(p)&&getComputedStyle(p).display!=='contents';
+      }
+      if(n.nodeType!==1)return false;
+      if(n.closest(HISTORY_SKIP))return true;
+      if(historyVisible(n)&&n.matches(HISTORY_ATTACHMENT))return false;
+      return [...n.childNodes].every(walk);
+    };
+    return walk(owner);
+  }
   function historyRead(host,onFold=()=>{},onEntries=()=>{},allowComposite=false){
     const root=historyRoot(host),entries=[],owners=new Map(),explicit=[];
     const add=(role,el,body,identityHint,fallback=false)=>{
@@ -2238,7 +2272,10 @@
       const role=isUserDescendant(el)?'user':'assistant',owner=historyOwner(el);
       if(!root.contains(el)||!historyVisible(el))continue;
       const matching=explicit.filter(x=>x.role===role&&(x.el.contains(el)||el.contains(x.el)||x.owner===owner));
-      if(matching.length){if(matching.length>1&&!matching.some(x=>x.el.contains(el)))throw Error('回合內多個同角色來源無法唯一核對');continue}
+      if(matching.length){
+        if(matching.length>1&&!matching.some(x=>x.el.contains(el))&&!historySplitLegacyCovered(el,owner,role,matching,owners.get(owner)||[]))throw historyIssue('回合內多個同角色來源無法唯一核對',owner,{candidateTag:el.tagName,candidateIsOwner:el===owner,candidateTextLength:String(el.innerText||'').length,matchedSources:matching.map(x=>({role:x.role,bodyId:x.el.getAttribute('data-response-body'),containsCandidate:x.el.contains(el),containedByCandidate:el.contains(x.el)}))});
+        continue;
+      }
       const body=role==='user'?(el.querySelector(USER_BUBBLE_SELECTOR)||el):el;
       add(role,el,body,null,role==='assistant'&&assistantFallbackTexts.has(el));
     }
