@@ -224,7 +224,10 @@ public sealed class GalArchiveOwnedChild : IDisposable {
     static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
     [DllImport("kernel32.dll",SetLastError=true)]
     static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    static extern bool GetExitCodeProcess(IntPtr process,out uint code);
     private IntPtr job, process;
+    public uint ExitCode {get {uint code; Check(GetExitCodeProcess(process,out code),"Get exit code"); return code;}}
     public int Id {get;private set;}
     public bool HasExited {
         get {
@@ -430,30 +433,27 @@ function Self-Test {
         if (Test-Owner @{pid=$PID;startTicks='0'}) { throw 'PID reuse guard failed' }
         $pidFile = Join-Path $script:homeDir 'descendant.pid'
         $errorFile = Join-Path $script:homeDir 'test-error.txt'
-        $childFile = Join-Path $script:homeDir 'child.ps1'
+        $childFile = Join-Path $script:homeDir 'child.py'
+        $testPython = if (Test-Path -LiteralPath $python -PathType Leaf) { $python } else { (Get-Command python.exe -ErrorAction Stop).Source }
         $fixture = @'
-$ErrorActionPreference = 'Stop'
-try {
-    $info = New-Object Diagnostics.ProcessStartInfo
-    $info.FileName = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $info.Arguments = '-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 60"'
-    $info.UseShellExecute = $false
-    $info.CreateNoWindow = $true
-    $p = [Diagnostics.Process]::Start($info)
-    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'descendant.pid'),$p.Id.ToString())
-    Start-Sleep -Seconds 60
-} catch {
-    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'test-error.txt'),$_.Exception.Message)
-    exit 1
-}
+from pathlib import Path
+import subprocess, sys, time, traceback
+base = Path(__file__).parent
+try:
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    (base / "descendant.pid").write_text(str(p.pid))
+    time.sleep(60)
+except Exception:
+    (base / "test-error.txt").write_text(traceback.format_exc())
+    raise
 '@
         [IO.File]::WriteAllText($childFile,$fixture)
-        $p=Start-Owned $powerShell ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$childFile+'"')
+        $p=Start-Owned $testPython ('"'+$childFile+'"')
         $desc=$null
         try {
             for ($i=0;$i -lt 100 -and -not (Test-Path -LiteralPath $pidFile) -and -not $p.HasExited;$i++) { Start-Sleep -Milliseconds 200 }
             if (Test-Path -LiteralPath $errorFile) { throw ('Synthetic child: '+(Get-Content -LiteralPath $errorFile -Raw)) }
-            if ($p.HasExited -or -not (Test-Path -LiteralPath $pidFile)) { throw ('Owned child/descendant start failed, parent exited='+$p.HasExited) }
+            if ($p.HasExited -or -not (Test-Path -LiteralPath $pidFile)) { throw ('Owned child/descendant start failed, exit='+$p.ExitCode) }
             $desc=Get-Process -Id ([int](Get-Content -LiteralPath $pidFile -Raw)) -ErrorAction Stop
         } finally { Stop-Owned $p }
         if ($null -eq $desc -or -not $desc.WaitForExit(10000)) { throw 'Owned descendant was not terminated by job close' }
