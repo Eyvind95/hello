@@ -1760,7 +1760,7 @@
     if(left<0||at<=left||right<=at||children.slice(left+1,at).some(n=>!whitespace(n))||children.slice(at+1,right).some(n=>!whitespace(n)))return null;
     return {before,after,label,value};
   }
-  function historyAssistantCodeText(body,owner,id,raw,onBlank=()=>{}){
+  function historyAssistantCodeText(body,owner,id,raw,onBlank=()=>{},onViewer=()=>{}){
     const codes=[...body.querySelectorAll('code')].filter(historyVisible);
     let text=raw;
     // Match an entire line-delimited semantic anchor, not an incidental
@@ -1830,18 +1830,44 @@
           wrapper=child;
         }
         if(wrapper.getAttribute('data-markdown-copy')!=='code-block'||!historyVisible(wrapper))return null;
-        const header=wrapper.children[0],source=wrapper.children[1],code=source?.children[0];
+        const header=wrapper.children[0],source=wrapper.children[1];
         if(header?.getAttribute('data-markdown-copy')!=='exclude'||header.getAttribute('contenteditable')!=='false'||
-           source?.getAttribute('data-code-block-source')!=='true'||code?.tagName!=='CODE'||
-           !only(wrapper,[header,source])||!only(source,[code])||wrapper.querySelectorAll('code').length!==1||
-           !codes.includes(code)||header.querySelectorAll('code,pre,p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table').length)return null;
+           !source||!only(wrapper,[header,source])||wrapper.querySelectorAll('code').length!==1||
+           header.querySelectorAll('code,pre,p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table').length)return null;
+        let code=source.children[0],viewerPre=null;
+        if(source.getAttribute('data-code-block-source')==='true'){
+          if(code?.tagName!=='CODE'||!only(source,[code]))return null;
+        }else{
+          // TEA-BRANCH-007: hydrated JavaScript viewer of the same native
+          // block. Exact copy-source attribute and nested PRE/CODE path;
+          // the sole optional sibling is an empty, aria-hidden scroll button.
+          // Do not treat an arbitrary PRE or a label in prose as UI.
+          code=wrapper.querySelectorAll('code')[0];
+          const pre=code?.parentElement;
+          if(pre?.tagName!=='PRE'||!only(pre,[code])||group.getAttribute('data-chatgpt-copy-code')!==String(code.textContent||'')||
+             String(header.textContent||'').trim()!=='JavaScript'||String(code.innerText||'')!==String(code.textContent||'')||
+             String(pre.innerText||'')!==String(code.textContent||'')||!historyVisible(pre))return null;
+          let n=pre;
+          for(;n!==source;n=n.parentElement){
+            const parent=n.parentElement;
+            if(!parent||parent.tagName!=='DIV')return null;
+            if(!only(parent,[n])){
+              const children=[...parent.childNodes].filter(x=>!whitespace(x));
+              const button=children[1];
+              if(parent!==source||children.length!==2||children[0]!==n||button?.tagName!=='BUTTON'||
+                 button.getAttribute('aria-hidden')!=='true'||! /^(捲動至底部|Scroll to bottom)$/i.test(button.getAttribute('aria-label')||'')||String(button.textContent||'').trim())return null;
+            }
+          }
+          viewerPre=pre;
+        }
+        if(!codes.includes(code))return null;
         const label=String(header.textContent||'').trim(),value=String(code.textContent||'');
         // Only labels actually verified in native source evidence.
         if(!/^(純文字|程式碼|JavaScript)$/.test(label)||!value.trim()||
            (code.innerText&&code.innerText!==value))return null;
         const copies=[...header.querySelectorAll('button,[role="button"]')].filter(n=>/複製|copy/i.test([n.getAttribute('aria-label'),n.getAttribute('title'),n.getAttribute('data-testid')].filter(Boolean).join(' ')));
         if(copies.length!==1)return null;
-        return {group,code,label,value};
+        return {group,code,label,value,viewerPre};
       };
       const children=[...root.children],nodes=[...root.childNodes];
       const gapMatches=(gap,run)=>{
@@ -1880,8 +1906,12 @@
         }
         if(matches.length!==1)continue;
         const {start,end}=matches[0];
-        text=text.slice(0,start)+'\n\n'+run.map(p=>p.value).join('\n\n')+'\n\n'+text.slice(end);
-        for(const p of run)nativeHandled.add(p.code);
+        const originalGap=text.slice(start,end),normalizedGap='\n\n'+run.map(p=>p.value).join('\n\n')+'\n\n';
+        text=text.slice(0,start)+normalizedGap+text.slice(end);
+        for(const p of run){
+          nativeHandled.add(p.code);
+          if(p.viewerPre)onViewer({pre:p.viewerPre,proof:{messageId:id,kind:'native-javascript-viewer-projection',label:p.label,codeText:p.value,previousGap:originalGap,normalizedGap,removedStructure:{tag:'pre',text:p.value},copySourceVerified:true}});
+        }
       }
     }
     const evidence=[];
@@ -2082,15 +2112,17 @@
       if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
       const stable=composite?pc.compositeId(composite.compositeNative.turnId,composite.compositeNative.ids):role+'|'+(native?'message:'+native:'turn:'+turn);
       let text=historyReadText(body,identityHint?body:owner,stable,onFold);
-      const blankCodeNormalizations=[];
-      if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text,x=>{if(blankCodeNormalizations.length<8)blankCodeNormalizations.push(x)});
-      const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(historyVisible).map(n=>({tag:n.tagName.toLowerCase(),text:role==='assistant'?historyAssistantStructureText(n,body):n.innerText||n.textContent||''}));
+      const blankCodeNormalizations=[],viewerNormalizations=[],viewerPreNodes=new Set();
+      if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text,x=>{if(blankCodeNormalizations.length<8)blankCodeNormalizations.push(x)},x=>{
+        viewerPreNodes.add(x.pre);viewerNormalizations.push(x.proof);
+      });
+      const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(n=>historyVisible(n)&&!viewerPreNodes.has(n)).map(n=>({tag:n.tagName.toLowerCase(),text:role==='assistant'?historyAssistantStructureText(n,body):n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
       const row={id:stable,role,text,identityBasis:composite?'unresolved-native-composite':native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments,...(composite||{})};
       const sameOwner=owners.get(owner)||[];
       if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
-      const item={row,el,owner,body,blankCodeNormalizations};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
+      const item={row,el,owner,body,blankCodeNormalizations,viewerNormalizations};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
     };
     // Read the entire marked response before the legacy selector can pick
     // a nested PDF citation. Keep native message identity, not the user turn ID.
@@ -2385,7 +2417,15 @@
               const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost,policy):null;
               if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);const result=await recoverWait(recovered);target=result.target;targetHeight=result.height;continue}
               if(entries?.some(x=>x.generatedImage)){await historyCaptureGeneratedImages(b,entries);historyGuard(b)}
-              if(b.branch?.direction==='down')b.branchDownEntries=entries;
+              if(b.branch?.direction==='down'){
+                b.branchDownEntries=entries;
+                const seen=b.branchViewerProofKeys||(b.branchViewerProofKeys=new Set()),proofs=b.branchViewerProofs||(b.branchViewerProofs=[]);
+                for(const entry of entries||[])for(const proof of entry.viewerNormalizations||[]){
+                  const key=JSON.stringify(proof);if(seen.has(key))continue;
+                  if(proofs.length>=128||key.length>100000){b.branchViewerProofOverflow=(b.branchViewerProofOverflow||0)+1;continue}
+                  seen.add(key);proofs.push(proof);
+                }
+              }
               return rows;
             }
             if(last!==fingerprint){
@@ -2710,6 +2750,8 @@
     data.evidence.coverage='selected-assistant-boundary; no independent server manifest';
     data.evidence.branchReadRecovery=b.branchReadRecovery||[];
     if(b.branchDownProgress)data.evidence.branchDownProgress=b.branchDownProgress;
+    if(b.branchViewerProofs?.length){data.evidence.branchViewerProofs=b.branchViewerProofs;data.warnings.push('已核對原生 JavaScript 檢視器之複製來源及程式碼，僅正規化介面標籤與重複 PRE 容器；原始投影另存證據。')}
+    if(b.branchViewerProofOverflow)data.evidence.branchViewerProofOverflow=b.branchViewerProofOverflow;
     if(b.branchOverlapEvidence?.length)data.evidence.branchOverlapEvidence=b.branchOverlapEvidence;
     if(b.branchOverlapEvidenceOverflow)data.evidence.branchOverlapEvidenceOverflow=b.branchOverlapEvidenceOverflow;
     data.evidence.continuity=data.status==='completed'&&!!b.branchProof;
