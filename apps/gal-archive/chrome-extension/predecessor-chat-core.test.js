@@ -1127,6 +1127,27 @@ test('native quoted code UI label is repaired in text and structure, never seman
   const body=nativeRun(options);
   a.throws(()=>ctx.fix(body,{},'assistant|message:native-test',body.innerText),/正文與程式碼框不一致/);
  }
+ // TEA-BRANCH-008: captured native exclusive plain-text block shape.
+ function singleNative({projection='',wrongId=false,extraRoot=false,extraSource=false,extraCode=false,label='純文字',sourceMarker=true,copy=true,rendered=false}={}){
+  const value='A literal line\n\nAnother line  ';
+  const code=el('code',{},[el('span',{},[text(value),...(extraCode?[el('a',{},[text('link')])]:[])])],rendered?value:'');
+  const header=el('div',{'data-markdown-copy':'exclude',contenteditable:'false'},[el('div',{},[text(label)]),el('div',{},[el('button',{'aria-label':copy?'複製代碼':'other'},[])])]);
+  const source=el('div',sourceMarker?{'data-code-block-source':'true'}:{},[code,...(extraSource?[el('p',{},[text('other text')])]:[])]);
+  const group=el('div',{},[el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,source])]);
+  const root=el('div',{'data-markdown-text-style':'assistant-message'},[group,...(extraRoot?[el('p',{},[text('additional prose')])]:[])]);
+  const body=el('div',{'data-response-body':'native-test'},[el('div',{'data-chatgpt-selection-message-id':wrongId?'wrong':'native-test'},[root])],projection);
+  return {body,code,value};
+ }
+ const sample=singleNative();
+ for(const projection of ['', '純文字', sample.value, '純文字\n'+sample.value]){
+  const {body,code,value}=singleNative({projection,rendered:projection.includes(sample.value)}),proofs=[];
+  a.equal(ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},()=>{},x=>proofs.push(x)),value);
+  a.equal(ctx.structure(code,body),value);a.equal(proofs.length,1);a.equal(proofs[0].previousProjection,projection);a.equal(proofs[0].codeText,value);
+ }
+ for(const options of [{wrongId:true},{extraRoot:true},{extraSource:true},{extraCode:true},{label:'JavaScript'},{sourceMarker:false},{copy:false},{projection:'unaccounted prose'}]){
+  const {body}=singleNative(options),proofs=[];
+  a.throws(()=>ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},()=>{},x=>proofs.push(x)),/正文與程式碼框不一致/);a.equal(proofs.length,0);
+ }
  // TEA-BRANCH-007: independently observed hydrated JS viewer. Keep
  // the same code-only structure as native source, with a proof of PRE
  // removal, exact copy-source, and exact adjacent text projection.
