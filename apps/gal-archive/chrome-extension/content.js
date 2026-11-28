@@ -1885,7 +1885,13 @@
           text=p.value;nativeHandled.add(p.code);
         }
       }
+      // TEA-BRANCH-009: two adjacent native plain-text fallback blocks
+      // can hydrate with only one LF between them. Exact observed projection,
+      // not a general whitespace or overlap tolerance.
+      const adjacentPlainProjection=run=>run.length===2&&run.every(p=>!p.viewerPre&&p.label==='純文字')?
+        '\n\n'+run.map(p=>p.label+'\n'+p.value).join('\n')+'\n\n':null;
       const gapMatches=(gap,run)=>{
+        if(gap===adjacentPlainProjection(run))return true;
         // Exact projections only: omitted, label alone, code alone, or
         // label + code. Consume in DOM order, no arbitrary nonempty gap.
         if(gap==='\n\n')return true;
@@ -1922,6 +1928,8 @@
         if(matches.length!==1)continue;
         const {start,end}=matches[0];
         const originalGap=text.slice(start,end),normalizedGap='\n\n'+run.map(p=>p.value).join('\n\n')+'\n\n';
+        if(originalGap===adjacentPlainProjection(run))onSingle({messageId:id,kind:'native-adjacent-plain-code-projection',
+          previousProjection:originalGap,normalizedProjection:normalizedGap,codeTexts:run.map(p=>p.value),sourceMarkerVerified:true});
         text=text.slice(0,start)+normalizedGap+text.slice(end);
         for(const p of run){
           nativeHandled.add(p.code);
@@ -2780,7 +2788,7 @@
     if(b.branchDownProgress)data.evidence.branchDownProgress=b.branchDownProgress;
     if(b.branchViewerProofs?.length){data.evidence.branchViewerProofs=b.branchViewerProofs;data.warnings.push('已核對原生 JavaScript 檢視器之複製來源及程式碼，僅正規化介面標籤與重複 PRE 容器；原始投影另存證據。')}
     if(b.branchViewerProofOverflow)data.evidence.branchViewerProofOverflow=b.branchViewerProofOverflow;
-    if(b.branchSingleCodeProofs?.length){data.evidence.branchSingleCodeProofs=b.branchSingleCodeProofs;data.warnings.push('已核對原生 GPT 整則純文字程式碼框之唯一正文來源；保留原始投影及逐字來源證據，未驗證伺服器原始 Markdown。')}
+    if(b.branchSingleCodeProofs?.length){data.evidence.branchSingleCodeProofs=b.branchSingleCodeProofs;data.warnings.push('已核對原生 GPT 純文字程式碼框之獨立或相鄰來源投影；保留原始投影及逐字來源證據，未驗證伺服器原始 Markdown。')}
     if(b.branchSingleCodeProofOverflow)data.evidence.branchSingleCodeProofOverflow=b.branchSingleCodeProofOverflow;
     if(b.branchOverlapEvidence?.length)data.evidence.branchOverlapEvidence=b.branchOverlapEvidence;
     if(b.branchOverlapEvidenceOverflow)data.evidence.branchOverlapEvidenceOverflow=b.branchOverlapEvidenceOverflow;

@@ -1127,6 +1127,22 @@ test('native quoted code UI label is repaired in text and structure, never seman
   const body=nativeRun(options);
   a.throws(()=>ctx.fix(body,{},'assistant|message:native-test',body.innerText),/正文與程式碼框不一致/);
  }
+ // TEA-BRANCH-009: actual adjacent native fallback blocks render with
+ // one LF between labeled code bodies, versus fully omitted projection.
+ const pair=['first\nline','second\nline'];
+ const hydratedPair=pair.map(v=>'純文字\n'+v).join('\n');
+ const canonicalPair='intro\n\nbefore\n\n'+pair.join('\n\n')+'\n\nafter\n\nend';
+ for(const projection of ['',hydratedPair]){
+   const body=nativeRun({values:pair,projection,rendered:!!projection}),proofs=[];
+   a.equal(ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},()=>{},x=>proofs.push(x)),canonicalPair);
+   a.equal(proofs.length,projection?1:0);
+   if(projection){a.equal(proofs[0].kind,'native-adjacent-plain-code-projection');a.equal(proofs[0].previousProjection,'\n\n'+hydratedPair+'\n\n');a.equal(proofs[0].normalizedProjection,'\n\n'+pair.join('\n\n')+'\n\n')}
+ }
+ for(const options of [{wrongId:true},{extraNode:true},{copy:false},{sourceMarker:false},{repeatAnchors:true},{labels:['JavaScript','純文字'],projection:'JavaScript\n'+pair[0]+'\n純文字\n'+pair[1]},{projection:hydratedPair.replace('\n純文字','\nextra prose\n純文字')}]){
+   const body=nativeRun({values:pair,projection:hydratedPair,rendered:true,...options}),proofs=[];
+   try{a.notEqual(ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},()=>{},x=>proofs.push(x)),canonicalPair)}catch(e){a.match(e.message,/正文與程式碼框不一致/)}
+   a.equal(proofs.length,0);
+ }
  // TEA-BRANCH-008: captured native exclusive plain-text block shape.
  function singleNative({projection='',wrongId=false,extraRoot=false,extraSource=false,extraCode=false,label='純文字',sourceMarker=true,copy=true,rendered=false}={}){
   const value='A literal line\n\nAnother line  ';
