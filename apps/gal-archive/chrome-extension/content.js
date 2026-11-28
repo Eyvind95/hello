@@ -1912,6 +1912,25 @@
         let j=i+1,run=[first],p;
         while(j<children.length&&(p=proof(children[j]))){run.push(p);j++}
         const before=children[i-1],after=children[j];i=j-1;
+        // TEA-BRANCH-010: the captured response is exactly one prose
+        // paragraph followed by two native plain source blocks, with no
+        // right anchor. Prove the entire exclusive root and raw projection.
+        if(!after&&children.length===3&&before?.tagName==='P'&&historyVisible(before)&&
+           run.length===2&&codes.length===2&&only(root,[before,...run.map(p=>p.group)])&&
+           run.every(p=>{const span=p.code.children[0];return !p.viewerPre&&p.label==='純文字'&&span?.tagName==='SPAN'&&only(p.code,[span])&&
+             [...span.childNodes].every(n=>n.nodeType===3)&&String(span.textContent||'')===p.value})){
+          const a=before.innerText||'',values=run.map(p=>p.value);
+          const projections=['', '\n', '\n\n', '\n\n'+values.join('\n\n'),
+            '\n\n'+run.map(p=>p.label).join('\n\n'),
+            '\n\n'+run.map(p=>p.label+'\n'+p.value).join('\n\n'),
+            '\n\n'+run.map(p=>p.label+'\n'+p.value).join('\n')];
+          if(a.trim()&&text.startsWith(a)&&projections.includes(text.slice(a.length))){
+            const normalized=a+'\n\n'+values.join('\n\n');
+            onSingle({messageId:id,kind:'native-terminal-plain-code-run',previousProjection:text,normalizedProjection:normalized,codeTexts:values,sourceMarkerVerified:true,rootExclusive:true});
+            text=normalized;for(const p of run)nativeHandled.add(p.code);
+            continue;
+          }
+        }
         if(!block(before)||!block(after)||!historyVisible(before)||!historyVisible(after))continue;
         const expected=[before,...run.map(p=>p.group),after];
         const from=nodes.indexOf(before),to=nodes.indexOf(after);
@@ -3982,7 +4001,7 @@
     button.textContent='📚 前輩聊天掃描 V'+chrome.runtime.getManifest().version;
     button.setAttribute('aria-label','開啟前輩聊天掃描助手');
     button.title='獨立 ChatGPT 完整聊天 JSON 掃描（此安裝版本）';
-    button.style.cssText='position:fixed!important;left:50%!important;right:auto!important;transform:translateX(-50%)!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
+    button.style.cssText='position:fixed!important;left:auto!important;right:16px!important;transform:none!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
     button.onclick=()=>{
       const active=document.getElementById(HISTORY_PANEL);
       if(active){if(active.dataset?.gaExtensionId===chrome.runtime.id)active.gaShowHistoryDetails?.();else button.title='此頁已有其他版本掃描或保全面板，請勿同頁重複掃描';return}

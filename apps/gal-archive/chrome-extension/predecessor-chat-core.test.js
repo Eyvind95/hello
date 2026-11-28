@@ -1143,6 +1143,28 @@ test('native quoted code UI label is repaired in text and structure, never seman
    try{a.notEqual(ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},()=>{},x=>proofs.push(x)),canonicalPair)}catch(e){a.match(e.message,/正文與程式碼框不一致/)}
    a.equal(proofs.length,0);
  }
+ // TEA-BRANCH-010: exclusive native root with a paragraph and two terminal
+ // plain source groups. Synthetic text stands in for the private evidence.
+ function terminalPair({suffix='',wrongId=false,extraNode=false,extraRoot=false,extraCode=false,label='純文字',copy=true,sourceMarker=true}={}){
+  const aText='opening\nsecond line',values=['first\nline','second\nline'];
+  const groups=values.map(v=>{
+   const code=el('code',{},[el('span',{},[text(v),...(extraCode?[el('a',{},[text('extra')])]:[])])],'');
+   const header=el('div',{'data-markdown-copy':'exclude',contenteditable:'false'},[el('div',{},[text(label)]),el('button',{'aria-label':copy?'複製代碼':'other'},[])]);
+   return el('div',{},[el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,el('div',sourceMarker?{'data-code-block-source':'true'}:{},[code])])]);
+  });
+  const root=el('div',{'data-markdown-text-style':'assistant-message'},[el('p',{},[text(aText)]),groups[0],...(extraNode?[text('unaccounted')]:[]),groups[1],...(extraRoot?[el('p',{},[text('other')])]:[])]);
+  return {body:el('div',{'data-response-body':'native-test'},[el('div',{'data-chatgpt-selection-message-id':wrongId?'wrong':'native-test'},[root])],aText+suffix),expected:aText+'\n\n'+values.join('\n\n')};
+ }
+ for(const suffix of ['', '\n','\n\n','\n\n'+pair.join('\n\n'),'\n\n純文字\n\n純文字','\n\n'+hydratedPair,'\n\n'+pair.map(v=>'純文字\n'+v).join('\n\n')]){
+  const {body,expected}=terminalPair({suffix}),proofs=[];
+  a.equal(ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},()=>{},x=>proofs.push(x)),expected);
+  a.equal(proofs.length,1);a.equal(proofs[0].kind,'native-terminal-plain-code-run');a.equal(proofs[0].previousProjection,body.innerText);a.equal(proofs[0].normalizedProjection,expected);
+ }
+ for(const options of [{wrongId:true},{extraNode:true},{extraRoot:true},{extraCode:true},{label:'JavaScript'},{copy:false},{sourceMarker:false},{suffix:'\n\nunaccounted prose'}]){
+  const {body}=terminalPair(options),proofs=[];
+  a.throws(()=>ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},()=>{},x=>proofs.push(x)),/正文與程式碼框不一致/);
+  a.equal(proofs.length,0);
+ }
  // TEA-BRANCH-008: captured native exclusive plain-text block shape.
  function singleNative({projection='',wrongId=false,extraRoot=false,extraSource=false,extraCode=false,label='純文字',sourceMarker=true,copy=true,rendered=false}={}){
   const value='A literal line\n\nAnother line  ';
@@ -1597,3 +1619,5 @@ test('stop source wiring retains a cancellation guard and cannot overwrite stop 
  a.match(src,/if\(b\.cancelled\|\|e\.code==='HISTORY_RECOVERY_RETRY'\)throw e/);
  a.match(src,/historyRun\(b\)\.catch\(/);
 });
+
+test('predecessor scan launcher stays on the lower right',()=>{const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');const launcher=src.slice(src.indexOf('function historyLauncher()'));a.match(launcher,/button\.style\.cssText='position:fixed!important;left:auto!important;right:16px!important;transform:none!important;bottom:108px!important;/)});
