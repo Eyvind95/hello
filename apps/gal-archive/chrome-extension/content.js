@@ -4074,7 +4074,7 @@
     button.textContent='📚 前輩聊天掃描 V'+chrome.runtime.getManifest().version;
     button.setAttribute('aria-label','開啟前輩聊天掃描助手');
     button.title='獨立 ChatGPT 完整聊天 JSON 掃描（此安裝版本）';
-    button.style.cssText='position:fixed!important;left:auto!important;right:16px!important;transform:none!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
+    button.style.cssText='position:fixed!important;left:16px!important;right:auto!important;transform:none!important;bottom:108px!important;z-index:2147483645!important;padding:10px 14px!important;min-height:42px!important;border:1px solid #c0afff!important;border-radius:12px!important;background:#5145a4!important;color:white!important;font:600 14px system-ui,sans-serif!important;box-shadow:0 3px 16px #0005!important;cursor:pointer!important;touch-action:manipulation!important';
     button.onclick=()=>{
       const active=document.getElementById(HISTORY_PANEL);
       if(active){if(active.dataset?.gaExtensionId===chrome.runtime.id)active.gaShowHistoryDetails?.();else button.title='此頁已有其他版本掃描或保全面板，請勿同頁重複掃描';return}
