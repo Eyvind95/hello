@@ -1620,7 +1620,7 @@ test('stop source wiring retains a cancellation guard and cannot overwrite stop 
  a.match(src,/historyRun\(b\)\.catch\(/);
 });
 
-test('predecessor scan launcher stays on the lower right',()=>{const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');const launcher=src.slice(src.indexOf('function historyLauncher()'));a.match(launcher,/button\.style\.cssText='position:fixed!important;left:auto!important;right:16px!important;transform:none!important;bottom:108px!important;/)});
+test('predecessor scan launcher stays on the lower left',()=>{const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');const launcher=src.slice(src.indexOf('function historyLauncher()'));a.match(launcher,/button\.style\.cssText='position:fixed!important;left:16px!important;right:auto!important;transform:none!important;bottom:108px!important;/)});
 
 
 test('split native generated-image and following assistant text retain distinct IDs; incomplete or ambiguous activity rejected',()=>{
