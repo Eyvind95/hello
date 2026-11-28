@@ -1809,8 +1809,84 @@
       }
       return true;
     };
+    // TEA-BRANCH-006: a native source fallback can omit a whole run of
+    // consecutive fenced blocks from innerText. Reconstruct only an
+    // identity-bound, direct Markdown-root run with unique prose anchors.
+    // No arbitrary DOM flattening or guessed insertion.
+    const nativeHandled=new Set();
+    const only=(parent,wanted)=>{const actual=[...parent.childNodes].filter(n=>!whitespace(n));return actual.length===wanted.length&&actual.every((n,i)=>n===wanted[i])};
+    const nativeId=body.getAttribute?.('data-response-body');
+    const selection=body.children?.[0],root=selection?.children?.[0];
+    if(nativeId&&(id==='assistant|message:'+nativeId||id===nativeId)&&
+       selection?.tagName==='DIV'&&selection.getAttribute('data-chatgpt-selection-message-id')===nativeId&&
+       root?.tagName==='DIV'&&root.getAttribute('data-markdown-text-style')==='assistant-message'&&
+       only(body,[selection])&&only(selection,[root])&&historyVisible(root)&&historyVisible(selection)){
+      const proof=group=>{
+        if(group?.tagName!=='DIV'||!historyVisible(group))return null;
+        let wrapper=group;
+        while(wrapper.getAttribute('data-code-block')!=='true'){
+          const child=wrapper.children[0];
+          if(child?.tagName!=='DIV'||!only(wrapper,[child]))return null;
+          wrapper=child;
+        }
+        if(wrapper.getAttribute('data-markdown-copy')!=='code-block'||!historyVisible(wrapper))return null;
+        const header=wrapper.children[0],source=wrapper.children[1],code=source?.children[0];
+        if(header?.getAttribute('data-markdown-copy')!=='exclude'||header.getAttribute('contenteditable')!=='false'||
+           source?.getAttribute('data-code-block-source')!=='true'||code?.tagName!=='CODE'||
+           !only(wrapper,[header,source])||!only(source,[code])||wrapper.querySelectorAll('code').length!==1||
+           !codes.includes(code)||header.querySelectorAll('code,pre,p,blockquote,h1,h2,h3,h4,h5,h6,ul,ol,table').length)return null;
+        const label=String(header.textContent||'').trim(),value=String(code.textContent||'');
+        // Only labels actually verified in native source evidence.
+        if(!/^(純文字|程式碼|JavaScript)$/.test(label)||!value.trim()||
+           (code.innerText&&code.innerText!==value))return null;
+        const copies=[...header.querySelectorAll('button,[role="button"]')].filter(n=>/複製|copy/i.test([n.getAttribute('aria-label'),n.getAttribute('title'),n.getAttribute('data-testid')].filter(Boolean).join(' ')));
+        if(copies.length!==1)return null;
+        return {group,code,label,value};
+      };
+      const children=[...root.children],nodes=[...root.childNodes];
+      const gapMatches=(gap,run)=>{
+        // Exact projections only: omitted, label alone, code alone, or
+        // label + code. Consume in DOM order, no arbitrary nonempty gap.
+        if(gap==='\n\n')return true;
+        let offsets=new Set([0]);
+        for(const p of run){
+          const next=new Set(offsets);
+          for(const off of offsets)for(const v of [p.label,p.value,p.label+'\n'+p.value]){
+            const piece='\n\n'+v;
+            if(gap.startsWith(piece,off))next.add(off+piece.length);
+          }
+          offsets=next;
+          if(offsets.size>128)return false;
+        }
+        return offsets.has(gap.length-2)&&gap.endsWith('\n\n');
+      };
+      for(let i=0;i<children.length;i++){
+        const first=proof(children[i]);if(!first)continue;
+        let j=i+1,run=[first],p;
+        while(j<children.length&&(p=proof(children[j]))){run.push(p);j++}
+        const before=children[i-1],after=children[j];i=j-1;
+        if(!block(before)||!block(after)||!historyVisible(before)||!historyVisible(after))continue;
+        const expected=[before,...run.map(p=>p.group),after];
+        const from=nodes.indexOf(before),to=nodes.indexOf(after);
+        if(from<0||to<=from)continue;
+        const actual=nodes.slice(from,to+1).filter(n=>!whitespace(n));
+        if(actual.length!==expected.length||actual.some((n,k)=>n!==expected[k]))continue;
+        const a=before.innerText||'',b=after.innerText||'',left=positions(text,a),right=positions(text,b);
+        if(!a.trim()||!b.trim()||!left||!right)continue;
+        const matches=[];
+        for(const at of left)for(const end of right){
+          const start=at+a.length;
+          if(end>=start&&gapMatches(text.slice(start,end),run))matches.push({start,end});
+        }
+        if(matches.length!==1)continue;
+        const {start,end}=matches[0];
+        text=text.slice(0,start)+'\n\n'+run.map(p=>p.value).join('\n\n')+'\n\n'+text.slice(end);
+        for(const p of run)nativeHandled.add(p.code);
+      }
+    }
     const evidence=[];
     for(const code of codes){
+      if(nativeHandled.has(code))continue;
       const value=code.innerText||code.textContent||'';
       if(!value.trim()){
         const proof=historyNativeBlankCodeBlock(code,body,value);
