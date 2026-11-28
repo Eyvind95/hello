@@ -1516,3 +1516,46 @@ test('branch overlap rejection preserves old and new observation before restorat
   const first=b.branchOverlapEvidence[0];a.equal(first.messageId,g.id);a.deepEqual(Array.from(first.fields),[field]);a.equal(first.previous.row,g);a.equal(first.current.row,changed);a.equal(first.previousRawDom.projection,'initial');a.equal(first.currentRawDom.projection,'remounted');a.equal(first.accepted,false);
  }
 });
+
+test('stop immediately exports immutable accepted branch rows while scan is still pending; finalization never downloads twice',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  // Navigation only:'));
+ for(const mode of ['pending','download-error','build-error','terminal-error']){
+  let release,output=[],builds=0,attempts=0,closed=0;
+  const rows=[r('user|turn:one'),r('assistant|message:two','assistant')];
+  const b={branch:{direction:'down'},rows:rows.slice(),stop:{},download:{hidden:true},action:{},summary:{},info:{},pane:{remove(){closed++}}};
+  const state={bulk:b};
+  const ctx={state,Date,pc:{...c,validateBranch:data=>{a.equal(data.status,mode==='terminal-error'?'failed':'cancelled');a.equal(data.evidence.continuity,false);a.equal(data.evidence.branchBoundary.verified,false)}},
+   historyLocateHost:async()=>{},historyBranchDown:async()=>{await new Promise(resolve=>{release=resolve})},
+   historyScanPayload:(b,status,error)=>{
+    if(mode==='terminal-error'&&status==='completed')throw Error('terminal build failed');
+    return {status,error,count:b.rows.length,rows:b.rows.slice(),canonical:false,importable:false,evidence:{continuity:false,branchBoundary:{verified:false}}}
+   },
+   historyPrepareDownload:data=>{builds++;if(mode==='build-error'&&builds===1)throw Error('blob allocation failed');return {filename:'stop.json',blob:{text:async()=>JSON.stringify(data)},immutable:JSON.stringify(data)}},
+   historyTriggerDownload:p=>{attempts++;if(mode==='download-error'&&attempts===1)throw Error('download unavailable');output.push(p.immutable);return p.filename},
+   historyStatus(){},historyRemember:async()=>{throw Error('branch must not write local resume memory')}
+  };
+  vm.runInNewContext(block+';globalThis.run=historyRun;globalThis.stop=historyRequestStop;',ctx);
+  const pending=ctx.run(b);
+  await Promise.resolve();await Promise.resolve();a.equal(typeof release,'function');
+  if(mode==='terminal-error'){release();await pending;a.equal(output.length,1);a.equal(JSON.parse(output[0]).status,'failed');a.equal(state.bulk,null);continue}
+  ctx.stop(b);a.equal(b.cancelled,true);a.equal(state.bulk,b);a.equal(b.download.hidden,false);
+  if(mode==='pending'){a.equal(output.length,1);a.equal(builds,1);ctx.stop(b);a.equal(attempts,1)}
+  if(mode==='download-error'){a.equal(output.length,0);a.match(b.info.textContent,/下載觸發失敗/);b.download.onclick();a.equal(output.length,1);a.equal(builds,1)}
+  if(mode==='build-error'){a.equal(output.length,0);a.match(b.info.textContent,/保全建立失敗/);b.download.onclick();a.equal(output.length,1);a.equal(builds,2)}
+  const saved=JSON.parse(output[0]);a.equal(saved.status,'cancelled');a.equal(saved.count,2);a.equal(saved.evidence.stopRequest.acceptedRowsOnly,true);
+  // Simulate stale async diagnostics/new rows; repeated download must use the exact original immutable file.
+  b.rows.push(r('user|turn:late'));release();await pending;
+  a.equal(state.bulk,null);a.equal(output.length,1);a.match(b.stop.textContent,/關閉面板/);
+  b.download.onclick();a.equal(output.length,2);a.equal(output[0],output[1]);b.stop.onclick();a.equal(closed,1);
+ }
+});
+test('stop source wiring retains a cancellation guard and cannot overwrite stop UI with scan progress',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ a.match(src,/b\.stop\.onclick=event=>historyRequestStop\(b,event\)/);
+ a.match(src,/function historyStatus\(b,msg\)\{\s*if\(b\.stopRequested\)return/);
+ a.match(src,/if\(b\.cancelled\|\|e\.code==='HISTORY_RECOVERY_RETRY'\)throw e/);
+ a.match(src,/historyRun\(b\)\.catch\(/);
+});
