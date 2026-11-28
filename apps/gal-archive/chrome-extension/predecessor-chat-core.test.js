@@ -1401,3 +1401,44 @@ test('both branch launch buttons call the same entry with explicit direction, vi
   else {a.equal(pane.isConnected,true);a.match(branchInfo.textContent,/⛔/);a.match(mode.textContent,/⛔/)}
  }
 });
+
+
+test('branch down accelerates only inside same fully verified native body, falls back on remount, reflow, changed text or intervening message',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  async function historyBranchDown('),src.indexOf('  async function historyRun(b)'))+src.slice(src.indexOf('  function historyPrefixMerge('),src.indexOf('  function historyPrefixJoin('));
+ for(const mode of ['normal','remount','reflow','changed-text','intervening','no-native-id']){
+  let now=1000,first=true,fastAttempted=false,failedFast=false,reads=0;
+  const moves=[],trace=[],hash='a'.repeat(64),host={scrollTop:100,scrollHeight:6000,clientHeight:100,clientTop:0,getBoundingClientRect:()=>({top:0})};
+  const anchor={...r('assistant|message:anchor','assistant','parent'),identityBasis:'native-dom-id'},u=r('user|turn:u'),g={...r('assistant|message:g','assistant','long reply'),identityBasis:mode==='no-native-id'?'turn-key':'native-dom-id'},u2=r('user|turn:u2'),g2={...r('assistant|message:g2','assistant'),identityBasis:'native-dom-id'};
+  const b={host,branch:{row:anchor,hash,direction:'down'},rows:[],windows:0,scrollStats:{}};
+  const element=(top,bottom)=>({isConnected:true,getBoundingClientRect:()=>({top:top-host.scrollTop,bottom:bottom-host.scrollTop})});
+  const body=element(100,5000),otherBody=element(100,5000),changedBody=element(100,4900),early=element(0,99),later=element(5000,5300),last=element(5300,6000),intervening=element(700,750);
+  const Clock=class extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}};
+  const ctx={Date:Clock,pc:c,historyGuard:()=>{},historyStatus:()=>{},historyTrace:(b,event,details)=>trace.push({event,...details}),historyHostObservation:()=>{},historyLoading:()=>false,historyNativeFailure:()=>null,historyEdgeOrdinal:()=>({}),historyAtBottom:h=>h.scrollTop>=5900,historyBranchDigest:async()=>hash,
+   historyScroll:(h,to)=>{const from=h.scrollTop;h.scrollTop=Math.min(5900,Math.max(0,to));moves.push({from,to:h.scrollTop});if(h.scrollTop-from>200&&!fastAttempted){fastAttempted=true;failedFast=true}},
+   sleep:async ms=>{now+=ms},historySettled:async()=>{
+    now+=700;reads++;
+    let rows,entries;
+    if(first){first=false;rows=[anchor,u,g];entries=[{row:anchor,el:early},{row:u,el:early},{row:g,el:body,body}];}
+    else if(host.scrollTop<4800){const bad=failedFast&&host.scrollTop>200;let row=g,el=body;
+      if(bad&&mode==='remount')el=otherBody;
+      if(bad&&mode==='reflow')el=changedBody;
+      if(bad&&mode==='changed-text')row={...g,text:'changed'};
+      if(host.scrollTop<=100)failedFast=false;
+      rows=[row];entries=[{row,el,body:el}];
+      if(mode==='intervening')entries.push({row:u2,el:intervening});
+    }else if(host.scrollTop<5500){rows=[g,u2,g2];entries=[{row:g,el:body,body},{row:u2,el:later},{row:g2,el:last}];}
+    else {rows=[u2,g2];entries=[{row:u2,el:later},{row:g2,el:last}]}
+    if(mode==='intervening'&&first===false&&reads===1)entries.push({row:u2,el:intervening});
+    b.branchDownEntries=entries;return rows;
+   }};
+  vm.runInNewContext(block+';globalThis.down=historyBranchDown;',ctx);
+  await ctx.down(b);
+  a.deepEqual(Array.from(b.rows,x=>x.id),[u.id,g.id,u2.id,g2.id]);a.equal(b.bottomReached,true);
+  const fast=moves.filter(x=>x.to-x.from>200);
+  if(mode==='normal'){a.ok(fast.length>=2);a.ok(b.scrollStats.interiorAdvances>=2);a.ok(reads<45);a.ok(fast.every(x=>x.to<=4800));}
+  else if(['remount','reflow','changed-text'].includes(mode)){a.equal(b.scrollStats.interiorFallbacks,1);a.equal(b.scrollStats.interiorAdvances||0,0);a.equal(fast.length,1);a.ok(trace.some(x=>x.event==='branch-down-interior-rejected'))}
+  else if(mode==='no-native-id'){a.equal(fast.length,0);a.equal(b.scrollStats.interiorAdvances||0,0)}
+  else {a.ok(fast.every(x=>x.from>=750));}
+ }
+});

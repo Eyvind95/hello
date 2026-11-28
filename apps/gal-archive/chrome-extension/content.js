@@ -2286,7 +2286,15 @@
             // unmount it. Full scans never supply anchorRead.
             const anchor=b.mode==='predecessor-anchor'&&anchorRead?anchorRead(b.host):null;
             if(anchor?.observation)return anchor.rows;
-            let entries=null;const rows=anchor?anchor.rows:historyRead(b.host,observation=>historyFoldObservation(b,observation),x=>{entries=x},b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
+            const readStarted=Date.now();let entries=null;const rows=anchor?anchor.rows:historyRead(b.host,observation=>historyFoldObservation(b,observation),x=>{entries=x},b.mode==='predecessor-history'&&!b.sample&&!b.isolated),fingerprint=pc.fingerprint(rows);
+            if(b.branch?.direction==='down'){
+              const elapsed=Date.now()-readStarted,stats=b.scrollStats;
+              stats.branchReadCount=(stats.branchReadCount||0)+1;
+              stats.branchReadTotalMs=(stats.branchReadTotalMs||0)+elapsed;
+              stats.branchReadMaxMs=Math.max(stats.branchReadMaxMs||0,elapsed);
+              stats.branchReadLastMs=elapsed;
+              if(elapsed>=1000)historyTrace(b,'branch-down-slow-read',{elapsed,rows:rows.length,tail:rows.at(-1)?.id});
+            }
             readIssueKey='';readIssueSince=0;
             if(last===fingerprint&&lastRows){for(let i=0;i<rows.length;i++)for(const change of pc.compareRow(lastRows[i],rows[i]).changes)historyAttachmentChange(b,change)}
             if(lastRows&&last!==null&&last!==fingerprint){
@@ -2301,6 +2309,7 @@
               const recovered=upward&&target!==null?historyRecoverScroll(b,target,targetHeight,'settle-after-read',allowBoost,policy):null;
               if(recovered){target=recovered.target;targetHeight=recovered.height;last=null;lastRows=null;reason='恢復向上捲動位置';if(++resets>8||recovered.exhausted)throw retryError();historyStatus(b,reason);const result=await recoverWait(recovered);target=result.target;targetHeight=result.height;continue}
               if(entries?.some(x=>x.generatedImage)){await historyCaptureGeneratedImages(b,entries);historyGuard(b)}
+              if(b.branch?.direction==='down')b.branchDownEntries=entries;
               return rows;
             }
             if(last!==fingerprint){
@@ -2672,6 +2681,47 @@
     const idleLimit=180000,rangeEnd=()=>Math.max(0,host.scrollHeight-host.clientHeight);
     const progress=b.branchDownProgress={idleLimitMs:idleLimit,budgetBasis:'fixed-range-at-verified-row-growth',frontierStartTop:anchorTop,frontierRangeEnd:rangeEnd(),verifiedForwardWindows:0,verifiedForwardPixels:0,uncreditedWindows:0,budgetRejectedWindows:0,highWaterTop:anchorTop,lastGrowthAt:new Date(lastGrowth).toISOString(),lastProgressAt:new Date(lastProgress).toISOString()};
     const deadline=()=>lastProgress+idleLimit;
+    // Only navigate inside one already verified, mounted native assistant body.
+    // Geometry is not a completeness proof and cannot bridge message boundaries.
+    let fastDisabledTail=null;
+    const viewTop=()=>typeof document!=='undefined'&&host===document.scrollingElement?0:host.getBoundingClientRect().top+(host.clientTop||0);
+    const interior=(tail,from)=>{
+      const entries=b.branchDownEntries;
+      if(!Array.isArray(entries)||!entries.length||tail===fastDisabledTail||Math.abs(host.scrollTop-from)>2)return null;
+      const found=entries.filter(e=>e.row?.id===tail);
+      if(found.length!==1)return null;
+      const e=found[0],body=e.body;
+      if(e.row.role!=='assistant'||e.row.identityBasis!=='native-dom-id'||e.row.nonTextOmitted||!body?.isConnected||
+         typeof body.getBoundingClientRect!=='function'||!pc.compareRow(b.rows.at(-1),e.row).equal)return null;
+      const v=host.clientHeight,top=viewTop(),rect=body.getBoundingClientRect();
+      const start=from+rect.top-top,end=from+rect.bottom-top;
+      if(!Number.isFinite(v)||v<=0||!Number.isFinite(start)||!Number.isFinite(end)||start>from+2||end<from+v*3)return null;
+      const target=Math.min(from+v*16,end-v*2,progress.frontierRangeEnd,rangeEnd());
+      if(target-from<v*2)return null;
+      for(const other of entries){
+        if(other===e)continue;
+        if(!other.el?.isConnected||typeof other.el.getBoundingClientRect!=='function')return null;
+        const r=other.el.getBoundingClientRect();
+        if(r.bottom>top+2&&r.top<top+target-from+v-2)return null;
+      }
+      return {body,tail,start,end,target,from,viewport:v,height:host.scrollHeight};
+    };
+    const verifyInterior=(proof,current)=>{
+      const actual=host.scrollTop,entries=b.branchDownEntries;
+      const e=Array.isArray(entries)?entries.find(x=>x.row?.id===proof.tail):null;
+      const r=current.find(x=>x.id===proof.tail);
+      if(!e||e.body!==proof.body||!proof.body.isConnected||!r||!pc.compareRow(b.rows.at(-1),r).equal||
+         host.clientHeight!==proof.viewport||host.scrollHeight!==proof.height||Math.abs(actual-proof.target)>8)return false;
+      const top=viewTop(),rect=proof.body.getBoundingClientRect(),start=actual+rect.top-top,end=actual+rect.bottom-top;
+      if(Math.abs(start-proof.start)>2||Math.abs(end-proof.end)>2||start>actual+2||end<actual+proof.viewport*2-8)return false;
+      for(const other of entries){
+        if(other===e)continue;
+        if(!other.el?.isConnected||typeof other.el.getBoundingClientRect!=='function')return false;
+        const box=other.el.getBoundingClientRect();
+        if(box.bottom>top+proof.from-actual+2&&box.top<top+proof.viewport-2)return false;
+      }
+      return true;
+    };
     const guardProgress=()=>{if(Date.now()-lastProgress>=idleLimit)throw Error('180秒無新增連續訊息、已驗證向下位移或底端穩定證據')};
     const move=(target,kind)=>{b.scrollStats.attempts=(b.scrollStats.attempts||0)+1;historyTrace(b,'branch-down-scroll',{kind,target,from:host.scrollTop});historyScroll(host,target)};
     const accept=async (current,movement=null)=>{
@@ -2692,7 +2742,7 @@
         // A stale/older window, jump, resize/reflow, restore, or oscillation
         // is not evidence of traversing a long reply. Exact merge above is mandatory.
         const withinBudget=actual<=progress.frontierRangeEnd+2;
-        const eligible=previousTail===tail&&next.at(-1)?.id===tail&&Math.abs(pre-from)<=2&&actualHeight===oldHeight&&host.clientHeight===viewport&&from>=progress.highWaterTop-2&&actual>progress.highWaterTop+2&&actual<=target+8&&actual-from<=viewport*.9+8;
+        const eligible=previousTail===tail&&next.at(-1)?.id===tail&&Math.abs(pre-from)<=2&&actualHeight===oldHeight&&host.clientHeight===viewport&&from>=progress.highWaterTop-2&&actual>progress.highWaterTop+2&&actual<=target+8&&actual-from<=(movement.interiorVerified?viewport*16:viewport*.9)+8;
         const credited=eligible&&withinBudget;
         if(eligible&&!withinBudget)progress.budgetRejectedWindows++;
         if(credited){progress.verifiedForwardWindows++;progress.verifiedForwardPixels+=actual-progress.highWaterTop;progress.highWaterTop=actual;lastProgress=Date.now();progress.lastProgressAt=new Date(lastProgress).toISOString()}
@@ -2721,13 +2771,22 @@
       bottomSince=null;bottomSig=null;
       historyStatus(b,'從指定 GPT 頂端向下掃描');
       const from=anchorTop,oldHeight=anchorHeight,tail=b.rows.at(-1)?.id;
-      const target=Math.min(Math.max(0,host.scrollHeight-host.clientHeight),from+step);
+      const proof=step>=Math.floor(host.clientHeight*.65)?interior(tail,from):null;
+      const target=proof?proof.target:Math.min(Math.max(0,host.scrollHeight-host.clientHeight),from+step);
       const movement={from,pre:host.scrollTop,oldHeight,target,viewport:host.clientHeight,previousTail:acceptedLive.at(-1)?.id};
-      move(target,'forward');await sleep(350);
+      if(proof){historyStatus(b,'已核對超長 GPT 正文・在同一則內快速向下');historyTrace(b,'branch-down-interior-attempt',{tail,from,target,bodyStart:proof.start,bodyEnd:proof.end});}
+      move(target,proof?'verified-body-interior':'forward');await sleep(350);
       try{
         live=await historySettled(b,{deadline:deadline()});
-        await accept(live,movement);retries=0;step=Math.max(24,Math.floor(host.clientHeight*.65));
+        if(proof){
+          if(!verifyInterior(proof,live))throw Error('超長正文內位移證據改變；恢復普通重疊掃描');
+          movement.interiorVerified=true;
+        }
+        await accept(live,movement);
+        if(proof){b.scrollStats.interiorAdvances=(b.scrollStats.interiorAdvances||0)+1;historyTrace(b,'branch-down-interior-verified',{tail,from,target,actual:host.scrollTop})}
+        retries=0;step=Math.max(24,Math.floor(host.clientHeight*.65));
       }catch(e){
+        if(proof){fastDisabledTail=tail;b.scrollStats.interiorFallbacks=(b.scrollStats.interiorFallbacks||0)+1;historyTrace(b,'branch-down-interior-rejected',{tail,from,target,reason:String(e.message||e)})}
         historyGuard(b);guardProgress();b.scrollStats.overlapRetries=(b.scrollStats.overlapRetries||0)+1;if(++retries>=4)throw e;
         historyTrace(b,'branch-down-forward-conflict',{target,anchorTop:from,anchorHeight:oldHeight,anchorId:tail,reason:String(e.message||e)});
         let restored=false;
