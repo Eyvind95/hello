@@ -1760,7 +1760,7 @@
     if(left<0||at<=left||right<=at||children.slice(left+1,at).some(n=>!whitespace(n))||children.slice(at+1,right).some(n=>!whitespace(n)))return null;
     return {before,after,label,value};
   }
-  function historyAssistantCodeText(body,owner,id,raw,onBlank=()=>{},onViewer=()=>{}){
+  function historyAssistantCodeText(body,owner,id,raw,onBlank=()=>{},onViewer=()=>{},onSingle=()=>{}){
     const codes=[...body.querySelectorAll('code')].filter(historyVisible);
     let text=raw;
     // Match an entire line-delimited semantic anchor, not an incidental
@@ -1870,6 +1870,21 @@
         return {group,code,label,value,viewerPre};
       };
       const children=[...root.children],nodes=[...root.childNodes];
+      // TEA-BRANCH-008: a whole native assistant response can consist of a
+      // single plain-text code block. No prose anchors exist in this topology.
+      // Require the exact identity-bound exclusive root and native source
+      // path, one text-only SPAN, one verified copy control, and a known
+      // complete/omitted rendering projection. Never infer absent prose.
+      if(children.length===1&&only(root,[children[0]])&&codes.length===1){
+        const p=proof(children[0]),span=p?.code?.children?.[0];
+        if(p&&!p.viewerPre&&p.label==='純文字'&&span?.tagName==='SPAN'&&only(p.code,[span])&&
+           [...span.childNodes].every(n=>n.nodeType===3)&&String(span.textContent||'')===p.value&&
+           ['',p.label,p.value,p.label+'\n'+p.value].includes(text)){
+          onSingle({messageId:id,kind:'native-exclusive-plain-code-source',label:p.label,
+            previousProjection:text,codeText:p.value,rootExclusive:true,sourceMarkerVerified:true});
+          text=p.value;nativeHandled.add(p.code);
+        }
+      }
       const gapMatches=(gap,run)=>{
         // Exact projections only: omitted, label alone, code alone, or
         // label + code. Consume in DOM order, no arbitrary nonempty gap.
@@ -2112,17 +2127,17 @@
       if(roleMarker&&roleMarker!==role)throw historyIssue('角色標記衝突',owner,{role,roleMarker});
       const stable=composite?pc.compositeId(composite.compositeNative.turnId,composite.compositeNative.ids):role+'|'+(native?'message:'+native:'turn:'+turn);
       let text=historyReadText(body,identityHint?body:owner,stable,onFold);
-      const blankCodeNormalizations=[],viewerNormalizations=[],viewerPreNodes=new Set();
+      const blankCodeNormalizations=[],viewerNormalizations=[],singleCodeNormalizations=[],viewerPreNodes=new Set();
       if(role==='assistant')text=historyAssistantCodeText(body,owner,stable,text,x=>{if(blankCodeNormalizations.length<8)blankCodeNormalizations.push(x)},x=>{
         viewerPreNodes.add(x.pre);viewerNormalizations.push(x.proof);
-      });
+      },x=>singleCodeNormalizations.push(x));
       const structure=[...body.querySelectorAll(HISTORY_STRUCT)].filter(n=>historyVisible(n)&&!viewerPreNodes.has(n)).map(n=>({tag:n.tagName.toLowerCase(),text:role==='assistant'?historyAssistantStructureText(n,body):n.innerText||n.textContent||''}));
       const attachments=[...el.querySelectorAll(HISTORY_ATTACHMENT)].filter(historyVisible).map(historyAttachment);
       if(!text&&!attachments.length)throw Error('空白回合未能確認內容／附件');
       const row={id:stable,role,text,identityBasis:composite?'unresolved-native-composite':native?'native-dom-id':'turn-key',sourceCreatedAt:getVisibleSourceTime(el),structure,attachments,...(composite||{})};
       const sameOwner=owners.get(owner)||[];
       if(sameOwner.some(x=>x.row.id===stable))throw Error('重複原生訊息 ID');
-      const item={row,el,owner,body,blankCodeNormalizations,viewerNormalizations};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
+      const item={row,el,owner,body,blankCodeNormalizations,viewerNormalizations,singleCodeNormalizations};sameOwner.push(item);owners.set(owner,sameOwner);entries.push(item);
     };
     // Read the entire marked response before the legacy selector can pick
     // a nested PDF citation. Keep native message identity, not the user turn ID.
@@ -2419,6 +2434,12 @@
               if(entries?.some(x=>x.generatedImage)){await historyCaptureGeneratedImages(b,entries);historyGuard(b)}
               if(b.branch?.direction==='down'){
                 b.branchDownEntries=entries;
+                const singleSeen=b.branchSingleCodeProofKeys||(b.branchSingleCodeProofKeys=new Set()),singleProofs=b.branchSingleCodeProofs||(b.branchSingleCodeProofs=[]);
+                for(const entry of entries||[])for(const proof of entry.singleCodeNormalizations||[]){
+                  const key=JSON.stringify(proof);if(singleSeen.has(key))continue;
+                  if(singleProofs.length>=128||key.length>100000){b.branchSingleCodeProofOverflow=(b.branchSingleCodeProofOverflow||0)+1;continue}
+                  singleSeen.add(key);singleProofs.push(proof);
+                }
                 const seen=b.branchViewerProofKeys||(b.branchViewerProofKeys=new Set()),proofs=b.branchViewerProofs||(b.branchViewerProofs=[]);
                 for(const entry of entries||[])for(const proof of entry.viewerNormalizations||[]){
                   const key=JSON.stringify(proof);if(seen.has(key))continue;
@@ -2759,6 +2780,8 @@
     if(b.branchDownProgress)data.evidence.branchDownProgress=b.branchDownProgress;
     if(b.branchViewerProofs?.length){data.evidence.branchViewerProofs=b.branchViewerProofs;data.warnings.push('已核對原生 JavaScript 檢視器之複製來源及程式碼，僅正規化介面標籤與重複 PRE 容器；原始投影另存證據。')}
     if(b.branchViewerProofOverflow)data.evidence.branchViewerProofOverflow=b.branchViewerProofOverflow;
+    if(b.branchSingleCodeProofs?.length){data.evidence.branchSingleCodeProofs=b.branchSingleCodeProofs;data.warnings.push('已核對原生 GPT 整則純文字程式碼框之唯一正文來源；保留原始投影及逐字來源證據，未驗證伺服器原始 Markdown。')}
+    if(b.branchSingleCodeProofOverflow)data.evidence.branchSingleCodeProofOverflow=b.branchSingleCodeProofOverflow;
     if(b.branchOverlapEvidence?.length)data.evidence.branchOverlapEvidence=b.branchOverlapEvidence;
     if(b.branchOverlapEvidenceOverflow)data.evidence.branchOverlapEvidenceOverflow=b.branchOverlapEvidenceOverflow;
     data.evidence.continuity=data.status==='completed'&&!!b.branchProof;
