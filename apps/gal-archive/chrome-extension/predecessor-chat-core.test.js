@@ -1127,6 +1127,30 @@ test('native quoted code UI label is repaired in text and structure, never seman
   const body=nativeRun(options);
   a.throws(()=>ctx.fix(body,{},'assistant|message:native-test',body.innerText),/正文與程式碼框不一致/);
  }
+ // TEA-BRANCH-007: independently observed hydrated JS viewer. Keep
+ // the same code-only structure as native source, with a proof of PRE
+ // removal, exact copy-source, and exact adjacent text projection.
+ function hydrated({copyValue='// fixture',label='JavaScript',extra=false,wrongId=false,scrollButton=true,projection='JavaScript\n// fixture',codeValue='// fixture'}={}){
+  const code=el('code',{},[el('span',{},[text(codeValue)])]);
+  const pre=el('pre',{},[code]);
+  const header=el('div',{'data-markdown-copy':'exclude',contenteditable:'false'},[el('div',{},[text(label)]),el('button',{'aria-label':'複製代碼'},[])]);
+  const scroll=el('button',{'aria-hidden':'true','aria-label':'捲動至底部'},[]);
+  const source=el('div',{},[el('div',{},[el('div',{},[el('div',{},[pre])])]),...(scrollButton?[scroll]:[]),...(extra?[el('p',{},[text('unaccounted')])]:[])]);
+  const group=el('div',{'data-chatgpt-copy-code':copyValue},[el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,source])]);
+  const root=el('div',{'data-markdown-text-style':'assistant-message'},[el('p',{},[text('before')]),group,el('p',{},[text('after')])]);
+  const body=el('div',{'data-response-body':'native-test'},[el('div',{'data-chatgpt-selection-message-id':wrongId?'wrong':'native-test'},[root])],'before\n\n'+projection+'\n\nafter');
+  return {body,pre,code};
+ }
+ for(const options of [{},{scrollButton:false},{projection:'// fixture'},{projection:'JavaScript'}]){
+  const {body,pre,code}=hydrated(options),proofs=[];
+  a.equal(ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},x=>proofs.push(x)),'before\n\n// fixture\n\nafter');
+  a.equal(proofs.length,1);a.equal(proofs[0].pre,pre);a.equal(proofs[0].proof.codeText,code.textContent);a.equal(proofs[0].proof.removedStructure.tag,'pre');a.equal(proofs[0].proof.copySourceVerified,true);
+ }
+ for(const options of [{copyValue:'different'},{label:'other'},{extra:true},{wrongId:true},{projection:'JavaScript\n// fixture\nextra prose'},{codeValue:'// changed'}]){
+  const {body}=hydrated(options),proofs=[];
+  try{ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},x=>proofs.push(x))}catch(e){a.match(e.message,/正文與程式碼框不一致/)}
+  a.equal(proofs.length,0);
+ }
  // The comparator itself is unchanged; a row-only difference remains fatal.
  const normal={...r('anchor','assistant',expected),identityBasis:'native-dom-id',structure:[{tag:'blockquote',text:value},{tag:'code',text:value}]};
  const changed={...normal,text:f.body.innerText,structure:[{tag:'blockquote',text:label+'\n'+value},{tag:'code',text:value}]};
@@ -1465,5 +1489,30 @@ test('branch down accelerates only inside same fully verified native body, falls
   else if(['remount','reflow','changed-text'].includes(mode)){a.equal(b.scrollStats.interiorFallbacks,1);a.equal(b.scrollStats.interiorAdvances||0,0);a.equal(fast.length,1);a.ok(trace.some(x=>x.event==='branch-down-interior-rejected'))}
   else if(mode==='no-native-id'){a.equal(fast.length,0);a.equal(b.scrollStats.interiorAdvances||0,0)}
   else {a.ok(fast.every(x=>x.from>=750));}
+ }
+});
+
+
+test('branch overlap rejection preserves old and new observation before restoration, never promotes it',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8'),block=src.slice(src.indexOf('  async function historyBranchDown('),src.indexOf('  async function historyRun(b)'))+src.slice(src.indexOf('  function historyPrefixMerge('),src.indexOf('  function historyPrefixJoin('));
+ for(const field of ['text','structure']){
+  let now=1000,reads=0;
+  const hash='a'.repeat(64),host={scrollTop:100,scrollHeight:1000,clientHeight:100};
+  const anchor={...r('assistant|message:anchor','assistant','parent'),identityBasis:'native-dom-id'},u=r('user|turn:u'),g={...r('assistant|message:g','assistant','before\n\n// comment\n\nafter'),identityBasis:'native-dom-id',structure:[{tag:'code',text:'// comment'}]},u2=r('user|turn:u2');
+  const changed=field==='text'?{...g,text:g.text.replace('// comment','JavaScript\n// comment')}:{...g,structure:[...g.structure,{tag:'strong',text:'before'}]};
+  const b={host,branch:{row:anchor,hash,direction:'down'},rows:[],windows:0,scrollStats:{}};
+  const Clock=class extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}};
+  const ctx={Date:Clock,pc:c,historyGuard:()=>{},historyStatus:()=>{},historyTrace:()=>{},historyHostObservation:()=>{},historyLoading:()=>false,historyNativeFailure:()=>null,historyAtBottom:()=>false,historyBranchDigest:async()=>hash,
+   historyAnchorDomSnapshot:entry=>({status:'captured',messageId:entry.row.id,projection:entry.projection}),
+   historyScroll:(h,to)=>{h.scrollTop=to},sleep:async ms=>{now+=ms},historySettled:async()=>{
+    now+=700;reads++;const rows=reads===1?[anchor,u,g]:[changed,u2];
+    b.branchDownEntries=rows.map(row=>({row,projection:reads===1?'initial':'remounted'}));return rows;
+   }};
+  vm.runInNewContext(block+';globalThis.down=historyBranchDown;',ctx);
+  await a.rejects(ctx.down(b),/無法復原向下連續視窗/);
+  a.deepEqual(Array.from(b.rows,x=>x.id),[u.id,g.id]);a.equal(b.rows[1],g);a.notEqual(b.bottomReached,true);
+  a.equal(b.branchOverlapEvidence.length,4);
+  const first=b.branchOverlapEvidence[0];a.equal(first.messageId,g.id);a.deepEqual(Array.from(first.fields),[field]);a.equal(first.previous.row,g);a.equal(first.current.row,changed);a.equal(first.previousRawDom.projection,'initial');a.equal(first.currentRawDom.projection,'remounted');a.equal(first.accepted,false);
  }
 });
