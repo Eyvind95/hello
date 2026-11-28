@@ -1427,8 +1427,8 @@ test('branch down accelerates only inside same fully verified native body, falls
       if(host.scrollTop<=100)failedFast=false;
       rows=[row];entries=[{row,el,body:el}];
       if(mode==='intervening')entries.push({row:u2,el:intervening});
-    }else if(host.scrollTop<5500){rows=[g,u2,g2];entries=[{row:g,el:body,body},{row:u2,el:later},{row:g2,el:last,body:last}];}
-    else {rows=[u2,g2];entries=[{row:u2,el:later},{row:g2,el:last,body:last}]}
+    }else if(host.scrollTop<5500){rows=[g,u2,g2];entries=[{row:g,el:body,body},{row:u2,el:later},{row:g2,el:last}];}
+    else {rows=[u2,g2];entries=[{row:u2,el:later},{row:g2,el:last}]}
     if(mode==='intervening'&&first===false&&reads===1)entries.push({row:u2,el:intervening});
     b.branchDownEntries=entries;return rows;
    }};
