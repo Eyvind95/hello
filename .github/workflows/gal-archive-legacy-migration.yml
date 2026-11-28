@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'apps/gal-archive/archive-legacy-pilot-migration-preview*'
+      - 'apps/gal-archive/archive-legacy-migration-stage-preview*'
       - '.github/workflows/gal-archive-legacy-migration.yml'
 jobs:
   preview:
@@ -12,4 +13,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test apps/gal-archive/archive-legacy-pilot-migration-preview.test.cjs apps/gal-archive/chrome-extension/predecessor-chat-core.test.js
+      - run: node --test apps/gal-archive/archive-legacy-pilot-migration-preview.test.cjs apps/gal-archive/archive-legacy-migration-stage-preview.test.cjs apps/gal-archive/chrome-extension/predecessor-chat-core.test.js
