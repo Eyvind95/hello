@@ -1,0 +1,16 @@
+name: Archaeology V3 offline
+on:
+  pull_request:
+    paths:
+      - 'apps/gal-archive/archive-archaeology-preview-v3*'
+      - '.github/workflows/gal-archive-archaeology-v3.yml'
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check apps/gal-archive/archive-archaeology-preview-v3.cjs
+      - run: node --test apps/gal-archive/archive-archaeology-preview-v3.test.cjs apps/gal-archive/archive-pilot-import.test.js apps/gal-archive/chrome-extension/predecessor-chat-core.test.js
