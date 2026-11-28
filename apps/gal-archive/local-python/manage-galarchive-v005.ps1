@@ -433,16 +433,7 @@ try {
             # Isolated synthetic supervisor, no production state or credentials.
             $dir=$env:GALARCHIVE_MANAGER_TEST_DIR
             if (-not $dir -or -not (Test-Path -LiteralPath $dir -PathType Container) -or
-                (Split-Path -Leaf $dir) -notmatch '^galarchive-manager-test-[a-f0-9]{32}
-    }
-} catch {
-    if ($Action -eq 'Run') { exit 1 }
-    Write-Error -ErrorAction Continue ('GalArchive manager: '+$_.Exception.Message)
-    if (-not $NoPause) { [void](Read-Host 'Press Enter to close') }
-    exit 1
-}
-if (-not $NoPause -and $Action -notin @('Run','SelfTest','SelfTestJob')) { [void](Read-Host 'Press Enter to close') }
-) { throw 'Invalid synthetic test directory' }
+                (Split-Path -Leaf $dir) -notmatch '^galarchive-manager-test-[a-f0-9]{32}$') { throw 'Invalid synthetic test directory' }
             try {
                 Join-ManagerJob
                 $testPython = if (Test-Path -LiteralPath $python -PathType Leaf) { $python } else { (Get-Command python.exe -ErrorAction Stop).Source }
@@ -464,4 +455,4 @@ if (-not $NoPause -and $Action -notin @('Run','SelfTest','SelfTestJob')) { [void
     if (-not $NoPause) { [void](Read-Host 'Press Enter to close') }
     exit 1
 }
-if (-not $NoPause -and $Action -notin @('Run','SelfTest')) { [void](Read-Host 'Press Enter to close') }
+if (-not $NoPause -and $Action -notin @('Run','SelfTest','SelfTestJob')) { [void](Read-Host 'Press Enter to close') }
