@@ -1102,6 +1102,31 @@ test('native quoted code UI label is repaired in text and structure, never seman
  for(const options of [{rootMarker:false},{identity:false},{extraSelection:true},{extraBody:true},{quoted:true},{actualProse:true}]){
   const f=nestedBlank(options);a.equal(ctx.fix(f.body,{},'native-test',f.body.innerText),f.body.innerText);
  }
+ // TEA-BRANCH-006: the two actual failed DOM topologies, with private
+ // content replaced by generic fixtures. Rendered code may be empty,
+ // while the identity-bound native source nodes still hold exact text.
+ function nativeRun({values=['first\nline','second\nline'],labels=['純文字','純文字'],projection='',wrongId=false,extraNode=false,unknownLabel=false,copy=true,sourceMarker=true,repeatAnchors=false,rendered=false}={}){
+  const groups=values.map((v,i)=>{
+   const header=el('div',{'data-markdown-copy':'exclude',contenteditable:'false'},[el('div',{},[text(unknownLabel?'unknown':labels[i])]),el('button',{'aria-label':copy?'複製代碼':'其他'},[])],rendered?labels[i]:'');
+   const code=el('code',{},[el('span',{},[text(v)])],rendered?v:'');
+   const source=el('div',sourceMarker?{'data-code-block-source':'true'}:{},[code]);
+   return el('div',{},[el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,source])]);
+  });
+  const raw='intro\n\nbefore\n\n'+(projection?projection+'\n\n':'')+'after\n\nend'+(repeatAnchors?'\n\nbefore\n\nafter':'');
+  const root=el('div',{'data-markdown-text-style':'assistant-message'},[el('p',{},[text('intro')]),el('p',{},[text('before')]),...groups.slice(0,1),...(extraNode?[text('unaccounted')]:[]),...groups.slice(1),el('p',{},[text('after')]),el('p',{},[text('end')]),...(repeatAnchors?[el('p',{},[text('before')]),el('p',{},[text('after')])]:[])]);
+  return el('div',{'data-response-body':'native-test'},[el('div',{'data-chatgpt-selection-message-id':wrongId?'wrong':'native-test'},[root])],raw);
+ }
+ for(const [values,labels] of [[['first\nline','second\nline'],['純文字','純文字']],[['// generic comment'],['JavaScript']]]){
+  const expected='intro\n\nbefore\n\n'+values.join('\n\n')+'\n\nafter\n\nend';
+  for(const projection of ['',values.join('\n\n'),labels.join('\n\n'),values.map((v,i)=>labels[i]+'\n'+v).join('\n\n')]){
+   const body=nativeRun({values,labels,projection,rendered:!!projection});
+   a.equal(ctx.fix(body,{},'assistant|message:native-test',body.innerText),expected);
+  }
+ }
+ for(const options of [{wrongId:true},{extraNode:true},{unknownLabel:true},{copy:false},{sourceMarker:false},{repeatAnchors:true},{projection:'unaccounted prose'}]){
+  const body=nativeRun(options);
+  a.throws(()=>ctx.fix(body,{},'assistant|message:native-test',body.innerText),/正文與程式碼框不一致/);
+ }
  // The comparator itself is unchanged; a row-only difference remains fatal.
  const normal={...r('anchor','assistant',expected),identityBasis:'native-dom-id',structure:[{tag:'blockquote',text:value},{tag:'code',text:value}]};
  const changed={...normal,text:f.body.innerText,structure:[{tag:'blockquote',text:label+'\n'+value},{tag:'code',text:value}]};
