@@ -259,6 +259,7 @@ def archive_status() -> dict:
     """Report tool version and archive access, without revealing secrets."""
     return {"version": VERSION, "python": sys.version.split()[0],
             "archive": root().name, "output": OUTPUT, "overwrite": False,
+            "liveOutput": LIVE, "liveSchema": 1, "cloudSync": "not-verified",
             "transport": "stateless-http" if sys.argv[1:] == ["--http"] else "stdio"}
 
 
@@ -804,6 +805,8 @@ def append_live_turn(predecessor_id: str, generation_id: str, turn_id: str,
                 require(value["request"] == request, "Turn ID already used with different content")
                 return {"sequence": i+1, "turnId": turn_id, "sha256": digest(raw), "bytes": len(raw),
                         "idempotent": True, "readback": True, "cloudSync": "not-verified",
+                        "path": "/".join((LIVE, "predecessors", predecessor_id, generation_id, "turns", item[0].name)),
+                        "pendingAttachments": sum(a["status"] == "pending" for a in attachments),
                         "replyState": "prepared-not-delivery-verified"}
         previous = None
         if files:
@@ -874,6 +877,19 @@ def self_test():
                 pass
             else:
                 raise AssertionError("Unsafe operation unexpectedly accepted")
+        # Local launcher must also exercise the new atomic writer before cutover.
+        gen = str(uuid.uuid4())
+        turn = str(uuid.uuid4())
+        assert begin_live_generation("self-test", gen)["readback"]
+        cp = get_live_checkpoint("self-test", gen)
+        assert cp["count"] == 0 and cp["serverTime"].endswith("+08:00")
+        a = append_live_turn("self-test", gen, turn, None, "player", "reply",
+                             [{"role":"user","ordinal":0,"status":"pending","reason":"synthetic fixture"}])
+        assert a["readback"] and a["pendingAttachments"] == 1
+        assert append_live_turn("self-test", gen, turn, None, "player", "reply",
+                                [{"role":"user","ordinal":0,"status":"pending","reason":"synthetic fixture"}])["idempotent"]
+        assert get_live_checkpoint("self-test", gen)["lastTurnSha256"] == a["sha256"]
+        assert digest((p/a["path"]).read_bytes()) == a["sha256"]
         print("GalArchive-Python 0.0.5 self-test PASS (synthetic; no archive files modified)")
 
 
