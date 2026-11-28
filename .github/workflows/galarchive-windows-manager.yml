@@ -1,0 +1,22 @@
+name: GalArchive Windows manager tests
+on:
+  pull_request:
+    branches: [feat/galarchive-python-local-v005]
+  push:
+    branches: [feat/galarchive-windows-launcher-v005]
+  workflow_dispatch:
+jobs:
+  windows-manager:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse and test in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $path = Join-Path $PWD 'apps/gal-archive/local-python/manage-galarchive-v005.ps1'
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { $errors | Out-String | Write-Error; exit 1 }
+          & $path -Action SelfTest -NoPause
+          if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { exit $LASTEXITCODE }
