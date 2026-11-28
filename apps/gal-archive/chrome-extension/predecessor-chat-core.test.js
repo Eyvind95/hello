@@ -1621,3 +1621,48 @@ test('stop source wiring retains a cancellation guard and cannot overwrite stop 
 });
 
 test('predecessor scan launcher stays on the lower right',()=>{const fs=require('node:fs'),path=require('node:path');const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');const launcher=src.slice(src.indexOf('function historyLauncher()'));a.match(launcher,/button\.style\.cssText='position:fixed!important;left:auto!important;right:16px!important;transform:none!important;bottom:108px!important;/)});
+
+
+test('split native generated-image and following assistant text retain distinct IDs; incomplete or ambiguous activity rejected',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+ const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
+ const block=src.slice(src.indexOf('  function historyResponseIdentity('),src.indexOf('  // A rendered assistant body'))+src.slice(src.indexOf('  function historySplitImageRole('),src.indexOf('  const HISTORY_IMAGE_SINGLE_LIMIT'));
+ const ctx={historyVisible:n=>n.visible!==false,isUserDescendant:n=>!!n.closest('[data-user-message-bubble="true"]'),historyIssue:msg=>Error(msg),Node:{DOCUMENT_POSITION_FOLLOWING:4}};
+ vm.runInNewContext(block+';globalThis.prove=historyGeneratedImageProof;globalThis.identify=historyResponseIdentity;',ctx);
+ const matches=(n,s)=>s.split(',').some(part=>{const p=part.trim(),m=p.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);return m?n.hasAttribute(m[1])&&(m[2]===undefined||n.getAttribute(m[1])===m[2]):n.tagName.toLowerCase()===p});
+ const el=(tag,attrs={},kids=[],innerText='')=>{
+  const n={nodeType:1,tagName:tag.toUpperCase(),attrs,children:kids,childNodes:kids,innerText,textContent:innerText,visible:true,
+   getAttribute(k){return Object.hasOwn(this.attrs,k)?this.attrs[k]:null},hasAttribute(k){return Object.hasOwn(this.attrs,k)},
+   querySelectorAll(s){const out=[];for(const child of this.children){if(matches(child,s))out.push(child);out.push(...child.querySelectorAll(s))}return out},
+   contains(x){return this===x||this.children.some(child=>child.contains(x))},
+   closest(s){for(let p=this;p;p=p.parentElement)if(matches(p,s))return p;return null},
+   compareDocumentPosition(other){return this.parentElement===other.parentElement&&this.parentElement.children.indexOf(this)<this.parentElement.children.indexOf(other)?4:0}
+  };kids.forEach(k=>k.parentElement=n);return n
+ };
+ function fixture(mode='valid'){
+  const id='image-id',tid='text-id',uid='user-id';
+  const role=(v)=>el('h4',{'data-conversation-role':v});
+  const user=el('div',{},[role('user'),el('div',{'data-chatgpt-search-unit-key':'fallback:0:user','data-chatgpt-search-message-ids':mode==='wrong-user'?'other':uid},[el('div',{'data-user-message-bubble':'true'})])]);
+  const img=el('img'),preview=el('button',{'data-testid':'generated-image-preview','aria-label':'產生的圖片 1'},[img]);
+  const body=el('div',{'data-response-body':id,'data-chatgpt-search-message-ids':mode==='wrong-image'?'other':id},[el('div',{'data-testid':'generated-image-gallery'},[preview,el('button',{'aria-label':'編輯生成的圖像 1'}),el('button',{'aria-label':'分享生成的圖像 1'})]),...(mode==='caption'?[el('p',{},[],'unexpected text')]:[])]);
+  const imageBlock=el('div',{},[el('span',{'hidden':'','data-chatgpt-agent-turn-start':''}),body]);
+  const textId=mode==='same-id'?id:tid;
+  const textBody=el('div',{'data-response-body':textId},[el('div',{'data-chatgpt-selection-message-id':mode==='wrong-selection'?'other':textId},[el('div',{'data-markdown-text-style':'assistant-message'},[el('p',{},[],'fixture confirmation')])])],'fixture confirmation');
+  const text=el('div',{},[el('div',{'data-chatgpt-search-unit-key':'fallback:2:assistant','data-content-search-unit-key':'fallback:2:assistant','data-chatgpt-search-message-ids':mode==='extra-id'?textId+' other':textId+' '+textId},[role(mode==='wrong-role'?'user':'assistant'),textBody])]);
+  const activity=el('div',{'data-spacing':'activity'},mode==='swapped'?[user,text,imageBlock]:[user,imageBlock,text,...(mode==='extra-block'?[el('div')]:[])]);
+  const owner=el('div',{'data-turn-key':uid},[el('div',{'data-talvt-turn-state':mode==='incomplete'?'pending':'complete'},[activity])]);
+  if(mode==='hidden-text')textBody.visible=false;
+  if(mode==='hidden-image')img.visible=false;
+  return {owner,body,textBody,img,id,tid}
+ }
+ const x=fixture();
+ a.equal(ctx.prove(x.body,x.owner).id,'assistant|message:'+x.id);a.equal(ctx.prove(x.body,x.owner).image,x.img);
+ a.equal(ctx.identify(x.textBody,x.owner),x.tid);
+ for(const mode of ['wrong-user','wrong-image','same-id','wrong-selection','extra-id','wrong-role','swapped','extra-block','incomplete','hidden-text','hidden-image','caption']){
+  const f=fixture(mode);a.equal(ctx.prove(f.body,f.owner),null,mode);
+ }
+ // The old standalone image role is still accepted, without any text sibling.
+ const standalone=fixture(),body=standalone.body;
+ const owner=el('div',{'data-turn-key':'standalone-turn'},[el('div',{'data-talvt-turn-state':'complete'},[el('div',{},[el('h4',{'data-conversation-role':'assistant'}),body])])]);
+ a.equal(ctx.prove(body,owner).id,'assistant|message:'+standalone.id);
+});

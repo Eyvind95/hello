@@ -2042,6 +2042,39 @@
   }
   // Narrow exception for the observed native generated-image-only renderer.
   // Never treat arbitrary img, user uploads, captions, or tool UI as prose.
+  // Older native renderer: user, role-less generated-image body, then a
+  // separately identified assistant text body, all in one completed activity.
+  // The image must remain a separate native message, never inherit the text ID.
+  function historySplitImageRole(body,owner,id){
+    const block=body.parentElement,activity=block?.parentElement;
+    if(!activity||activity.getAttribute('data-spacing')!=='activity'||!owner.contains(activity))return false;
+    const state=activity.parentElement;
+    if(!state||state.getAttribute('data-talvt-turn-state')!=='complete'||!owner.contains(state))return false;
+    const blocks=[...activity.children];
+    if(blocks.length!==3||blocks[1]!==block||block.children.length!==2||block.children[1]!==body)return false;
+    const start=block.children[0];
+    if(start.tagName!=='SPAN'||!start.hasAttribute('hidden')||!start.hasAttribute('data-chatgpt-agent-turn-start')||String(start.textContent||'').trim())return false;
+    if(block.querySelectorAll('[data-conversation-role],[data-chatgpt-search-unit-key]').length)return false;
+    const user=blocks[0],textBlock=blocks[2],turn=owner.getAttribute('data-turn-key');
+    const userRoles=[...user.querySelectorAll('[data-conversation-role]')],userUnits=[...user.querySelectorAll('[data-chatgpt-search-unit-key]')];
+    if(!turn||turn===id||userRoles.length!==1||userRoles[0].getAttribute('data-conversation-role')!=='user'||
+       userUnits.length!==1||!String(userUnits[0].getAttribute('data-chatgpt-search-unit-key')||'').endsWith(':user')||
+       userUnits[0].getAttribute('data-chatgpt-search-message-ids')!==turn||
+       userUnits[0].querySelectorAll('[data-user-message-bubble="true"]').length!==1||!historyVisible(userUnits[0]))return false;
+    const textBodies=[...textBlock.querySelectorAll('[data-response-body]')],allBodies=[...owner.querySelectorAll('[data-response-body]')];
+    if(textBodies.length!==1||allBodies.length!==2||allBodies[0]!==body||allBodies[1]!==textBodies[0])return false;
+    const textBody=textBodies[0],textId=textBody.getAttribute('data-response-body'),unit=textBody.parentElement;
+    if(!textId||textId===id||textId===turn||!unit||unit.parentElement!==textBlock||textBlock.children.length!==1||unit.children.length!==2||unit.children[1]!==textBody)return false;
+    const key=unit.getAttribute('data-chatgpt-search-unit-key')||'',role=unit.children[0];
+    const textRoles=[...textBlock.querySelectorAll('[data-conversation-role]')],selection=[...textBody.querySelectorAll('[data-chatgpt-selection-message-id]')];
+    if(!key.endsWith(':assistant')||unit.getAttribute('data-content-search-unit-key')!==key||
+       unit.getAttribute('data-chatgpt-search-message-ids')!==textId+' '+textId||
+       textRoles.length!==1||textRoles[0]!==role||role.getAttribute('data-conversation-role')!=='assistant'||
+       selection.length!==1||selection[0].getAttribute('data-chatgpt-selection-message-id')!==textId||
+       textBody.querySelectorAll('[data-markdown-text-style="assistant-message"]').length!==1||
+       !historyVisible(textBody)||!String(textBody.innerText||'').trim()||isUserDescendant(textBody))return false;
+    try{return historyResponseIdentity(textBody,owner)===textId}catch(_){return false}
+  }
   function historyGeneratedImageProof(body,owner){
     const gallerySelector='[data-testid="generated-image-gallery"]',previewSelector='[data-testid="generated-image-preview"]';
     const galleries=[...body.querySelectorAll(gallerySelector)];
@@ -2052,7 +2085,8 @@
     const state=body.closest('[data-talvt-turn-state="complete"]');
     if(!state||!owner.contains(state))return null;
     const parent=body.parentElement,roles=[...parent.children].filter(n=>n.hasAttribute('data-conversation-role'));
-    if(roles.length!==1||roles[0].getAttribute('data-conversation-role')!=='assistant'||!(roles[0].compareDocumentPosition(body)&Node.DOCUMENT_POSITION_FOLLOWING))return null;
+    const ownRole=roles.length===1&&roles[0].getAttribute('data-conversation-role')==='assistant'&&!!(roles[0].compareDocumentPosition(body)&Node.DOCUMENT_POSITION_FOLLOWING);
+    if(!ownRole&&(roles.length!==0||!historySplitImageRole(body,owner,id)))return null;
     const conflicts=[...body.querySelectorAll('[data-message-id],[data-source-message-id],[data-dil-message-id],[data-chatgpt-selection-message-id],[data-message-author-role]')];
     if(conflicts.some(n=>['data-message-id','data-source-message-id','data-dil-message-id','data-chatgpt-selection-message-id'].some(a=>n.hasAttribute(a)&&n.getAttribute(a)!==id)||(n.hasAttribute('data-message-author-role')&&n.getAttribute('data-message-author-role')!=='assistant')))return null;
     if(galleries.length!==1||body.querySelectorAll('p,pre,code,blockquote,table,[data-markdown-text-style="assistant-message"]').length)return null;
