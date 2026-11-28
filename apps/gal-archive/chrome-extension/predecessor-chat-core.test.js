@@ -1522,12 +1522,13 @@ test('stop immediately exports immutable accepted branch rows while scan is stil
  const src=fs.readFileSync(path.join(__dirname,'content.js'),'utf8');
  const block=src.slice(src.indexOf('  async function historyRun(b)'),src.indexOf('  // Navigation only:'));
  for(const mode of ['pending','download-error','build-error','terminal-error']){
-  let release,output=[],builds=0,attempts=0,closed=0;
+  let release,entered,output=[],builds=0,attempts=0,closed=0;
+  const ready=new Promise(resolve=>{entered=resolve});
   const rows=[r('user|turn:one'),r('assistant|message:two','assistant')];
   const b={branch:{direction:'down'},rows:rows.slice(),stop:{},download:{hidden:true},action:{},summary:{},info:{},pane:{remove(){closed++}}};
   const state={bulk:b};
   const ctx={state,Date,pc:{...c,validateBranch:data=>{a.equal(data.status,mode==='terminal-error'?'failed':'cancelled');a.equal(data.evidence.continuity,false);a.equal(data.evidence.branchBoundary.verified,false)}},
-   historyLocateHost:async()=>{},historyBranchDown:async()=>{await new Promise(resolve=>{release=resolve})},
+   historyLocateHost:async()=>{},historyGuard:()=>{},historyBranchDown:async()=>{await new Promise(resolve=>{release=resolve;entered()})},
    historyScanPayload:(b,status,error)=>{
     if(mode==='terminal-error'&&status==='completed')throw Error('terminal build failed');
     return {status,error,count:b.rows.length,rows:b.rows.slice(),canonical:false,importable:false,evidence:{continuity:false,branchBoundary:{verified:false}}}
@@ -1538,7 +1539,7 @@ test('stop immediately exports immutable accepted branch rows while scan is stil
   };
   vm.runInNewContext(block+';globalThis.run=historyRun;globalThis.stop=historyRequestStop;',ctx);
   const pending=ctx.run(b);
-  await Promise.resolve();await Promise.resolve();a.equal(typeof release,'function');
+  await ready;a.equal(typeof release,'function');
   if(mode==='terminal-error'){release();await pending;a.equal(output.length,1);a.equal(JSON.parse(output[0]).status,'failed');a.equal(state.bulk,null);continue}
   ctx.stop(b);a.equal(b.cancelled,true);a.equal(state.bulk,b);a.equal(b.download.hidden,false);
   if(mode==='pending'){a.equal(output.length,1);a.equal(builds,1);ctx.stop(b);a.equal(attempts,1)}
