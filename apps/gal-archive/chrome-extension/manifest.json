@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "輪迴檔案館｜ChatGPT＋Gal AI 雙掃描助手",
-  "version": "0.10.97",
-  "version_name": "V0.10.97 分支長文內加速",
+  "version": "0.10.98",
+  "version_name": "V0.10.98 原生程式碼檢視器核對",
   "description": "輪迴檔案館：原生回答辨識及程式碼框正文完整性檢查。",
   "permissions": [
     "storage",
