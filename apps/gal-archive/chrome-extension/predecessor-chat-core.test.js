@@ -1127,6 +1127,30 @@ test('native quoted code UI label is repaired in text and structure, never seman
   const body=nativeRun(options);
   a.throws(()=>ctx.fix(body,{},'assistant|message:native-test',body.innerText),/正文與程式碼框不一致/);
  }
+ // TEA-BRANCH-007: independently observed hydrated JS viewer. Keep
+ // the same code-only structure as native source, with a proof of PRE
+ // removal, exact copy-source, and exact adjacent text projection.
+ function hydrated({copyValue='// fixture',label='JavaScript',extra=false,wrongId=false,scrollButton=true,projection='JavaScript\n// fixture',codeValue='// fixture'}={}){
+  const code=el('code',{},[el('span',{},[text(codeValue)])]);
+  const pre=el('pre',{},[code]);
+  const header=el('div',{'data-markdown-copy':'exclude',contenteditable:'false'},[el('div',{},[text(label)]),el('button',{'aria-label':'複製代碼'},[])]);
+  const scroll=el('button',{'aria-hidden':'true','aria-label':'捲動至底部'},[]);
+  const source=el('div',{},[el('div',{},[el('div',{},[el('div',{},[pre])])]),...(scrollButton?[scroll]:[]),...(extra?[el('p',{},[text('unaccounted')])]:[])]);
+  const group=el('div',{'data-chatgpt-copy-code':copyValue},[el('div',{'data-code-block':'true','data-markdown-copy':'code-block'},[header,source])]);
+  const root=el('div',{'data-markdown-text-style':'assistant-message'},[el('p',{},[text('before')]),group,el('p',{},[text('after')])]);
+  const body=el('div',{'data-response-body':'native-test'},[el('div',{'data-chatgpt-selection-message-id':wrongId?'wrong':'native-test'},[root])],'before\n\n'+projection+'\n\nafter');
+  return {body,pre,code};
+ }
+ for(const options of [{},{scrollButton:false},{projection:'// fixture'},{projection:'JavaScript'}]){
+  const {body,pre,code}=hydrated(options),proofs=[];
+  a.equal(ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},x=>proofs.push(x)),'before\n\n// fixture\n\nafter');
+  a.equal(proofs.length,1);a.equal(proofs[0].pre,pre);a.equal(proofs[0].proof.codeText,code.textContent);a.equal(proofs[0].proof.removedStructure.tag,'pre');a.equal(proofs[0].proof.copySourceVerified,true);
+ }
+ for(const options of [{copyValue:'different'},{label:'other'},{extra:true},{wrongId:true},{projection:'JavaScript\n// fixture\nextra prose'},{codeValue:'// changed'}]){
+  const {body}=hydrated(options),proofs=[];
+  try{ctx.fix(body,{},'assistant|message:native-test',body.innerText,()=>{},x=>proofs.push(x))}catch(e){a.match(e.message,/正文與程式碼框不一致/)}
+  a.equal(proofs.length,0);
+ }
  // The comparator itself is unchanged; a row-only difference remains fatal.
  const normal={...r('anchor','assistant',expected),identityBasis:'native-dom-id',structure:[{tag:'blockquote',text:value},{tag:'code',text:value}]};
  const changed={...normal,text:f.body.innerText,structure:[{tag:'blockquote',text:label+'\n'+value},{tag:'code',text:value}]};
