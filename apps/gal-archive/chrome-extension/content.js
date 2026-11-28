@@ -2181,13 +2181,13 @@
     if(reply.row.id!=='assistant|message:'+native||historyResponseIdentity(reply.body,owner)!==native)return false;
     const activity=image.body.parentElement.parentElement,userBlock=activity.children[0];
     const bubbles=[...userBlock.querySelectorAll('[data-user-message-bubble="true"]')];
-    if(bubbles.length!==1||!(users[0].el.contains(bubbles[0])||bubbles[0].contains(users[0].el)))return false;
+    if(bubbles.length!==1||!userBlock.contains(users[0].el)||!(users[0].el.contains(bubbles[0])||bubbles[0].contains(users[0].el)))return false;
     // Do not discard additional visible text or attachments outside the
     // verified bodies. Ordinary hidden labels and known UI controls are not
     // archive messages. Traverse display:contents wrappers as well.
-    const covered=[userBlock,image.body,reply.body];
-    const label=reply.body.parentElement.children[0];
-    if(label.getAttribute('data-conversation-role')==='assistant'&&RESPONSE_LABEL.test(String(label.innerText||'').trim()))covered.push(label);
+    const covered=[users[0].el,image.body,reply.body];
+    const labels=[...userBlock.querySelectorAll('[data-conversation-role]'),reply.body.parentElement.children[0]];
+    for(const label of labels)if(RESPONSE_LABEL.test(String(label.innerText||'').trim()))covered.push(label);
     const walk=n=>{
       if(covered.includes(n))return true;
       if(n.nodeType===8)return true;
