@@ -7,7 +7,11 @@ on:
   workflow_dispatch:
 jobs:
   offline:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,5 +21,5 @@ jobs:
       - run: python apps/gal-archive/local-python/galarchive_mcp_v005.py --self-test
       - run: |
           cd apps/gal-archive/local-python
-          sed 's/galarchive_mcp_v003/galarchive_mcp_v005/g' test_v003.py > test_batch_v005.py
+          python -c "from pathlib import Path; p=Path('test_v003.py'); Path('test_batch_v005.py').write_text(p.read_text(encoding='utf-8').replace('galarchive_mcp_v003','galarchive_mcp_v005'),encoding='utf-8')"
           python -m unittest discover -p 'test_*v005.py' -v
