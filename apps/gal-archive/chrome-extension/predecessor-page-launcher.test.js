@@ -108,7 +108,7 @@ test('new toolbar and right launcher ignore old-version launcher and configurati
  f.nodes.set(oldButton.id,oldButton);f.nodes.set(oldPane.id,oldPane);
  await f.popup({type:'predecessor-popup-config',chat:'/c/first'});
  const launcher=f.nodes.get('ga-predecessor-page-launcher--testextension'),pane=f.nodes.get('ga-predecessor-page-config--testextension');
- assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/left:50%!important;right:auto!important;transform:translateX\(-50%\)!important/);assert.match(pane.style.cssText,/left:50%!important;right:auto!important;transform:translateX\(-50%\)!important/);
+ assert.ok(launcher);assert.ok(pane);assert.match(launcher.style.cssText,/left:auto!important;right:16px!important;transform:none!important;bottom:108px!important/);assert.match(pane.style.cssText,/left:50%!important;right:auto!important;transform:translateX\(-50%\)!important/);
  assert.match(launcher.textContent,/V0\.10\.48/);assert.equal(legacyClicks,0);
  assert.equal(f.nodes.get(oldButton.id),oldButton);assert.equal(f.nodes.get(oldPane.id),oldPane);
  f.route('/c/second');f.launch();assert.equal(f.nodes.has(pane.id),false);assert.equal(f.nodes.get(oldPane.id),oldPane);
